@@ -1,1167 +1,1300 @@
 # SecureCloud — Architectural Drivers
 
-**Document status:** v0.1
-**Document type:** Architecture Foundation
+**Document:** `docs/architecture/architectural-drivers.md`
+**Version:** 0.2
+**Status:** Approved
+**Project:** SecureCloud
+**Target environment:** Security-critical communication for critical-sector organizations, including operations in degraded, hostile, remote, or intermittently connected environments.
 
 ---
 
 ## 1. Purpose
 
-This document defines the architectural drivers that will guide the design and implementation of SecureCloud.
+This document defines the **architectural drivers** for SecureCloud.
 
-It establishes:
+Architectural drivers are the requirements, constraints, qualities, assumptions, and operational characteristics that materially influence architectural decisions.
 
-* what the system must accomplish;
-* the security properties the architecture must provide;
-* the performance and reliability objectives;
-* the constraints imposed by the project specification;
-* the threat model;
-* the engineering principles governing architectural decisions;
-* assumptions and unresolved questions.
+This document answers:
 
-This document intentionally does **not** define detailed implementation choices.
+> **What properties must the SecureCloud architecture satisfy, and why?**
 
-Technology selections, protocols, cryptographic constructions, IPC mechanisms, database structures, and other concrete architectural decisions must be evaluated separately and recorded through Architecture Decision Records (ADRs) when appropriate.
+It intentionally does **not** prescribe detailed implementation mechanisms or specific cryptographic protocols.
+
+Technical solutions shall be evaluated later against these drivers and documented through architecture decisions and ADRs.
 
 ---
 
 # 2. Architectural Vision
 
-SecureCloud is intended to become a professional-grade secure communications platform designed for organizations handling highly sensitive information, including investigative journalism, international NGOs, sensitive enterprises, and administrations.
+SecureCloud is intended to be a **professional, lightweight, ultra-secure communication platform** for critical operational environments.
 
-The system shall prioritize:
+The system must remain useful when conventional assumptions about communication infrastructure do not hold.
 
-1. confidentiality;
-2. protection against interception and infrastructure compromise;
-3. metadata minimization;
-4. secure multi-device communication;
-5. reliable asynchronous delivery;
-6. predictable performance;
-7. strong testing and verification;
-8. maintainability and architectural clarity.
+SecureCloud therefore targets not only normal Internet connectivity, but also:
 
-The project specifies a five-microservice C++ architecture with a Qt native client, PostgreSQL, Docker/Docker Compose and CI/CD.
+* intermittent connectivity;
+* degraded networks;
+* high-latency networks;
+* constrained bandwidth;
+* temporary disconnection;
+* remote environments;
+* hostile network environments;
+* emergency situations;
+* potentially disconnected or alternative communication environments.
 
-The long-term vision may extend beyond the academic MVP into a more complete portfolio-grade security and performance project.
+The architectural objective is not simply:
+
+> **"encrypted messaging."**
+
+It is:
+
+> **A security-critical, resilient, efficient communication system that minimizes unnecessary information exposure while remaining predictable and usable under both normal and degraded operating conditions.**
 
 ---
 
-# 3. Architectural Scope
+# 3. Architectural Scope and Maturity
 
-The initial system is composed of:
+SecureCloud contains capabilities with different expected implementation maturity.
 
-* Qt/C++ client;
-* API Gateway;
-* Authentication Service;
-* Messaging Service;
-* Files Service;
-* Audit Service;
-* Deploy Service;
-* PostgreSQL;
-* Docker/Docker Compose;
-* CI/CD pipeline.
+To avoid confusing ambitious architectural goals with mandatory three-month implementation requirements, every major capability shall be classified into one of three categories.
 
-The project specification explicitly identifies five C++ microservices and describes their orchestration alongside PostgreSQL.
+## 3.1 MUST IMPLEMENT
 
-The final boundaries, responsibilities, communication mechanisms and data ownership of these components remain subject to architectural analysis.
+Capabilities required to form the functional MVP.
+
+Examples:
+
+* end-to-end encrypted messaging;
+* secure authentication;
+* multi-device support;
+* device revocation;
+* durable offline message storage;
+* reliable message delivery;
+* core file transfer;
+* testing and validation;
+* core observability;
+* deployment automation.
+
+## 3.2 MUST ARCHITECT FOR
+
+Capabilities whose architectural interfaces, boundaries, and extension points should be considered now, even if the complete implementation is not delivered in the initial MVP.
+
+Examples:
+
+* alternative transports;
+* mesh networking;
+* satellite communication;
+* disconnected/tactical networking;
+* advanced emergency communication;
+* advanced location privacy mechanisms.
+
+The architecture must avoid unnecessarily preventing these capabilities later.
+
+## 3.3 ADVANCED / RESEARCH
+
+Capabilities that may be partially implemented, prototyped, benchmarked, or documented as future extensions.
+
+Examples include:
+
+* stronger traffic-analysis resistance;
+* more sophisticated metadata protection;
+* advanced post-revocation protection;
+* sophisticated disconnected-operation protocols;
+* advanced transport switching;
+* more advanced emergency escalation mechanisms.
+
+A capability classified here must **not** be represented as fully implemented unless it actually is.
 
 ---
 
 # 4. Functional Architectural Drivers
 
-## FD-01 — Secure real-time messaging
+## 4.1 End-to-End Confidentiality
 
-The platform shall provide real-time professional messaging.
+Message plaintext shall be accessible only to the intended communicating endpoints.
 
-The messaging subsystem is identified as the core of the platform and is expected to support a peak target of 10,000 messages per second.
+The server infrastructure shall not require access to plaintext message content.
 
-The exact workload definition for this target remains OPEN.
+The architecture shall therefore maintain a strict boundary between:
+
+```text
+Endpoint plaintext
+        │
+        ▼
+Client-side cryptographic processing
+        │
+        ▼
+Encrypted data
+        │
+        ▼
+SecureCloud infrastructure
+```
+
+Infrastructure components shall operate on encrypted or otherwise minimized representations whenever their responsibility does not require plaintext.
 
 ---
 
-## FD-02 — End-to-end encrypted messaging
+## 4.2 Client-Side Encryption and Decryption
 
-Message content shall be encrypted on the authorized sending endpoint and decrypted only by authorized receiving endpoint(s).
+Messages shall be encrypted on the sender's trusted client endpoint and decrypted on the recipient's trusted client endpoint.
 
-The server shall operate on encrypted message data and shall not possess the cryptographic capability required to decrypt message content.
+The infrastructure shall not become a trusted plaintext processing layer.
 
-The project specification explicitly states that the server should never see message content and should only route encrypted packets.
+This applies to:
+
+* messages;
+* sensitive attachments;
+* sensitive location information;
+* other protected user content where applicable.
 
 ---
 
-## FD-03 — Conversation management
+## 4.3 Server Knowledge Minimization
+
+SecureCloud shall follow a **least-knowledge principle** in addition to least privilege.
+
+The infrastructure should know only what is technically necessary to perform its responsibilities.
+
+The architecture shall seek to minimize knowledge of:
+
+* message contents;
+* communicating parties;
+* precise communication relationships;
+* unnecessary timestamps;
+* message sizes where technically feasible;
+* user location;
+* device relationships;
+* unnecessary behavioral information.
+
+This requirement applies across the infrastructure, not only to the database.
+
+---
+
+## 4.4 Metadata Minimization
+
+Metadata shall be treated as a security-sensitive data category.
+
+The architecture shall explicitly consider leakage through:
+
+* sender information;
+* recipient information;
+* routing identifiers;
+* timestamps;
+* message sizes;
+* delivery events;
+* connection patterns;
+* traffic patterns;
+* device identifiers;
+* location information.
+
+The architecture shall seek to separate:
+
+```text
+Human identity
+Account identity
+Cryptographic identity
+Device identity
+Routing identity
+```
+
+rather than assuming they must be equivalent.
+
+---
+
+## 4.5 Authentication and Cryptographic Identity Separation
+
+Authentication credentials and cryptographic identity shall be treated as separate concepts.
+
+Authentication establishes that a user/device is authorized to access the system.
+
+Cryptographic identity establishes the keys and cryptographic relationships used to protect communication.
+
+Compromise or replacement of authentication credentials must not automatically imply uncontrolled replacement or exposure of cryptographic identities.
+
+The detailed relationship between these systems shall be defined by later architecture decisions.
+
+---
+
+## 4.6 Multi-Device Identity
+
+A user shall be able to operate SecureCloud from multiple authorized devices.
+
+Each device shall possess a device-specific cryptographic identity.
+
+The architecture shall support:
+
+* device enrollment;
+* device authentication;
+* device authorization;
+* device revocation;
+* synchronization;
+* secure key distribution;
+* multiple active devices;
+* future group communication.
+
+A user's logical identity shall therefore not be assumed to correspond to a single physical device.
+
+---
+
+## 4.7 Device Revocation
+
+Revocation shall be supported at the device level.
+
+For the MVP, revocation is **prospective**.
+
+A revoked device shall not receive authorization or cryptographic material for messages created/encrypted after revocation.
+
+Messages already encrypted for the device before revocation may remain decryptable by that device, including when the device was offline.
+
+This is an intentional MVP security policy.
+
+A stronger model in which undelivered previously encrypted messages become inaccessible following revocation may be investigated later.
+
+---
+
+## 4.8 Forward Secrecy
+
+The messaging architecture shall provide strong forward-secrecy properties.
+
+Compromise of current cryptographic material should not enable retrospective decryption of previously protected communications beyond the explicitly defined security limits of the selected protocol.
+
+The exact protocol and key-evolution mechanism shall be selected later through architectural analysis and ADRs.
+
+---
+
+## 4.9 Secure Key Distribution
+
+SecureCloud shall provide an architectural mechanism for distributing and retrieving public cryptographic material efficiently.
+
+The mechanism must support:
+
+* multi-device users;
+* device enrollment;
+* revocation;
+* scalable communication;
+* group communication;
+* verification of cryptographic identity;
+* resistance to unauthorized key substitution.
+
+The key-distribution mechanism must not automatically turn SecureCloud infrastructure into an unquestioned cryptographic trust authority.
+
+---
+
+# 5. Messaging Drivers
+
+## 5.1 Durable Offline Messaging
+
+Messages shall remain available for later delivery when the recipient is offline.
 
 The system shall support:
 
-* conversation history;
-* conversation threads;
-* secure presence/status information;
-* local encrypted-history search.
+```text
+Alice online
+     │
+     ▼
+SecureCloud
+     │
+     ▼
+Durable encrypted mailbox
+     │
+     │ Bob offline
+     ▼
+Bob reconnects
+     │
+     ▼
+Message delivery
+```
 
-The exact implementation and synchronization mechanisms remain OPEN.
-
----
-
-## FD-04 — Offline message delivery
-
-Messages shall be capable of being stored in encrypted form while a recipient is offline and delivered when the recipient becomes available.
-
-The system shall define explicit policies for:
-
-* message retention;
-* expiration;
-* mailbox limits;
-* long-term offline users;
-* delivery acknowledgement;
-* retry behaviour;
-* failure recovery.
-
-These policies are currently OPEN.
+Offline operation is therefore a first-class capability rather than an exceptional failure case.
 
 ---
 
-## FD-05 — Secure file sharing
+## 5.2 Durable Acceptance
 
-The system shall support secure file sharing for sensitive information and large data volumes.
+SecureCloud shall provide a clear and deterministic concept of **durable acceptance**.
 
-The project specification identifies:
+A message shall be considered durably accepted only once the infrastructure has persisted it according to the system's defined durability guarantees.
 
-* file operations;
-* streaming encryption;
-* data compression;
-* encrypted filesystem/storage;
-* potentially terabytes of sensitive data.
+Durable acceptance shall not be confused with:
 
----
+* delivery;
+* receipt;
+* reading;
+* acknowledgement.
 
-## FD-06 — Server-blind file storage
-
-The Files Service shall operate on encrypted file data and shall not possess the cryptographic capability required to decrypt the protected file contents.
-
-The detailed file-encryption and key-distribution architecture remains OPEN.
+These states shall be represented separately.
 
 ---
 
-## FD-07 — Centralized authentication
+## 5.3 Long-Term Offline Users
 
-The system shall provide centralized authentication.
+The architecture shall account for recipients that remain offline for extended periods.
 
-The project specification identifies:
+The system shall not blindly deliver an unbounded backlog immediately after a device reconnects.
 
-* MFA;
-* token issuance;
-* token refresh;
-* token validation;
-* token revocation;
-* permission verification.
+The architecture should support mechanisms such as:
 
-The exact authentication protocol and credential mechanisms remain OPEN.
-
----
-
-## FD-08 — Authorization
-
-The system shall distinguish authentication from authorization.
-
-Being authenticated does not automatically grant permission to perform an operation.
-
-Authorization shall govern access to protected resources and operations.
-
-The detailed authorization model remains OPEN.
-
----
-
-## FD-09 — Audit
-
-The platform shall provide security and operational auditing.
-
-Audit events shall be designed so that they do not unnecessarily expose protected message or file content.
-
-The exact event taxonomy, retention, storage and access-control model remain OPEN.
-
----
-
-## FD-10 — Automated deployment
-
-The project shall support automated build, test, packaging, deployment and post-deployment verification.
-
-The project specification describes the following pipeline:
-
-1. Build;
-2. Test;
-3. Package;
-4. Deploy;
-5. Verify.
-
----
-
-# 5. Security Architectural Drivers
-
-Security is a primary architectural concern rather than a feature added after implementation.
-
----
-
-## SD-01 — End-to-end confidentiality
-
-Sensitive message content shall remain confidential from infrastructure components that do not require plaintext access.
-
-Plaintext message content should exist only where required on authorized endpoints.
-
----
-
-## SD-02 — Server blindness
-
-The SecureCloud infrastructure shall not automatically become a decryption authority.
-
-In particular:
-
-* Messaging Service must not be able to decrypt message content;
-* Files Service must not be able to decrypt protected file content;
-* database compromise must not directly expose plaintext protected content.
-
----
-
-## SD-03 — Authentication/cryptographic identity separation
-
-Account authentication credentials and cryptographic communication identities shall be treated as separate security domains.
-
-Authentication answers:
-
-> "Who is authenticated?"
-
-Cryptographic identity answers:
-
-> "Which cryptographic entity am I communicating with?"
-
-Compromise of authentication infrastructure must not automatically imply compromise of users' historical encrypted communications.
-
----
-
-## SD-04 — Multi-device security
-
-A logical user shall be able to securely authorize multiple devices.
-
-Each device should have an independent device-level cryptographic identity rather than requiring one universal private key to be copied across all devices.
-
-The precise key hierarchy and provisioning mechanism remain OPEN.
-
----
-
-## SD-05 — Device revocation
-
-Individual devices shall be revocable.
-
-After revocation, the revoked device shall not be authorized to access future protected communications.
-
-The system shall define how revocation interacts with:
-
-* active sessions;
-* cached credentials;
-* offline messages;
-* group membership;
-* cryptographic keys;
-* previously downloaded data.
-
----
-
-## SD-06 — Forward secrecy
-
-The cryptographic architecture shall aim to provide Perfect Forward Secrecy (PFS), such that compromise of long-term key material does not automatically permit retrospective decryption of protected past communications.
-
-The exact cryptographic protocol/construction remains OPEN.
-
----
-
-## SD-07 — Post-compromise considerations
-
-The architecture should consider protection and recovery after compromise of an individual device or cryptographic state.
-
-This includes investigation of:
-
-* key rotation;
-* session/key evolution;
-* device re-enrollment;
-* compromised-device recovery;
-* group membership changes.
-
-The exact security properties and mechanisms remain OPEN.
-
----
-
-## SD-08 — Metadata minimization
-
-SecureCloud should expose as little communication metadata as technically and operationally possible.
-
-The desired objective is to minimize exposure of:
-
-* communicating parties;
-* communication relationships;
-* timing;
-* message sizes;
-* frequency;
-* routing information;
-* other traffic metadata.
-
-This is an architectural goal, not yet a claim of complete anonymity.
-
----
-
-## SD-09 — Metadata privacy must be threat-model driven
-
-The system shall not claim protection against traffic analysis without defining:
-
-* the adversary;
-* available observations;
-* available capabilities;
-* information being protected;
-* unavoidable information leakage;
-* measurable security objectives.
-
-Potential future mechanisms may include encrypted routing metadata, opaque identifiers, padding, batching, timing obfuscation or relay mechanisms.
-
-No such mechanism is selected by this document.
-
----
-
-## SD-10 — Secure key distribution
-
-The system shall provide a mechanism for distributing/discovering public cryptographic material without making the infrastructure a decryption authority.
-
-The mechanism must support the future possibility of:
-
-* multi-device users;
-* group conversations;
-* device revocation;
-* key rotation;
-* offline users.
-
-The exact architecture is OPEN.
-
----
-
-## SD-11 — Group-chat security
-
-The cryptographic architecture shall eventually support secure group conversations.
-
-The design must consider:
-
-* group membership;
-* adding devices/users;
-* removing devices/users;
-* key rotation;
-* forward secrecy;
-* post-compromise security;
-* offline members;
-* scalability.
-
-The exact group-messaging protocol is OPEN.
-
----
-
-## SD-12 — Secure local storage
-
-Sensitive information stored locally on client devices shall be protected against unauthorized access.
-
-The architecture shall consider:
-
-* message history;
-* cryptographic keys;
-* authentication/session material;
-* temporary files;
-* downloaded files;
-* caches.
-
-The exact local-storage mechanism is OPEN.
-
----
-
-## SD-13 — Defense in depth
-
-No single security mechanism should be treated as sufficient protection.
-
-Security should be established through multiple independent layers including, as appropriate:
-
-* endpoint cryptography;
-* authentication;
-* authorization;
-* secure transport;
-* secure storage;
-* isolation;
-* least privilege;
-* input validation;
-* auditing;
-* monitoring;
-* secure deployment;
-* dependency management.
-
----
-
-# 6. Threat Model
-
-SecureCloud's initial threat model includes the following adversaries and failure conditions.
-
-## T-01 — Network attacker
-
-An attacker capable of intercepting, observing, modifying, delaying or replaying network traffic.
-
-Priority: **Critical**
-
-Primary concerns:
-
-* message confidentiality;
-* message integrity;
-* authentication;
-* replay;
-* traffic analysis;
-* metadata exposure.
-
----
-
-## T-02 — Compromised or malicious server
-
-An attacker gains control of, or maliciously operates, one or more SecureCloud backend components.
-
-Priority: **Critical**
-
-The architecture should assume that backend compromise does not automatically provide plaintext access to protected message/file content.
-
----
-
-## T-03 — Database compromise
-
-An attacker obtains unauthorized access to the database or a database backup.
-
-Priority: **Critical**
-
-Protected message/file content must remain protected if stored as ciphertext.
-
-Metadata exposure must be explicitly evaluated.
-
----
-
-## T-04 — Stolen device
-
-An attacker obtains physical access to an authorized user's device.
-
-Priority: **Critical**
-
-The architecture shall consider:
-
-* device revocation;
-* local encrypted storage;
-* credential protection;
-* key protection;
-* session invalidation;
-* cryptographic compromise containment.
-
----
-
-## T-05 — Malicious authenticated user
-
-A legitimate user abuses their authorized access.
-
-Priority: **High**
-
-The system should enforce least privilege and explicit authorization.
-
----
-
-## T-06 — Compromised client
-
-Malware or an attacker compromises a user's operating environment.
-
-Priority: **Critical**
-
-SecureCloud cannot assume that plaintext is safe once an endpoint itself is compromised.
-
-The architecture should instead aim to limit the blast radius and provide recovery mechanisms.
-
----
-
-## T-07 — Global/passive surveillance
-
-An adversary capable of observing large-scale network traffic.
-
-Priority: **Critical**
-
-The architecture shall investigate metadata and traffic-analysis resistance.
-
-SecureCloud shall not claim protection beyond the capabilities explicitly defined in its threat model.
-
----
-
-## T-08 — Malicious insider/administrator
-
-An authorized administrator abuses privileged access.
-
-Priority: **Critical**
-
-Administrative privileges must not automatically imply access to protected message/file plaintext.
-
----
-
-## T-09 — Availability attack
-
-An attacker attempts to disrupt availability through resource exhaustion, flooding or denial-of-service techniques.
-
-Priority: **High**
-
-The system shall consider:
-
-* rate limiting;
-* resource quotas;
-* connection limits;
+* retention policies;
+* bounded synchronization;
+* prioritization;
+* expiration policies;
+* pagination;
 * backpressure;
-* isolation;
-* graceful degradation;
-* recovery.
+* controlled catch-up;
+* administrative policy.
+
+The exact retention semantics remain an architectural decision.
 
 ---
 
-# 7. Performance Drivers
+## 5.4 Message Priority
 
-## PD-01 — Messaging throughput
+The architecture shall support differentiated message delivery semantics.
 
-The architecture shall target a peak throughput of:
+At minimum, the conceptual model shall allow:
 
-**10,000 messages/second**
+```text
+NORMAL
+URGENT
+EMERGENCY / CRITICAL
+```
 
-as stated in the project specification.
+Priority shall influence appropriate delivery behavior such as:
 
-The following measurement conditions remain OPEN:
+* queue priority;
+* retry behavior;
+* acknowledgement;
+* synchronization;
+* resource allocation.
 
-* message size;
-* message distribution;
-* number of concurrent connections;
-* hardware;
-* persistence guarantees;
-* encryption workload;
-* fan-out;
-* geographic distribution;
-* acceptable error rate.
-
----
-
-## PD-02 — Predictable performance
-
-Performance shall prioritize predictable behaviour under load.
-
-Important metrics should include:
-
-* throughput;
-* p50 latency;
-* p95 latency;
-* p99 latency;
-* p99.9 latency where useful;
-* CPU utilization;
-* memory consumption;
-* allocation rate;
-* queue depth;
-* connection count;
-* error rate.
+The precise emergency protocol shall be defined separately.
 
 ---
 
-## PD-03 — Low latency
+# 6. Emergency Communication
 
-The messaging system should provide low and predictable latency for interactive communication.
+SecureCloud shall support communication appropriate for critical operational situations.
 
-The exact latency objectives are OPEN.
+Emergency communication may include:
 
----
+* high-priority messages;
+* acknowledgement;
+* delivery confirmation;
+* escalation;
+* emergency groups;
+* location sharing;
+* controlled retry;
+* operation under degraded connectivity.
 
-## PD-04 — Large-file performance
+Emergency communication must not automatically bypass security requirements.
 
-The file subsystem shall support efficient large-file operations.
+The architecture shall balance:
 
-Performance considerations include:
+```text
+Reliability
+Security
+Metadata minimization
+Latency
+Resource consumption
+```
 
-* sequential I/O;
-* streaming;
-* encryption overhead;
-* compression overhead;
-* memory consumption;
-* copying;
-* allocation;
-* network throughput.
-
----
-
-## PD-05 — Evidence-based optimization
-
-Performance optimizations shall be justified through:
-
-1. measurement;
-2. profiling;
-3. benchmark comparison;
-4. analysis of trade-offs.
-
-The project shall avoid optimization based solely on intuition.
+The emergency protocol shall be defined through a dedicated technical specification and, where appropriate, ADRs.
 
 ---
 
-## PD-06 — Zero-copy / shared-memory optimization
+# 7. Geolocation and Location Privacy
 
-Advanced techniques such as shared memory or zero-copy data paths may be investigated where benchmarks demonstrate a meaningful bottleneck.
+## 7.1 Geolocation Sharing
 
-They are not architectural requirements merely because they may be faster in theory.
+The architecture shall support controlled sharing of geolocation information.
 
-Any such mechanism must be evaluated against:
+A user may explicitly share:
 
-* security;
-* complexity;
-* portability;
-* correctness;
-* failure handling;
-* maintainability;
-* testability;
-* measurable performance benefit.
+* current position;
+* selected position;
+* emergency location;
+* potentially historical or operational location information where explicitly supported.
+
+Location information shall receive protection appropriate to its sensitivity.
 
 ---
 
-# 8. Reliability & Availability Drivers
-
-## RD-01 — Durable message acceptance
-
-Once the system declares a message durably accepted, the message should survive temporary service/client unavailability according to the defined durability model.
-
-The exact durability semantics remain OPEN.
-
----
-
-## RD-02 — Asynchronous delivery
-
-The system shall support delivery to temporarily offline recipients.
-
-The delivery model must define:
-
-* retries;
-* acknowledgements;
-* duplicate handling;
-* ordering;
-* expiration;
-* failure states.
-
----
-
-## RD-03 — Retention policy
-
-The system shall define explicit retention policies to prevent unbounded accumulation of undelivered messages.
-
-Policies should address:
-
-* maximum retention period;
-* mailbox size;
-* message count;
-* expiration;
-* user/admin configuration;
-* long-term offline accounts.
-
----
-
-## RD-04 — Failure isolation
-
-Failure of one service should not unnecessarily cause total system failure.
-
-The architecture shall explicitly model service dependencies and failure propagation.
-
----
-
-## RD-05 — Recovery
-
-Services must have defined recovery behaviour after:
-
-* process crash;
-* network failure;
-* database failure;
-* temporary dependency failure;
-* container restart.
-
----
-
-## RD-06 — Availability
-
-The specification describes the messaging system as having "zero tolerance to failure."
-
-This requirement must be translated into measurable availability objectives.
-
-OPEN:
-
-* uptime target;
-* RTO;
-* RPO;
-* acceptable message loss;
-* acceptable degradation.
-
----
-
-# 9. Operational Drivers
-
-## OD-01 — Reproducible builds
-
-Builds should be reproducible and controlled.
-
----
-
-## OD-02 — Automated testing
-
-Testing shall be integrated into CI/CD.
-
----
-
-## OD-03 — Automated deployment
-
-Deployment should be automated rather than manually performed.
-
-The project specification identifies Docker/Docker Compose as the deployment approach.
-
----
-
-## OD-04 — Health verification
-
-Successful deployment shall require more than container startup.
-
-Verification should eventually include:
-
-* process health;
-* dependency connectivity;
-* service health checks;
-* smoke tests;
-* relevant security checks.
-
----
-
-## OD-05 — Rollback
-
-The deployment architecture should support controlled rollback.
-
----
-
-## OD-06 — Observability
-
-The architecture should provide sufficient observability to diagnose:
-
-* failures;
-* latency problems;
-* resource exhaustion;
-* service communication failures;
-* security-relevant events.
-
-Observability must not become a mechanism for leaking protected message/file content.
-
----
-
-# 10. Architectural Constraints
-
-## AC-01 — C++
-
-The backend services are required by the project specification to be implemented in C++.
-
----
-
-## AC-02 — Five microservices
-
-The project specification defines five backend microservices:
-
-* Auth Service;
-* Messaging Service;
-* Files Service;
-* Audit Service;
-* Deploy Service.
-
-This is treated as a project constraint.
-
-The internal boundaries and exact responsibilities still require architectural validation.
-
----
-
-## AC-03 — Qt native client
-
-The specification proposes a native Qt/C++ client rather than an Electron/web-based client.
-
----
-
-## AC-04 — PostgreSQL
-
-PostgreSQL is specified as the database component.
-
-The final data model, ownership and persistence strategy remain OPEN.
-
----
-
-## AC-05 — Docker / Docker Compose
-
-Docker and Docker Compose are specified as deployment/orchestration technologies for the project.
-
----
-
-## AC-06 — Three-month academic delivery
-
-The assignment describes a three-month implementation period.
-
-The architecture must therefore remain sufficiently understandable, testable and maintainable for a student team.
-
----
-
-# 11. Engineering Principles
-
-## EP-01 — Security is an architectural property
-
-Security shall be considered during architectural design rather than added after implementation.
-
----
-
-## EP-02 — Minimize trust
-
-Components should receive the minimum privileges and plaintext access necessary to perform their responsibilities.
-
----
-
-## EP-03 — Do not invent cryptography
-
-SecureCloud shall use established cryptographic constructions and reputable implementations.
-
-The project shall not invent proprietary cryptographic primitives.
-
----
-
-## EP-04 — Measure before optimizing
-
-Performance decisions should be supported by benchmarks and profiling.
-
----
-
-## EP-05 — Complexity must be justified
-
-Architectural complexity must have a corresponding benefit.
-
----
-
-## EP-06 — Innovation must be evidence-based
-
-Innovative technologies or mechanisms should be introduced when they provide a demonstrable security, performance, reliability or engineering advantage.
-
-"Modern" or "innovative" alone is not sufficient justification.
-
----
-
-## EP-07 — Explicit trade-offs
-
-Important architectural decisions shall document:
-
-* problem;
-* alternatives;
-* constraints;
-* decision;
-* rationale;
-* consequences;
-* validation strategy.
-
----
-
-## EP-08 — Failure is part of the design
-
-Every critical component shall be designed with failure scenarios in mind.
-
----
-
-## EP-09 — Security claims must be defensible
-
-SecureCloud shall not claim properties stronger than those demonstrated by its architecture, implementation, testing and threat model.
-
----
-
-# 12. Academic MVP vs Portfolio Roadmap
+## 7.2 Location Privacy
 
 SecureCloud shall distinguish between:
 
-### Academic MVP
+> **Protecting location data**
 
-The minimum coherent system required for:
+and:
 
-* demonstration;
-* evaluation;
-* review;
-* testing;
-* presentation.
+> **Preventing an adversary from inferring location.**
 
-### Portfolio Roadmap
+Encrypting GPS coordinates does not by itself prevent location inference through:
 
-Advanced capabilities that may continue after the academic deadline.
+* network metadata;
+* IP information;
+* radio connectivity;
+* timing;
+* traffic patterns;
+* external observation.
 
-Potential future areas include:
-
-* advanced metadata minimization;
-* stronger traffic-analysis resistance;
-* sophisticated group messaging;
-* advanced key lifecycle management;
-* advanced IPC;
-* zero-copy data paths;
-* high-scale performance optimization;
-* stronger resilience;
-* advanced observability;
-* distributed deployment.
-
-The existence of a portfolio roadmap must not justify compromising the security or engineering quality of the academic MVP.
+Location privacy shall therefore be treated as part of the broader metadata and threat-model architecture.
 
 ---
 
-# 13. Assumptions
+# 8. Connectivity and Resilience Drivers
 
-The following are working assumptions rather than final architectural decisions.
+## 8.1 Degraded Connectivity
 
-### A-01
+SecureCloud shall remain functional under:
 
-The backend should be treated as potentially compromised with respect to protected content.
-
-### A-02
-
-Clients are the primary trusted environment for plaintext message/file content.
-
-### A-03
-
-Users may possess multiple authorized devices.
-
-### A-04
-
-Devices should have independent cryptographic identities.
-
-### A-05
-
-Offline delivery is required.
-
-### A-06
-
-Group messaging is a target capability.
-
-### A-07
-
-Metadata minimization is a major security objective.
-
-### A-08
-
-Authentication and cryptographic identity are separate security domains.
-
-### A-09
-
-Advanced performance mechanisms may be justified after measurement.
+* intermittent connectivity;
+* high latency;
+* packet loss;
+* temporary network outages;
+* unstable connections;
+* constrained bandwidth.
 
 ---
 
-# 14. Open Architectural Questions
+## 8.2 Offline-First Client Operation
 
-The following questions must be resolved before corresponding architecture areas are finalized.
+The client shall be designed to operate safely when connectivity is unavailable.
 
-## Identity & cryptography
+The client should provide durable local handling of:
 
-* What cryptographic identity model will be used?
-* What key hierarchy will be used?
-* How are device keys generated?
-* How are public keys distributed?
-* How are keys verified?
+* outgoing encrypted messages;
+* pending transfers;
+* synchronization state;
+* necessary operational metadata.
+
+Sensitive locally stored information must remain protected against unauthorized local access.
+
+---
+
+## 8.3 Transport Independence
+
+The messaging and security architecture should avoid unnecessary coupling to a single network transport.
+
+Conceptually:
+
+```text
+              SecureCloud protocol
+                       │
+                Transport abstraction
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+       Internet       Mesh       Satellite
+```
+
+The initial implementation may prioritize conventional Internet connectivity, while the architecture remains extensible to other transport mechanisms.
+
+---
+
+# 9. Alternative and Disconnected Networking
+
+## 9.1 Mesh Networking
+
+Mesh networking shall be considered an architectural capability.
+
+The architecture should avoid making future peer-to-peer or multi-hop communication impossible.
+
+A complete mesh implementation is not necessarily required for the initial MVP.
+
+Future work may investigate:
+
+* peer discovery;
+* multi-hop forwarding;
+* intermittent peers;
+* local message exchange;
+* opportunistic synchronization;
+* security across untrusted intermediate nodes.
+
+---
+
+## 9.2 Satellite Communication
+
+The architecture shall consider extremely constrained communication transports, including satellite links.
+
+Relevant constraints include:
+
+* high latency;
+* limited bandwidth;
+* intermittent availability;
+* expensive transmission;
+* asymmetric bandwidth;
+* connection instability.
+
+The initial implementation does not need to provide complete satellite integration unless explicitly included in the implementation plan.
+
+---
+
+## 9.3 Disconnected / Tactical Networking
+
+SecureCloud shall consider environments where centralized Internet infrastructure is temporarily unavailable.
+
+The architecture should therefore avoid assuming:
+
+> continuous access to a central server.
+
+Potential future capabilities include:
+
+* store-and-forward communication;
+* local synchronization;
+* peer-assisted delivery;
+* disconnected operation;
+* delayed synchronization.
+
+Specific tactical networking technologies or protocols shall not be selected at this stage.
+
+---
+
+# 10. File and Attachment Drivers
+
+## 10.1 Client-Side File Encryption
+
+Sensitive files shall be encrypted before leaving the trusted client boundary.
+
+The File Service shall not require the ability to decrypt protected files.
+
+Conceptually:
+
+```text
+Alice
+  │
+  │ plaintext file
+  ▼
+Client crypto
+  │
+  │ encrypted file
+  ▼
+File Service
+  │
+  ▼
+Encrypted storage
+```
+
+---
+
+## 10.2 File Transfer Performance
+
+Large encrypted files shall be transferred efficiently without unnecessary copies, allocations, or transformations.
+
+The architecture shall consider:
+
+* streaming;
+* bounded buffering;
+* backpressure;
+* zero-copy opportunities where justified;
+* resumable transfers;
+* bandwidth constraints.
+
+Optimization shall be driven by measurement rather than assumption.
+
+---
+
+# 11. Performance Drivers
+
+## 11.1 Throughput
+
+The target system shall support approximately:
+
+> **10,000 messages per second**
+
+under the defined benchmark workload and deployment assumptions.
+
+The exact benchmark definition shall be documented separately.
+
+---
+
+## 11.2 Latency
+
+The system shall target predictable low latency.
+
+Latency shall be evaluated using:
+
+* p50;
+* p95;
+* p99;
+* workload-specific measurements.
+
+Average latency alone shall not be considered sufficient.
+
+---
+
+## 11.3 Predictability Under Load
+
+SecureCloud prioritizes:
+
+> **Guaranteed durability + predictable behavior under load + low latency.**
+
+The architecture shall avoid designs that achieve excellent average performance while becoming unstable or unpredictable under high load.
+
+---
+
+## 11.4 Resource Efficiency
+
+The system shall use CPU, memory, network bandwidth, storage and battery resources efficiently.
+
+This is particularly important for:
+
+* lightweight clients;
+* constrained networks;
+* large file transfers;
+* offline synchronization;
+* emergency communication.
+
+---
+
+## 11.5 Measurement Before Optimization
+
+Performance-critical architectural decisions shall be supported by measurement.
+
+The project shall use:
+
+* benchmarks;
+* profiling;
+* load testing;
+* latency measurements;
+* memory measurements;
+* allocation analysis;
+* relevant system-level metrics.
+
+Claims such as "zero-copy is faster" or "shared memory is necessary" shall be validated experimentally.
+
+---
+
+# 12. Shared Memory and High-Performance IPC
+
+Shared memory and other high-performance IPC mechanisms may be considered where they provide measurable benefits.
+
+They shall **not** be introduced merely because they appear technologically advanced.
+
+The architecture shall evaluate:
+
+```text
+Performance benefit
+        vs.
+Complexity
+Security risk
+Maintainability
+Debuggability
+Operational cost
+```
+
+Shared memory is therefore an architectural candidate rather than an unconditional requirement.
+
+---
+
+# 13. Microservice Architecture
+
+SecureCloud shall consist of five core backend services.
+
+The initial target decomposition is:
+
+```text
+Gateway
+   │
+   ├── Auth Service
+   ├── Messaging Service
+   ├── File Service
+   ├── Delivery Service
+   └── Audit Service
+```
+
+The project intentionally adopts this microservice architecture from the beginning because service separation is a central project requirement.
+
+The architecture shall nevertheless prevent unnecessary coupling between services.
+
+Each service shall have:
+
+* explicit responsibility;
+* explicit interface;
+* defined trust boundary;
+* controlled data access;
+* independent testing;
+* clear ownership.
+
+---
+
+# 14. Data and Persistence
+
+## 14.1 Encrypted Persistence
+
+Sensitive message and file data shall remain encrypted when persisted by the infrastructure.
+
+The database/storage layer shall not require plaintext access.
+
+---
+
+## 14.2 Data Ownership
+
+Each service shall access only the data required for its responsibility.
+
+Data ownership shall be explicitly documented.
+
+Cross-service database access should be avoided unless justified by an architectural decision.
+
+---
+
+## 14.3 Retention
+
+The architecture shall define retention policies for:
+
+* messages;
+* files;
+* delivery state;
+* operational metadata;
+* audit records.
+
+Retention must balance:
+
+```text
+Durability
+Security
+Privacy
+Storage consumption
+Operational requirements
+```
+
+---
+
+# 15. Security Drivers
+
+Security is a primary architectural concern rather than a later hardening phase.
+
+The architecture shall address:
+
+* end-to-end confidentiality;
+* authentication;
+* authorization;
+* cryptographic identity;
+* device identity;
+* key lifecycle;
+* forward secrecy;
+* revocation;
+* metadata minimization;
+* secure local storage;
+* secure transport;
+* service isolation;
+* audit integrity;
+* abuse prevention;
+* resilience against malicious infrastructure.
+
+Security mechanisms shall follow:
+
+> **least privilege + least knowledge + defense in depth + fail-safe behavior.**
+
+---
+
+# 16. Threat Model Drivers
+
+The architecture shall consider adversaries including:
+
+### Network attacker
+
+Able to observe, intercept, delay, reorder, replay, or manipulate network traffic within realistic capabilities.
+
+### Infrastructure attacker
+
+Able to compromise one or more backend services or infrastructure components.
+
+### Malicious or curious administrator
+
+Able to access operational infrastructure and potentially sensitive metadata.
+
+### Device attacker
+
+Able to obtain temporary or persistent access to a user device.
+
+### Traffic analyst
+
+Able to infer information from metadata such as timing, volume, routing, and connectivity patterns.
+
+### Physical adversary
+
+Able to operate in environments where devices or communication infrastructure may be exposed to hostile physical conditions.
+
+The detailed threat model shall be documented separately.
+
+---
+
+# 17. Auditability
+
+SecureCloud shall provide sufficient auditability to support:
+
+* security investigations;
+* operational diagnostics;
+* service accountability;
+* incident response.
+
+Auditability must not become an excuse to collect unnecessary sensitive information.
+
+Audit data shall therefore be designed according to:
+
+> **minimum necessary observability.**
+
+Audit logs shall not contain message plaintext or unnecessary sensitive content.
+
+---
+
+# 18. Reliability Drivers
+
+SecureCloud shall provide predictable behavior under:
+
+* service failures;
+* network failures;
+* partial outages;
+* message retries;
+* duplicate delivery attempts;
+* client reconnection;
+* prolonged offline periods.
+
+The system shall consider:
+
+* idempotency;
+* retry policies;
+* backpressure;
+* durable queues;
+* bounded resource consumption;
+* failure isolation.
+
+---
+
+# 19. Consistency and Delivery Semantics
+
+The architecture shall explicitly define:
+
+* durable acceptance;
+* queued;
+* delivered;
+* received;
+* acknowledged;
+* read, where applicable.
+
+The system shall avoid ambiguous semantics such as treating successful network transmission as equivalent to durable storage or recipient delivery.
+
+---
+
+# 20. Testing Drivers
+
+Testing shall be treated as an architectural concern.
+
+The project shall require multiple testing levels:
+
+```text
+Unit
+  ↓
+Component
+  ↓
+Integration
+  ↓
+End-to-End
+  ↓
+Security
+  ↓
+Load / Performance
+  ↓
+Failure / Resilience
+```
+
+Security-sensitive components shall have particularly strong test coverage.
+
+---
+
+# 21. Performance Testing
+
+Performance requirements shall be validated through reproducible benchmarks.
+
+Benchmarks should cover:
+
+* message throughput;
+* latency distributions;
+* concurrent clients;
+* service-to-service communication;
+* persistence;
+* encryption/decryption;
+* file transfer;
+* offline synchronization;
+* recovery;
+* resource consumption.
+
+The project shall avoid reporting performance numbers without documenting:
+
+* workload;
+* hardware;
+* configuration;
+* concurrency;
+* dataset;
+* measurement method.
+
+---
+
+# 22. Failure and Resilience Testing
+
+The system shall be tested against realistic failures including:
+
+* service crashes;
+* network interruptions;
+* connection loss;
+* delayed messages;
+* duplicated requests;
+* database failures;
+* partial service availability;
+* reconnect storms;
+* offline clients;
+* resource exhaustion.
+
+---
+
+# 23. Deployment and Operations
+
+The system shall support reproducible deployment.
+
+Operational architecture shall address:
+
+* service startup;
+* configuration;
+* secrets management;
+* service health;
+* observability;
+* graceful shutdown;
+* recovery;
+* backups where applicable;
+* deployment validation.
+
+Infrastructure credentials and cryptographic secrets shall not be embedded in source code.
+
+---
+
+# 24. Lightweight and Professional Design
+
+Despite its security and architectural ambitions, SecureCloud should remain lightweight.
+
+The architecture should avoid:
+
+* unnecessary dependencies;
+* excessive abstraction;
+* premature optimization;
+* unnecessary service communication;
+* accidental complexity;
+* technology chosen solely for novelty.
+
+Every significant complexity introduced into the system should have a documented justification.
+
+---
+
+# 25. C++ Engineering Drivers
+
+C++ is a primary architectural constraint and opportunity.
+
+The project shall prioritize:
+
+* modern C++;
+* RAII;
+* explicit ownership;
+* strong type safety;
+* predictable resource management;
+* controlled concurrency;
+* bounded memory usage where practical;
+* safe error handling;
+* testability;
+* maintainability.
+
+Unsafe constructs shall require justification.
+
+Performance-sensitive code shall be measured rather than optimized speculatively.
+
+---
+
+# 26. Architectural Decision Principles
+
+Major architectural decisions shall be evaluated according to:
+
+1. Security
+2. Privacy / metadata minimization
+3. Reliability
+4. Predictability
+5. Performance
+6. Resource efficiency
+7. Maintainability
+8. Testability
+9. Operational complexity
+10. Future extensibility
+
+Security or privacy shall not be weakened merely to simplify implementation without an explicit documented trade-off.
+
+---
+
+# 27. Architectural Constraints
+
+The project has the following known constraints.
+
+### Implementation
+
+* Core backend services are implemented in C++.
+* The project consists of five core microservices.
+* The project has a limited academic implementation period.
+* Some advanced capabilities may therefore remain partially implemented or prototyped.
+
+### Security
+
+* Plaintext must remain endpoint-controlled.
+* The infrastructure must minimize knowledge of communications.
+* Device-specific cryptographic identity is required.
+* Device revocation is required.
+* Forward secrecy is required.
+
+### Performance
+
+* Approximately 10,000 messages/second is a target benchmark.
+* Low latency and predictable performance are primary goals.
+* Optimization must be measurement-driven.
+
+### Operations
+
+* The system must remain useful during intermittent connectivity.
+* Offline operation is a first-class requirement.
+* Deployment and testing must be reproducible.
+
+---
+
+# 28. Explicit Non-Decisions
+
+The following have **not** yet been decided and shall not be treated as architectural facts:
+
+* exact end-to-end cryptographic protocol;
+* exact key-exchange protocol;
+* exact group-messaging protocol;
+* exact metadata-protection mechanism;
+* exact anonymous/opaque routing mechanism;
+* exact authentication protocol;
+* exact key-management infrastructure;
+* exact inter-service IPC mechanism;
+* whether shared memory will ultimately be used;
+* exact database schema;
+* exact message retention policy;
+* exact emergency protocol;
+* exact mesh protocol;
+* exact satellite transport;
+* exact tactical networking technology;
+* exact location privacy mechanism.
+
+These decisions require architectural analysis and, where appropriate, ADRs.
+
+---
+
+# 29. Architectural Questions to Resolve
+
+The following questions shall drive subsequent architecture work.
+
+### Identity
+
+* How are human, account, device, routing and cryptographic identities separated?
 * How are devices enrolled?
-* How are devices revoked?
-* How are keys rotated?
-* How is recovery handled?
-* What happens after device compromise?
-* What protocol provides forward secrecy?
-* What protocol provides group messaging security?
+* How are devices verified?
+* How are revoked devices handled?
+
+### Messaging
+
+* What is the message envelope?
+* How does routing work without unnecessary identity disclosure?
+* How are offline messages stored and synchronized?
+* How are duplicate deliveries prevented?
+* What constitutes durable acceptance?
+
+### Cryptography
+
+* Which protocol provides forward secrecy?
+* How are multi-device keys managed?
+* How are group conversations secured?
+* How is key distribution authenticated?
+* How are files protected?
+
+### Metadata
+
+* Which metadata must infrastructure components know?
+* Which metadata can be hidden?
+* Which metadata can be padded, aggregated, delayed, or otherwise minimized?
+* What metadata can an external network observer infer?
+
+### Connectivity
+
+* What abstraction separates messaging from transport?
+* How does the system behave during prolonged disconnection?
+* How could mesh or satellite transports be integrated later?
+
+### Performance
+
+* Where are the actual bottlenecks?
+* Which communication paths justify specialized IPC?
+* Does shared memory provide measurable benefit?
+* Where can zero-copy techniques safely be applied?
+
+### Reliability
+
+* What exactly constitutes durable acceptance?
+* What are the retention and expiration rules?
+* How are reconnect storms controlled?
+* How is message backlog bounded?
+
+### Emergency communication
+
+* What constitutes an emergency message?
+* How is priority enforced?
+* What acknowledgement semantics are required?
+* How does emergency communication behave under degraded connectivity?
 
 ---
 
-## Metadata privacy
+# 30. ADR Candidates
 
-* What metadata must the server know?
-* What metadata can be hidden?
-* What metadata is inherently unavoidable?
-* What traffic-analysis attacker are we defending against?
-* Can sender/recipient relationships be hidden from the server?
-* Can message timing be obscured?
-* Can message sizes be obscured?
-* What are the performance/UX costs?
+The following topics are candidates for formal Architecture Decision Records.
 
----
+1. Five-service microservice architecture
+2. Service responsibility boundaries
+3. Inter-service communication mechanism
+4. Shared memory / high-performance IPC
+5. Authentication vs cryptographic identity separation
+6. Device identity architecture
+7. Public-key distribution
+8. End-to-end messaging protocol
+9. Forward secrecy mechanism
+10. Multi-device encryption model
+11. Group messaging architecture
+12. Metadata-minimizing routing
+13. Offline message durability model
+14. Message retention and backlog management
+15. File encryption architecture
+16. Transport abstraction
+17. Emergency message architecture
+18. Geolocation architecture
+19. Location privacy architecture
+20. Mesh networking extension model
+21. Satellite transport extension model
+22. Disconnected/tactical networking model
+23. Audit architecture
+24. Persistence ownership
+25. Performance optimization strategy
 
-## Messaging
-
-* What are the message delivery guarantees?
-* What does "durably accepted" mean?
-* What ordering guarantees are required?
-* How are duplicates handled?
-* How are acknowledgements represented?
-* How are offline messages retained?
-* How are expired messages handled?
-* How are multi-device deliveries synchronized?
-
----
-
-## Group messaging
-
-* What cryptographic group protocol should be used?
-* How are members added?
-* How are members removed?
-* How are devices added/removed?
-* How are keys rotated?
-* How is forward secrecy maintained?
-* How is post-compromise security handled?
+Not every candidate necessarily requires an ADR; the project team shall use the ADR process to determine when a decision is sufficiently significant, difficult, or consequential to warrant one.
 
 ---
 
-## Performance
+# 31. Architectural Principles
 
-* What exactly constitutes the 10k msg/s benchmark?
-* What message size?
-* What concurrency?
-* What hardware?
-* What latency target?
-* What persistence guarantee?
-* What fan-out?
-* What resource limits?
+The following principles are considered foundational.
 
----
+### Principle 1 — Endpoint Confidentiality
 
-## Reliability
+> Plaintext belongs to trusted endpoints, not infrastructure.
 
-* What availability target?
-* What RTO?
-* What RPO?
-* What constitutes message loss?
-* How much degradation is acceptable?
-* What happens during database failure?
-* What happens when individual services fail?
+### Principle 2 — Least Knowledge
 
----
+> A component should know as little sensitive information as technically possible.
 
-## Files
+### Principle 3 — Least Privilege
 
-* Maximum file size?
-* Maximum concurrent transfers?
-* Required throughput?
-* Retention policy?
-* File integrity model?
-* Resumable uploads?
-* Chunking?
-* Deduplication?
-* Encryption/compression ordering?
+> A component should have only the permissions required for its responsibility.
 
----
+### Principle 4 — Security by Architecture
 
-## Architecture
+> Security must emerge from system boundaries and design, not only from application-level checks.
 
-* Exact responsibilities of the five services?
-* Which service owns which data?
-* What communication mechanism is used internally?
-* REST, RPC, sockets, or other mechanism?
-* Is shared memory justified?
-* Where does the API Gateway terminate connections?
-* How is backpressure implemented?
-* How are service failures isolated?
+### Principle 5 — Metadata Is Data
 
----
+> Metadata can be as sensitive as message content and must be treated accordingly.
 
-# 15. Architectural Decision Classification
+### Principle 6 — Offline Is Normal
 
-SecureCloud shall distinguish the following concepts:
+> Loss of connectivity is an expected operating condition, not merely an error.
 
-### Requirement
+### Principle 7 — Measure Before Optimizing
 
-A property imposed by the project/product.
+> Performance claims require reproducible measurements.
 
-### Constraint
+### Principle 8 — Explicit Trade-offs
 
-A limitation or mandatory technology/structure.
+> Security, performance, complexity and reliability trade-offs must be made consciously and documented.
 
-### Assumption
+### Principle 9 — Transport Independence
 
-A statement accepted temporarily until validated.
+> SecureCloud communication semantics should not unnecessarily depend on one physical/network transport.
 
-### Architectural Driver
+### Principle 10 — Architectural Extensibility
 
-A requirement that materially influences architecture.
+> Advanced capabilities may be implemented later, but today's architecture should avoid unnecessarily preventing them.
 
-### Decision
+### Principle 11 — Fail Securely
 
-A chosen architectural approach.
+> Failure must not silently degrade critical security properties.
 
-### ADR
+### Principle 12 — Document Significant Decisions
 
-A documented significant architectural decision including rationale and consequences.
-
-### Benchmark
-
-Experimental evidence used to validate performance-related decisions.
+> Significant architectural decisions must be traceable through architecture documentation and ADRs.
 
 ---
 
-# 16. Initial ADR Candidates
+# 32. Traceability
 
-The following topics are candidates for future ADRs.
+Every major architectural component should ultimately be traceable to one or more drivers in this document.
 
-| ADR     | Topic                                               | Status    |
-| ------- | --------------------------------------------------- | --------- |
-| ADR-001 | Five-service architecture                           | Candidate |
-| ADR-002 | Authentication vs cryptographic identity separation | Candidate |
-| ADR-003 | Device-specific cryptographic identities            | Candidate |
-| ADR-004 | Key distribution architecture                       | Candidate |
-| ADR-005 | End-to-end messaging cryptographic architecture     | Candidate |
-| ADR-006 | Forward secrecy strategy                            | Candidate |
-| ADR-007 | Group messaging cryptographic architecture          | Candidate |
-| ADR-008 | Metadata-minimizing routing                         | Candidate |
-| ADR-009 | Offline message durability model                    | Candidate |
-| ADR-010 | Internal service communication                      | Candidate |
-| ADR-011 | Shared memory / zero-copy IPC                       | Candidate |
-| ADR-012 | Secure file architecture                            | Candidate |
-| ADR-013 | Local secure storage                                | Candidate |
-| ADR-014 | Authentication/token architecture                   | Candidate |
-| ADR-015 | Reliability/failure model                           | Candidate |
+Conceptually:
 
-These are candidates, not decisions.
+```text
+Architectural Driver
+        ↓
+Architecture Decision
+        ↓
+Component / Boundary
+        ↓
+Requirement
+        ↓
+Trello Specification
+        ↓
+Implementation
+        ↓
+Test
+        ↓
+Evidence
+```
 
----
-
-# 17. Traceability to Project Specification
-
-| Specification requirement          | Architectural driver |
-| ---------------------------------- | -------------------- |
-| Professional secure communications | FD-01, SD-01         |
-| End-to-end encrypted messaging     | FD-02, SD-01, SD-02  |
-| Server routes encrypted packets    | SD-02                |
-| 10,000 messages/sec peak           | PD-01                |
-| Local encrypted-history search     | FD-03                |
-| Secure presence                    | FD-03                |
-| Secure file sharing                | FD-05, FD-06         |
-| Streaming encryption               | FD-05                |
-| Data compression                   | FD-05                |
-| Encrypted filesystem/storage       | FD-05                |
-| MFA authentication                 | FD-07                |
-| Token validation/revocation        | FD-07                |
-| Permission verification            | FD-08                |
-| Audit events                       | FD-09                |
-| Five C++ microservices             | AC-01, AC-02         |
-| Qt native application              | AC-03                |
-| PostgreSQL                         | AC-04                |
-| Docker/Docker Compose              | AC-05                |
-| Automated CI/CD                    | FD-10, OD-01–OD-05   |
-| Unit/integration testing           | OD-02                |
-| Three-month project                | AC-06                |
+This traceability model is intended to support both engineering rigor and project evaluation.
 
 ---
 
-# 18. Status
+# 33. Definition of Architectural Success
 
-This document is **not a final architecture**.
+The SecureCloud architecture is successful if it enables a system that is:
 
-It establishes the drivers from which the architecture will be derived.
+* confidential by design;
+* metadata-conscious;
+* resilient to unreliable connectivity;
+* durable under failure;
+* predictable under load;
+* efficient in CPU, memory and network usage;
+* testable;
+* maintainable;
+* deployable;
+* extensible;
+* explicit about security guarantees and limitations.
 
-No implementation technology should be considered mandatory merely because it appears as an idea in this document.
+Most importantly:
 
-All significant architectural choices must be validated through appropriate reasoning, experimentation, security analysis, benchmarks and/or testing.
+> **The architecture must make it difficult for future implementation decisions to accidentally violate the project's security, reliability, performance, or privacy objectives.**
 
-**Next architectural phase:**
+---
 
-> **System Context → Actors → Trust Boundaries → Data Flows → Architecture Alternatives**
+# 34. Document Status
 
+**Version:** 0.2
+**Status:** Draft for review
 
+This document is an architectural baseline.
 
+It may evolve as architectural analysis reveals new constraints or requirements. Significant changes shall be documented and, where appropriate, accompanied by an ADR.
 
+This document defines **what the architecture must achieve**.
 
+The future `architecture.md` document will define **the architecture selected to achieve it**.
