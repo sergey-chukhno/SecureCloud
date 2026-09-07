@@ -1,247 +1,154 @@
-# Section 4 — Authentication Service Design
+# 3. Gateway Service Design
 
-## 4.1 Purpose
+## 3.1 Purpose
 
-The Authentication Service is the authoritative backend component for:
+The Gateway is SecureCloud's single external entry point.
 
-* application authentication;
-* multi-factor authentication (MFA);
-* session lifecycle;
-* access and refresh token issuance;
-* device authorization and revocation;
-* authentication-related authorization decisions;
-* user/device authentication state;
-* the public cryptographic identity directory.
+Its responsibilities are:
 
-The Auth Service **does not own E2E message/file plaintext or private cryptographic keys**.
+* terminate external TLS connections;
+* accept client API requests;
+* enforce authentication at the external boundary;
+* validate requests;
+* enforce coarse-grained route/scope authorization;
+* route requests to the appropriate backend service;
+* translate external REST/JSON requests into internal gRPC/Protobuf calls;
+* enforce request, connection and resource limits;
+* propagate deadlines and cancellation;
+* provide streaming for large transfers;
+* apply controlled retry behavior;
+* translate internal failures into appropriate external errors.
 
-Authentication credentials and cryptographic identity are deliberately separated.
+The Gateway does **not** own business state and does not become an authority over E2E encrypted content.
 
----
+It must never possess:
 
-## 4.2 Responsibilities
+* E2E private keys;
+* message plaintext;
+* plaintext file contents;
+* file-encryption keys;
+* cryptographic authority over user/device E2E identities.
 
-The Auth Service is responsible for:
-
-1. verifying user authentication credentials;
-2. enforcing MFA when required;
-3. creating and managing authenticated sessions;
-4. issuing and rotating access/refresh tokens;
-5. revoking sessions and devices;
-6. maintaining authoritative device authorization state;
-7. authorizing sensitive device/security operations;
-8. maintaining the public cryptographic directory;
-9. managing public prekey material;
-10. publishing authentication/security audit events.
-
-It is **not** responsible for:
-
-* decrypting messages or files;
-* storing message/file plaintext;
-* storing device private keys;
-* deciding message delivery;
-* managing conversations/groups;
-* storing encrypted message history;
-* storing file content;
-* making business-level messaging authorization decisions.
+The Gateway is therefore a **security and protocol boundary**, not a business-logic service.
 
 ---
 
-# 4.3 Persistence
+## 3.2 Architectural Position
 
-The Auth Service uses **PostgreSQL 17**.
+The canonical request path is:
 
-It owns its database and is the only service allowed to modify Auth-owned persistent state.
-
-Conceptually, the database contains:
-
-* `User`
-* `Session`
-* `RefreshTokenState`
-* `Device`
-* `CryptoIdentity`
-* `SignedPrekey`
-* `OneTimePrekey`
-* MFA-related authentication state
-
-The exact physical schema, indexes, constraints, and migration structure belong in `data-model.md`.
-
-### Database rules
-
-* No other service accesses the Auth database directly.
-* No cross-service SQL.
-* No cross-service foreign keys.
-* All Auth state changes use local PostgreSQL transactions.
-* Authentication state required for correctness must be durable.
-* Process-local memory may be used only as a cache or bounded optimization.
-
----
-
-# 4.4 Identity Model
-
-SecureCloud distinguishes three concepts:
-
-### User identity
-
-A logical SecureCloud account identified by an opaque `user_id`.
-
-### Device identity
-
-A physical application installation/device identified by a unique `device_id`.
-
-One user may have multiple authorized devices:
-
-```text
-User
- ├── Device A — phone
- ├── Device B — laptop
- └── Device C — tablet
+```text id="p7g8a1"
+Qt/C++ Client
+      │
+      │ HTTPS + TLS 1.3
+      ▼
+   Gateway
+      │
+      ├──────────────► Auth
+      │
+      ├──────────────► Messaging
+      │
+      └──────────────► Files
 ```
 
-### Cryptographic identity
+Audit is primarily reached through internal asynchronous events rather than direct client access.
 
-Each device possesses its own E2E cryptographic identity.
+The client never connects directly to:
 
-Therefore:
+* Auth;
+* Messaging;
+* Files;
+* Audit;
+* PostgreSQL;
+* ScyllaDB;
+* MinIO;
+* ClickHouse.
 
-```text
-User
-  └── Device
-       ├── Authentication state
-       └── E2E cryptographic identity
-```
-
-Authentication identity and E2E cryptographic identity are independent.
-
-A valid authentication token does not provide access to the device's private cryptographic keys.
+The Gateway hides backend topology from the client.
 
 ---
 
-# 4.5 Authentication Flow
+## 3.3 External Transport
 
-All external authentication requests pass through the Gateway.
+Client-to-Gateway communication uses:
 
-The Gateway does not perform authentication itself; it routes authentication requests to Auth.
+* HTTPS;
+* TLS 1.3;
+* REST/JSON for external APIs.
 
-For a normal login:
+The Gateway terminates external TLS.
 
-```text
+Normal application authentication uses application credentials and tokens rather than requiring client TLS certificates.
+
+Client TLS certificates are therefore not the primary application identity mechanism.
+
+The Gateway validates the external TLS session before processing the HTTP request.
+
+---
+
+## 3.4 Authentication Boundary
+
+The Gateway is the **authentication enforcement point**.
+
+Auth is the **authentication authority**.
+
+This distinction is important.
+
+```text id="3q0w7m"
 Client
   │
-  │ HTTPS / TLS 1.3
+  │ credentials
   ▼
 Gateway
   │
-  │ gRPC + Protobuf / mTLS
+  │ authentication request
   ▼
 Auth
   │
-  ├── Verify primary credential
-  │
-  ├── Determine MFA requirement
-  │
-  ├── Verify second factor
-  │
-  ├── Create authenticated session
-  │
-  └── Issue tokens
-  │
+  │ authentication result
   ▼
 Gateway
   │
+  │ response
   ▼
 Client
 ```
 
-Authentication succeeds only when all required authentication factors have been successfully verified.
+For example:
 
-When MFA is required, Auth **must not issue a fully authenticated session/token after successful primary-factor verification alone**.
+```text
+POST /auth/login
+```
+
+is sent to the Gateway.
+
+The Gateway routes the request to Auth.
+
+The Gateway does not implement credential verification itself.
+
+Likewise:
+
+```text
+POST /auth/refresh
+```
+
+is routed to Auth.
+
+The Gateway must not redirect the client to Auth using an HTTP redirect.
+
+The client should remain unaware of internal service addresses.
 
 ---
 
-# 4.6 Multi-Factor Authentication
+## 3.5 Access Tokens
 
-MFA is a first-class capability of the Auth Service.
+After successful authentication, Auth issues a short-lived access token.
 
-The project requirements explicitly include multi-factor authentication as part of centralized authentication.
-
-### MVP mechanism
-
-The initial implementation uses **TOTP** as the second factor.
-
-The design must keep the MFA mechanism behind an abstraction so that stronger factors can be introduced later, such as:
-
-* WebAuthn/FIDO2 security keys;
-* platform authenticators;
-* other organization-approved authentication factors.
-
-The architecture therefore does not couple the rest of SecureCloud to TOTP-specific behavior.
-
-### Authentication assurance
-
-Authentication state distinguishes the assurance level achieved by the session.
-
-Conceptually:
-
-```text
-PRIMARY_ONLY
-MFA_VERIFIED
-```
-
-A session requiring MFA must reach `MFA_VERIFIED` before it can be used for operations requiring full authentication assurance.
-
-The resulting authentication context may therefore contain:
-
-```text
-authentication_level = MFA_VERIFIED
-```
-
-This value can be propagated through the Gateway's `AuthenticatedContext`.
-
----
-
-# 4.7 MFA and Sensitive Operations
-
-MFA is particularly important for operations that could materially change the security identity of an account.
-
-The following operations should require an appropriately strong authentication level, with `MFA_VERIFIED` as the MVP baseline:
-
-* registering a new device;
-* revoking a device;
-* changing authentication credentials;
-* changing MFA configuration;
-* changing important security settings;
-* other explicitly security-sensitive account operations.
-
-This creates an important security boundary:
-
-```text
-Valid access token
-        │
-        ▼
-Authentication established
-        │
-        ├── Normal operation
-        │
-        └── Sensitive operation
-                 │
-                 ▼
-          MFA assurance required
-```
-
-Consequently, possession of a stolen ordinary access token does not automatically grant unrestricted authority over account security state.
-
----
-
-# 4.8 Access Tokens
-
-Auth issues short-lived signed access tokens.
-
-The token contains only authentication/authorization information required by downstream components.
+The access token contains only the information necessary for authorization and request context.
 
 Conceptual claims include:
 
-```text
+```text id="h3xj1k"
 user_id
 device_id
 session_id
@@ -255,538 +162,639 @@ token_version
 authentication_level
 ```
 
-`user_id` and `device_id` are opaque identifiers.
+Identifiers are opaque.
 
-The token contains:
+The token must not contain:
 
-* no message plaintext;
-* no file plaintext;
-* no private cryptographic keys;
-* no sensitive cryptographic session state.
+* E2E private keys;
+* message plaintext;
+* file plaintext;
+* file-encryption keys;
+* unnecessary personal information.
 
-Auth owns the private signing key.
+The access token is an **application authentication/authorization credential**.
 
-The Gateway receives only the corresponding public verification material and can therefore validate access tokens locally without calling Auth for every request.
-
----
-
-# 4.9 Refresh Tokens
-
-Refresh tokens are longer-lived and stateful.
-
-Auth:
-
-1. validates the refresh token;
-2. validates its associated session/device state;
-3. issues a new access token;
-4. rotates the refresh token;
-5. invalidates the previous refresh token.
-
-The server stores a protected representation of refresh-token state rather than relying on plaintext storage.
-
-Reuse of an already-rotated refresh token is treated as a security event and may result in session revocation according to security policy.
+It is not the user's cryptographic identity for E2E communication.
 
 ---
 
-# 4.10 Session Management
+## 3.6 Access Token Verification
 
-Sessions are device-specific.
+Auth owns the private signing key used to issue access tokens.
+
+The Gateway possesses only the corresponding public verification material.
 
 Conceptually:
 
-```text
-User
- ├── Session A → Device A
- ├── Session B → Device B
- └── Session C → Device C
-```
-
-A session contains authoritative authentication state such as:
-
-* `session_id`;
-* `user_id`;
-* `device_id`;
-* authentication level;
-* creation time;
-* expiration state;
-* revocation state;
-* token/version state.
-
-Conceptual session states:
-
-```text
-ACTIVE
-REVOKED
-EXPIRED
-```
-
-Session state is durable in PostgreSQL.
-
-The Auth Service remains the authority for session revocation.
-
----
-
-# 4.11 Device Management
-
-Auth is the authoritative service for device registration, authorization and revocation.
-
-A new device must undergo an explicit authenticated onboarding/pairing process.
-
-A valid access token alone must **not** be sufficient to silently register an attacker-controlled device.
-
-Device registration therefore establishes:
-
-```text
-User
-  │
-  └── explicitly authorizes
+```text id="1k2x8r"
+Auth
+ ├── private signing key
+ │
+ └── signs access token
           │
           ▼
-       New Device
+       Gateway
           │
-          └── New E2E Crypto Identity
+          └── verifies signature
 ```
 
-Each registered device receives its own:
+The Gateway verifies at minimum:
 
-* `device_id`;
-* authentication state;
-* E2E identity;
-* public identity key;
-* signed prekey;
-* one-time prekeys.
+* token signature;
+* issuer;
+* audience;
+* expiration;
+* required claims;
+* token version;
+* applicable authentication level;
+* required scopes.
 
-Private device keys remain exclusively on the device.
+The Gateway must fail closed if token verification cannot be performed reliably.
 
----
-
-# 4.12 Device Revocation
-
-Auth can revoke an individual device.
-
-Revocation results in:
-
-* device state becoming `REVOKED`;
-* associated authentication sessions being revoked;
-* future authentication being rejected;
-* future message delivery to that device being prevented;
-* relevant cryptographic directory state being updated.
-
-A revoked device may still decrypt encrypted messages that it had already legitimately received before revocation.
-
-Revocation therefore means:
-
-> A revoked device cannot obtain new authorized data, but revocation cannot retroactively erase plaintext that the device already legitimately possessed.
+It must never treat an unverifiable token as authenticated.
 
 ---
 
-# 4.13 Cryptographic Directory
+## 3.7 Request Authentication Context
 
-Auth owns the public cryptographic directory required for E2E communication.
+After successful token verification, the Gateway creates a request-scoped `AuthenticatedContext`.
 
-For each authorized device, the directory may contain:
+Conceptually:
+
+```text id="9jv6f2"
+AuthenticatedContext
+ ├── user_id
+ ├── device_id
+ ├── session_id
+ ├── scopes
+ └── authentication_level
+```
+
+This context is passed to the appropriate backend service through the internal authenticated request.
+
+The Gateway should not rely on client-supplied identity fields when authoritative identity is already available from the verified token.
+
+For example, a request containing:
 
 ```text
-user_id
-device_id
-identity_public_key
-signed_prekey
-prekey_signature
-one_time_prekeys
-key_state
-revocation_state
+user_id = X
 ```
 
-Private keys are never stored by Auth.
+does not allow the client to impersonate `X`.
 
-Clients generate their own cryptographic private material and upload only the public components required for other devices to establish E2E sessions.
-
-Auth is therefore a **directory and authorization authority**, not a cryptographic decryption authority.
+The authoritative identity comes from the authenticated context.
 
 ---
 
-# 4.14 Device Discovery
+## 3.8 Authentication Assurance and MFA
 
-Device discovery is explicit.
+Some operations require stronger authentication assurance.
 
-When a client needs to establish or update an E2E communication session, it can obtain the authorized device set and corresponding public cryptographic material from Auth.
+Auth defines the authoritative authentication level.
 
-For example:
+The MVP uses:
 
-```text
-Alice
- ├── Alice-phone
- ├── Alice-laptop
- └── Alice-tablet
+```text id="j6w3zz"
+PRIMARY_ONLY
+MFA_VERIFIED
 ```
 
-The logical communication participant remains Alice, while Messaging operates on individual device delivery targets.
+Sensitive operations requiring stronger assurance include operations such as:
 
-This distinction is required for:
+* registering a new device;
+* revoking a device;
+* changing credentials;
+* modifying MFA/security settings.
 
-* multi-device messaging;
-* device-specific encryption;
-* device revocation;
-* prekey/session establishment;
-* synchronization.
+The Gateway may enforce the required authentication level for the relevant route.
 
-Contact discovery and device discovery are separate concepts.
+Auth remains authoritative for the underlying authentication state.
 
----
-
-# 4.15 Prekey Management
-
-The client generates cryptographic prekeys.
-
-Auth stores and manages their public components:
-
-* signed prekey;
-* signature;
-* one-time prekeys;
-* availability/state.
-
-Auth does not generate or possess device private prekeys.
-
-The Auth Service may track one-time-prekey consumption so that a prekey is not incorrectly allocated multiple times.
+The Gateway must never implement an MFA bypass.
 
 ---
 
-# 4.16 Identity Verification
+## 3.9 Authorization
 
-Auth provides cryptographic identity information but does not decide whether a human user trusts another user's cryptographic identity.
+Authorization is deliberately split between Gateway and backend services.
 
-That decision belongs to the client.
+### Gateway
 
-The client detects events such as:
+Performs coarse-grained authorization:
 
-```text
-Known identity
-      │
-      ▼
-Identity key changed
-      │
-      ▼
-Contact marked KEY_CHANGED / UNVERIFIED
-      │
-      ▼
-User explicitly verifies identity
-```
+* route access;
+* required scope;
+* authentication level;
+* basic request policy.
 
-High-risk deployments should support out-of-band verification of cryptographic fingerprints/safety numbers.
+### Backend service
 
-The security distinction is:
-
-> Authentication proves control of an account/device credential; identity verification establishes trust in the cryptographic identity used for E2E communication.
-
----
-
-# 4.17 Authorization Boundary
-
-Auth authorizes operations over Auth-owned resources.
-
-Examples include:
-
-* session management;
-* device registration;
-* device revocation;
-* authentication state;
-* security settings;
-* cryptographic directory access.
-
-Gateway performs coarse route/scope enforcement.
-
-Backend services perform their own business/resource authorization.
+Performs fine-grained business authorization.
 
 For example:
 
 ```text
 Gateway
-  └── "Is this request allowed to access this API scope?"
-  
+   │
+   │ "authenticated user has messaging scope"
+   ▼
 Messaging
-  └── "Is this user/device allowed to perform this messaging operation?"
-  
+   │
+   │ "is this user actually a member of conversation X?"
+   ▼
+allow / deny
+```
+
+The Gateway must not attempt to reproduce all business authorization logic.
+
+This prevents the Gateway from becoming a centralized business-logic monolith.
+
+---
+
+## 3.10 Routing
+
+The Gateway maps external API operations to backend services.
+
+Canonical routing:
+
+| External capability              | Backend   |
+| -------------------------------- | --------- |
+| Login / MFA / refresh            | Auth      |
+| User/device discovery            | Auth      |
+| Public cryptographic directory   | Auth      |
+| Conversations/groups             | Messaging |
+| Send/retrieve messages           | Messaging |
+| Synchronization                  | Messaging |
+| Delivery/read receipts           | Messaging |
+| File metadata                    | Files     |
+| File upload/download             | Files     |
+| Device/authentication operations | Auth      |
+
+Audit is an internal service and is not directly exposed as a normal client API.
+
+The Gateway must not expose backend addresses or allow arbitrary service selection by clients.
+
+---
+
+## 3.11 Internal Communication
+
+Gateway-to-service communication uses:
+
+* gRPC;
+* Protocol Buffers;
+* HTTP/2;
+* mTLS.
+
+Each backend service has its own service identity.
+
+The Gateway authenticates the target service connection through the service PKI defined in ADR-008.
+
+The Gateway must not use a shared service private key.
+
+---
+
+## 3.12 E2E Encrypted Data Handling
+
+The Gateway treats encrypted message and file payloads as opaque data.
+
+For a message:
+
+```text id="v0m5bp"
+Client
+   │
+   │ ciphertext
+   ▼
+Gateway
+   │
+   │ ciphertext
+   ▼
+Messaging
+```
+
+For a file:
+
+```text id="xj0y7k"
+Client
+   │
+   │ encrypted stream
+   ▼
+Gateway
+   │
+   │ encrypted stream
+   ▼
 Files
-  └── "Is this user/device allowed to access this file?"
-  
-Auth
-  └── "Is this session/device/account authorized?"
 ```
 
-No service assumes that the Gateway's authorization check alone is sufficient for sensitive business operations.
+The Gateway may process the routing and transport metadata required for the request.
+
+It must not decrypt application payloads.
+
+The Gateway is therefore not an E2E cryptographic endpoint.
 
 ---
 
-# 4.18 Internal Interface
+## 3.13 Streaming
 
-Auth communicates internally using:
+Streaming is required for large file transfers.
+
+The Gateway must stream data between:
 
 ```text
-gRPC
-Protocol Buffers
-HTTP/2
-mTLS
+HTTP client
+     ↕
+Gateway
+     ↕
+gRPC stream
+     ↕
+Files
+     ↕
+MinIO
 ```
 
-Each Auth instance has its own service identity and certificate.
+The Gateway must not buffer the complete file in memory.
 
-The service-to-service certificate authenticates the Auth service itself.
+Buffers are bounded.
 
-Application-level authorization determines which RPCs another service may invoke.
+Backpressure must propagate through the complete streaming path.
 
-Conceptual RPC operations include:
+For example:
+
+```text id="i5xk4z"
+slow client
+    ↓
+Gateway output buffer fills
+    ↓
+gRPC stream slows
+    ↓
+Files slows
+    ↓
+MinIO read slows
+```
+
+The same principle applies to uploads.
+
+---
+
+## 3.14 Message Synchronization
+
+Messaging synchronization may use:
+
+* bounded batches;
+* streaming where appropriate;
+* explicit cursors;
+* bounded response sizes.
+
+The Gateway must not create unbounded response buffers.
+
+Long-lived streams must have:
+
+* cancellation;
+* deadlines or lifecycle limits where appropriate;
+* bounded server-side state;
+* explicit reconnection behavior.
+
+---
+
+## 3.15 Retry Policy
+
+The Gateway may automatically retry only operations where retry is demonstrably safe.
+
+Automatic retry is appropriate primarily for:
+
+* idempotent reads;
+* explicitly idempotent operations;
+* transient dependency failures;
+* operations where the remaining request deadline permits retry.
+
+Retries use:
+
+* bounded retry count;
+* exponential backoff;
+* jitter;
+* deadline awareness.
+
+The Gateway must not blindly retry operations such as:
+
+* `SendMessage`;
+* `CreateConversation`;
+* `AddParticipant`;
+* `RegisterDevice`;
+* `RevokeDevice`;
+* `UploadFile`;
+* emergency message submission.
+
+Where retries are required for these operations, stable idempotency mechanisms must be used.
+
+---
+
+## 3.16 Idempotency and Unknown Outcomes
+
+The Gateway must account for the possibility that:
 
 ```text
-Authenticate
-RefreshSession
-ValidateSession
-RevokeSession
-
-GetUser
-GetDevice
-ListUserDevices
-
-RegisterDevice
-RevokeDevice
-
-GetDeviceCryptoDirectory
-GetCryptoIdentity
-UpdateCryptoPrekeys
+request → backend → operation succeeds → response lost
 ```
 
-MFA-specific operations are exposed through the authentication/session workflow rather than introducing a separate MFA service.
+The client may therefore retry.
+
+For operations with durable side effects, the backend service's idempotency mechanism is authoritative.
+
+The Gateway must not attempt to infer whether a state-changing operation succeeded merely from a network timeout.
+
+It should return an appropriate unknown/transient failure to the client when the outcome cannot safely be established.
+
+The client can then retry using the operation's stable idempotency identifier.
 
 ---
 
-# 4.19 Internal Components
+## 3.17 Deadlines and Cancellation
 
-The Auth Service is internally divided into focused components:
+Every internal request has a bounded deadline.
+
+The Gateway propagates the remaining request deadline to backend services.
+
+Conceptually:
+
+```text id="h7e1x4"
+Client
+   │
+   │ request deadline = T
+   ▼
+Gateway
+   │
+   │ remaining deadline
+   ▼
+Messaging/Auth/Files
+```
+
+When the client cancels a request, the Gateway should propagate cancellation where supported.
+
+The Gateway must not allow abandoned requests to continue consuming resources indefinitely.
+
+---
+
+## 3.18 Rate and Resource Limiting
+
+The Gateway is the first resource-protection boundary.
+
+It applies limits to:
+
+* request size;
+* connection count;
+* request concurrency;
+* streaming concurrency;
+* upload/download size;
+* authentication attempts;
+* request rates;
+* backend connection usage.
+
+Limits should be differentiated where necessary.
+
+For example, authentication endpoints require stronger anti-abuse protection than ordinary message retrieval.
+
+Resource limits must be bounded and explicit.
+
+---
+
+## 3.19 Backpressure
+
+The Gateway must provide backpressure rather than accepting unlimited work.
+
+When resources are exhausted it may:
+
+* reject requests;
+* throttle;
+* delay work within bounded limits;
+* terminate overloaded streams;
+* return explicit retryable errors.
+
+It must never silently discard an accepted request.
+
+For durable operations, the distinction between:
 
 ```text
-AuthenticationController
-CredentialVerifier
-MfaManager
-SecondFactorVerifier
-
-SessionManager
-AccessTokenIssuer
-RefreshTokenManager
-
-DeviceManager
-DeviceAuthorizationManager
-DeviceRevocationManager
-
-CryptoDirectoryManager
-PrekeyManager
-
-AuthorizationPolicy
-
-PostgreSQLRepository
-TransactionManager
-
-AuditOutboxPublisher
+not accepted
 ```
 
-`MfaManager` owns MFA policy/state and coordinates the selected second-factor verifier.
-
-`SecondFactorVerifier` abstracts the actual factor mechanism, allowing TOTP to be replaced or supplemented without redesigning the authentication service.
-
-These are implementation components, **not additional microservices**.
-
----
-
-# 4.20 Credential Security
-
-If password authentication is used, Auth stores only a strong password-derived verifier using a current vetted password-hashing algorithm.
-
-Auth must enforce:
-
-* bounded authentication attempts;
-* appropriate throttling/rate limiting;
-* no credential logging;
-* protected credential storage;
-* secure secret handling;
-* explicit failure on credential-verification errors.
-
-MFA secrets must receive equivalent protection and must never appear in logs, tokens, audit payloads, or error messages.
-
-Exact password-hashing parameters and MFA-secret storage details belong to implementation/security configuration, not to a new architectural decision.
-
----
-
-# 4.21 Failure Behavior
-
-Authentication failures must fail closed.
-
-Examples:
-
-### PostgreSQL unavailable
-
-Auth cannot reliably determine authoritative authentication/session state.
-
-Result:
+and:
 
 ```text
-Authentication operation → explicit failure/unavailable
+durably accepted
 ```
 
-Auth must not fabricate successful authentication.
-
-### Token signing key unavailable
-
-Auth must not:
-
-* issue unsigned tokens;
-* use a weaker signing mechanism;
-* silently downgrade security.
-
-Token issuance fails explicitly.
-
-### Invalid credentials
-
-Authentication fails without revealing unnecessary information.
-
-### MFA failure
-
-Authentication does not reach `MFA_VERIFIED`.
-
-The client must not receive a fully privileged authentication result.
-
-### Revoked session/device
-
-Authentication or sensitive operations are rejected.
-
-### Gateway cannot reach Auth
-
-Operations requiring Auth authority fail explicitly.
-
-The Gateway must never bypass Auth to authenticate a user.
+must remain clear.
 
 ---
 
-# 4.22 Audit Integration
+## 3.20 Error Translation
 
-Auth publishes security and operational events through its transactional outbox.
+Backend services return internal errors.
 
-Examples:
+The Gateway translates them into stable external API errors.
 
-* login success;
-* login failure;
-* MFA success/failure;
-* session creation;
-* session revocation;
-* refresh-token reuse;
-* device registration;
-* device revocation;
-* cryptographic identity change;
-* security-policy violation.
+Clients should not receive:
 
-Audit publication is asynchronous.
+* internal service addresses;
+* stack traces;
+* database errors;
+* internal implementation details;
+* sensitive operational information.
 
-An Audit outage must not cause an otherwise valid authentication state transaction to become dependent on synchronous Audit availability, unless a specific security policy explicitly requires otherwise.
-
-No passwords, MFA secrets, private keys, access-token plaintext, refresh-token plaintext, or message/file plaintext are included in audit events.
-
----
-
-# 4.23 Horizontal Scaling
-
-Auth supports multiple service instances.
-
-Durable authentication state remains in PostgreSQL.
-
-Instances must not rely on process-local state for correctness.
-
-Stateless or safely cacheable operations may use local caching, but stale cache data must never bypass:
-
-* device revocation;
-* critical authentication state;
-* security-sensitive authorization;
-* MFA requirements.
-
-The authoritative database remains the source of truth.
-
----
-
-# 4.24 Security Invariants
-
-The following invariants are mandatory:
-
-1. Auth is the authoritative authentication authority.
-2. Gateway cannot bypass Auth to authenticate users.
-3. MFA requirements cannot be bypassed by successful primary-factor authentication.
-4. Sensitive security operations require the appropriate authentication assurance level.
-5. Authentication credentials and E2E cryptographic identity remain separate.
-6. Private device cryptographic keys never enter the backend.
-7. Auth never decrypts E2E content.
-8. Auth stores only public cryptographic directory material.
-9. Device registration requires explicit authorization.
-10. Revoked devices receive no future authorized data.
-11. Previously received encrypted data remains decryptable by the revoked device.
-12. Access tokens contain no private cryptographic keys or plaintext content.
-13. Token issuance fails closed if signing security cannot be guaranteed.
-14. MFA secrets and authentication credentials are never logged.
-15. Refresh-token reuse is detectable and treated as a security event.
-16. Authentication state required for correctness is durable.
-17. No administrator backdoor provides access to E2E plaintext or private keys.
-18. No insecure authentication downgrade is permitted.
-
----
-
-# 4.25 Implementation Boundary
-
-The architecture is now concrete enough to implement.
-
-The following belong in subsequent implementation-oriented documentation:
-
-* PostgreSQL physical schema and indexes;
-* exact MFA tables/state;
-* exact TOTP enrollment/verification parameters;
-* exact protobuf definitions;
-* REST authentication contract;
-* token serialization;
-* cryptographic library/API integration;
-* secret/key deployment configuration;
-* device-pairing protocol;
-* exact authentication error codes;
-* migration strategy;
-* test cases and security-test vectors.
-
-These details do **not** require additional architectural ADRs unless implementation later reveals a genuine architectural conflict.
-
----
-
-## 4.26 Design Summary
+Conceptually:
 
 ```text
-                    ┌───────────────┐
-                    │    Client     │
-                    └───────┬───────┘
-                            │
-                     HTTPS / TLS 1.3
-                            │
-                    ┌───────▼───────┐
-                    │    Gateway    │
-                    └───────┬───────┘
-                            │
-                     gRPC / mTLS
-                            │
-                    ┌───────▼───────┐
-                    │      Auth     │
-                    │               │
-                    │ Credentials   │
-                    │ MFA           │
-                    │ Sessions      │
-                    │ Tokens        │
-                    │ Devices       │
-                    │ Crypto Dir.   │
-                    └───────┬───────┘
-                            │
-                       PostgreSQL
+Internal:
+SCYLLA_TIMEOUT
 ```
 
-The Auth Service therefore provides the **authentication and device-security foundation** of SecureCloud while remaining completely outside the E2E decryption boundary.
+may become an external error such as:
 
-Its central principle is:
+```text
+503 Service Temporarily Unavailable
+```
 
-> **Auth proves who is authorized to use the system and which devices are authorized; it never becomes an authority over E2E plaintext or private cryptographic keys.**
+with a stable application error code.
+
+The mapping must preserve enough information for clients to distinguish:
+
+* authentication failure;
+* authorization failure;
+* validation failure;
+* rate limiting;
+* temporary unavailability;
+* timeout;
+* permanent business failure.
+
+---
+
+## 3.21 Failure Behavior
+
+### Auth unavailable
+
+Authentication-dependent operations fail.
+
+The Gateway must not bypass Auth.
+
+### Messaging unavailable
+
+Messaging operations fail explicitly.
+
+The Gateway must not fabricate successful message submission.
+
+### Files unavailable
+
+File operations fail explicitly.
+
+Messaging operations should remain independently available.
+
+### Audit unavailable
+
+The Gateway should not make ordinary successful requests dependent on synchronous Audit availability.
+
+### Internal network failure
+
+The Gateway returns an explicit transient error when the request cannot safely complete.
+
+### Gateway restart
+
+The Gateway should not lose durable business state because it is stateless.
+
+In-flight requests may fail and be retried according to their idempotency semantics.
+
+---
+
+## 3.22 Statelessness
+
+The Gateway is designed to be stateless with respect to business data.
+
+It does not own:
+
+* messages;
+* conversations;
+* files;
+* user credentials;
+* device registrations;
+* audit history.
+
+It may maintain bounded process-local state for:
+
+* active connections;
+* rate limiting;
+* in-flight requests;
+* connection pools;
+* temporary streaming buffers.
+
+Such state must not be required for correctness.
+
+This allows multiple Gateway instances to operate interchangeably:
+
+```text id="q7t3f5"
+                  Load Balancer
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+      Gateway-1    Gateway-2    Gateway-3
+          │            │            │
+          └────────────┼────────────┘
+                       ▼
+              backend services
+```
+
+No sticky sessions are required for correctness.
+
+---
+
+## 3.23 Gateway Components
+
+The Gateway is organized around the following components:
+
+### Transport
+
+* `HttpsServer`
+* `TlsHandler`
+
+### Request Processing
+
+* `RequestValidator`
+* `AccessTokenMiddleware`
+* `RouteScopeAuthorizer`
+
+### Routing
+
+* `Router`
+* `GrpcClientLayer`
+
+### Resource Protection
+
+* `RateLimiter`
+* `ResourceLimiter`
+* `DeadlineCancellationHandler`
+
+### Streaming
+
+* `StreamingProxy`
+
+### Response Handling
+
+* `ErrorMapper`
+
+These are internal Gateway components, not independent services.
+
+---
+
+## 3.24 Security Invariants
+
+The Gateway must preserve these invariants:
+
+1. All external client traffic uses TLS.
+2. Authentication is enforced before protected requests reach backend services.
+3. Auth remains the authentication authority.
+4. The Gateway never bypasses MFA requirements.
+5. Access-token verification fails closed.
+6. Backend services remain responsible for fine-grained business authorization.
+7. E2E ciphertext remains opaque to the Gateway.
+8. The Gateway never receives E2E private keys.
+9. The Gateway never decrypts messages or files.
+10. Backend service addresses are never exposed to clients.
+11. Internal service communication is authenticated using service identity/mTLS.
+12. Service private keys are never shared.
+13. Request and streaming resources are bounded.
+14. Retries never create unsafe duplicate side effects.
+15. Authentication and authorization failures cannot be bypassed during dependency outages.
+16. The Gateway does not become a business-state authority.
+17. Process-local Gateway state is never required for durable correctness.
+
+---
+
+## 3.25 Implementation Boundary
+
+The following decisions are fixed for implementation:
+
+* Gateway is the single external entry point.
+* Client ↔ Gateway uses HTTPS + TLS 1.3.
+* External API uses REST/JSON.
+* Gateway → backend uses gRPC/Protobuf.
+* Internal service communication uses mTLS.
+* Auth is the authentication authority.
+* Gateway is the authentication enforcement point.
+* Access tokens are short-lived signed tokens.
+* Auth owns the token signing private key.
+* Gateway verifies tokens using public verification material.
+* Refresh tokens are handled by Auth and are not treated as stateless access tokens.
+* Gateway creates a request-scoped `AuthenticatedContext`.
+* Gateway performs coarse route/scope/authentication-level authorization.
+* Backend services perform fine-grained business authorization.
+* E2E ciphertext is opaque to the Gateway.
+* Gateway is stateless with respect to business state.
+* File transfers use streaming.
+* Large payloads are never fully buffered by the Gateway.
+* Backpressure is mandatory.
+* Request/resource limits are mandatory.
+* Deadlines and cancellation are propagated.
+* Automatic retries are restricted to safe/idempotent operations.
+* State-changing operations rely on explicit idempotency semantics.
+* Internal errors are translated into stable external errors.
+* Gateway instances are horizontally interchangeable.
+* Gateway failure must not imply business-data loss.
+
+The detailed REST schema, request/response structures, error codes and gRPC contracts belong in `openapi.yaml` and the corresponding `.proto` files rather than in this section.
