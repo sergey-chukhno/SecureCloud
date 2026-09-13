@@ -463,3 +463,106 @@ A database schema must not become the public API contract.
 ---
 
 
+## 1.17 File Sharing and File Access Authorization
+
+SecureCloud treats file transfer and conversation delivery as two separate
+responsibilities.
+
+The Files Service owns encrypted file transfer, encrypted content storage,
+file metadata, resumable transfer state, and file-access authorization.
+
+The Messaging Service owns the conversation-level representation of a shared
+file, including conversation ordering, sender identity, recipient targeting,
+offline delivery, synchronization, delivery state, and read state.
+
+Messaging and Files do not synchronously call each other during the normal
+MVP file-sharing or file-download path.
+
+#### File sharing workflow
+
+A file sent to a direct or group conversation is represented as a first-class
+FILE conversation item. A user may therefore send a file without accompanying
+text.
+
+The workflow is:
+
+1. The client encrypts the file locally before upload.
+2. The client uploads the encrypted file through the Gateway to the Files
+   Service using streaming.
+3. The Files Service durably stores:
+   - encrypted file content in Object Storage;
+   - file metadata in its PostgreSQL database.
+4. After successful durable storage, the Files Service returns:
+   - `file_id`;
+   - a short-lived signed file-access capability bound to the authenticated
+     user/device and the specific `file_id`.
+5. The client creates a FILE conversation item referencing the uploaded file.
+6. The client encrypts the protected conversation-item content and submits it
+   through the Gateway to the Messaging Service.
+7. The Messaging Service processes the FILE conversation item using the same
+   conversation, ordering, membership, recipient-device, offline-delivery,
+   synchronization, acknowledgement, delivery-state, and read-state mechanisms
+   used for other conversation items.
+8. Recipient devices receive the FILE conversation item through normal
+   Messaging delivery and synchronization.
+9. A recipient client requests the encrypted file through the Gateway and
+   Files Service using the file identifier and a valid file-access capability.
+10. The recipient client decrypts the file locally after download.
+
+The backend never decrypts file content.
+
+#### File access capability
+
+The MVP uses capability-based file access authorization.
+
+A file-access capability is:
+
+- cryptographically signed;
+- short-lived;
+- bound to one `file_id`;
+- bound to the authorized user/device;
+- independently verifiable by the Files Service;
+- rejected after expiration.
+
+The capability allows the Files Service to authorize file access without a
+synchronous Files → Messaging request for every download.
+
+The capability must not grant access to any file other than the file identified
+by its bound `file_id`.
+
+The Files Service validates both:
+
+- the authenticated request context;
+- the file-access capability.
+
+Both must correspond to the same authorized user/device.
+
+#### Service dependency decision
+
+The normal MVP runtime topology explicitly excludes:
+
+- Messaging → Files synchronous calls;
+- Files → Messaging synchronous calls;
+- Messaging → Auth synchronous calls on the normal message path.
+
+The client coordinates the multi-step user workflow through the public Gateway,
+while each backend service remains responsible for its own domain.
+
+#### Audit boundary
+
+Audit events are application/security events produced by the runtime service
+that owns the corresponding decision or state transition.
+
+Examples:
+
+- Gateway: malformed requests, boundary policy violations, rate-limit
+  security rejections, and other application-level gateway security events.
+- Auth: login, MFA, credential, token, and device authentication events.
+- Messaging: conversation, membership, message, delivery, and read-state
+  events.
+- Files: upload, download authorization denial, deletion, and file lifecycle
+  events.
+
+Infrastructure telemetry, ordinary service logs, metrics, traces, health
+checks, and deployment events are not application Audit Service events.
+They belong to the observability and infrastructure control plane.
