@@ -2,10 +2,11 @@
 *.DS_Store
 .antigravity/
 
-# Build directories
+# Build & dependency directories
 build/
 bin/
 lib/
+vcpkg_installed/
 
 # IDE & cache
 .cache/

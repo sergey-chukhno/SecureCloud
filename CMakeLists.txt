@@ -20,6 +20,9 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake/modules")
 # Load compiler flags target definition
 include(SecureCloudCompilerFlags)
 
+# Load dependency discovery module
+include(SecureCloudDependencies)
+
 # Register project source tree and test suite directories
 add_subdirectory(src)
 add_subdirectory(tests)
