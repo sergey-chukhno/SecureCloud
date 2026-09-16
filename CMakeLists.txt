@@ -27,6 +27,9 @@ include(SecureCloudCompilerFlags)
 # Load dependency discovery module
 include(SecureCloudDependencies)
 
+# Load formatting and static analysis tooling module
+include(SecureCloudFormatting)
+
 # Register production source tree
 add_subdirectory(src)
 
