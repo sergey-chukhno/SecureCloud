@@ -27,8 +27,14 @@ include(SecureCloudCompilerFlags)
 # Load dependency discovery module
 include(SecureCloudDependencies)
 
+# Load Protobuf and gRPC code generation module
+include(SecureCloudProtobuf)
+
 # Load formatting and static analysis tooling module
 include(SecureCloudFormatting)
+
+# Register Protobuf and gRPC contracts target
+add_subdirectory(proto)
 
 # Register production source tree
 add_subdirectory(src)
