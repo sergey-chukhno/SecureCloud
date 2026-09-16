@@ -1,0 +1,138 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 28,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "dev-debug",
+      "displayName": "Developer Debug Build",
+      "description": "Debug configuration for local development with symbols and hardening",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/dev-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "dev-release",
+      "displayName": "Developer Release Build",
+      "description": "Optimized release configuration for performance validation",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/dev-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "ci-linux",
+      "displayName": "CI Linux Build Preset",
+      "description": "Strict build configuration for Linux CI environment",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ci-linux",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "ci-macos",
+      "displayName": "CI macOS Build Preset",
+      "description": "Strict build configuration for macOS CI environment",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ci-macos",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "ci-windows",
+      "displayName": "CI Windows Build Preset",
+      "description": "Strict build configuration for Windows CI environment",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ci-windows",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev-debug",
+      "displayName": "Build Dev Debug",
+      "configurePreset": "dev-debug"
+    },
+    {
+      "name": "dev-release",
+      "displayName": "Build Dev Release",
+      "configurePreset": "dev-release"
+    },
+    {
+      "name": "ci-linux",
+      "displayName": "Build CI Linux",
+      "configurePreset": "ci-linux"
+    },
+    {
+      "name": "ci-macos",
+      "displayName": "Build CI macOS",
+      "configurePreset": "ci-macos"
+    },
+    {
+      "name": "ci-windows",
+      "displayName": "Build CI Windows",
+      "configurePreset": "ci-windows"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "dev-debug",
+      "displayName": "Test Dev Debug",
+      "configurePreset": "dev-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": true
+      }
+    },
+    {
+      "name": "dev-release",
+      "displayName": "Test Dev Release",
+      "configurePreset": "dev-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-linux",
+      "displayName": "Test CI Linux",
+      "configurePreset": "ci-linux",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-macos",
+      "displayName": "Test CI macOS",
+      "configurePreset": "ci-macos",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-windows",
+      "displayName": "Test CI Windows",
+      "configurePreset": "ci-windows",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
+  ]
+}

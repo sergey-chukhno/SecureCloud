@@ -1,3 +1,14 @@
 .DS_Store
 *.DS_Store
 .antigravity/
+
+# Build directories
+build/
+bin/
+lib/
+
+# IDE & cache
+.cache/
+.vscode/
+.idea/
+*.user

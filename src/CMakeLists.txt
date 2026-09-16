@@ -1,0 +1,7 @@
+add_subdirectory(common)
+add_subdirectory(client)
+add_subdirectory(gateway)
+add_subdirectory(auth)
+add_subdirectory(messaging)
+add_subdirectory(files)
+add_subdirectory(audit)
