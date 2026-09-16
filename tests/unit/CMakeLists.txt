@@ -39,3 +39,18 @@ target_link_libraries(securecloud_gtest_smoke_test PRIVATE
 
 # Automatic CTest discovery for GoogleTest test cases
 gtest_discover_tests(securecloud_gtest_smoke_test)
+
+# Protobuf & gRPC Code Generation Pipeline Smoke Test (SC005-T04)
+add_executable(securecloud_proto_smoke_test
+    proto_smoke_test.cpp
+)
+
+target_link_libraries(securecloud_proto_smoke_test PRIVATE
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_proto_smoke_test)
+
