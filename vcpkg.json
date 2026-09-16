@@ -1,0 +1,8 @@
+{
+  "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
+  "name": "securecloud",
+  "version-string": "0.1.0",
+  "description": "SecureCloud Enterprise E2EE Platform dependency manifest baseline",
+  "builtin-baseline": "34262174c431d17d0c3eb72bc13d5ff648ab03b5",
+  "dependencies": []
+}
