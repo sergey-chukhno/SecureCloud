@@ -12,4 +12,12 @@ else()
     message(STATUS "[SecureCloud] Standard host toolchain discovery active")
 endif()
 
+# Discover testing dependencies when BUILD_TESTING is enabled
+if(BUILD_TESTING)
+    message(STATUS "[SecureCloud] Discovering GoogleTest testing framework...")
+    find_package(GTest REQUIRED)
+    include(GoogleTest)
+    message(STATUS "[SecureCloud] GoogleTest framework discovered successfully (Targets: GTest::gtest, GTest::gtest_main, GTest::gmock)")
+endif()
+
 message(STATUS "[SecureCloud] Dependency discovery pipeline established successfully")
