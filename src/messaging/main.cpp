@@ -1,9 +1,15 @@
 #include "securecloud/common/version.hpp"
 
 #include <iostream>
+#include <string_view>
+
+namespace {
+constexpr std::string_view service_name = "messaging";
+constexpr std::string_view service_display_name = "Messaging Service";
+} // namespace
 
 int main() {
-    std::cout << "[SecureCloud Messaging] Starting Messaging Service v" << securecloud::common::get_version_string()
-              << "\n";
+    std::cout << "[SecureCloud] Starting " << service_display_name << " (" << service_name << ") v"
+              << securecloud::common::get_version_string() << "\n";
     return 0;
 }
