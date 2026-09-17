@@ -5,6 +5,25 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/gateway/Dockerfile
+    volumes:
+      - type: bind
+        source: ../../deploy/dev-pki/ca/ca.crt
+        target: /etc/securecloud/certs/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/dev-pki/services/gateway/gateway.crt
+        target: /etc/securecloud/certs/service.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/dev-pki/services/gateway/gateway.key
+        target: /etc/securecloud/certs/service.key
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - securecloud-dev
 
@@ -12,6 +31,25 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/auth/Dockerfile
+    volumes:
+      - type: bind
+        source: ../../deploy/dev-pki/ca/ca.crt
+        target: /etc/securecloud/certs/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/dev-pki/services/auth/auth.crt
+        target: /etc/securecloud/certs/service.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/dev-pki/services/auth/auth.key
+        target: /etc/securecloud/certs/service.key
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - securecloud-dev
 
@@ -19,6 +57,25 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/messaging/Dockerfile
+    volumes:
+      - type: bind
+        source: ../../deploy/dev-pki/ca/ca.crt
+        target: /etc/securecloud/certs/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/dev-pki/services/messaging/messaging.crt
+        target: /etc/securecloud/certs/service.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/dev-pki/services/messaging/messaging.key
+        target: /etc/securecloud/certs/service.key
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - securecloud-dev
 
@@ -26,6 +83,25 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/files/Dockerfile
+    volumes:
+      - type: bind
+        source: ../../deploy/dev-pki/ca/ca.crt
+        target: /etc/securecloud/certs/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/dev-pki/services/files/files.crt
+        target: /etc/securecloud/certs/service.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/dev-pki/services/files/files.key
+        target: /etc/securecloud/certs/service.key
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - securecloud-dev
 
@@ -33,6 +109,25 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/audit/Dockerfile
+    volumes:
+      - type: bind
+        source: ../../deploy/dev-pki/ca/ca.crt
+        target: /etc/securecloud/certs/ca.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/dev-pki/services/audit/audit.crt
+        target: /etc/securecloud/certs/service.crt
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../deploy/dev-pki/services/audit/audit.key
+        target: /etc/securecloud/certs/service.key
+        read_only: true
+        bind:
+          create_host_path: false
     networks:
       - securecloud-dev
 
