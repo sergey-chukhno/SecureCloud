@@ -1,5 +1,6 @@
 add_library(securecloud_common STATIC
     src/version.cpp
+    src/security/mtls_config.cpp
 )
 
 add_library(securecloud::common ALIAS securecloud_common)
@@ -12,4 +13,5 @@ target_include_directories(securecloud_common PUBLIC
 target_link_libraries(securecloud_common PUBLIC
     securecloud::compiler_flags
     securecloud_proto
+    gRPC::grpc++
 )
