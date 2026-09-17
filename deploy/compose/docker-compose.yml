@@ -1,0 +1,42 @@
+name: securecloud
+
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/gateway/Dockerfile
+    networks:
+      - securecloud-dev
+
+  auth:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/auth/Dockerfile
+    networks:
+      - securecloud-dev
+
+  messaging:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/messaging/Dockerfile
+    networks:
+      - securecloud-dev
+
+  files:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/files/Dockerfile
+    networks:
+      - securecloud-dev
+
+  audit:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/audit/Dockerfile
+    networks:
+      - securecloud-dev
+
+networks:
+  securecloud-dev:
+    driver: bridge
+    internal: true
