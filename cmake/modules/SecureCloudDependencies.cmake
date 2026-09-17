@@ -36,7 +36,7 @@ endif()
 
 # 2. Discover Protobuf dependency
 message(STATUS "[SecureCloud] Discovering Protobuf framework...")
-find_package(Protobuf REQUIRED CONFIG)
+find_package(Protobuf REQUIRED)
 if(TARGET Protobuf::libprotobuf)
     message(STATUS "[SecureCloud] Discovered Protobuf target: Protobuf::libprotobuf")
 elseif(TARGET protobuf::libprotobuf)
