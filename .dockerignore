@@ -27,8 +27,10 @@ benchmarks/
 # Local environment configuration, credentials, logs, and TLS material
 .env*
 *.log
+deploy/dev-pki/
 *.pem
 *.crt
 *.key
 *.p12
 *.pfx
+

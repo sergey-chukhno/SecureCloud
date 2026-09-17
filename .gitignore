@@ -13,3 +13,12 @@ vcpkg_installed/
 .vscode/
 .idea/
 *.user
+
+# Development PKI, credentials, and TLS material
+deploy/dev-pki/
+*.key
+*.pem
+*.crt
+*.p12
+*.pfx
+
