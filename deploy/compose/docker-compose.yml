@@ -131,7 +131,134 @@ services:
     networks:
       - securecloud-dev
 
+  postgres:
+    image: postgres:17.0-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_ADMIN_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:-postgres_dev_admin_secret}
+      POSTGRES_DB: postgres
+      AUTH_DB_NAME: ${AUTH_DB_NAME:-securecloud_auth}
+      AUTH_DB_USER: ${AUTH_DB_USER:-auth_user}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth_dev_db_secret}
+      FILES_DB_NAME: ${FILES_DB_NAME:-securecloud_files}
+      FILES_DB_USER: ${FILES_DB_USER:-files_user}
+      FILES_DB_PASSWORD: ${FILES_DB_PASSWORD:-files_dev_db_secret}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - type: bind
+        source: ./postgres/init-databases.sh
+        target: /docker-entrypoint-initdb.d/init-databases.sh
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - securecloud-dev
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-postgres} -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  scylladb:
+    image: scylladb/scylla:6.0.1
+    command: --developer-mode=1 --smp 1 --memory 512M
+    environment:
+      SCYLLA_CLUSTER_NAME: ${SCYLLA_CLUSTER_NAME:-securecloud-dev-cluster}
+    volumes:
+      - scylla-data:/var/lib/scylla
+    networks:
+      - securecloud-dev
+    ports:
+      - "127.0.0.1:${SCYLLA_HOST_PORT:-9042}:9042"
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e \"SHOW HOST\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8.3.59-alpine
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+      CLICKHOUSE_USER: ${CLICKHOUSE_ADMIN_USER:-default}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD:-clickhouse_dev_admin_secret}
+      AUDIT_DB_NAME: ${AUDIT_DB_NAME:-securecloud_audit}
+      AUDIT_DB_USER: ${AUDIT_DB_USER:-audit_user}
+      AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD:-audit_dev_db_secret}
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - type: bind
+        source: ./clickhouse/init-clickhouse.sql
+        target: /docker-entrypoint-initdb.d/init-clickhouse.sql
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - securecloud-dev
+    ports:
+      - "127.0.0.1:${CLICKHOUSE_HOST_HTTP_PORT:-8123}:8123"
+      - "127.0.0.1:${CLICKHOUSE_HOST_NATIVE_PORT:-9009}:9000"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://127.0.0.1:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2024-08-03T04-33-23Z
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_dev_secret}
+    volumes:
+      - minio-data:/data
+    networks:
+      - securecloud-dev
+    ports:
+      - "127.0.0.1:${MINIO_HOST_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_HOST_CONSOLE_PORT:-9001}:9001"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9000' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    entrypoint: ["/bin/sh", "/init-minio.sh"]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin_dev_secret}
+      FILES_MINIO_BUCKET: ${FILES_MINIO_BUCKET:-securecloud-files-encrypted}
+      FILES_MINIO_USER: ${FILES_MINIO_USER:-files_minio_user}
+      FILES_MINIO_PASSWORD: ${FILES_MINIO_PASSWORD:-files_dev_minio_secret}
+    volumes:
+      - type: bind
+        source: ./minio/init-minio.sh
+        target: /init-minio.sh
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - securecloud-dev
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+
 networks:
   securecloud-dev:
     driver: bridge
     internal: true
+
+volumes:
+  postgres-data:
+  scylla-data:
+  clickhouse-data:
+  minio-data:
