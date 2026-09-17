@@ -40,7 +40,7 @@ target_link_libraries(securecloud_gtest_smoke_test PRIVATE
 # Automatic CTest discovery for GoogleTest test cases
 gtest_discover_tests(securecloud_gtest_smoke_test)
 
-# Protobuf & gRPC Code Generation Pipeline Smoke Test (SC005-T04)
+# Protobuf & gRPC Code Generation Pipeline Smoke Test
 add_executable(securecloud_proto_smoke_test
     proto_smoke_test.cpp
 )
@@ -53,4 +53,17 @@ target_link_libraries(securecloud_proto_smoke_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_proto_smoke_test)
+
+# gRPC mTLS Configuration & Security Unit Test Suite
+add_executable(securecloud_mtls_config_test
+    security/mtls_config_test.cpp
+)
+
+target_link_libraries(securecloud_mtls_config_test PRIVATE
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_mtls_config_test)
 
