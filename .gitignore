@@ -14,11 +14,15 @@ vcpkg_installed/
 .idea/
 *.user
 
-# Development PKI, credentials, and TLS material
+# Development PKI, credentials, environment files, and TLS material
 deploy/dev-pki/
+.env
+.env.local
+.env.*.local
 *.key
 *.pem
 *.crt
 *.p12
 *.pfx
+
 
