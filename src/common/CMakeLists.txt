@@ -1,6 +1,11 @@
 add_library(securecloud_common STATIC
     src/version.cpp
     src/security/mtls_config.cpp
+    src/configuration/configuration_source.cpp
+    src/configuration/secret_string.cpp
+    src/configuration/validation_error.cpp
+    src/configuration/config_parser.cpp
+    src/configuration/common_service_config.cpp
 )
 
 add_library(securecloud::common ALIAS securecloud_common)
