@@ -5,6 +5,18 @@ services:
     build:
       context: ../..
       dockerfile: deploy/docker/gateway/Dockerfile
+    environment:
+      SECURECLOUD_GRPC_HOST: "0.0.0.0"
+      SECURECLOUD_GATEWAY_GRPC_PORT: "50051"
+      SECURECLOUD_CA_CERT_PATH: /etc/securecloud/certs/ca.crt
+      SECURECLOUD_SERVICE_CERT_PATH: /etc/securecloud/certs/service.crt
+      SECURECLOUD_SERVICE_KEY_PATH: /etc/securecloud/certs/service.key
+      SECURECLOUD_GATEWAY_AUTH_ENDPOINT: auth:50052
+      SECURECLOUD_GATEWAY_MESSAGING_ENDPOINT: messaging:50053
+      SECURECLOUD_GATEWAY_FILES_ENDPOINT: files:50054
+      SECURECLOUD_GATEWAY_AUDIT_ENDPOINT: audit:50055
+      SECURECLOUD_GATEWAY_PEER_PROBE_TARGET: ${SECURECLOUD_GATEWAY_PEER_PROBE_TARGET:-auth:50052}
+      SECURECLOUD_GATEWAY_PEER_PROBE_NAME: ${SECURECLOUD_GATEWAY_PEER_PROBE_NAME:-auth}
     volumes:
       - type: bind
         source: ../../deploy/dev-pki/ca/ca.crt
@@ -26,11 +38,25 @@ services:
           create_host_path: false
     networks:
       - securecloud-dev
+    depends_on:
+      auth:
+        condition: service_started
 
   auth:
     build:
       context: ../..
       dockerfile: deploy/docker/auth/Dockerfile
+    environment:
+      SECURECLOUD_GRPC_HOST: "0.0.0.0"
+      SECURECLOUD_AUTH_GRPC_PORT: "50052"
+      SECURECLOUD_CA_CERT_PATH: /etc/securecloud/certs/ca.crt
+      SECURECLOUD_SERVICE_CERT_PATH: /etc/securecloud/certs/service.crt
+      SECURECLOUD_SERVICE_KEY_PATH: /etc/securecloud/certs/service.key
+      SECURECLOUD_AUTH_DB_HOST: postgres
+      SECURECLOUD_AUTH_DB_PORT: "5432"
+      SECURECLOUD_AUTH_DB_NAME: ${AUTH_DB_NAME:-securecloud_auth}
+      SECURECLOUD_AUTH_DB_USER: ${AUTH_DB_USER:-auth_user}
+      SECURECLOUD_AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth_dev_db_secret}
     volumes:
       - type: bind
         source: ../../deploy/dev-pki/ca/ca.crt
@@ -52,11 +78,23 @@ services:
           create_host_path: false
     networks:
       - securecloud-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   messaging:
     build:
       context: ../..
       dockerfile: deploy/docker/messaging/Dockerfile
+    environment:
+      SECURECLOUD_GRPC_HOST: "0.0.0.0"
+      SECURECLOUD_MESSAGING_GRPC_PORT: "50053"
+      SECURECLOUD_CA_CERT_PATH: /etc/securecloud/certs/ca.crt
+      SECURECLOUD_SERVICE_CERT_PATH: /etc/securecloud/certs/service.crt
+      SECURECLOUD_SERVICE_KEY_PATH: /etc/securecloud/certs/service.key
+      SECURECLOUD_MESSAGING_SCYLLA_HOST: scylladb
+      SECURECLOUD_MESSAGING_SCYLLA_PORT: "9042"
+      SECURECLOUD_MESSAGING_SCYLLA_KEYSPACE: ${MESSAGING_SCYLLA_KEYSPACE:-securecloud_messaging}
     volumes:
       - type: bind
         source: ../../deploy/dev-pki/ca/ca.crt
@@ -78,11 +116,29 @@ services:
           create_host_path: false
     networks:
       - securecloud-dev
+    depends_on:
+      scylladb:
+        condition: service_healthy
 
   files:
     build:
       context: ../..
       dockerfile: deploy/docker/files/Dockerfile
+    environment:
+      SECURECLOUD_GRPC_HOST: "0.0.0.0"
+      SECURECLOUD_FILES_GRPC_PORT: "50054"
+      SECURECLOUD_CA_CERT_PATH: /etc/securecloud/certs/ca.crt
+      SECURECLOUD_SERVICE_CERT_PATH: /etc/securecloud/certs/service.crt
+      SECURECLOUD_SERVICE_KEY_PATH: /etc/securecloud/certs/service.key
+      SECURECLOUD_FILES_DB_HOST: postgres
+      SECURECLOUD_FILES_DB_PORT: "5432"
+      SECURECLOUD_FILES_DB_NAME: ${FILES_DB_NAME:-securecloud_files}
+      SECURECLOUD_FILES_DB_USER: ${FILES_DB_USER:-files_user}
+      SECURECLOUD_FILES_DB_PASSWORD: ${FILES_DB_PASSWORD:-files_dev_db_secret}
+      SECURECLOUD_FILES_S3_ENDPOINT: http://minio:9000
+      SECURECLOUD_FILES_S3_BUCKET: ${FILES_MINIO_BUCKET:-securecloud-files-encrypted}
+      SECURECLOUD_FILES_S3_ACCESS_KEY: ${FILES_MINIO_USER:-files_minio_user}
+      SECURECLOUD_FILES_S3_SECRET_KEY: ${FILES_MINIO_PASSWORD:-files_dev_minio_secret}
     volumes:
       - type: bind
         source: ../../deploy/dev-pki/ca/ca.crt
@@ -104,11 +160,29 @@ services:
           create_host_path: false
     networks:
       - securecloud-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
 
   audit:
     build:
       context: ../..
       dockerfile: deploy/docker/audit/Dockerfile
+    environment:
+      SECURECLOUD_GRPC_HOST: "0.0.0.0"
+      SECURECLOUD_AUDIT_GRPC_PORT: "50055"
+      SECURECLOUD_CA_CERT_PATH: /etc/securecloud/certs/ca.crt
+      SECURECLOUD_SERVICE_CERT_PATH: /etc/securecloud/certs/service.crt
+      SECURECLOUD_SERVICE_KEY_PATH: /etc/securecloud/certs/service.key
+      SECURECLOUD_AUDIT_DB_HOST: clickhouse
+      SECURECLOUD_AUDIT_DB_PORT: "8123"
+      SECURECLOUD_AUDIT_DB_NAME: ${AUDIT_DB_NAME:-securecloud_audit}
+      SECURECLOUD_AUDIT_DB_USER: ${AUDIT_DB_USER:-audit_user}
+      SECURECLOUD_AUDIT_DB_PASSWORD: ${AUDIT_DB_PASSWORD:-audit_dev_db_secret}
     volumes:
       - type: bind
         source: ../../deploy/dev-pki/ca/ca.crt
@@ -130,6 +204,9 @@ services:
           create_host_path: false
     networks:
       - securecloud-dev
+    depends_on:
+      clickhouse:
+        condition: service_healthy
 
   postgres:
     image: postgres:17.0-alpine
@@ -255,7 +332,6 @@ services:
 networks:
   securecloud-dev:
     driver: bridge
-    internal: true
 
 volumes:
   postgres-data:

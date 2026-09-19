@@ -4,6 +4,10 @@ set -euo pipefail
 # SecureCloud Automated Persistence Infrastructure Verification Suite (SC11-T05)
 # Validates PostgreSQL 17, ScyllaDB 6.0, ClickHouse 24.8, and MinIO S3 Object Storage.
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cd "${ROOT_DIR}"
+
 COMPOSE_CMD="docker compose --ansi never -f deploy/compose/docker-compose.yml"
 COLOR_RESET="\033[0m"
 COLOR_GREEN="\033[1;32m"
