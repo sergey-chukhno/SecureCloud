@@ -111,3 +111,30 @@ target_link_libraries(securecloud_service_config_boundaries_test PRIVATE
 
 gtest_discover_tests(securecloud_service_config_boundaries_test)
 
+# Health Status Manager & Service Unit Test Suite (SC13-T03)
+add_executable(securecloud_health_status_manager_test
+    health/health_status_manager_test.cpp
+)
+
+target_link_libraries(securecloud_health_status_manager_test PRIVATE
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_health_status_manager_test)
+
+# Transport Probe Unit Test Suite (SC13-T03)
+add_executable(securecloud_transport_probe_test
+    health/transport_probe_test.cpp
+)
+
+target_link_libraries(securecloud_transport_probe_test PRIVATE
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_transport_probe_test)
+

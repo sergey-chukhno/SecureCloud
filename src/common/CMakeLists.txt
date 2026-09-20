@@ -6,6 +6,9 @@ add_library(securecloud_common STATIC
     src/configuration/validation_error.cpp
     src/configuration/config_parser.cpp
     src/configuration/common_service_config.cpp
+    src/health/health_status_manager.cpp
+    src/health/health_service_impl.cpp
+    src/health/transport_probe.cpp
 )
 
 add_library(securecloud::common ALIAS securecloud_common)

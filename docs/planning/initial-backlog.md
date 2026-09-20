@@ -187,14 +187,27 @@ are not committed.
 
 ### SC-013 --- Establish health and readiness endpoints
 
+**Status:** Completed (Milestone M1)\
 **Labels:** Infrastructure, Feature, M1\
 **Owner:** Sergey + Dev 2 + Dev 3\
 **Dependencies:** SC-008, SC-011, SC-012
 
-Implement liveness/readiness and relevant dependency health checks.
+Implement liveness/readiness and relevant dependency health checks adhering to ADR-009 Section 23/24.
+
+**Implementation Summary:**
+- Implemented reusable `HealthStatusManager`, `HealthServiceImpl`, and `TransportProbe` in `securecloud::common::health`.
+- Explicit service name ownership passed into constructors.
+- Protocol semantic convention: `""` or `<service_name>` = Liveness, `"readiness"` = Readiness, unknown string = `SERVICE_UNKNOWN`.
+- Bounded M1 transport-level TCP connectivity probes with a strict 250 ms maximum probe deadline.
+- Enforced strict Gateway local readiness (zero downstream fan-out / zero cascading failure).
+- Enforced fail-closed mTLS peer authentication (`GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY`).
+- Verified real Docker dependency outage: PostgreSQL container down causes `auth` and `files` readiness to degrade to `NOT_SERVING` while process liveness remains `SERVING`, and other services (`messaging`, `audit`, `gateway`) remain `SERVING`.
+- Verified graceful shutdown immediately degrades readiness to `NOT_SERVING`.
+- All 5 microservices migrated to common health infrastructure, deleting 6 duplicated `HealthServiceImpl` classes.
+- Full verification suite: unit tests (`HealthStatusManagerTest`, `HealthServiceImplTest`, `TransportProbeTest`), mTLS integration tests (`HealthIntegrationTest`, `MtlsIntegrationTest`), and automated Docker Compose test suite (`scripts/verify-health-endpoints.sh`).
 
 **Acceptance:** process startup is not treated as readiness when
-required dependencies are unavailable.
+required dependencies are unavailable. Fully verified with 100% passing tests.
 
 ### SC-014 --- Establish initial CI pipeline
 

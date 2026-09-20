@@ -3,6 +3,9 @@
 #include "securecloud/common/version.hpp"
 #include "securecloud/configuration/configuration_source.hpp"
 #include "securecloud/configuration/validation_error.hpp"
+#include "securecloud/health/health_service_impl.hpp"
+#include "securecloud/health/health_status_manager.hpp"
+#include "securecloud/health/transport_probe.hpp"
 #include "securecloud/security/mtls_config.hpp"
 
 #include <atomic>
@@ -12,11 +15,18 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <thread>
+#include <utility>
 
 namespace {
 
 constexpr auto k_poll_interval = std::chrono::milliseconds(100);
+constexpr uint16_t k_default_http_port = 80;
+constexpr uint16_t k_default_https_port = 443;
+constexpr auto k_max_port = 65535;
+constexpr std::string_view k_http_prefix = "http://";
+constexpr std::string_view k_https_prefix = "https://";
 
 std::atomic<bool> g_shutdown_requested{false};
 
@@ -26,18 +36,33 @@ void signal_handler(int signal) {
     }
 }
 
-class HealthServiceImpl final : public securecloud::common::v1::HealthService::Service {
-  public:
-    grpc::Status Check(grpc::ServerContext* context, const securecloud::common::v1::HealthCheckRequest* request,
-                       securecloud::common::v1::HealthCheckResponse* response) override {
-        (void)request;
-        if (!context->auth_context()->IsPeerAuthenticated()) {
-            return {grpc::StatusCode::UNAUTHENTICATED, "Peer unauthenticated"};
-        }
-        response->set_status(securecloud::common::v1::HealthCheckResponse::SERVING);
-        return grpc::Status::OK;
+std::pair<std::string, uint16_t> parse_endpoint(std::string_view endpoint) {
+    std::string_view ep = endpoint;
+    uint16_t default_port = k_default_http_port;
+    if (ep.starts_with(k_http_prefix)) {
+        ep.remove_prefix(k_http_prefix.size());
+    } else if (ep.starts_with(k_https_prefix)) {
+        ep.remove_prefix(k_https_prefix.size());
+        default_port = k_default_https_port;
     }
-};
+    auto colon = ep.find(':');
+    if (colon != std::string_view::npos) {
+        std::string host(ep.substr(0, colon));
+        uint16_t port = default_port;
+        try {
+            auto parsed = std::stoul(std::string(ep.substr(colon + 1)));
+            if (parsed > 0 && parsed <= k_max_port) {
+                port = static_cast<uint16_t>(parsed);
+            }
+        } catch (const std::exception& ex) {
+            std::cerr << "[SecureCloud] [files] WARNING: Failed to parse port from endpoint '" << endpoint
+                      << "': " << ex.what() << ", using default port " << default_port << "\n";
+            port = default_port;
+        }
+        return {host, port};
+    }
+    return {std::string(ep), default_port};
+}
 
 int run_service() {
     std::signal(SIGINT, signal_handler);
@@ -73,7 +98,14 @@ int run_service() {
     }
 
     std::string server_address = config.common.listen_address();
-    HealthServiceImpl health_service;
+    auto s3_endpoint_info = parse_endpoint(config.s3_endpoint);
+
+    securecloud::common::health::HealthStatusManager health_manager(config.common.service_name);
+    health_manager.set_readiness_evaluator([&config, target = s3_endpoint_info] {
+        return securecloud::common::health::probe_tcp_connectivity(config.db_host, config.db_port) &&
+               securecloud::common::health::probe_tcp_connectivity(target.first, target.second);
+    });
+    securecloud::common::health::HealthServiceImpl health_service(config.common.service_name, health_manager);
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);
@@ -86,6 +118,9 @@ int run_service() {
         return 1;
     }
 
+    health_manager.set_live(true);
+    health_manager.set_ready(true);
+
     std::cout << "[SecureCloud] [" << config.common.service_name << "] mTLS server listening strictly on "
               << server_address << " with service identity 'DNS:" << config.common.service_name << "'\n";
 
@@ -93,6 +128,7 @@ int run_service() {
         std::this_thread::sleep_for(k_poll_interval);
     }
 
+    health_manager.set_shutting_down(true);
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down mTLS server...\n";
     server->Shutdown();
     return 0;
