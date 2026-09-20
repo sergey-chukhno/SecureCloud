@@ -5,17 +5,22 @@
 #include "securecloud/security/mtls_config.hpp"
 
 #include <arpa/inet.h>
+#include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
 #include <memory>
 #include <netinet/in.h>
+#include <spawn.h>
 #include <sstream>
 #include <string>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <vector>
 
@@ -474,6 +479,91 @@ TEST_F(HealthIntegrationTest, SecurityWrongClientIdentityRejectedPostHandshake) 
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
 
     server->Shutdown();
+}
+
+int run_health_probe_cli(const std::vector<std::string>& extra_args) {
+#ifdef SECURECLOUD_HEALTH_PROBE_BIN
+    std::vector<std::string> args_storage;
+    args_storage.reserve(extra_args.size() + 1);
+    args_storage.emplace_back(SECURECLOUD_HEALTH_PROBE_BIN);
+    args_storage.insert(args_storage.end(), extra_args.begin(), extra_args.end());
+
+    std::vector<char*> argv;
+    argv.reserve(args_storage.size() + 1);
+    for (auto& arg : args_storage) {
+        argv.push_back(arg.data());
+    }
+    argv.push_back(nullptr);
+
+    posix_spawn_file_actions_t actions;
+    posix_spawn_file_actions_init(&actions);
+    posix_spawn_file_actions_addopen(&actions, STDOUT_FILENO, "/dev/null", O_WRONLY, 0);
+    posix_spawn_file_actions_addopen(&actions, STDERR_FILENO, "/dev/null", O_WRONLY, 0);
+
+    std::array<char*, 1> empty_env{nullptr};
+    pid_t pid = 0;
+    int spawn_ret = posix_spawn(&pid, SECURECLOUD_HEALTH_PROBE_BIN, &actions, nullptr, argv.data(), empty_env.data());
+    posix_spawn_file_actions_destroy(&actions);
+    if (spawn_ret != 0) {
+        return -1;
+    }
+
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) {
+            return -1;
+        }
+    }
+
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    return -1;
+#else
+    (void)extra_args;
+    return -1;
+#endif
+}
+
+TEST_F(HealthIntegrationTest, HealthProbeCliTimeoutValidation) {
+    constexpr int k_exit_invalid_args = 3;
+    constexpr int k_exit_rpc_error = 1;
+
+    const std::vector<std::string> base_args = {
+        "--target", "127.0.0.1:50051",          "--server-name", "auth",
+        "--ca",     ca_path_.string(),          "--cert",        gateway_cert_path_.string(),
+        "--key",    gateway_key_path_.string(),
+    };
+
+    const std::vector<std::string> invalid_timeouts = {
+        "abc",
+        "",
+        "0",
+        "-1",
+        "-500",
+        "2147483648",              // INT_MAX + 1
+        "99999999999999999999999", // uint64 overflow / ERANGE
+        "100ms",
+        "3.14",
+    };
+
+    for (const auto& invalid_timeout : invalid_timeouts) {
+        auto args = base_args;
+        args.emplace_back("--timeout-ms");
+        args.push_back(invalid_timeout);
+        int exit_code = run_health_probe_cli(args);
+        EXPECT_EQ(exit_code, k_exit_invalid_args)
+            << "Expected exit code 3 for invalid timeout-ms '" << invalid_timeout << "', got " << exit_code;
+    }
+
+    // Valid positive timeout should not fail with invalid_args (exit code 3)
+    auto valid_args = base_args;
+    valid_args.emplace_back("--timeout-ms");
+    valid_args.emplace_back("1500");
+    int exit_code = run_health_probe_cli(valid_args);
+    EXPECT_NE(exit_code, k_exit_invalid_args) << "Valid timeout-ms was unexpectedly rejected as invalid argument";
+    EXPECT_EQ(exit_code, k_exit_rpc_error)
+        << "Expected RPC failure exit code 1 when probing non-listening endpoint, got " << exit_code;
 }
 
 } // namespace

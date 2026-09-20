@@ -342,16 +342,89 @@ SC-013-T07 (Documentation & Final M1 Gate)
 
 ---
 
+### SC-013-C01 — Enforce Monotonic 250 ms Budget Across Complete Transport Probe Operation
+
+- **Status**: `[COMPLETED & VERIFIED]`
+- **Objective**: Ensure the entire `probe_tcp_connectivity()` operation respects an overall monotonic deadline across all resolved addresses, and rejects non-positive timeouts fail-closed.
+- **Exact files/directories**:
+  - `[MODIFY] src/common/src/health/transport_probe.cpp`
+  - `[MODIFY] tests/unit/health/transport_probe_test.cpp`
+- **Implementation approach**:
+  - Return `false` immediately when `timeout <= std::chrono::milliseconds::zero()`.
+  - Establish `const auto deadline = start_time + timeout` using `std::chrono::steady_clock`.
+  - In address resolution loop, check `now >= deadline` and compute `remaining_ms = deadline - now`.
+  - Pass remaining time budget into `try_connect_socket()`, breaking if budget is exhausted.
+  - Add unit test `MultipleAddressesShareSingleOverallDeadline` verifying that resolving `localhost` with multiple IPs on a closed port consumes only a single shared budget.
+- **Acceptance criteria**:
+  - Non-positive timeouts fail immediately.
+  - Cumulative socket connection attempts across resolved addresses do not exceed overall timeout budget.
+  - Unit tests pass cleanly.
+
+---
+
+### SC-013-C02 — Strict Validation of `--timeout-ms` in Health Probe CLI
+
+- **Status**: `[COMPLETED & VERIFIED]`
+- **Objective**: Strictly validate `--timeout-ms` in `tests/integration/health_probe_cli.cpp` and reject non-numeric, empty, zero, negative, out-of-range (> INT_MAX), and overflow values with exit code 3 (`k_exit_invalid_args`).
+- **Exact files/directories**:
+  - `[MODIFY] tests/integration/health_probe_cli.cpp`
+  - `[MODIFY] tests/integration/health_integration_test.cpp`
+  - `[MODIFY] tests/integration/CMakeLists.txt`
+- **Implementation approach**:
+  - Implement `parse_timeout_ms(const char* val, int& timeout_ms)` checking digit characters, `errno == ERANGE`, `raw == 0`, and `raw > INT_MAX`.
+  - Return `false` from `parse_flag_value()` on invalid timeout to fail argument parsing with exit code 3.
+  - Add `HealthProbeCliTimeoutValidation` integration test executing the probe binary via POSIX spawn across representative invalid inputs (`"abc"`, `""`, `"0"`, `"-1"`, `"-500"`, `"2147483648"`, `"99999999999999999999999"`, `"100ms"`, `"3.14"`) and valid input (`"1500"`).
+- **Acceptance criteria**:
+  - Invalid `--timeout-ms` exits with code 3.
+  - Valid timeout parses correctly.
+  - Automated integration test passes cleanly.
+
+---
+
+### SC-013-C03 — Reliable Verification-Script Cleanup on Normal and Error Exits
+
+- **Status**: `[COMPLETED & VERIFIED]`
+- **Objective**: Ensure `scripts/verify-health-endpoints.sh` cleans up on every exit (normal, error, SIGINT, SIGTERM) while preserving original exit status, guaranteeing PostgreSQL and Compose stack are never left stopped.
+- **Exact files/directories**:
+  - `[MODIFY] scripts/verify-health-endpoints.sh`
+- **Implementation approach**:
+  - Replace ERR trap with `trap cleanup EXIT`, `trap 'exit 130' INT`, `trap 'exit 143' TERM`.
+  - In `cleanup()`, capture `$?`, disable traps, run `$COMPOSE_CMD down`, and re-exit with original status.
+  - Add Check 7 verifying cleanup trap execution and container removal when simulated failure occurs after PostgreSQL outage.
+- **Acceptance criteria**:
+  - Cleanup executes on normal exit and all error conditions.
+  - Original exit code preserved.
+  - Check 7 verifies zero leftover containers and untouched host PostgreSQL.
+
+---
+
+### SC-013-C04 — Configurable Compose Host Ports in Verification Suite
+
+- **Status**: `[COMPLETED & VERIFIED]`
+- **Objective**: Use documented Compose host port variables (`GATEWAY_HOST_PORT`, `AUTH_HOST_PORT`, `MESSAGING_HOST_PORT`, `FILES_HOST_PORT`, `AUDIT_HOST_PORT`) defaulting to 50051–50055 without hardcoding.
+- **Exact files/directories**:
+  - `[MODIFY] scripts/verify-health-endpoints.sh`
+- **Implementation approach**:
+  - Parameterize all 5 service ports using standard `${..._HOST_PORT:-default}` pattern.
+  - Update all probe targets to use configured port variables.
+  - Exercise verification with non-default port override (`AUTH_HOST_PORT=50062`).
+- **Acceptance criteria**:
+  - No hardcoded 50051–50055 ports in probe commands.
+  - Successful run with port override.
+
+---
+
 ## Final Verification Summary & Empirical Evidence (SC-013)
 
 ### 1. Automated Health & Readiness Suite (`./scripts/verify-health-endpoints.sh`)
-- Executed from repository root and `scripts/`:
+- Executed under both default and overridden (`AUTH_HOST_PORT=50062`) port configurations:
   - **Check 1**: Host PostgreSQL 14 baseline on `localhost:5432` verified active and untouched before Compose startup (`[PASS]`).
   - **Check 2**: Started Docker Compose stack with latest binaries (`[PASS]`).
   - **Check 3**: Probed steady-state mTLS liveness and readiness across all 5 services (`gateway`, `auth`, `messaging`, `files`, `audit`) -> all return `SERVING` (`[PASS]`).
   - **Check 4 (Outage)**: Stopped `postgres` container -> `auth` and `files` readiness degraded to `NOT_SERVING` while process liveness remained `SERVING`; `messaging`, `audit`, and `gateway` remained `SERVING` (`[PASS]`).
   - **Check 5 (Recovery)**: Restarted `postgres` container -> `auth` and `files` readiness recovered to `SERVING` (`[PASS]`).
   - **Check 6**: Clean teardown, zero leftover containers, host PostgreSQL 14 verified active on `localhost:5432` (`[PASS]`).
+  - **Check 7 (Cleanup Resilience)**: Simulated failure after PostgreSQL outage verified that EXIT trap executes teardown, zero leftover containers remain, and original exit code 1 is preserved (`[PASS]`).
 
 ### 2. Service Configuration & Persistence Non-Regression
 - `./scripts/verify-service-config.sh`: 10/10 checks passed cleanly (`[PASS]`).
@@ -359,9 +432,9 @@ SC-013-T07 (Documentation & Final M1 Gate)
 - Host PostgreSQL 14 on `localhost:5432`: 100% untouched throughout all tests.
 
 ### 3. CTest Suite Regression
-- 79/79 unit and integration tests passed (100% pass rate in 6.48 seconds):
-  - Unit tests: `HealthStatusManagerTest` (7 tests), `HealthServiceImplTest` (5 tests), `TransportProbeTest` (4 tests).
-  - Integration tests: `HealthIntegrationTest` (10 tests), `MtlsIntegrationTest` (7 tests).
+- 81/81 unit and integration tests passed (100% pass rate in 7.05 seconds):
+  - Unit tests: `HealthStatusManagerTest` (7 tests), `HealthServiceImplTest` (5 tests), `TransportProbeTest` (5 tests including shared deadline).
+  - Integration tests: `HealthIntegrationTest` (11 tests including CLI timeout validation), `MtlsIntegrationTest` (7 tests).
 
 ### 4. Code Hygiene & Static Analysis
 - `./scripts/check-formatting.sh`: 0 errors. Fully compliant with project clang-format and clang-tidy standards.

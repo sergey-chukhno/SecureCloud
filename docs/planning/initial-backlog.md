@@ -205,6 +205,11 @@ Implement liveness/readiness and relevant dependency health checks adhering to A
 - Verified graceful shutdown immediately degrades readiness to `NOT_SERVING`.
 - All 5 microservices migrated to common health infrastructure, deleting 6 duplicated `HealthServiceImpl` classes.
 - Full verification suite: unit tests (`HealthStatusManagerTest`, `HealthServiceImplTest`, `TransportProbeTest`), mTLS integration tests (`HealthIntegrationTest`, `MtlsIntegrationTest`), and automated Docker Compose test suite (`scripts/verify-health-endpoints.sh`).
+- CodeRabbit review findings resolved (SC-013-C01 through SC-013-C04):
+  - SC-013-C01: Enforced monotonic 250 ms budget across complete transport probe operation and fail-closed non-positive timeout handling.
+  - SC-013-C02: Strict validation of `--timeout-ms` in health probe CLI rejecting invalid/out-of-range inputs with exit code 3.
+  - SC-013-C03: Reliable EXIT/INT/TERM cleanup in `verify-health-endpoints.sh` with post-outage failure resilience check.
+  - SC-013-C04: Configurable Compose host ports (`GATEWAY_HOST_PORT` through `AUDIT_HOST_PORT`) exercised with non-default port overrides.
 
 **Acceptance:** process startup is not treated as readiness when
 required dependencies are unavailable. Fully verified with 100% passing tests.

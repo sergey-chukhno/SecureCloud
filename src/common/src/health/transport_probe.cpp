@@ -55,6 +55,10 @@ bool check_poll_result(int sockfd, int timeout_ms) noexcept {
 }
 
 bool try_connect_socket(const struct addrinfo& addr, int timeout_ms) noexcept {
+    if (timeout_ms <= 0) {
+        return false;
+    }
+
     int sockfd = ::socket(addr.ai_family, addr.ai_socktype, addr.ai_protocol);
     if (sockfd < 0) {
         return false;
@@ -88,9 +92,12 @@ bool try_connect_socket(const struct addrinfo& addr, int timeout_ms) noexcept {
 } // namespace
 
 bool probe_tcp_connectivity(std::string_view host, uint16_t port, std::chrono::milliseconds timeout) noexcept {
-    if (host.empty() || port == 0) {
+    if (host.empty() || port == 0 || timeout <= std::chrono::milliseconds::zero()) {
         return false;
     }
+
+    const auto start_time = std::chrono::steady_clock::now();
+    const auto deadline = start_time + timeout;
 
     try {
         std::string host_str(host);
@@ -108,10 +115,19 @@ bool probe_tcp_connectivity(std::string_view host, uint16_t port, std::chrono::m
         }
 
         bool connected = false;
-        const auto timeout_ms = static_cast<int>(timeout.count());
 
         for (struct addrinfo* rp = res; rp != nullptr; rp = rp->ai_next) {
-            if (try_connect_socket(*rp, timeout_ms)) {
+            const auto now = std::chrono::steady_clock::now();
+            if (now >= deadline) {
+                break;
+            }
+            const auto remaining_ms =
+                static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count());
+            if (remaining_ms <= 0) {
+                break;
+            }
+
+            if (try_connect_socket(*rp, remaining_ms)) {
                 connected = true;
                 break;
             }

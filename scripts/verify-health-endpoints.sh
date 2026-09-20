@@ -23,6 +23,13 @@ COMPOSE_CMD="docker compose --ansi never -f deploy/compose/docker-compose.yml"
 BUILD_DIR="${ROOT_DIR}/build/dev-debug"
 PROBE_BIN="${BUILD_DIR}/tests/integration/securecloud_health_probe"
 
+# Configurable Compose host ports (default: 50051-50055)
+GATEWAY_HOST_PORT="${GATEWAY_HOST_PORT:-50051}"
+AUTH_HOST_PORT="${AUTH_HOST_PORT:-50052}"
+MESSAGING_HOST_PORT="${MESSAGING_HOST_PORT:-50053}"
+FILES_HOST_PORT="${FILES_HOST_PORT:-50054}"
+AUDIT_HOST_PORT="${AUDIT_HOST_PORT:-50055}"
+
 COLOR_RESET="\033[0m"
 COLOR_GREEN="\033[1;32m"
 COLOR_RED="\033[1;31m"
@@ -42,11 +49,16 @@ log_fail() {
 }
 
 cleanup() {
-    log_info "Teardown: Stopping Compose stack..."
+    local exit_code=$?
+    trap - EXIT INT TERM
+    log_info "Teardown: Ensuring Compose stack is stopped..."
     $COMPOSE_CMD down >/dev/null 2>&1 || true
+    exit "${exit_code}"
 }
 
-trap cleanup ERR
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 check_host_pg() {
     if [ -x /opt/homebrew/bin/pg_isready ]; then
@@ -149,46 +161,46 @@ sleep 2
 # ==============================================================================
 log_info "Check 3: Probing steady-state mTLS health and readiness across all 5 services..."
 
-# Gateway (50051)
-if probe_service "127.0.0.1:50051" "gateway" "" "SERVING" && \
-   probe_service "127.0.0.1:50051" "gateway" "gateway" "SERVING" && \
-   probe_service "127.0.0.1:50051" "gateway" "readiness" "SERVING"; then
+# Gateway (${GATEWAY_HOST_PORT})
+if probe_service "127.0.0.1:${GATEWAY_HOST_PORT}" "gateway" "" "SERVING" && \
+   probe_service "127.0.0.1:${GATEWAY_HOST_PORT}" "gateway" "gateway" "SERVING" && \
+   probe_service "127.0.0.1:${GATEWAY_HOST_PORT}" "gateway" "readiness" "SERVING"; then
     log_pass "Gateway: Liveness SERVING, Readiness SERVING."
 else
     log_fail "Gateway steady-state probe failed."
 fi
 
-# Auth (50052)
-if probe_service "127.0.0.1:50052" "auth" "" "SERVING" && \
-   probe_service "127.0.0.1:50052" "auth" "auth" "SERVING" && \
-   probe_service "127.0.0.1:50052" "auth" "readiness" "SERVING"; then
+# Auth (${AUTH_HOST_PORT})
+if probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "" "SERVING" && \
+   probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "auth" "SERVING" && \
+   probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "readiness" "SERVING"; then
     log_pass "Auth: Liveness SERVING, Readiness SERVING."
 else
     log_fail "Auth steady-state probe failed."
 fi
 
-# Messaging (50053)
-if probe_service "127.0.0.1:50053" "messaging" "" "SERVING" && \
-   probe_service "127.0.0.1:50053" "messaging" "messaging" "SERVING" && \
-   probe_service "127.0.0.1:50053" "messaging" "readiness" "SERVING"; then
+# Messaging (${MESSAGING_HOST_PORT})
+if probe_service "127.0.0.1:${MESSAGING_HOST_PORT}" "messaging" "" "SERVING" && \
+   probe_service "127.0.0.1:${MESSAGING_HOST_PORT}" "messaging" "messaging" "SERVING" && \
+   probe_service "127.0.0.1:${MESSAGING_HOST_PORT}" "messaging" "readiness" "SERVING"; then
     log_pass "Messaging: Liveness SERVING, Readiness SERVING."
 else
     log_fail "Messaging steady-state probe failed."
 fi
 
-# Files (50054)
-if probe_service "127.0.0.1:50054" "files" "" "SERVING" && \
-   probe_service "127.0.0.1:50054" "files" "files" "SERVING" && \
-   probe_service "127.0.0.1:50054" "files" "readiness" "SERVING"; then
+# Files (${FILES_HOST_PORT})
+if probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "" "SERVING" && \
+   probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "files" "SERVING" && \
+   probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "readiness" "SERVING"; then
     log_pass "Files: Liveness SERVING, Readiness SERVING."
 else
     log_fail "Files steady-state probe failed."
 fi
 
-# Audit (50055)
-if probe_service "127.0.0.1:50055" "audit" "" "SERVING" && \
-   probe_service "127.0.0.1:50055" "audit" "audit" "SERVING" && \
-   probe_service "127.0.0.1:50055" "audit" "readiness" "SERVING"; then
+# Audit (${AUDIT_HOST_PORT})
+if probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "" "SERVING" && \
+   probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "audit" "SERVING" && \
+   probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "readiness" "SERVING"; then
     log_pass "Audit: Liveness SERVING, Readiness SERVING."
 else
     log_fail "Audit steady-state probe failed."
@@ -200,40 +212,45 @@ fi
 log_info "Check 4: Simulating real Docker dependency outage (stopping postgres container)..."
 $COMPOSE_CMD stop postgres >/dev/null
 
+if [ "${SECURECLOUD_SIMULATE_POST_OUTAGE_FAILURE:-0}" = "1" ]; then
+    log_info "[SIMULATION] Simulating verification check failure immediately after PostgreSQL outage begins..."
+    log_fail "Simulated verification failure after postgres outage"
+fi
+
 log_info "Verifying degraded readiness and persistent liveness..."
 
 # Auth depends on PostgreSQL: readiness must degrade, liveness must remain SERVING
-if probe_service "127.0.0.1:50052" "auth" "" "SERVING" && \
-   probe_service "127.0.0.1:50052" "auth" "readiness" "NOT_SERVING"; then
+if probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "" "SERVING" && \
+   probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "readiness" "NOT_SERVING"; then
     log_pass "Auth: Liveness remained SERVING while Readiness degraded to NOT_SERVING."
 else
     log_fail "Auth failed dependency degradation contract during postgres outage."
 fi
 
 # Files depends on PostgreSQL: readiness must degrade, liveness must remain SERVING
-if probe_service "127.0.0.1:50054" "files" "" "SERVING" && \
-   probe_service "127.0.0.1:50054" "files" "readiness" "NOT_SERVING"; then
+if probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "" "SERVING" && \
+   probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "readiness" "NOT_SERVING"; then
     log_pass "Files: Liveness remained SERVING while Readiness degraded to NOT_SERVING."
 else
     log_fail "Files failed dependency degradation contract during postgres outage."
 fi
 
 # Messaging does NOT depend on PostgreSQL: readiness must stay SERVING
-if probe_service "127.0.0.1:50053" "messaging" "readiness" "SERVING"; then
+if probe_service "127.0.0.1:${MESSAGING_HOST_PORT}" "messaging" "readiness" "SERVING"; then
     log_pass "Messaging: Readiness remained SERVING (unaffected by postgres outage)."
 else
     log_fail "Messaging readiness improperly degraded during postgres outage."
 fi
 
 # Audit does NOT depend on PostgreSQL: readiness must stay SERVING
-if probe_service "127.0.0.1:50055" "audit" "readiness" "SERVING"; then
+if probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "readiness" "SERVING"; then
     log_pass "Audit: Readiness remained SERVING (unaffected by postgres outage)."
 else
     log_fail "Audit readiness improperly degraded during postgres outage."
 fi
 
 # Gateway has local readiness only: readiness must stay SERVING
-if probe_service "127.0.0.1:50051" "gateway" "readiness" "SERVING"; then
+if probe_service "127.0.0.1:${GATEWAY_HOST_PORT}" "gateway" "readiness" "SERVING"; then
     log_pass "Gateway: Readiness remained SERVING (local readiness preserved)."
 else
     log_fail "Gateway readiness improperly degraded during postgres outage."
@@ -264,7 +281,7 @@ fi
 TRIES=0
 AUTH_RECOVERED=0
 while [ $TRIES -lt 10 ]; do
-    if probe_service "127.0.0.1:50052" "auth" "readiness" "SERVING" >/dev/null 2>&1; then
+    if probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "readiness" "SERVING" >/dev/null 2>&1; then
         AUTH_RECOVERED=1
         break
     fi
@@ -282,7 +299,7 @@ fi
 TRIES=0
 FILES_RECOVERED=0
 while [ $TRIES -lt 10 ]; do
-    if probe_service "127.0.0.1:50054" "files" "readiness" "SERVING" >/dev/null 2>&1; then
+    if probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "readiness" "SERVING" >/dev/null 2>&1; then
         FILES_RECOVERED=1
         break
     fi
@@ -315,4 +332,29 @@ else
     log_fail "Leftover containers detected after teardown: $RUNNING_CONTAINERS"
 fi
 
-log_pass "ALL 6 HEALTH & READINESS VERIFICATION CHECKS PASSED SUCCESSFULLY!"
+# ==============================================================================
+# Check 7: Post-Outage Failure Cleanup Trap Resilience
+# ==============================================================================
+if [ "${SECURECLOUD_SIMULATE_POST_OUTAGE_FAILURE:-0}" = "0" ]; then
+    log_info "Check 7: Validating cleanup trap execution when failure occurs after postgres outage..."
+    SUB_EXIT=0
+    SECURECLOUD_SIMULATE_POST_OUTAGE_FAILURE=1 "${SCRIPT_DIR}/verify-health-endpoints.sh" >/dev/null 2>&1 || SUB_EXIT=$?
+    if [ "$SUB_EXIT" -eq 0 ]; then
+        log_fail "Expected verify-health-endpoints.sh to fail under simulated post-outage failure, but it succeeded!"
+    fi
+    log_pass "Subshell failed with expected exit code (${SUB_EXIT})."
+
+    REMAINING_CONTAINERS=$($COMPOSE_CMD ps -q)
+    if [ -n "$REMAINING_CONTAINERS" ]; then
+        log_fail "Leftover containers detected after post-outage failure! Cleanup trap failed."
+    fi
+    log_pass "Teardown verified: Zero leftover Compose containers remain."
+
+    if check_host_pg; then
+        log_pass "Host PostgreSQL 14 remains active and untouched on localhost:5432 after failure teardown."
+    else
+        log_fail "Host PostgreSQL 14 regression detected on localhost:5432 after failure teardown!"
+    fi
+fi
+
+log_pass "ALL 7 HEALTH & READINESS VERIFICATION CHECKS PASSED SUCCESSFULLY!"

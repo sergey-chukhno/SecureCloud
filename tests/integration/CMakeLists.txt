@@ -24,6 +24,12 @@ target_link_libraries(securecloud_health_integration_test PRIVATE
     GTest::gtest_main
 )
 
+target_compile_definitions(securecloud_health_integration_test PRIVATE
+    SECURECLOUD_HEALTH_PROBE_BIN="$<TARGET_FILE:securecloud_health_probe>"
+)
+
+add_dependencies(securecloud_health_integration_test securecloud_health_probe)
+
 gtest_discover_tests(securecloud_health_integration_test)
 
 # Dedicated Health & Readiness mTLS Probe Runner CLI (SC-013-T06)

@@ -1,11 +1,13 @@
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/security/mtls_config.hpp"
 
+#include <cerrno>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <grpcpp/grpcpp.h>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -44,6 +46,28 @@ void print_usage(std::string_view prog_name) {
               << "  --timeout-ms <ms>               RPC deadline in milliseconds (default: 3000)\n";
 }
 
+bool parse_timeout_ms(const char* val, int& timeout_ms) noexcept {
+    if (val == nullptr || *val == '\0') {
+        return false;
+    }
+    for (const char* p = val; *p != '\0'; ++p) {
+        if (*p < '0' || *p > '9') {
+            return false;
+        }
+    }
+    char* end = nullptr;
+    errno = 0;
+    unsigned long long raw = std::strtoull(val, &end, k_decimal_base);
+    if (errno == ERANGE || end == val || end == nullptr || *end != '\0') {
+        return false;
+    }
+    if (raw == 0 || raw > static_cast<unsigned long long>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+    timeout_ms = static_cast<int>(raw);
+    return true;
+}
+
 bool parse_flag_value(std::string_view flag, const char* val, ProbeOptions& opts) {
     if (flag == "--target") {
         opts.target = val;
@@ -60,11 +84,7 @@ bool parse_flag_value(std::string_view flag, const char* val, ProbeOptions& opts
     } else if (flag == "--expected-status") {
         opts.expected_status = val;
     } else if (flag == "--timeout-ms") {
-        char* end = nullptr;
-        long timeout_val = std::strtol(val, &end, k_decimal_base);
-        if (end != nullptr && *end == '\0' && timeout_val > 0) {
-            opts.timeout_ms = static_cast<int>(timeout_val);
-        }
+        return parse_timeout_ms(val, opts.timeout_ms);
     } else {
         return false;
     }
@@ -94,7 +114,7 @@ bool parse_args(int argc, char* const* argv, ProbeOptions& options) {
 
         const char* val = argv[++i];
         if (!parse_flag_value(arg, val, options)) {
-            std::cerr << "Unknown argument: " << arg << "\n";
+            std::cerr << "Invalid argument or flag value: " << arg << "\n";
             print_usage(argv[0]);
             return false;
         }
