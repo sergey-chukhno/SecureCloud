@@ -3,6 +3,9 @@
 #include "securecloud/common/version.hpp"
 #include "securecloud/configuration/configuration_source.hpp"
 #include "securecloud/configuration/validation_error.hpp"
+#include "securecloud/health/health_service_impl.hpp"
+#include "securecloud/health/health_status_manager.hpp"
+#include "securecloud/health/transport_probe.hpp"
 #include "securecloud/security/mtls_config.hpp"
 
 #include <atomic>
@@ -25,19 +28,6 @@ void signal_handler(int signal) {
         g_shutdown_requested.store(true);
     }
 }
-
-class HealthServiceImpl final : public securecloud::common::v1::HealthService::Service {
-  public:
-    grpc::Status Check(grpc::ServerContext* context, const securecloud::common::v1::HealthCheckRequest* request,
-                       securecloud::common::v1::HealthCheckResponse* response) override {
-        (void)request;
-        if (!context->auth_context()->IsPeerAuthenticated()) {
-            return {grpc::StatusCode::UNAUTHENTICATED, "Peer unauthenticated"};
-        }
-        response->set_status(securecloud::common::v1::HealthCheckResponse::SERVING);
-        return grpc::Status::OK;
-    }
-};
 
 int run_service() {
     std::signal(SIGINT, signal_handler);
@@ -73,7 +63,10 @@ int run_service() {
     }
 
     std::string server_address = config.common.listen_address();
-    HealthServiceImpl health_service;
+    securecloud::common::health::HealthStatusManager health_manager(config.common.service_name);
+    health_manager.set_readiness_evaluator(
+        [&config] { return securecloud::common::health::probe_tcp_connectivity(config.db_host, config.db_port); });
+    securecloud::common::health::HealthServiceImpl health_service(config.common.service_name, health_manager);
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);
@@ -86,6 +79,9 @@ int run_service() {
         return 1;
     }
 
+    health_manager.set_live(true);
+    health_manager.set_ready(true);
+
     std::cout << "[SecureCloud] [" << config.common.service_name << "] mTLS server listening strictly on "
               << server_address << " with service identity 'DNS:" << config.common.service_name << "'\n";
 
@@ -93,6 +89,7 @@ int run_service() {
         std::this_thread::sleep_for(k_poll_interval);
     }
 
+    health_manager.set_shutting_down(true);
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down mTLS server...\n";
     server->Shutdown();
     return 0;

@@ -1,4 +1,6 @@
 #include "securecloud/common/v1/health.grpc.pb.h"
+#include "securecloud/health/health_service_impl.hpp"
+#include "securecloud/health/health_status_manager.hpp"
 #include "securecloud/security/mtls_config.hpp"
 
 #include <filesystem>
@@ -13,6 +15,9 @@
 namespace securecloud::common::security {
 namespace {
 
+using health::HealthServiceImpl;
+using health::HealthStatusManager;
+
 std::string read_file_content(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::in | std::ios::binary);
     if (!file.is_open()) {
@@ -22,32 +27,6 @@ std::string read_file_content(const std::filesystem::path& path) {
     ss << file.rdbuf();
     return ss.str();
 }
-
-class HealthServiceImpl final : public securecloud::common::v1::HealthService::Service {
-  public:
-    explicit HealthServiceImpl(std::string expected_client_identity = "")
-        : expected_client_identity_(std::move(expected_client_identity)) {}
-
-    grpc::Status Check(grpc::ServerContext* context, const securecloud::common::v1::HealthCheckRequest* request,
-                       securecloud::common::v1::HealthCheckResponse* response) override {
-        (void)request;
-        if (!context->auth_context()->IsPeerAuthenticated()) {
-            return {grpc::StatusCode::UNAUTHENTICATED, "Peer unauthenticated"};
-        }
-
-        if (!expected_client_identity_.empty()) {
-            if (!verify_peer_service_identity(*context->auth_context(), expected_client_identity_)) {
-                return {grpc::StatusCode::UNAUTHENTICATED, "Peer service identity mismatch"};
-            }
-        }
-
-        response->set_status(securecloud::common::v1::HealthCheckResponse::SERVING);
-        return grpc::Status::OK;
-    }
-
-  private:
-    std::string expected_client_identity_;
-};
 
 class MtlsIntegrationTest : public ::testing::Test {
   protected:
@@ -63,6 +42,9 @@ class MtlsIntegrationTest : public ::testing::Test {
     }
 
     void SetUp() override {
+        health_manager_.set_live(true);
+        health_manager_.set_ready(true);
+
         auto pki_root = find_pki_root();
         ca_path_ = pki_root / "ca" / "ca.crt";
         auth_cert_path_ = pki_root / "services" / "auth" / "auth.crt";
@@ -101,7 +83,7 @@ class MtlsIntegrationTest : public ::testing::Test {
     }
 
     static std::pair<std::unique_ptr<grpc::Server>, std::string>
-    start_mtls_server(HealthServiceImpl* service_impl, const SecurityCredentialsConfig& server_config) {
+    start_mtls_server(health::HealthServiceImpl* service_impl, const SecurityCredentialsConfig& server_config) {
         auto server_creds = MtlsCredentialLoader::create_server_credentials(server_config);
         EXPECT_NE(server_creds, nullptr);
 
@@ -118,6 +100,7 @@ class MtlsIntegrationTest : public ::testing::Test {
         return {std::move(server), server_address};
     }
 
+    health::HealthStatusManager health_manager_{"auth"};
     std::filesystem::path ca_path_;
     std::filesystem::path auth_cert_path_;
     std::filesystem::path auth_key_path_;
@@ -132,7 +115,7 @@ class MtlsIntegrationTest : public ::testing::Test {
 };
 
 TEST_F(MtlsIntegrationTest, PositiveValidGatewayToAuthMtlsSucceeds) {
-    HealthServiceImpl health_service("gateway");
+    health::HealthServiceImpl health_service("auth", health_manager_, "gateway");
     auto [server, server_address] = start_mtls_server(&health_service, auth_config_);
 
     auto channel = MtlsCredentialLoader::create_mtls_channel(server_address, gateway_config_, "auth");
@@ -151,7 +134,7 @@ TEST_F(MtlsIntegrationTest, PositiveValidGatewayToAuthMtlsSucceeds) {
 }
 
 TEST_F(MtlsIntegrationTest, NegativeUntrustedCaFailsClosed) {
-    HealthServiceImpl health_service;
+    health::HealthServiceImpl health_service("auth", health_manager_);
     auto [server, server_address] = start_mtls_server(&health_service, auth_config_);
 
     // Create temp directory for untrusted fake CA
@@ -187,7 +170,7 @@ TEST_F(MtlsIntegrationTest, NegativeUntrustedCaFailsClosed) {
 }
 
 TEST_F(MtlsIntegrationTest, NegativeMissingClientCertificateFailsClosed) {
-    HealthServiceImpl health_service;
+    health::HealthServiceImpl health_service("auth", health_manager_);
     auto [server, server_address] = start_mtls_server(&health_service, auth_config_);
 
     // Create client TLS channel with CA trust ONLY (no client cert/key)
@@ -214,7 +197,7 @@ TEST_F(MtlsIntegrationTest, NegativeMissingClientCertificateFailsClosed) {
 }
 
 TEST_F(MtlsIntegrationTest, NegativeServerSanMismatchFailsClosed) {
-    HealthServiceImpl health_service;
+    health::HealthServiceImpl health_service("auth", health_manager_);
     auto [server, server_address] = start_mtls_server(&health_service, auth_config_);
 
     // Client expects target SAN identity "messaging", but server presents "auth"
@@ -235,7 +218,7 @@ TEST_F(MtlsIntegrationTest, NegativeServerSanMismatchFailsClosed) {
 
 TEST_F(MtlsIntegrationTest, NegativeWrongClientIdentityRejectedPostHandshake) {
     // Server requires peer SAN identity "gateway"
-    HealthServiceImpl health_service("gateway");
+    health::HealthServiceImpl health_service("auth", health_manager_, "gateway");
     auto [server, server_address] = start_mtls_server(&health_service, auth_config_);
 
     // Client presents trusted "audit" service certificate
@@ -257,7 +240,7 @@ TEST_F(MtlsIntegrationTest, NegativeWrongClientIdentityRejectedPostHandshake) {
 }
 
 TEST_F(MtlsIntegrationTest, NegativePlaintextConnectionAttackRejected) {
-    HealthServiceImpl health_service;
+    health::HealthServiceImpl health_service("auth", health_manager_);
     auto [server, server_address] = start_mtls_server(&health_service, auth_config_);
 
     // Client attempts insecure connection
@@ -287,7 +270,7 @@ TEST_F(MtlsIntegrationTest, NegativeMismatchedKeyCertStartupFailsClosed) {
     auto server_creds = MtlsCredentialLoader::create_server_credentials(mismatched_config);
     EXPECT_NE(server_creds, nullptr);
 
-    HealthServiceImpl health_service;
+    health::HealthServiceImpl health_service("auth", health_manager_);
     grpc::ServerBuilder builder;
     int selected_port = 0;
     builder.AddListeningPort("127.0.0.1:0", server_creds, &selected_port);

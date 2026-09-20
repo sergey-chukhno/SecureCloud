@@ -38,6 +38,8 @@ services:
           create_host_path: false
     networks:
       - securecloud-dev
+    ports:
+      - "127.0.0.1:${GATEWAY_HOST_PORT:-50051}:50051"
     depends_on:
       auth:
         condition: service_started
@@ -78,6 +80,8 @@ services:
           create_host_path: false
     networks:
       - securecloud-dev
+    ports:
+      - "127.0.0.1:${AUTH_HOST_PORT:-50052}:50052"
     depends_on:
       postgres:
         condition: service_healthy
@@ -116,6 +120,8 @@ services:
           create_host_path: false
     networks:
       - securecloud-dev
+    ports:
+      - "127.0.0.1:${MESSAGING_HOST_PORT:-50053}:50053"
     depends_on:
       scylladb:
         condition: service_healthy
@@ -160,6 +166,8 @@ services:
           create_host_path: false
     networks:
       - securecloud-dev
+    ports:
+      - "127.0.0.1:${FILES_HOST_PORT:-50054}:50054"
     depends_on:
       postgres:
         condition: service_healthy
@@ -204,6 +212,8 @@ services:
           create_host_path: false
     networks:
       - securecloud-dev
+    ports:
+      - "127.0.0.1:${AUDIT_HOST_PORT:-50055}:50055"
     depends_on:
       clickhouse:
         condition: service_healthy
