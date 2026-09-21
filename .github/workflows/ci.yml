@@ -27,9 +27,12 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Homebrew dependencies
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew update --quiet
-          brew install protobuf grpc googletest llvm ninja
+          brew install protobuf grpc googletest llvm@18 ninja
+          echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
 
       - name: Configure CMake with Static Analysis
         run: |
@@ -58,8 +61,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Homebrew dependencies
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew update --quiet
           brew install protobuf grpc googletest ninja
 
       - name: Configure CMake
