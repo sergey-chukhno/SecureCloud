@@ -49,6 +49,8 @@ constexpr socket_handle_t k_invalid_socket = INVALID_SOCKET;
 
 inline void close_socket_handle(socket_handle_t s) noexcept {
     if (s != INVALID_SOCKET) {
+        linger l{1, 0};
+        ::setsockopt(s, SOL_SOCKET, SO_LINGER, reinterpret_cast<const char*>(&l), sizeof(l));
         ::closesocket(s);
     }
 }
@@ -83,6 +85,7 @@ using socklen_val_t = socklen_t;
 constexpr int k_listen_backlog = 5;
 constexpr std::chrono::milliseconds k_test_probe_timeout{250};
 constexpr std::chrono::milliseconds k_short_rpc_deadline{500};
+constexpr std::chrono::milliseconds k_server_shutdown_timeout{500};
 constexpr std::chrono::seconds k_rpc_deadline{2};
 
 std::string read_file_content(const std::filesystem::path& path) {
@@ -104,10 +107,7 @@ class ScopedTcpListener {
             return;
         }
 
-#ifdef _WIN32
-        const char opt = 1;
-        ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-#else
+#ifndef _WIN32
         int opt = 1;
         ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 #endif
@@ -234,6 +234,14 @@ class HealthIntegrationTest : public ::testing::Test {
         return {std::move(server), server_address};
     }
 
+    static void shutdown_server(std::unique_ptr<grpc::Server>& server) {
+        if (server) {
+            server->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
+            server->Wait();
+            server.reset();
+        }
+    }
+
     HealthStatusManager health_manager_{"auth"};
     std::filesystem::path ca_path_;
     std::filesystem::path auth_cert_path_;
@@ -266,7 +274,9 @@ TEST_F(HealthIntegrationTest, CheckLivenessEmptyServiceReturnsServing) {
     EXPECT_TRUE(status.ok()) << "RPC failed: " << status.error_message();
     EXPECT_EQ(response.status(), v1::HealthCheckResponse::SERVING);
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(HealthIntegrationTest, CheckLivenessCanonicalServiceReturnsServing) {
@@ -287,7 +297,9 @@ TEST_F(HealthIntegrationTest, CheckLivenessCanonicalServiceReturnsServing) {
     EXPECT_TRUE(status.ok()) << "RPC failed: " << status.error_message();
     EXPECT_EQ(response.status(), v1::HealthCheckResponse::SERVING);
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(HealthIntegrationTest, CheckReadinessWithHealthyDependencyReturnsServing) {
@@ -315,7 +327,9 @@ TEST_F(HealthIntegrationTest, CheckReadinessWithHealthyDependencyReturnsServing)
     EXPECT_TRUE(status.ok()) << "RPC failed: " << status.error_message();
     EXPECT_EQ(response.status(), v1::HealthCheckResponse::SERVING);
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(HealthIntegrationTest, CheckReadinessDegradesOnDependencyOutageWhileLivenessRemainsServing) {
@@ -368,7 +382,9 @@ TEST_F(HealthIntegrationTest, CheckReadinessDegradesOnDependencyOutageWhileLiven
         EXPECT_EQ(resp.status(), v1::HealthCheckResponse::SERVING);
     }
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(HealthIntegrationTest, CheckReadinessDegradesImmediatelyOnShutdown) {
@@ -410,7 +426,9 @@ TEST_F(HealthIntegrationTest, CheckReadinessDegradesImmediatelyOnShutdown) {
         EXPECT_EQ(resp.status(), v1::HealthCheckResponse::SERVING);
     }
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(HealthIntegrationTest, CheckUnknownServiceReturnsServiceUnknown) {
@@ -431,7 +449,9 @@ TEST_F(HealthIntegrationTest, CheckUnknownServiceReturnsServiceUnknown) {
     EXPECT_TRUE(status.ok()) << "RPC failed: " << status.error_message();
     EXPECT_EQ(response.status(), v1::HealthCheckResponse::SERVICE_UNKNOWN);
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(HealthIntegrationTest, SecurityPlaintextClientRejected) {
@@ -452,7 +472,9 @@ TEST_F(HealthIntegrationTest, SecurityPlaintextClientRejected) {
     EXPECT_FALSE(status.ok());
     EXPECT_NE(status.error_code(), grpc::StatusCode::OK);
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(HealthIntegrationTest, SecurityUntrustedCaRejected) {
@@ -486,7 +508,9 @@ TEST_F(HealthIntegrationTest, SecurityUntrustedCaRejected) {
     EXPECT_FALSE(status.ok());
     EXPECT_NE(status.error_code(), grpc::StatusCode::OK);
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
     std::filesystem::remove_all(temp_dir);
 }
 
@@ -514,7 +538,9 @@ TEST_F(HealthIntegrationTest, SecurityUnauthenticatedClientRejected) {
     EXPECT_FALSE(status.ok());
     EXPECT_NE(status.error_code(), grpc::StatusCode::OK);
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(HealthIntegrationTest, SecurityWrongClientIdentityRejectedPostHandshake) {
@@ -537,7 +563,9 @@ TEST_F(HealthIntegrationTest, SecurityWrongClientIdentityRejectedPostHandshake) 
     EXPECT_FALSE(status.ok());
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 int run_health_probe_cli(const std::vector<std::string>& extra_args) {
