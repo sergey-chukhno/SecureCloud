@@ -1,15 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Prevent Git Bash / MSYS2 from converting POSIX subject strings (e.g., /CN=...) into Windows file paths
-export MSYS_NO_PATHCONV=1
-export MSYS2_ARG_CONV_EXCL="*"
+# In Git Bash / MSYS2, exempt -subj arguments from automatic POSIX-to-Windows path conversion
+export MSYS2_ARG_CONV_EXCL="/CN="
 
 # SecureCloud Development PKI Provisioning Tool
 # SC-009 — Establish Development CA and Service Certificates
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+get_native_path() {
+    local target_dir="$1"
+    if (cd "${target_dir}" && pwd -W) >/dev/null 2>&1; then
+        (cd "${target_dir}" && pwd -W)
+    elif command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "${target_dir}"
+    else
+        (cd "${target_dir}" && pwd)
+    fi
+}
+
+SCRIPT_DIR="$(get_native_path "$(dirname "${BASH_SOURCE[0]}")")"
+ROOT_DIR="$(get_native_path "${SCRIPT_DIR}/..")"
 
 PKI_DIR="${ROOT_DIR}/deploy/dev-pki"
 CA_DIR="${PKI_DIR}/ca"
