@@ -159,6 +159,12 @@ class ScopedTcpListener {
 class HealthIntegrationTest : public ::testing::Test {
   protected:
     static std::filesystem::path find_pki_root() {
+#ifdef SECURECLOUD_DEV_PKI_DIR
+        std::filesystem::path defined_path(SECURECLOUD_DEV_PKI_DIR);
+        if (std::filesystem::exists(defined_path / "ca" / "ca.crt")) {
+            return defined_path;
+        }
+#endif
         auto curr = std::filesystem::current_path();
         while (!curr.empty() && curr != curr.root_path()) {
             if (std::filesystem::exists(curr / "deploy" / "dev-pki" / "ca" / "ca.crt")) {

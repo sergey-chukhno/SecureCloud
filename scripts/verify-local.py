@@ -193,6 +193,14 @@ class VerificationOrchestrator:
             return self._summarize_and_exit(total_start)
 
         # Stage 5: Test Suite (CTest)
+        pki_ca = self.repo_root / "deploy" / "dev-pki" / "ca" / "ca.crt"
+        pki_script = self.repo_root / "scripts" / "generate-dev-pki.sh"
+        if not pki_ca.exists() and pki_script.exists():
+            import shutil
+            bash_bin = shutil.which("bash")
+            if bash_bin:
+                subprocess.run([bash_bin, str(pki_script)], cwd=str(self.repo_root), check=False)
+
         cmd_test = ["ctest", "--preset", self.preset, "--output-on-failure"]
         if not self._execute_stage("5. CTest Execution Suite", cmd_test, skip=skip_tests):
             return self._summarize_and_exit(total_start)

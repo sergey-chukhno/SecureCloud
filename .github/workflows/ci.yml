@@ -70,6 +70,10 @@ jobs:
         run: |
           cmake --build --preset ci-macos
 
+      - name: Generate Development PKI Certificates
+        run: |
+          bash scripts/generate-dev-pki.sh
+
       - name: Execute CTest Suite
         run: |
           ctest --preset ci-macos --output-on-failure
@@ -127,6 +131,11 @@ jobs:
         run: |
           cmake --build --preset ci-windows-msvc
 
+      - name: Generate Development PKI Certificates
+        shell: bash
+        run: |
+          bash scripts/generate-dev-pki.sh
+
       - name: Execute CTest Suite
         shell: pwsh
         run: |
@@ -155,6 +164,7 @@ jobs:
             mingw-w64-ucrt-x86_64-protobuf
             mingw-w64-ucrt-x86_64-grpc
             mingw-w64-ucrt-x86_64-gtest
+            mingw-w64-ucrt-x86_64-openssl
 
       - name: Configure CMake (MinGW UCRT64)
         shell: msys2 {0}
@@ -165,6 +175,11 @@ jobs:
         shell: msys2 {0}
         run: |
           cmake --build --preset ci-windows-mingw
+
+      - name: Generate Development PKI Certificates (MinGW UCRT64)
+        shell: msys2 {0}
+        run: |
+          bash scripts/generate-dev-pki.sh
 
       - name: Execute CTest Suite (MinGW UCRT64)
         shell: msys2 {0}

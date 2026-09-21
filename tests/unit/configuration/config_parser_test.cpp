@@ -133,7 +133,7 @@ TEST(ConfigParserTest, ValidatesFilesystemPaths) {
     auto p1 = ConfigParser::parse_path("PATH", "/etc/securecloud/certs/ca.crt", errors, false);
     ASSERT_TRUE(p1.has_value());
     if (p1.has_value()) {
-        EXPECT_EQ(p1.value().string(), "/etc/securecloud/certs/ca.crt");
+        EXPECT_EQ(p1.value().generic_string(), "/etc/securecloud/certs/ca.crt");
     }
 
     // Empty path
