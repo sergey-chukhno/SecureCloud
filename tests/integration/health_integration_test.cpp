@@ -543,28 +543,31 @@ TEST_F(HealthIntegrationTest, SecurityWrongClientIdentityRejectedPostHandshake) 
 int run_health_probe_cli(const std::vector<std::string>& extra_args) {
 #ifdef SECURECLOUD_HEALTH_PROBE_BIN
 #ifdef _WIN32
-    std::string cmdline = "\"" SECURECLOUD_HEALTH_PROBE_BIN "\"";
+    std::string bin_path = SECURECLOUD_HEALTH_PROBE_BIN;
+    for (char& c : bin_path) {
+        if (c == '/') {
+            c = '\\';
+        }
+    }
+
+    std::string cmdline = "\"" + bin_path + "\"";
     for (const auto& arg : extra_args) {
         cmdline += " \"";
         cmdline += arg;
         cmdline += "\"";
     }
 
-    STARTUPINFOW si{};
-    si.cb = sizeof(si);
-    si.dwFlags |= STARTF_USESTDHANDLES;
-    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    si.hStdOutput = INVALID_HANDLE_VALUE;
-    si.hStdError = INVALID_HANDLE_VALUE;
-
     SECURITY_ATTRIBUTES sa{};
     sa.nLength = sizeof(sa);
     sa.bInheritHandle = TRUE;
     HANDLE nul_handle = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
-    if (nul_handle != INVALID_HANDLE_VALUE) {
-        si.hStdOutput = nul_handle;
-        si.hStdError = nul_handle;
-    }
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    si.dwFlags |= STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = nul_handle;
+    si.hStdError = nul_handle;
 
     PROCESS_INFORMATION pi{};
     int wide_len = MultiByteToWideChar(CP_UTF8, 0, cmdline.c_str(), -1, nullptr, 0);
@@ -573,19 +576,27 @@ int run_health_probe_cli(const std::vector<std::string>& extra_args) {
 
     BOOL success = CreateProcessW(nullptr, wide_cmd.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi);
 
-    if (nul_handle != INVALID_HANDLE_VALUE) {
-        CloseHandle(nul_handle);
-    }
-
     if (!success) {
+        if (nul_handle != INVALID_HANDLE_VALUE) {
+            CloseHandle(nul_handle);
+        }
         return -1;
     }
 
-    WaitForSingleObject(pi.hProcess, 10000);
+    DWORD wait_res = WaitForSingleObject(pi.hProcess, 3000);
+    if (wait_res == WAIT_TIMEOUT) {
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, 1000);
+    }
+
     DWORD exit_code = 0;
     GetExitCodeProcess(pi.hProcess, &exit_code);
     CloseHandle(pi.hProcess);
     CloseHandle(pi.hThread);
+
+    if (nul_handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(nul_handle);
+    }
 
     return static_cast<int>(exit_code);
 #else
