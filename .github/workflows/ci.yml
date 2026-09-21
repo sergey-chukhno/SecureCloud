@@ -86,8 +86,23 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Install Ninja build system
+        shell: pwsh
+        run: |
+          choco install -y ninja
+          "C:\ProgramData\chocolatey\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
       - name: Set up MSVC Developer Command Prompt
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Ensure complete vcpkg git history
+        shell: pwsh
+        run: |
+          $isShallow = git -C $env:VCPKG_INSTALLATION_ROOT rev-parse --is-shallow-repository
+          if ($isShallow -eq "true") {
+            Write-Host "Unshallowing vcpkg repository..."
+            git -C $env:VCPKG_INSTALLATION_ROOT fetch --unshallow
+          }
 
       - name: Create vcpkg binary cache directory
         shell: pwsh
