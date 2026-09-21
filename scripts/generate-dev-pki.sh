@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Prevent Git Bash / MSYS2 from converting POSIX subject strings (e.g., /CN=...) into Windows file paths
+export MSYS_NO_PATHCONV=1
+export MSYS2_ARG_CONV_EXCL="*"
+
 # SecureCloud Development PKI Provisioning Tool
 # SC-009 — Establish Development CA and Service Certificates
 
@@ -47,7 +51,7 @@ echo "[SecureCloud PKI] Using OpenSSL tool: ${OPENSSL_VER}"
 
 # Create root PKI and subdirectories with strict permissions (0700)
 mkdir -p "${CA_DIR}" "${SERVICES_DIR}"
-chmod 700 "${PKI_DIR}" "${CA_DIR}" "${SERVICES_DIR}"
+chmod 700 "${PKI_DIR}" "${CA_DIR}" "${SERVICES_DIR}" 2>/dev/null || true
 
 CA_KEY="${CA_DIR}/ca.key"
 CA_CRT="${CA_DIR}/ca.crt"
@@ -66,23 +70,23 @@ else
         -subj "/CN=SecureCloud Development Root CA/O=SecureCloud Dev" \
         -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
         -addext "keyUsage=critical,digitalSignature,cRLSign,keyCertSign" \
-        -addext "subjectKeyIdentifier=hash" >/dev/null 2>&1
+        -addext "subjectKeyIdentifier=hash" >/dev/null
 
-    chmod 600 "${CA_KEY}"
-    chmod 644 "${CA_CRT}"
+    chmod 600 "${CA_KEY}" 2>/dev/null || true
+    chmod 644 "${CA_CRT}" 2>/dev/null || true
     CA_REGENERATED=true
     echo "[SecureCloud PKI] Root CA created."
 fi
 
 # Ensure CA key permissions remain strict 0600
-chmod 600 "${CA_KEY}"
-chmod 644 "${CA_CRT}"
+chmod 600 "${CA_KEY}" 2>/dev/null || true
+chmod 644 "${CA_CRT}" 2>/dev/null || true
 
 # Provision Service Identities
 for service in "${SERVICES[@]}"; do
     SVC_DIR="${SERVICES_DIR}/${service}"
     mkdir -p "${SVC_DIR}"
-    chmod 700 "${SVC_DIR}"
+    chmod 700 "${SVC_DIR}" 2>/dev/null || true
 
     SVC_KEY="${SVC_DIR}/${service}.key"
     SVC_CRT="${SVC_DIR}/${service}.crt"
@@ -91,20 +95,20 @@ for service in "${SERVICES[@]}"; do
 
     if [[ -f "${SVC_KEY}" && -f "${SVC_CRT}" && "${FORCE_REGEN}" == "false" && "${CA_REGENERATED}" == "false" ]]; then
         echo "[SecureCloud PKI] Service '${service}' certificate already exists. Preserving identity."
-        chmod 600 "${SVC_KEY}"
-        chmod 644 "${SVC_CRT}"
+        chmod 600 "${SVC_KEY}" 2>/dev/null || true
+        chmod 644 "${SVC_CRT}" 2>/dev/null || true
         continue
     fi
 
     echo "[SecureCloud PKI] Provisioning service identity: ${service}..."
 
     # Generate unique ECDSA P-256 private key for service
-    openssl ecparam -name prime256v1 -genkey -noout -out "${SVC_KEY}" >/dev/null 2>&1
-    chmod 600 "${SVC_KEY}"
+    openssl ecparam -name prime256v1 -genkey -noout -out "${SVC_KEY}" >/dev/null
+    chmod 600 "${SVC_KEY}" 2>/dev/null || true
 
     # Generate CSR for service
     openssl req -new -key "${SVC_KEY}" -out "${SVC_CSR}" \
-        -subj "/CN=${service}.dev.securecloud.local/O=SecureCloud Dev" >/dev/null 2>&1
+        -subj "/CN=${service}.dev.securecloud.local/O=SecureCloud Dev" >/dev/null
 
     # Create temporary extension configuration for service
     cat << EOF > "${SVC_EXT}"
@@ -119,10 +123,10 @@ EOF
     # Sign service certificate against Root CA
     openssl x509 -req -in "${SVC_CSR}" \
         -CA "${CA_CRT}" -CAkey "${CA_KEY}" -CAcreateserial \
-        -out "${SVC_CRT}" -days 365 -extfile "${SVC_EXT}" >/dev/null 2>&1
+        -out "${SVC_CRT}" -days 365 -extfile "${SVC_EXT}" >/dev/null
 
-    chmod 600 "${SVC_KEY}"
-    chmod 644 "${SVC_CRT}"
+    chmod 600 "${SVC_KEY}" 2>/dev/null || true
+    chmod 644 "${SVC_CRT}" 2>/dev/null || true
 
     # Cleanup temporary CSR and extension files
     rm -f "${SVC_CSR}" "${SVC_EXT}"
