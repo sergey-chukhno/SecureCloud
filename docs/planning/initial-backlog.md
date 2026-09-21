@@ -216,13 +216,34 @@ required dependencies are unavailable. Fully verified with 100% passing tests.
 
 ### SC-014 --- Establish initial CI pipeline
 
+**Status:** Completed (Milestone M1)\
 **Labels:** Infrastructure, Test, M1\
 **Owner:** Sergey\
 **Dependencies:** SC-003, SC-004, SC-005, SC-006
 
 Automate configure/build, CTest, formatting, and static-analysis gates.
 
-**Acceptance:** required failures block the CI result.
+**Implementation Summary:**
+- **SC-014-T01 (Cross-Platform Portability Foundation)**:
+  - Adapted transport probe and unit/integration test helpers for native compatibility across macOS, Windows MSVC, and Windows MinGW (Win32 sockets, WSAStartup/WSACleanup, CreateProcessW, ws2_32 linking).
+  - Preserved bounded 250 ms deadline, non-blocking polling, and fail-closed handling.
+  - Injected explicit manifest dependencies into `vcpkg.json` for deterministic Windows MSVC resolution while leaving macOS/MinGW host package managers untouched.
+  - Defined explicit `ci-windows-msvc` and `ci-windows-mingw` CMake presets.
+- **SC-014-T02 (Local Developer Verification Orchestrator)**:
+  - Authored `scripts/verify-local.py` strictly as an orchestrator consuming `CMakePresets.json`, `check-format`, `verify-contracts`, and `ctest`. Zero duplicated build/compiler logic.
+  - Provided thin POSIX (`verify-local.sh`) and Windows PowerShell (`verify-local.ps1`) wrappers.
+  - Added `verify-contracts` CMake custom target.
+- **SC-014-T03 (GitHub Actions Multi-Platform CI Pipeline)**:
+  - Authored `.github/workflows/ci.yml` with pinned runner versions (`macos-14`, `windows-2022`).
+  - Implemented 4 parallel jobs: `quality-gates` (canonical runner for clang-format, clang-tidy, and contracts), `macos-build-test`, `windows-msvc-build-test`, and `windows-mingw-build-test` (using verified UCRT64 package identifiers).
+- **SC-014-T04 (CodeRabbit Review Integration)**:
+  - Configured `.coderabbit.yaml` adhering strictly to schema v2 with assertive profile and SecureCloud-specific path instructions.
+  - Clearly separated review configuration from GitHub branch protection enforcement.
+- **SC-014-T05 (Developer Workflow Documentation & Branch Protection Spec)**:
+  - Authored comprehensive developer documentation in `docs/implementation/development-workflow.md`.
+  - Detailed GitHub repository branch protection rules for `main`.
+
+**Acceptance:** required failures block the CI result; all local verification stages pass 100%. Fully verified.
 
 ### SC-015 --- Validate distributed development environment
 

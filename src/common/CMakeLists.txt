@@ -23,3 +23,7 @@ target_link_libraries(securecloud_common PUBLIC
     securecloud_proto
     gRPC::grpc++
 )
+
+if(WIN32)
+    target_link_libraries(securecloud_common PUBLIC ws2_32)
+endif()

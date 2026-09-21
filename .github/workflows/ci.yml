@@ -1,0 +1,157 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+jobs:
+  # ============================================================================
+  # Canonical Quality Gate (macOS Apple Silicon arm64)
+  # Runs formatting check, clang-tidy static analysis, and contract smoke tests.
+  # Avoids duplicating expensive static analysis across multiple platform jobs.
+  # ============================================================================
+  quality-gates:
+    name: Quality Gates (Formatting, Clang-Tidy, Contracts)
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Homebrew dependencies
+        run: |
+          brew update --quiet
+          brew install protobuf grpc googletest llvm ninja
+
+      - name: Configure CMake with Static Analysis
+        run: |
+          cmake --preset ci-macos -DENABLE_CLANG_TIDY=ON
+
+      - name: Check Formatting (.clang-format)
+        run: |
+          cmake --build --preset ci-macos --target check-format
+
+      - name: Run Clang-Tidy & Build Contract Targets
+        run: |
+          cmake --build --preset ci-macos --target securecloud_proto_smoke_test
+
+      - name: Validate Generated Protobuf & gRPC Contracts
+        run: |
+          cmake --build --preset ci-macos --target verify-contracts
+
+  # ============================================================================
+  # Native macOS Build & Test Job (Apple Silicon arm64)
+  # ============================================================================
+  macos-build-test:
+    name: macOS (AppleClang / arm64)
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Homebrew dependencies
+        run: |
+          brew update --quiet
+          brew install protobuf grpc googletest ninja
+
+      - name: Configure CMake
+        run: |
+          cmake --preset ci-macos
+
+      - name: Build All Targets
+        run: |
+          cmake --build --preset ci-macos
+
+      - name: Execute CTest Suite
+        run: |
+          ctest --preset ci-macos --output-on-failure
+
+  # ============================================================================
+  # Native Windows MSVC Build & Test Job (MSVC 2022 / vcpkg)
+  # ============================================================================
+  windows-msvc-build-test:
+    name: Windows (MSVC 2022 / vcpkg)
+    runs-on: windows-2022
+    env:
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Create vcpkg binary cache directory
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ env.VCPKG_DEFAULT_BINARY_CACHE }}"
+
+      - name: Restore vcpkg binary cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
+          key: vcpkg-binary-cache-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-binary-cache-${{ runner.os }}-
+
+      - name: Configure CMake with MSVC & vcpkg
+        shell: pwsh
+        run: |
+          cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build All Targets
+        shell: pwsh
+        run: |
+          cmake --build --preset ci-windows-msvc
+
+      - name: Execute CTest Suite
+        shell: pwsh
+        run: |
+          ctest --preset ci-windows-msvc --output-on-failure
+
+  # ============================================================================
+  # Native Windows MinGW Build & Test Job (MSYS2 UCRT64 / GCC 14+)
+  # ============================================================================
+  windows-mingw-build-test:
+    name: Windows (MinGW-w64 UCRT64 / GCC 14+)
+    runs-on: windows-2022
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2 UCRT64 Environment
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          path-type: minimal
+          install: >-
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-protobuf
+            mingw-w64-ucrt-x86_64-grpc
+            mingw-w64-ucrt-x86_64-gtest
+
+      - name: Configure CMake (MinGW UCRT64)
+        shell: msys2 {0}
+        run: |
+          cmake --preset ci-windows-mingw
+
+      - name: Build All Targets (MinGW UCRT64)
+        shell: msys2 {0}
+        run: |
+          cmake --build --preset ci-windows-mingw
+
+      - name: Execute CTest Suite (MinGW UCRT64)
+        shell: msys2 {0}
+        run: |
+          ctest --preset ci-windows-mingw --output-on-failure

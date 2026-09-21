@@ -211,33 +211,166 @@ The author remains responsible for correctness; the reviewer verifies assumption
 
 ---
 
-# 9. CI Before Merge
+# 9. CI, CodeRabbit & Merge Gates
 
-A PR cannot merge when required CI checks fail.
+### 9.1 Merge Workflow Lifecycle
 
-Minimum PR checks:
+Every contribution strictly follows the 7-step merge lifecycle:
 
-```text id="l1a8zq"
-Build
-Unit tests
-Relevant integration tests
-Contract tests
-clang-format
-clang-tidy
-AddressSanitizer
+```text
+feature branch
+    ↓
+local verification (./scripts/verify-local.sh)
+    ↓
+commit
+    ↓
+Pull Request
+    ↓
+GitHub Actions CI
+    ↓
+CodeRabbit Automated Review
+    ↓
+Human Review (1+ approval)
+    ↓
+Protected main
 ```
 
-Additional tests are required when relevant:
+---
 
-```text id="r9v2cs"
-ThreadSanitizer
-Security tests
-Resilience tests
-E2E tests
-Performance benchmarks
+### 9.2 Developer Platform Prerequisites
+
+The project natively supports three primary developer environments:
+
+#### 1. macOS / Apple Silicon (`arm64`)
+- macOS 14+ with Xcode 15+ Command Line Tools (`xcode-select --install`)
+- Homebrew packages:
+  ```bash
+  brew install cmake ninja protobuf grpc googletest llvm
+  ```
+- Toolchain: AppleClang, Ninja, Homebrew LLVM (`clang-format`, `clang-tidy`).
+
+#### 2. Windows 11 / Server 2022 with MSVC
+- Visual Studio 2022 (Community, Professional, or Enterprise) with "Desktop development with C++".
+- CMake 3.28+ and Ninja installed and available on `PATH`.
+- vcpkg installation (`VCPKG_INSTALLATION_ROOT` environment variable configured).
+- Toolchain: MSVC `cl.exe` (v19.38+), Ninja, vcpkg manifest mode.
+
+#### 3. Windows with MinGW-w64 (MSYS2 UCRT64)
+- MSYS2 installed with `UCRT64` environment:
+  ```bash
+  pacman -S --noconfirm --needed \
+    mingw-w64-ucrt-x86_64-toolchain \
+    mingw-w64-ucrt-x86_64-cmake \
+    mingw-w64-ucrt-x86_64-ninja \
+    mingw-w64-ucrt-x86_64-protobuf \
+    mingw-w64-ucrt-x86_64-grpc \
+    mingw-w64-ucrt-x86_64-gtest
+  ```
+- Toolchain: GCC 14+ (C++20 baseline), Ninja.
+
+---
+
+### 9.3 Local Developer Verification Orchestrator
+
+Before committing changes, developers execute the unified local verification orchestrator:
+
+- **POSIX (macOS / Linux / MSYS2)**:
+  ```bash
+  ./scripts/verify-local.sh
+  ```
+- **Windows (PowerShell)**:
+  ```powershell
+  .\scripts\verify-local.ps1
+  ```
+
+#### Orchestrator Architectural Role
+`scripts/verify-local.py` is strictly an **orchestrator**, not a secondary build system. It discovers and validates targets directly from `CMakePresets.json` and invokes CMake and CTest targets:
+
+1. **Stage 1 (Configure)**: `cmake --preset <preset>`
+2. **Stage 2 (Formatting)**: `cmake --build --preset <preset> --target check-format`
+3. **Stage 3 (Native Build)**: `cmake --build --preset <preset>`
+4. **Stage 4 (Contracts Validation)**: `cmake --build --preset <preset> --target verify-contracts`
+5. **Stage 5 (CTest Suite)**: `ctest --preset <preset> --output-on-failure`
+6. **Stage 6 (Extended Verification)**: Executed when `--full` is passed (`verify-dev-pki.sh`, `verify-service-config.sh`).
+
+#### Useful Flags
+```bash
+./scripts/verify-local.sh --help             # Display all options
+./scripts/verify-local.sh --list-presets     # List presets from CMakePresets.json
+./scripts/verify-local.sh --detect           # Auto-detect platform preset (e.g. ci-macos)
+./scripts/verify-local.sh --full             # Run full suite including PKI & config scripts
+./scripts/verify-local.sh --skip-format      # Skip formatting stage during rapid iteration
+./scripts/verify-local.sh --tidy             # Enable clang-tidy static analysis
 ```
 
-The PR author must fix the failure or explicitly resolve it with the reviewer. Never bypass a failing security/correctness test merely to merge.
+#### Formatting Remediation
+If the formatting check fails in Stage 2, apply `.clang-format` rules in-place via:
+```bash
+cmake --build --preset <preset> --target format
+```
+
+---
+
+### 9.4 Continuous Integration Architecture
+
+The official CI pipeline is authored in `.github/workflows/ci.yml`. It uses explicitly pinned runner versions and a deduplicated quality gate structure:
+
+| Job Name | Runner Version | Responsibilities |
+| :--- | :--- | :--- |
+| **`quality-gates`** | `macos-14` | Canonical quality gate: `.clang-format` check, `clang-tidy` static analysis (`WarningsAsErrors: '*'`), Protobuf/gRPC contract smoke test. Avoids running expensive static analysis three times. |
+| **`macos-build-test`** | `macos-14` | Native AppleClang build (`ci-macos`) and 81/81 CTest suite execution. |
+| **`windows-msvc-build-test`** | `windows-2022` | Native MSVC 2022 build (`ci-windows-msvc`) with vcpkg binary cache restore and CTest suite execution. |
+| **`windows-mingw-build-test`** | `windows-2022` | Native MinGW GCC build (`ci-windows-mingw`) using precompiled MSYS2 UCRT64 packages and CTest suite execution. |
+
+---
+
+### 9.5 CodeRabbit Automated Review
+
+- CodeRabbit is configured via `.coderabbit.yaml` (schema version 2).
+- It provides automated architectural, security, and C++20 memory safety analysis on pull requests targeting `main`.
+- **Review Scope**:
+  - `src/**`: C++20 memory safety (RAII, zero raw owning pointers), concurrency/thread safety, fail-closed socket probes (<= 250 ms), mutual TLS client certificate verification, `SecretString` secret hygiene, and cross-platform Winsock/POSIX conventions.
+  - `tests/**`: Determinism, no arbitrary sleeps, and strict developer host PostgreSQL isolation.
+  - `cmake/**`: Modern target-based CMake idioms.
+  - `.github/**`: Runner pinning and MSYS2 UCRT64 package integrity.
+- **Architectural Disclaimer**: `.coderabbit.yaml` configures automated review commentary. Pull request merge protection is enforced separately by GitHub branch protection rules on `main`.
+
+---
+
+### 9.6 GitHub Branch Protection Specification for `main`
+
+To ensure no broken or unreviewed code reaches production, the repository administrator must configure the following GitHub Branch Protection Rules for the `main` branch under **Repository Settings → Branches → Branch protection rules**:
+
+1. **Branch Name Pattern**:
+   ```text
+   main
+   ```
+
+2. **Protect Matching Branches Settings**:
+   - **Require a pull request before merging**:
+     - Check: *Require approvals* (Minimum: **1 approval**).
+     - Check: *Dismiss stale pull request approvals when new commits are pushed*.
+     - Check: *Require review from Code Owners* (optional/recommended).
+   - **Require status checks to pass before merging**:
+     - Check: *Require branches to be up to date before merging*.
+     - Search and select the exact 4 required status checks:
+       1. `Quality Gates (Formatting, Clang-Tidy, Contracts)`
+       2. `macOS (AppleClang / arm64)`
+       3. `Windows (MSVC 2022 / vcpkg)`
+       4. `Windows (MinGW-w64 UCRT64 / GCC 14+)`
+   - **Do not allow bypassing the above settings**:
+     - Check: Enforce rules for administrators.
+   - **Restrict who can push to matching branches**:
+     - Enable to prohibit direct `git push origin main`.
+
+---
+
+### 9.7 Developer Workstation Host Invariant
+
+> [!CAUTION]
+> **Hard Invariant**: The developer workstation operates an independent **PostgreSQL 14** instance on `localhost:5432`.
+>
+> CI workflows, unit test suites, integration tests, and local verification scripts (`verify-local.sh`) MUST NEVER stop, restart, reconfigure, or attempt to bind to host port `5432`. Ephemeral CI environments execute in isolated virtual machines, and local development testing uses designated non-conflicting ports.
 
 ---
 
