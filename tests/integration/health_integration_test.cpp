@@ -112,7 +112,7 @@ class ScopedTcpListener {
         ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
 #endif
 
-        struct sockaddr_in addr{};
+        sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         addr.sin_port = 0;

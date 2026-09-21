@@ -92,7 +92,7 @@ bool check_poll_result(socket_handle_t sockfd, int timeout_ms) noexcept {
     int len = sizeof(so_error);
     return (::getsockopt(sockfd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so_error), &len) == 0 && so_error == 0);
 #else
-    struct pollfd pfd{};
+    pollfd pfd{};
     pfd.fd = sockfd;
     pfd.events = POLLOUT;
 
@@ -189,7 +189,7 @@ bool probe_tcp_connectivity(std::string_view host, uint16_t port, std::chrono::m
         std::string host_str(host);
         std::string port_str = std::to_string(port);
 
-        struct addrinfo hints{};
+        addrinfo hints{};
         hints.ai_family = AF_UNSPEC;
         hints.ai_socktype = SOCK_STREAM;
         hints.ai_protocol = IPPROTO_TCP;
