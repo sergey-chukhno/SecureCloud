@@ -77,7 +77,7 @@ jobs:
 
       - name: Generate Development PKI Certificates
         run: |
-          bash scripts/generate-dev-pki.sh
+          bash scripts/generate-dev-pki.sh --force
 
       - name: Execute CTest Suite
         run: |
@@ -139,7 +139,7 @@ jobs:
       - name: Generate Development PKI Certificates
         shell: bash
         run: |
-          bash scripts/generate-dev-pki.sh
+          bash scripts/generate-dev-pki.sh --force
 
       - name: Execute CTest Suite
         shell: pwsh
@@ -184,7 +184,7 @@ jobs:
       - name: Generate Development PKI Certificates (MinGW UCRT64)
         shell: msys2 {0}
         run: |
-          bash scripts/generate-dev-pki.sh
+          bash scripts/generate-dev-pki.sh --force
 
       - name: Execute CTest Suite (MinGW UCRT64)
         shell: msys2 {0}

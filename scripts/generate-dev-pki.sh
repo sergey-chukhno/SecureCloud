@@ -76,6 +76,7 @@ else
     
     # Generate Root CA key & cert atomically
     openssl req -x509 -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+        -pkeyopt ec_param_enc:named_curve -sha256 \
         -keyout "${CA_KEY}" -out "${CA_CRT}" -nodes -days 365 \
         -subj "/CN=SecureCloud Development Root CA/O=SecureCloud Dev" \
         -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \
@@ -112,12 +113,12 @@ for service in "${SERVICES[@]}"; do
 
     echo "[SecureCloud PKI] Provisioning service identity: ${service}..."
 
-    # Generate unique ECDSA P-256 private key for service
-    openssl ecparam -name prime256v1 -genkey -noout -out "${SVC_KEY}" >/dev/null
+    # Generate unique ECDSA P-256 private key for service with explicit named curve encoding
+    openssl ecparam -name prime256v1 -genkey -param_enc named_curve -noout -out "${SVC_KEY}" >/dev/null
     chmod 600 "${SVC_KEY}" 2>/dev/null || true
 
     # Generate CSR for service
-    openssl req -new -key "${SVC_KEY}" -out "${SVC_CSR}" \
+    openssl req -new -key "${SVC_KEY}" -sha256 -out "${SVC_CSR}" \
         -subj "/CN=${service}.dev.securecloud.local/O=SecureCloud Dev" >/dev/null
 
     # Create temporary extension configuration for service
@@ -130,8 +131,8 @@ authorityKeyIdentifier = keyid,issuer
 subjectAltName = DNS:${service}
 EOF
 
-    # Sign service certificate against Root CA
-    openssl x509 -req -in "${SVC_CSR}" \
+    # Sign service certificate against Root CA using SHA-256
+    openssl x509 -req -sha256 -in "${SVC_CSR}" \
         -CA "${CA_CRT}" -CAkey "${CA_KEY}" -CAcreateserial \
         -out "${SVC_CRT}" -days 365 -extfile "${SVC_EXT}" >/dev/null
 
