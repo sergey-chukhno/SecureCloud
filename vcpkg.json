@@ -3,8 +3,10 @@
   "name": "securecloud",
   "version-string": "0.1.0",
   "description": "SecureCloud Enterprise E2EE Platform dependency manifest baseline",
-  "builtin-baseline": "34262174c431d17d0c3eb72bc13d5ff648ab03b5",
+  "builtin-baseline": "b322364f06308bdd24823f9d8f03fe0cc86fd46f",
   "dependencies": [
-    "gtest"
+    "grpc",
+    "gtest",
+    "protobuf"
   ]
 }

@@ -4,25 +4,35 @@
 #include "securecloud/health/transport_probe.hpp"
 #include "securecloud/security/mtls_config.hpp"
 
-#include <arpa/inet.h>
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
-#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
 #include <memory>
-#include <netinet/in.h>
-#include <spawn.h>
 #include <sstream>
 #include <string>
+#include <vector>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <netinet/in.h>
+#include <spawn.h>
 #include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <vector>
+#endif
 
 namespace securecloud::common {
 namespace {
@@ -32,6 +42,43 @@ using health::HealthStatusManager;
 using health::probe_tcp_connectivity;
 using security::MtlsCredentialLoader;
 using security::SecurityCredentialsConfig;
+
+#ifdef _WIN32
+using socket_handle_t = SOCKET;
+constexpr socket_handle_t k_invalid_socket = INVALID_SOCKET;
+
+inline void close_socket_handle(socket_handle_t s) noexcept {
+    if (s != INVALID_SOCKET) {
+        ::closesocket(s);
+    }
+}
+
+inline void ensure_integration_winsock() noexcept {
+    struct WinsockInit {
+        WinsockInit() noexcept {
+            WSADATA wsa{};
+            (void)::WSAStartup(MAKEWORD(2, 2), &wsa);
+        }
+        ~WinsockInit() noexcept { ::WSACleanup(); }
+    };
+    static WinsockInit init;
+}
+
+using socklen_val_t = int;
+#else
+using socket_handle_t = int;
+constexpr socket_handle_t k_invalid_socket = -1;
+
+inline void close_socket_handle(socket_handle_t s) noexcept {
+    if (s >= 0) {
+        ::close(s);
+    }
+}
+
+inline void ensure_integration_winsock() noexcept {}
+
+using socklen_val_t = socklen_t;
+#endif
 
 constexpr int k_listen_backlog = 5;
 constexpr std::chrono::milliseconds k_test_probe_timeout{250};
@@ -51,15 +98,21 @@ std::string read_file_content(const std::filesystem::path& path) {
 class ScopedTcpListener {
   public:
     ScopedTcpListener() {
+        ensure_integration_winsock();
         listen_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
-        if (listen_fd_ < 0) {
+        if (listen_fd_ == k_invalid_socket) {
             return;
         }
 
+#ifdef _WIN32
+        const char opt = 1;
+        ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#else
         int opt = 1;
         ::setsockopt(listen_fd_, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+#endif
 
-        struct sockaddr_in addr{};
+        sockaddr_in addr{};
         addr.sin_family = AF_INET;
         addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         addr.sin_port = 0;
@@ -74,7 +127,7 @@ class ScopedTcpListener {
             return;
         }
 
-        socklen_t len = sizeof(addr);
+        socklen_val_t len = sizeof(addr);
         if (::getsockname(listen_fd_, reinterpret_cast<struct sockaddr*>(&addr), &len) == 0) {
             port_ = ntohs(addr.sin_port);
         }
@@ -88,24 +141,30 @@ class ScopedTcpListener {
     ScopedTcpListener& operator=(ScopedTcpListener&&) = delete;
 
     void stop() noexcept {
-        if (listen_fd_ >= 0) {
-            ::close(listen_fd_);
-            listen_fd_ = -1;
+        if (listen_fd_ != k_invalid_socket) {
+            close_socket_handle(listen_fd_);
+            listen_fd_ = k_invalid_socket;
         }
     }
 
     [[nodiscard]] uint16_t port() const noexcept { return port_; }
 
-    [[nodiscard]] bool is_listening() const noexcept { return listen_fd_ >= 0; }
+    [[nodiscard]] bool is_listening() const noexcept { return listen_fd_ != k_invalid_socket; }
 
   private:
-    int listen_fd_{-1};
+    socket_handle_t listen_fd_{k_invalid_socket};
     uint16_t port_{0};
 };
 
 class HealthIntegrationTest : public ::testing::Test {
   protected:
     static std::filesystem::path find_pki_root() {
+#ifdef SECURECLOUD_DEV_PKI_DIR
+        std::filesystem::path defined_path(SECURECLOUD_DEV_PKI_DIR);
+        if (std::filesystem::exists(defined_path / "ca" / "ca.crt")) {
+            return defined_path;
+        }
+#endif
         auto curr = std::filesystem::current_path();
         while (!curr.empty() && curr != curr.root_path()) {
             if (std::filesystem::exists(curr / "deploy" / "dev-pki" / "ca" / "ca.crt")) {
@@ -483,6 +542,64 @@ TEST_F(HealthIntegrationTest, SecurityWrongClientIdentityRejectedPostHandshake) 
 
 int run_health_probe_cli(const std::vector<std::string>& extra_args) {
 #ifdef SECURECLOUD_HEALTH_PROBE_BIN
+#ifdef _WIN32
+    std::string bin_path = SECURECLOUD_HEALTH_PROBE_BIN;
+    for (char& c : bin_path) {
+        if (c == '/') {
+            c = '\\';
+        }
+    }
+
+    std::string cmdline = "\"" + bin_path + "\"";
+    for (const auto& arg : extra_args) {
+        cmdline += " \"";
+        cmdline += arg;
+        cmdline += "\"";
+    }
+
+    SECURITY_ATTRIBUTES sa{};
+    sa.nLength = sizeof(sa);
+    sa.bInheritHandle = TRUE;
+    HANDLE nul_handle = CreateFileW(L"NUL", GENERIC_WRITE, FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
+
+    STARTUPINFOW si{};
+    si.cb = sizeof(si);
+    si.dwFlags |= STARTF_USESTDHANDLES;
+    si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    si.hStdOutput = nul_handle;
+    si.hStdError = nul_handle;
+
+    PROCESS_INFORMATION pi{};
+    int wide_len = MultiByteToWideChar(CP_UTF8, 0, cmdline.c_str(), -1, nullptr, 0);
+    std::vector<wchar_t> wide_cmd(wide_len);
+    MultiByteToWideChar(CP_UTF8, 0, cmdline.c_str(), -1, wide_cmd.data(), wide_len);
+
+    BOOL success = CreateProcessW(nullptr, wide_cmd.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi);
+
+    if (!success) {
+        if (nul_handle != INVALID_HANDLE_VALUE) {
+            CloseHandle(nul_handle);
+        }
+        return -1;
+    }
+
+    DWORD wait_res = WaitForSingleObject(pi.hProcess, 3000);
+    if (wait_res == WAIT_TIMEOUT) {
+        TerminateProcess(pi.hProcess, 1);
+        WaitForSingleObject(pi.hProcess, 1000);
+    }
+
+    DWORD exit_code = 0;
+    GetExitCodeProcess(pi.hProcess, &exit_code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+
+    if (nul_handle != INVALID_HANDLE_VALUE) {
+        CloseHandle(nul_handle);
+    }
+
+    return static_cast<int>(exit_code);
+#else
     std::vector<std::string> args_storage;
     args_storage.reserve(extra_args.size() + 1);
     args_storage.emplace_back(SECURECLOUD_HEALTH_PROBE_BIN);
@@ -519,6 +636,7 @@ int run_health_probe_cli(const std::vector<std::string>& extra_args) {
         return WEXITSTATUS(status);
     }
     return -1;
+#endif
 #else
     (void)extra_args;
     return -1;

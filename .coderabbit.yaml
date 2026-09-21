@@ -1,0 +1,99 @@
+# ==============================================================================
+# SecureCloud CodeRabbit Configuration Reference (Schema Version 2)
+# ==============================================================================
+# IMPORTANT NOTICE ON MERGE ENFORCEMENT:
+# This file configures CodeRabbit automated review behavior, rules, and focus areas.
+# Pull Request merge blocking is governed separately by GitHub repository settings
+# and Branch Protection Rules for 'main' (e.g. required status checks, approvals).
+# This configuration file alone does not enforce merge protection.
+# ==============================================================================
+
+version: "2"
+language: "en-US"
+
+reviews:
+  # Review profile: "assertive" provides rigorous, security-focused critique
+  profile: "assertive"
+
+  # Keep standard PR review comments without blocking changes workflow
+  request_changes_workflow: false
+
+  # Include a high-level summary of the PR changes
+  high_level_summary: true
+
+  # Disable decorative poems in review comments
+  poem: false
+
+  # Add review status badge / comment
+  review_status: true
+
+  # Auto-review configuration
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "main"
+
+  # Path-specific review instructions tailored to SecureCloud's architecture
+  path_instructions:
+    - path: "src/**"
+      instructions: |
+        Review C++20 production code strictly adhering to SecureCloud standards:
+        1. Memory Safety & RAII:
+           - Enforce strict RAII, explicit resource ownership, and smart pointers.
+           - Prohibit owning raw pointers and manual delete.
+           - Guard against undefined behavior, memory leaks, and buffer overruns.
+        2. Concurrency & Thread Safety:
+           - Check mutex locking orders and lock contention in HealthStatusManager and shared state.
+           - Ensure all shared mutable state is properly synchronized; zero data races.
+        3. Fail-Closed Security Posture:
+           - All security checks, probes, and validators must fail-closed on any error or timeout.
+           - Probe deadlines must remain strictly bounded (<= 250 ms) with non-blocking socket polling.
+           - Never swallow error codes or exceptions.
+        4. Cryptography & mTLS:
+           - Enforce mutual TLS verification: servers must require and verify client certificates.
+           - Ensure client certificates validate server identity and SAN.
+           - Verify that credentials, private keys, and tokens use SecretString with memory masking.
+           - Never log sensitive credentials or private key material.
+        5. Cross-Platform Portability:
+           - Ensure clean compatibility across macOS (AppleClang), Windows (MSVC 2022), and Windows (MinGW GCC 14+ / UCRT64).
+           - On Windows, verify Winsock2 initialization (WSAStartup/WSACleanup) and Win32 socket mapping.
+           - Prohibit unguarded POSIX headers (<unistd.h>, <poll.h>, <sys/socket.h>, etc.).
+        6. Architectural Boundaries:
+           - Preserve 5-service separation (Gateway, Auth, Messaging, Files, Audit).
+           - Enforce that Gateway performs local readiness only (no backend network probing).
+           - No background polling threads in health services.
+
+    - path: "tests/**"
+      instructions: |
+        Review test code for:
+        1. Determinism:
+           - No arbitrary sleeps; use bounded deadlines and condition synchronization.
+        2. Host Invariant Isolation:
+           - Tests must NEVER bind to, reconfigure, or stop developer host PostgreSQL on localhost:5432.
+        3. Cross-Platform Portability:
+           - Use ScopedEphemeralListener for loopback testing.
+           - Verify process execution helpers support both Windows CreateProcessW and POSIX spawn.
+
+    - path: "cmake/**"
+      instructions: |
+        Review CMake configuration for:
+        1. Target-based modern CMake:
+           - No global include_directories() or link_libraries().
+           - Use target_include_directories() and target_link_libraries() with explicit scopes.
+        2. Multi-Platform Support:
+           - Correct compiler flag definitions across AppleClang, MSVC, and GCC.
+           - Out-of-source code generation in ${CMAKE_BINARY_DIR}.
+
+    - path: ".github/**"
+      instructions: |
+        Review GitHub Actions workflows for:
+        1. Pinned Runner Versions:
+           - Explicitly use macos-14 and windows-2022 runners (avoid floating *-latest).
+        2. Verified MSYS2 Packages:
+           - Ensure verified UCRT64 package names are used.
+        3. Security & Integrity:
+           - Strict exit code propagation (no '|| true' swallowing errors).
+
+chat:
+  auto_reply: true

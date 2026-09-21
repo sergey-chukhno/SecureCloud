@@ -51,6 +51,33 @@
       }
     },
     {
+      "name": "ci-windows-msvc",
+      "displayName": "CI Windows MSVC Build Preset",
+      "description": "Strict build configuration for Windows MSVC CI environment",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ci-windows-msvc",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "VCPKG_TARGET_TRIPLET": "x64-windows"
+      }
+    },
+    {
+      "name": "ci-windows-mingw",
+      "displayName": "CI Windows MinGW Build Preset",
+      "description": "Strict build configuration for Windows MinGW UCRT64 CI environment",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/ci-windows-mingw",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
+      }
+    },
+    {
       "name": "ci-windows",
       "displayName": "CI Windows Build Preset",
       "description": "Strict build configuration for Windows CI environment",
@@ -82,6 +109,16 @@
       "name": "ci-macos",
       "displayName": "Build CI macOS",
       "configurePreset": "ci-macos"
+    },
+    {
+      "name": "ci-windows-msvc",
+      "displayName": "Build CI Windows MSVC",
+      "configurePreset": "ci-windows-msvc"
+    },
+    {
+      "name": "ci-windows-mingw",
+      "displayName": "Build CI Windows MinGW",
+      "configurePreset": "ci-windows-mingw"
     },
     {
       "name": "ci-windows",
@@ -122,6 +159,22 @@
       "name": "ci-macos",
       "displayName": "Test CI macOS",
       "configurePreset": "ci-macos",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-windows-msvc",
+      "displayName": "Test CI Windows MSVC",
+      "configurePreset": "ci-windows-msvc",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-windows-mingw",
+      "displayName": "Test CI Windows MinGW",
+      "configurePreset": "ci-windows-mingw",
       "output": {
         "outputOnFailure": true
       }

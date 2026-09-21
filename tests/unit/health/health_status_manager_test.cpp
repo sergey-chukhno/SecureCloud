@@ -109,10 +109,7 @@ TEST(HealthStatusManagerTest, ReadinessEvaluatorExceptionSafety) {
     manager.set_live(true);
     manager.set_ready(true);
 
-    manager.set_readiness_evaluator([] {
-        throw std::runtime_error("Simulated socket error");
-        return false;
-    });
+    manager.set_readiness_evaluator([]() -> bool { throw std::runtime_error("Simulated socket error"); });
 
     EXPECT_FALSE(manager.evaluate_readiness());
 }

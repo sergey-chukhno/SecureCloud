@@ -1,3 +1,16 @@
+# Auto-generate dev PKI certificates if missing and bash/openssl are available
+find_program(BASH_EXECUTABLE NAMES bash)
+if(BASH_EXECUTABLE AND NOT EXISTS "${CMAKE_SOURCE_DIR}/deploy/dev-pki/ca/ca.crt")
+    execute_process(
+        COMMAND ${BASH_EXECUTABLE} "${CMAKE_SOURCE_DIR}/scripts/generate-dev-pki.sh" --force
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        RESULT_VARIABLE PKI_GEN_RES
+    )
+    if(NOT PKI_GEN_RES EQUAL 0)
+        message(WARNING "Failed to generate development PKI certificates automatically")
+    endif()
+endif()
+
 # gRPC mTLS Integration Test Suite (SC10-T03)
 add_executable(securecloud_mtls_integration_test
     mtls_integration_test.cpp
@@ -8,6 +21,10 @@ target_link_libraries(securecloud_mtls_integration_test PRIVATE
     securecloud_proto
     securecloud::compiler_flags
     GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_mtls_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
 )
 
 gtest_discover_tests(securecloud_mtls_integration_test)
@@ -26,6 +43,7 @@ target_link_libraries(securecloud_health_integration_test PRIVATE
 
 target_compile_definitions(securecloud_health_integration_test PRIVATE
     SECURECLOUD_HEALTH_PROBE_BIN="$<TARGET_FILE:securecloud_health_probe>"
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
 )
 
 add_dependencies(securecloud_health_integration_test securecloud_health_probe)

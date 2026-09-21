@@ -1,6 +1,14 @@
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/security/mtls_config.hpp"
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#include <winsock2.h>
+#endif
+
 #include <cerrno>
 #include <chrono>
 #include <cstdlib>
@@ -190,13 +198,18 @@ int run_probe(int argc, char* const* argv) {
 } // namespace
 
 int main(int argc, char* argv[]) noexcept {
+#ifdef _WIN32
+    WSADATA wsa{};
+    (void)::WSAStartup(MAKEWORD(2, 2), &wsa);
+#endif
     try {
-        return run_probe(argc, argv);
+        int ret = run_probe(argc, argv);
+        std::_Exit(ret);
     } catch (const std::exception& ex) {
         std::cerr << "FATAL: " << ex.what() << "\n";
-        return k_exit_rpc_error;
+        std::_Exit(k_exit_rpc_error);
     } catch (...) {
         std::cerr << "FATAL: unknown exception\n";
-        return k_exit_rpc_error;
+        std::_Exit(k_exit_rpc_error);
     }
 }
