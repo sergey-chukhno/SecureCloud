@@ -256,7 +256,31 @@ def auto_detect_preset() -> str:
     if system == "Darwin":
         return "ci-macos"
     elif system == "Windows":
+        # Check if MinGW / MSYS2 / GCC environment is active
+        msystem = os.environ.get("MSYSTEM", "").upper()
+        if "MINGW" in msystem or "UCRT" in msystem or "CLANG" in msystem:
+            return "ci-windows-mingw"
+
+        import shutil
+        has_gcc = (shutil.which("gcc") is not None or shutil.which("g++") is not None)
+        has_cl = (shutil.which("cl") is not None)
+
+        if has_gcc and not has_cl:
+            return "ci-windows-mingw"
+
+        if not has_cl and not has_gcc:
+            # Probe standard MSYS2 MinGW / UCRT installation paths
+            for candidate in [
+                Path("C:/msys64/mingw64/bin/g++.exe"),
+                Path("C:/msys64/ucrt64/bin/g++.exe"),
+                Path("C:/msys64/clang64/bin/clang++.exe"),
+            ]:
+                if candidate.exists():
+                    return "ci-windows-mingw"
+
         return "ci-windows-msvc"
+    elif system == "Linux":
+        return "ci-linux"
     return "dev-debug"
 
 
@@ -270,13 +294,13 @@ def main() -> int:
     parser.add_argument(
         "--preset",
         "-p",
-        default="dev-debug",
-        help="CMake preset to execute (default: dev-debug; use --detect to pick platform preset)",
+        default=None,
+        help="CMake preset to execute (default: auto-detected platform preset on Windows, dev-debug on POSIX)",
     )
     parser.add_argument(
         "--detect",
         action="store_true",
-        help="Auto-detect preset based on host platform (ci-macos, ci-windows-msvc, etc.)",
+        help="Force auto-detect preset based on host platform (ci-macos, ci-windows-mingw, ci-windows-msvc, etc.)",
     )
     parser.add_argument(
         "--list-presets",
@@ -327,7 +351,12 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    preset = auto_detect_preset() if args.detect else args.preset
+    if args.preset:
+        preset = args.preset
+    elif args.detect or platform.system() == "Windows":
+        preset = auto_detect_preset()
+    else:
+        preset = "dev-debug"
     orchestrator = VerificationOrchestrator(repo_root, preset=preset, verbose=args.verbose)
 
     if args.list_presets:

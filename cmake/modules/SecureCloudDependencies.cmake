@@ -12,6 +12,33 @@ else()
     message(STATUS "[SecureCloud] Standard host toolchain discovery active")
 endif()
 
+# Proactive discovery of compiler and MSYS2/MinGW prefixes on Windows
+if(WIN32)
+    # 1. Inspect compiler prefix if compiler is available
+    if(CMAKE_CXX_COMPILER)
+        get_filename_component(_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        get_filename_component(_COMPILER_PREFIX "${_COMPILER_BIN_DIR}" DIRECTORY)
+        if(EXISTS "${_COMPILER_PREFIX}" AND NOT "${_COMPILER_PREFIX}" IN_LIST CMAKE_PREFIX_PATH)
+            list(PREPEND CMAKE_PREFIX_PATH "${_COMPILER_PREFIX}")
+            message(STATUS "[SecureCloud] Added compiler prefix to CMAKE_PREFIX_PATH: ${_COMPILER_PREFIX}")
+        endif()
+    endif()
+
+    # 2. Inspect MSYSTEM_PREFIX if defined in environment
+    if(DEFINED ENV{MSYSTEM_PREFIX} AND EXISTS "$ENV{MSYSTEM_PREFIX}" AND NOT "$ENV{MSYSTEM_PREFIX}" IN_LIST CMAKE_PREFIX_PATH)
+        list(PREPEND CMAKE_PREFIX_PATH "$ENV{MSYSTEM_PREFIX}")
+        message(STATUS "[SecureCloud] Added MSYSTEM_PREFIX to CMAKE_PREFIX_PATH: $ENV{MSYSTEM_PREFIX}")
+    endif()
+
+    # 3. Proactively discover well-known MSYS2 prefixes (mingw64, ucrt64, clang64)
+    foreach(_CANDIDATE "C:/msys64/mingw64" "C:/msys64/ucrt64" "C:/msys64/clang64")
+        if(EXISTS "${_CANDIDATE}" AND NOT "${_CANDIDATE}" IN_LIST CMAKE_PREFIX_PATH)
+            list(APPEND CMAKE_PREFIX_PATH "${_CANDIDATE}")
+            message(STATUS "[SecureCloud] Proactively discovered MSYS2 prefix: ${_CANDIDATE}")
+        endif()
+    endforeach()
+endif()
+
 # 1. Discover gRPC dependency (finds gRPC and its Protobuf dependency via CONFIG mode)
 message(STATUS "[SecureCloud] Discovering gRPC framework...")
 find_package(gRPC REQUIRED)
@@ -26,7 +53,16 @@ if(TARGET gRPC::grpc_cpp_plugin)
     get_target_property(GRPC_CPP_PLUGIN_BIN gRPC::grpc_cpp_plugin LOCATION)
     message(STATUS "[SecureCloud] Discovered grpc_cpp_plugin target: gRPC::grpc_cpp_plugin (${GRPC_CPP_PLUGIN_BIN})")
 else()
-    find_program(GRPC_CPP_PLUGIN_BIN NAMES grpc_cpp_plugin)
+    find_program(GRPC_CPP_PLUGIN_BIN NAMES grpc_cpp_plugin
+        HINTS
+        ${CMAKE_PREFIX_PATH}
+        "${_COMPILER_PREFIX}/bin"
+        "$ENV{MSYSTEM_PREFIX}/bin"
+        "C:/msys64/mingw64/bin"
+        "C:/msys64/ucrt64/bin"
+        "C:/msys64/clang64/bin"
+        PATH_SUFFIXES bin
+    )
     if(GRPC_CPP_PLUGIN_BIN)
         message(STATUS "[SecureCloud] Discovered grpc_cpp_plugin executable: ${GRPC_CPP_PLUGIN_BIN}")
     else()
@@ -51,7 +87,16 @@ if(TARGET protobuf::protoc)
     get_target_property(PROTOC_BIN protobuf::protoc LOCATION)
     message(STATUS "[SecureCloud] Discovered protoc target: protobuf::protoc (${PROTOC_BIN})")
 else()
-    find_program(PROTOC_BIN NAMES protoc)
+    find_program(PROTOC_BIN NAMES protoc
+        HINTS
+        ${CMAKE_PREFIX_PATH}
+        "${_COMPILER_PREFIX}/bin"
+        "$ENV{MSYSTEM_PREFIX}/bin"
+        "C:/msys64/mingw64/bin"
+        "C:/msys64/ucrt64/bin"
+        "C:/msys64/clang64/bin"
+        PATH_SUFFIXES bin
+    )
     if(PROTOC_BIN)
         message(STATUS "[SecureCloud] Discovered protoc executable: ${PROTOC_BIN}")
     else()
