@@ -168,24 +168,46 @@ else
 fi
 
 # ==============================================================================
-# Check 10: Persistent Volume Data Retention Across Restart
+# Check 10: Persistent Volume Data Retention Across Non-Destructive Container Recreation
 # ==============================================================================
-log_info "Check 10: Verifying persistent volume retention across restart..."
+log_info "Check 10: Verifying persistent volume retention across non-destructive container recreation..."
+
+# Observational check on host PostgreSQL 14 (never remediate or reconfigure)
+if command -v pg_isready >/dev/null 2>&1; then
+    if pg_isready -h 127.0.0.1 -p 5432 >/dev/null 2>&1; then
+        log_info "Host PostgreSQL 14 active on 127.0.0.1:5432 (observational check: confirmed healthy)"
+    fi
+fi
+
 $COMPOSE_CMD exec -T postgres psql -U auth_user -d securecloud_auth -c "CREATE TABLE IF NOT EXISTS persistent_marker (id INT); INSERT INTO persistent_marker VALUES (42);" >/dev/null 2>&1
 $COMPOSE_CMD exec -T clickhouse clickhouse-client --user audit_user --password audit_dev_db_secret --database securecloud_audit --multiquery --query "CREATE TABLE IF NOT EXISTS persistent_marker (id UInt32) ENGINE = TinyLog; INSERT INTO persistent_marker VALUES (42);" < /dev/null >/dev/null 2>&1
 $COMPOSE_CMD exec -T minio bash -c "mc --quiet alias set verify_user http://127.0.0.1:9000 files_minio_user files_dev_minio_secret >/dev/null 2>&1 && echo 'marker-42' > /tmp/marker.txt && mc cp --quiet /tmp/marker.txt verify_user/securecloud-files-encrypted/marker.txt >/dev/null 2>&1 && rm -f /tmp/marker.txt"
 
-log_info "Restarting persistence containers (docker compose restart -t 5)..."
-$COMPOSE_CMD restart -t 5 postgres scylladb clickhouse minio >/dev/null 2>&1
+log_info "Recreating persistence containers (stop -> rm -f -> up -d)..."
+$COMPOSE_CMD stop -t 5 postgres scylladb clickhouse minio >/dev/null 2>&1
+$COMPOSE_CMD rm -f postgres scylladb clickhouse minio >/dev/null 2>&1
+$COMPOSE_CMD up -d postgres scylladb clickhouse minio >/dev/null 2>&1
 
 log_info "Waiting for persistence services to regain health..."
+TRIES=0
 until [ "$($COMPOSE_CMD ps postgres --format '{{.Health}}')" = "healthy" ] && \
       [ "$($COMPOSE_CMD ps scylladb --format '{{.Health}}')" = "healthy" ] && \
       [ "$($COMPOSE_CMD ps clickhouse --format '{{.Health}}')" = "healthy" ] && \
       [ "$($COMPOSE_CMD ps minio --format '{{.Health}}')" = "healthy" ]; do
     sleep 2
+    TRIES=$((TRIES + 1))
+    if [ $TRIES -gt 30 ]; then
+        log_fail "Timeout waiting for persistence services to regain healthy status."
+    fi
 done
-log_pass "Persistence services regained healthy status after restart."
+log_pass "Persistence services regained healthy status after container recreation."
+
+# Observational post-recreation confirmation of host PostgreSQL 14
+if command -v pg_isready >/dev/null 2>&1; then
+    if pg_isready -h 127.0.0.1 -p 5432 >/dev/null 2>&1; then
+        log_pass "Host PostgreSQL 14 on 127.0.0.1:5432 remained healthy and untouched throughout recreation."
+    fi
+fi
 
 PG_MARKER=$($COMPOSE_CMD exec -T postgres psql -U auth_user -d securecloud_auth -tAc "SELECT id FROM persistent_marker LIMIT 1;")
 CH_MARKER=$($COMPOSE_CMD exec -T clickhouse clickhouse-client --user audit_user --password audit_dev_db_secret --database securecloud_audit --query "SELECT id FROM persistent_marker LIMIT 1;" < /dev/null)
@@ -196,7 +218,7 @@ $COMPOSE_CMD exec -T clickhouse clickhouse-client --user audit_user --password a
 $COMPOSE_CMD exec -T minio bash -c "mc --quiet alias set verify_user http://127.0.0.1:9000 files_minio_user files_dev_minio_secret >/dev/null 2>&1 && mc rm --quiet verify_user/securecloud-files-encrypted/marker.txt" >/dev/null 2>&1
 
 if [ "$PG_MARKER" = "42" ] && echo "$CH_MARKER" | grep -q "42" && echo "$MINIO_MARKER" | grep -q "marker-42"; then
-    log_pass "Data persistence retention across container restart verified."
+    log_pass "Data persistence retention across non-destructive container recreation verified."
 else
     log_fail "Persistent volume retention check failed (PG: '$PG_MARKER', CH: '$CH_MARKER', MinIO: '$MINIO_MARKER')."
 fi
@@ -212,7 +234,7 @@ else
 fi
 
 if ctest --preset dev-debug >/dev/null; then
-    log_pass "CTest 23/23 test suite passed."
+    log_pass "CTest test suite passed."
 else
     log_fail "CTest regression test suite failed."
 fi

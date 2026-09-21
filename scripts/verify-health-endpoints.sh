@@ -207,6 +207,31 @@ else
 fi
 
 # ==============================================================================
+# Check 3b: Fail-Closed Security Negative Probes (Live Microservices)
+# ==============================================================================
+log_info "Check 3b: Validating fail-closed security boundaries against live microservices..."
+
+# 1. Server SAN Mismatch Rejection
+if "${PROBE_BIN}" --target "127.0.0.1:${AUTH_HOST_PORT}" --server-name "unauthorized.attacker.org" --service-name "" --ca "${CA_CERT}" --cert "${CLIENT_CERT}" --key "${CLIENT_KEY}" --expected-status "SERVING" --timeout-ms 1500 >/dev/null 2>&1; then
+    log_fail "Security vulnerability: Server SAN mismatch connection was accepted by auth service!"
+else
+    log_pass "Server SAN mismatch rejected fail-closed."
+fi
+
+# 2. Untrusted CA Certificate Rejection
+FAKE_CA="${ROOT_DIR}/build/fake_ca.crt"
+openssl req -x509 -newkey rsa:2048 -keyout /dev/null -out "${FAKE_CA}" -days 1 -nodes -subj "/CN=FakeCA" >/dev/null 2>&1 || true
+if [ -f "${FAKE_CA}" ]; then
+    if "${PROBE_BIN}" --target "127.0.0.1:${AUTH_HOST_PORT}" --server-name "auth" --service-name "" --ca "${FAKE_CA}" --cert "${CLIENT_CERT}" --key "${CLIENT_KEY}" --expected-status "SERVING" --timeout-ms 1500 >/dev/null 2>&1; then
+        rm -f "${FAKE_CA}"
+        log_fail "Security vulnerability: Untrusted CA connection was accepted by auth service!"
+    else
+        log_pass "Untrusted CA rejected fail-closed."
+    fi
+    rm -f "${FAKE_CA}"
+fi
+
+# ==============================================================================
 # Check 4: Real Docker Dependency Outage Test (PostgreSQL Down)
 # ==============================================================================
 log_info "Check 4: Simulating real Docker dependency outage (stopping postgres container)..."
@@ -311,6 +336,66 @@ if [ "$FILES_RECOVERED" -eq 1 ]; then
     log_pass "Files: Readiness successfully recovered to SERVING."
 else
     log_fail "Files readiness failed to recover to SERVING."
+fi
+
+# ==============================================================================
+# Check 5b: Real Docker Dependency Outage Test 2 (ClickHouse Outage & Recovery)
+# ==============================================================================
+log_info "Check 5b: Simulating secondary dependency outage (stopping clickhouse container)..."
+$COMPOSE_CMD stop clickhouse >/dev/null
+
+log_info "Verifying Audit readiness degrades to NOT_SERVING while others stay unaffected..."
+
+# Audit depends on ClickHouse: readiness must degrade, liveness must remain SERVING
+if probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "" "SERVING" && \
+   probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "readiness" "NOT_SERVING"; then
+    log_pass "Audit: Liveness remained SERVING while Readiness degraded to NOT_SERVING."
+else
+    log_fail "Audit failed dependency degradation contract during clickhouse outage."
+fi
+
+# Auth, Files, Messaging, Gateway must NOT degrade
+if probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "readiness" "SERVING" && \
+   probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "readiness" "SERVING" && \
+   probe_service "127.0.0.1:${MESSAGING_HOST_PORT}" "messaging" "readiness" "SERVING" && \
+   probe_service "127.0.0.1:${GATEWAY_HOST_PORT}" "gateway" "readiness" "SERVING"; then
+    log_pass "Auth, Files, Messaging, Gateway: Readiness remained SERVING (unaffected by clickhouse outage)."
+else
+    log_fail "Collateral readiness degradation detected during clickhouse outage."
+fi
+
+log_info "Restoring clickhouse container and verifying Audit readiness recovery..."
+$COMPOSE_CMD start clickhouse >/dev/null
+
+TRIES=0
+HEALTH=$($COMPOSE_CMD ps clickhouse --format '{{.Health}}')
+while [ "$HEALTH" != "healthy" ] && [ $TRIES -lt 30 ]; do
+    sleep 2
+    TRIES=$((TRIES + 1))
+    HEALTH=$($COMPOSE_CMD ps clickhouse --format '{{.Health}}')
+done
+
+if [ "$HEALTH" = "healthy" ]; then
+    log_pass "Clickhouse container regained healthy status."
+else
+    log_fail "Clickhouse failed to become healthy after restart (status: '$HEALTH')."
+fi
+
+TRIES=0
+AUDIT_RECOVERED=0
+while [ $TRIES -lt 10 ]; do
+    if probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "readiness" "SERVING" >/dev/null 2>&1; then
+        AUDIT_RECOVERED=1
+        break
+    fi
+    sleep 1
+    TRIES=$((TRIES + 1))
+done
+
+if [ "$AUDIT_RECOVERED" -eq 1 ]; then
+    log_pass "Audit: Readiness successfully recovered to SERVING."
+else
+    log_fail "Audit readiness failed to recover to SERVING."
 fi
 
 # ==============================================================================

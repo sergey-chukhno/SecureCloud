@@ -30,6 +30,8 @@ constexpr socket_handle_t k_invalid_socket = INVALID_SOCKET;
 
 inline void close_socket(socket_handle_t fd) noexcept {
     if (fd != INVALID_SOCKET) {
+        linger l{1, 0};
+        ::setsockopt(fd, SOL_SOCKET, SO_LINGER, reinterpret_cast<const char*>(&l), sizeof(l));
         ::closesocket(fd);
     }
 }
@@ -71,26 +73,34 @@ class SocketCloser {
 
 bool check_poll_result(socket_handle_t sockfd, int timeout_ms) noexcept {
 #ifdef _WIN32
-    WSAPOLLFD pfd{};
-    pfd.fd = sockfd;
-    pfd.events = POLLOUT;
+    fd_set writefds;
+    fd_set exceptfds;
+    FD_ZERO(&writefds);
+    FD_ZERO(&exceptfds);
+    FD_SET(sockfd, &writefds);
+    FD_SET(sockfd, &exceptfds);
 
-    int poll_rc = ::WSAPoll(&pfd, 1, timeout_ms > 0 ? timeout_ms : 1);
-    if (poll_rc <= 0) {
+    timeval tv{};
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
+
+    int sel_rc = ::select(0, nullptr, &writefds, &exceptfds, &tv);
+    if (sel_rc <= 0) {
         return false;
     }
 
-    auto revents = static_cast<unsigned short>(pfd.revents);
-    auto pollout = static_cast<unsigned short>(POLLOUT);
-    auto pollerr = static_cast<unsigned short>(POLLERR | POLLHUP | POLLNVAL);
-
-    if ((revents & pollout) == 0 || (revents & pollerr) != 0) {
+    if (FD_ISSET(sockfd, &exceptfds)) {
         return false;
     }
 
-    int so_error = 0;
-    int len = sizeof(so_error);
-    return (::getsockopt(sockfd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so_error), &len) == 0 && so_error == 0);
+    if (FD_ISSET(sockfd, &writefds)) {
+        int so_error = 0;
+        int len = sizeof(so_error);
+        return (::getsockopt(sockfd, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so_error), &len) == 0 &&
+                so_error == 0);
+    }
+
+    return false;
 #else
     pollfd pfd{};
     pfd.fd = sockfd;
@@ -161,7 +171,8 @@ bool try_connect_socket(const struct addrinfo& addr, int timeout_ms) noexcept {
     }
 
 #ifdef _WIN32
-    if (::WSAGetLastError() == WSAEWOULDBLOCK) {
+    int last_err = ::WSAGetLastError();
+    if (last_err == WSAEWOULDBLOCK || last_err == WSAEINPROGRESS) {
         return check_poll_result(sockfd, timeout_ms);
     }
 #else
