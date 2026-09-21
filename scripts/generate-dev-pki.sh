@@ -50,13 +50,18 @@ for arg in "$@"; do
     esac
 done
 
-# Ensure OpenSSL is available
-if ! command -v openssl >/dev/null 2>&1; then
+# Discover OpenSSL CLI (prefer Homebrew OpenSSL 3 over legacy system LibreSSL on macOS)
+OPENSSL_BIN="openssl"
+if [[ -x "/opt/homebrew/opt/openssl@3/bin/openssl" ]]; then
+    OPENSSL_BIN="/opt/homebrew/opt/openssl@3/bin/openssl"
+elif [[ -x "/usr/local/opt/openssl@3/bin/openssl" ]]; then
+    OPENSSL_BIN="/usr/local/opt/openssl@3/bin/openssl"
+elif ! command -v "${OPENSSL_BIN}" >/dev/null 2>&1; then
     echo "Error: OpenSSL CLI is required but not found in PATH." >&2
     exit 1
 fi
 
-OPENSSL_VER="$(openssl version)"
+OPENSSL_VER="$("${OPENSSL_BIN}" version)"
 echo "[SecureCloud PKI] Using OpenSSL tool: ${OPENSSL_VER}"
 
 # Create root PKI and subdirectories with strict permissions (0700)
@@ -75,7 +80,7 @@ else
     echo "[SecureCloud PKI] Generating Root CA (ECDSA P-256)..."
     
     # Generate Root CA key & cert atomically
-    openssl req -x509 -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
+    "${OPENSSL_BIN}" req -x509 -new -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 \
         -pkeyopt ec_param_enc:named_curve -sha256 \
         -keyout "${CA_KEY}" -out "${CA_CRT}" -nodes -days 365 \
         -subj "/CN=SecureCloud Development Root CA/O=SecureCloud Dev" \
@@ -114,11 +119,11 @@ for service in "${SERVICES[@]}"; do
     echo "[SecureCloud PKI] Provisioning service identity: ${service}..."
 
     # Generate unique ECDSA P-256 private key for service with explicit named curve encoding
-    openssl ecparam -name prime256v1 -genkey -param_enc named_curve -noout -out "${SVC_KEY}" >/dev/null
+    "${OPENSSL_BIN}" ecparam -name prime256v1 -genkey -param_enc named_curve -noout -out "${SVC_KEY}" >/dev/null
     chmod 600 "${SVC_KEY}" 2>/dev/null || true
 
     # Generate CSR for service
-    openssl req -new -key "${SVC_KEY}" -sha256 -out "${SVC_CSR}" \
+    "${OPENSSL_BIN}" req -new -key "${SVC_KEY}" -sha256 -out "${SVC_CSR}" \
         -subj "/CN=${service}.dev.securecloud.local/O=SecureCloud Dev" >/dev/null
 
     # Create temporary extension configuration for service
@@ -127,13 +132,13 @@ basicConstraints = critical, CA:FALSE
 keyUsage = critical, digitalSignature
 extendedKeyUsage = serverAuth, clientAuth
 subjectKeyIdentifier = hash
-authorityKeyIdentifier = keyid,issuer
+authorityKeyIdentifier = keyid
 subjectAltName = DNS:${service}
 EOF
 
     # Sign service certificate against Root CA using SHA-256
-    openssl x509 -req -sha256 -in "${SVC_CSR}" \
-        -CA "${CA_CRT}" -CAkey "${CA_KEY}" -CAcreateserial \
+    "${OPENSSL_BIN}" x509 -req -sha256 -in "${SVC_CSR}" \
+        -CA "${CA_CRT}" -CAkey "${CA_KEY}" -CAserial "${CA_SRL}" -CAcreateserial \
         -out "${SVC_CRT}" -days 365 -extfile "${SVC_EXT}" >/dev/null
 
     chmod 600 "${SVC_KEY}" 2>/dev/null || true

@@ -65,7 +65,12 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew install protobuf grpc googletest ninja
+          brew install openssl@3 protobuf grpc googletest ninja
+          echo "/opt/homebrew/opt/openssl@3/bin" >> "$GITHUB_PATH"
+
+      - name: Generate Development PKI Certificates
+        run: |
+          bash scripts/generate-dev-pki.sh --force
 
       - name: Configure CMake
         run: |
@@ -74,10 +79,6 @@ jobs:
       - name: Build All Targets
         run: |
           cmake --build --preset ci-macos
-
-      - name: Generate Development PKI Certificates
-        run: |
-          bash scripts/generate-dev-pki.sh --force
 
       - name: Execute CTest Suite
         run: |
