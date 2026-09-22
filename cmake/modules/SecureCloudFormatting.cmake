@@ -46,7 +46,17 @@ if(CLANG_FORMAT_BIN)
         VERBATIM
     )
 else()
-    message(STATUS "[SecureCloud] clang-format not found; check-format and format targets will be unavailable")
+    message(STATUS "[SecureCloud] clang-format not found; check-format and format will be informational no-op targets")
+    add_custom_target(check-format
+        COMMAND "${CMAKE_COMMAND}" -E echo "[SecureCloud] Warning: clang-format is not installed on this system; formatting check skipped."
+        COMMENT "clang-format not found; skipping formatting check"
+        VERBATIM
+    )
+    add_custom_target(format
+        COMMAND "${CMAKE_COMMAND}" -E echo "[SecureCloud] Warning: clang-format is not installed on this system; please install clang-format to format files in-place."
+        COMMENT "clang-format not found; cannot format in-place"
+        VERBATIM
+    )
 endif()
 
 # Optional static analysis via clang-tidy
