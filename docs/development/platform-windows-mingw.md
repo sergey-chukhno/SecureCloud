@@ -25,6 +25,11 @@ pacman -S --needed \
     git python3
 ```
 
+Or run directly from Windows **PowerShell** (single command):
+```powershell
+C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-openssl mingw-w64-x86_64-protobuf mingw-w64-x86_64-grpc mingw-w64-x86_64-gtest git python3
+```
+
 ### Option B: UCRT64 Environment (Universal CRT, Recommended)
 Open the **MSYS2 UCRT64** shell and install dependencies:
 ```bash
@@ -38,6 +43,11 @@ pacman -S --needed \
     mingw-w64-ucrt-x86_64-grpc \
     mingw-w64-ucrt-x86_64-gtest \
     git python3
+```
+
+Or run directly from Windows **PowerShell** (single command):
+```powershell
+C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-protobuf mingw-w64-ucrt-x86_64-grpc mingw-w64-ucrt-x86_64-gtest git python3
 ```
 
 ---
@@ -122,10 +132,26 @@ py scripts\verify-distributed-dev.py
 ## 6. MinGW-Specific Troubleshooting
 
 ### Issue 1: `Could not find a package configuration file provided by "gRPC"`
-- Check if MinGW64 or UCRT64 packages are installed via `pacman -Qs grpc`.
-- If installed in a non-standard directory, specify:
+This error indicates that while the base GCC compiler (`g++`) is present, the **gRPC C++ development package** has not been installed in MSYS2 yet.
+- Verify whether gRPC is installed:
   ```powershell
-  cmake --preset ci-windows-mingw -DCMAKE_PREFIX_PATH="C:/your_path/mingw64"
+  C:\msys64\usr\bin\pacman.exe -Qs grpc
+  ```
+- If not installed, install the full development dependencies:
+  ```powershell
+  # For MinGW64 environment:
+  C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-x86_64-grpc mingw-w64-x86_64-protobuf mingw-w64-x86_64-openssl mingw-w64-x86_64-gtest mingw-w64-x86_64-ninja
+
+  # For UCRT64 environment:
+  C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-ucrt-x86_64-grpc mingw-w64-ucrt-x86_64-protobuf mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-gtest mingw-w64-ucrt-x86_64-ninja
+  ```
+- Verify that `gRPCConfig.cmake` is now present:
+  ```powershell
+  Test-Path "C:\msys64\mingw64\lib\cmake\grpc\gRPCConfig.cmake"
+  ```
+- If MSYS2 is installed in a non-standard directory (e.g. `D:\msys64`), specify the prefix:
+  ```powershell
+  cmake --preset ci-windows-mingw -DCMAKE_PREFIX_PATH="D:/msys64/mingw64"
   ```
 
 ### Issue 2: Posix Path Conversion in Shells

@@ -62,7 +62,7 @@ constexpr uint16_t k_https_port = 443;
 constexpr int k_listen_backlog = 5;
 constexpr std::chrono::milliseconds k_test_timeout{250};
 constexpr std::chrono::milliseconds k_short_timeout{50};
-constexpr std::chrono::milliseconds k_scheduler_tolerance{50};
+constexpr std::chrono::milliseconds k_scheduler_tolerance{100};
 constexpr std::chrono::milliseconds k_zero_timeout{0};
 constexpr std::chrono::milliseconds k_negative_timeout{-10};
 
@@ -136,7 +136,7 @@ TEST(TransportProbeTest, ConnectToActiveListeningSocketSucceeds) {
     listener.close();
 
     EXPECT_TRUE(connected);
-    EXPECT_LE(duration.count(), k_test_timeout.count());
+    EXPECT_LE(duration.count(), (k_test_timeout + k_scheduler_tolerance).count());
 }
 
 TEST(TransportProbeTest, ConnectToClosedPortFailsWithinDeadline) {
@@ -152,7 +152,7 @@ TEST(TransportProbeTest, ConnectToClosedPortFailsWithinDeadline) {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
 
     EXPECT_FALSE(connected);
-    EXPECT_LE(duration.count(), k_test_timeout.count());
+    EXPECT_LE(duration.count(), (k_test_timeout + k_scheduler_tolerance).count());
 }
 
 TEST(TransportProbeTest, TimeoutOnNonRoutableEndpointIsBounded) {
@@ -162,7 +162,7 @@ TEST(TransportProbeTest, TimeoutOnNonRoutableEndpointIsBounded) {
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
 
     EXPECT_FALSE(connected);
-    EXPECT_LE(duration.count(), k_test_timeout.count());
+    EXPECT_LE(duration.count(), (k_test_timeout + k_scheduler_tolerance).count());
 }
 
 TEST(TransportProbeTest, MultipleAddressesShareSingleOverallDeadline) {

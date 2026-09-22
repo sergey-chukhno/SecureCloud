@@ -18,6 +18,9 @@ namespace {
 using health::HealthServiceImpl;
 using health::HealthStatusManager;
 
+constexpr std::chrono::milliseconds k_server_shutdown_timeout{500};
+constexpr std::chrono::seconds k_rpc_deadline{2};
+
 std::string read_file_content(const std::filesystem::path& path) {
     std::ifstream file(path, std::ios::in | std::ios::binary);
     if (!file.is_open()) {
@@ -106,6 +109,14 @@ class MtlsIntegrationTest : public ::testing::Test {
         return {std::move(server), server_address};
     }
 
+    static void shutdown_server(std::unique_ptr<grpc::Server>& server) {
+        if (server) {
+            server->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
+            server->Wait();
+            server.reset();
+        }
+    }
+
     health::HealthStatusManager health_manager_{"auth"};
     std::filesystem::path ca_path_;
     std::filesystem::path auth_cert_path_;
@@ -128,6 +139,7 @@ TEST_F(MtlsIntegrationTest, PositiveValidGatewayToAuthMtlsSucceeds) {
     auto stub = securecloud::common::v1::HealthService::NewStub(channel);
 
     grpc::ClientContext context;
+    context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
     securecloud::common::v1::HealthCheckRequest request;
     securecloud::common::v1::HealthCheckResponse response;
 
@@ -136,7 +148,9 @@ TEST_F(MtlsIntegrationTest, PositiveValidGatewayToAuthMtlsSucceeds) {
     EXPECT_TRUE(status.ok()) << "RPC failed: " << status.error_message();
     EXPECT_EQ(response.status(), securecloud::common::v1::HealthCheckResponse::SERVING);
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeUntrustedCaFailsClosed) {
@@ -162,7 +176,7 @@ TEST_F(MtlsIntegrationTest, NegativeUntrustedCaFailsClosed) {
     auto stub = securecloud::common::v1::HealthService::NewStub(channel);
 
     grpc::ClientContext context;
-    context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
+    context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
     securecloud::common::v1::HealthCheckRequest request;
     securecloud::common::v1::HealthCheckResponse response;
 
@@ -171,7 +185,9 @@ TEST_F(MtlsIntegrationTest, NegativeUntrustedCaFailsClosed) {
     EXPECT_FALSE(status.ok());
     EXPECT_NE(status.error_code(), grpc::StatusCode::OK);
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
     std::filesystem::remove_all(temp_dir);
 }
 
@@ -191,7 +207,7 @@ TEST_F(MtlsIntegrationTest, NegativeMissingClientCertificateFailsClosed) {
     auto stub = securecloud::common::v1::HealthService::NewStub(channel);
 
     grpc::ClientContext context;
-    context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
+    context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
     securecloud::common::v1::HealthCheckRequest request;
     securecloud::common::v1::HealthCheckResponse response;
 
@@ -199,7 +215,9 @@ TEST_F(MtlsIntegrationTest, NegativeMissingClientCertificateFailsClosed) {
 
     EXPECT_FALSE(status.ok()) << "Server unexpectedly accepted missing client certificate";
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeServerSanMismatchFailsClosed) {
@@ -211,7 +229,7 @@ TEST_F(MtlsIntegrationTest, NegativeServerSanMismatchFailsClosed) {
     auto stub = securecloud::common::v1::HealthService::NewStub(channel);
 
     grpc::ClientContext context;
-    context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
+    context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
     securecloud::common::v1::HealthCheckRequest request;
     securecloud::common::v1::HealthCheckResponse response;
 
@@ -219,7 +237,9 @@ TEST_F(MtlsIntegrationTest, NegativeServerSanMismatchFailsClosed) {
 
     EXPECT_FALSE(status.ok()) << "RPC unexpectedly succeeded when server SAN mismatched target SAN override";
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeWrongClientIdentityRejectedPostHandshake) {
@@ -232,7 +252,7 @@ TEST_F(MtlsIntegrationTest, NegativeWrongClientIdentityRejectedPostHandshake) {
     auto stub = securecloud::common::v1::HealthService::NewStub(channel);
 
     grpc::ClientContext context;
-    context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
+    context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
     securecloud::common::v1::HealthCheckRequest request;
     securecloud::common::v1::HealthCheckResponse response;
 
@@ -242,7 +262,9 @@ TEST_F(MtlsIntegrationTest, NegativeWrongClientIdentityRejectedPostHandshake) {
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
     EXPECT_EQ(status.error_message(), "Peer service identity mismatch");
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(MtlsIntegrationTest, NegativePlaintextConnectionAttackRejected) {
@@ -254,7 +276,7 @@ TEST_F(MtlsIntegrationTest, NegativePlaintextConnectionAttackRejected) {
     auto stub = securecloud::common::v1::HealthService::NewStub(channel);
 
     grpc::ClientContext context;
-    context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
+    context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
     securecloud::common::v1::HealthCheckRequest request;
     securecloud::common::v1::HealthCheckResponse response;
 
@@ -262,7 +284,9 @@ TEST_F(MtlsIntegrationTest, NegativePlaintextConnectionAttackRejected) {
 
     EXPECT_FALSE(status.ok()) << "Plaintext client connection was unexpectedly accepted by mTLS server";
 
-    server->Shutdown();
+    stub.reset();
+    channel.reset();
+    shutdown_server(server);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeMismatchedKeyCertStartupFailsClosed) {
@@ -290,13 +314,16 @@ TEST_F(MtlsIntegrationTest, NegativeMismatchedKeyCertStartupFailsClosed) {
         auto stub = securecloud::common::v1::HealthService::NewStub(channel);
 
         grpc::ClientContext context;
-        context.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
+        context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
         securecloud::common::v1::HealthCheckRequest request;
         securecloud::common::v1::HealthCheckResponse response;
 
         grpc::Status status = stub->Check(&context, request, &response);
         EXPECT_FALSE(status.ok());
-        server->Shutdown();
+
+        stub.reset();
+        channel.reset();
+        shutdown_server(server);
     }
 }
 
