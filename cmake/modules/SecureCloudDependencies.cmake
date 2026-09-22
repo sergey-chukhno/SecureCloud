@@ -41,7 +41,20 @@ endif()
 
 # 1. Discover gRPC dependency (finds gRPC and its Protobuf dependency via CONFIG mode)
 message(STATUS "[SecureCloud] Discovering gRPC framework...")
-find_package(gRPC REQUIRED)
+find_package(gRPC CONFIG QUIET)
+if(NOT gRPC_FOUND)
+    find_package(gRPC QUIET)
+endif()
+if(NOT gRPC_FOUND)
+    message(FATAL_ERROR
+        "[SecureCloud] gRPC package configuration file (gRPCConfig.cmake / grpc-config.cmake) was not found.\n"
+        "  Active CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}\n"
+        "  Remediation:\n"
+        "    - On MSYS2 MinGW64: Run 'pacman -S --needed mingw-w64-x86_64-grpc mingw-w64-x86_64-protobuf mingw-w64-x86_64-openssl mingw-w64-x86_64-gtest'\n"
+        "    - On MSYS2 UCRT64:  Run 'pacman -S --needed mingw-w64-ucrt-x86_64-grpc mingw-w64-ucrt-x86_64-protobuf mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-gtest'\n"
+        "    - On MSVC / vcpkg:  Ensure VCPKG_ROOT is set and pass -DCMAKE_TOOLCHAIN_FILE=\"$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake\""
+    )
+endif()
 if(TARGET gRPC::grpc++)
     message(STATUS "[SecureCloud] Discovered gRPC target: gRPC::grpc++")
 else()
@@ -72,7 +85,20 @@ endif()
 
 # 2. Discover Protobuf dependency
 message(STATUS "[SecureCloud] Discovering Protobuf framework...")
-find_package(Protobuf REQUIRED)
+find_package(Protobuf CONFIG QUIET)
+if(NOT Protobuf_FOUND AND NOT protobuf_FOUND)
+    find_package(Protobuf QUIET)
+endif()
+if(NOT Protobuf_FOUND AND NOT protobuf_FOUND)
+    message(FATAL_ERROR
+        "[SecureCloud] Protobuf package was not found.\n"
+        "  Active CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}\n"
+        "  Remediation:\n"
+        "    - On MSYS2 MinGW64: Run 'pacman -S --needed mingw-w64-x86_64-protobuf'\n"
+        "    - On MSYS2 UCRT64:  Run 'pacman -S --needed mingw-w64-ucrt-x86_64-protobuf'\n"
+        "    - On MSVC / vcpkg:  Ensure VCPKG_ROOT is set and pass -DCMAKE_TOOLCHAIN_FILE=\"$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake\""
+    )
+endif()
 if(TARGET Protobuf::libprotobuf)
     message(STATUS "[SecureCloud] Discovered Protobuf target: Protobuf::libprotobuf")
 elseif(TARGET protobuf::libprotobuf)

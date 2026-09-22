@@ -2,7 +2,7 @@
 find_program(BASH_EXECUTABLE NAMES bash)
 if(BASH_EXECUTABLE AND NOT EXISTS "${CMAKE_SOURCE_DIR}/deploy/dev-pki/ca/ca.crt")
     execute_process(
-        COMMAND ${BASH_EXECUTABLE} "${CMAKE_SOURCE_DIR}/scripts/generate-dev-pki.sh" --force
+        COMMAND ${BASH_EXECUTABLE} "scripts/generate-dev-pki.sh" --force
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
         RESULT_VARIABLE PKI_GEN_RES
     )
