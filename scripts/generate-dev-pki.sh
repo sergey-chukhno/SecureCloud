@@ -160,4 +160,11 @@ EOF
     echo "[SecureCloud PKI] Service '${service}' identity provisioned."
 done
 
+if [[ "$(uname -s)" =~ (MINGW|MSYS|CYGWIN) ]]; then
+    if command -v icacls.exe >/dev/null 2>&1; then
+        WIN_PKI="$(cygpath -w "${PKI_DIR}" 2>/dev/null || echo "${PKI_DIR}")"
+        icacls.exe "${WIN_PKI}" /grant "*S-1-1-0:(OI)(CI)RX" /T >/dev/null 2>&1 || true
+    fi
+fi
+
 echo "[SecureCloud PKI] Development PKI provisioning complete."

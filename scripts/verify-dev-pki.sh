@@ -230,9 +230,12 @@ fi
 echo "[Check 11/11] Verifying container UID 10001 read access and read-only mount protection..."
 if [ "$IS_WINDOWS" = true ]; then
     # On Windows, ensure NTFS DACLs mapped to Docker WSL2 allow non-root container UID 10001 to read mounted certificates and keys
-    chmod -R 755 "${SERVICES_DIR}" 2>/dev/null || true
-    chmod 644 "${SERVICES_DIR}"/*/*.key 2>/dev/null || true
-    chmod 644 "${SERVICES_DIR}"/*/*.crt 2>/dev/null || true
+    if command -v icacls.exe >/dev/null 2>&1; then
+        WIN_PKI="$(cygpath -w "${PKI_DIR}" 2>/dev/null || echo "${PKI_DIR}")"
+        icacls.exe "${WIN_PKI}" /grant "*S-1-1-0:(OI)(CI)RX" /T >/dev/null 2>&1 || true
+    fi
+    chmod -R 755 "${PKI_DIR}" 2>/dev/null || true
+    find "${SERVICES_DIR}" -type f -exec chmod 644 {} + 2>/dev/null || true
 fi
 
 for service in "${SERVICES[@]}"; do
@@ -240,7 +243,8 @@ for service in "${SERVICES[@]}"; do
     if docker compose -f "${COMPOSE_FILE}" run --rm --entrypoint "" "${service}" test -r /etc/securecloud/certs/service.key >/dev/null 2>&1; then
         log_pass "Container '${service}' process (UID 10001) can read service.key"
     else
-        log_fail "Container '${service}' process (UID 10001) CANNOT read service.key"
+        ERR_DIAG="$(docker compose -f "${COMPOSE_FILE}" run --rm --entrypoint "" "${service}" cat /etc/securecloud/certs/service.key 2>&1 >/dev/null || true)"
+        log_fail "Container '${service}' process (UID 10001) CANNOT read service.key: ${ERR_DIAG}"
     fi
 
     # Check Write Protection (touch should fail with exit code != 0)

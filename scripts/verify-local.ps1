@@ -24,8 +24,15 @@ if (-not $PythonCmd) {
     exit 1
 }
 
-# Automatically initialize MSVC environment if cl.exe is not in PATH
-if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
+# Automatically initialize MSVC environment if cl.exe is not in PATH or is 32-bit
+$clCmd = Get-Command cl -ErrorAction SilentlyContinue
+$is32BitCl = $false
+if ($clCmd) {
+    if ($clCmd.Source -like "*\Hostx86\x86\*" -or $clCmd.Source -like "*\bin\x86\*") {
+        $is32BitCl = $true
+    }
+}
+if (-not $clCmd -or $is32BitCl) {
     $vswhereCandidates = @(
         "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe",
         "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe"
@@ -36,7 +43,7 @@ if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
             if ($vsPath) {
                 $devShell = Join-Path $vsPath "Common7\Tools\Launch-VsDevShell.ps1"
                 if (Test-Path $devShell) {
-                    Write-Host "[SecureCloud] Initializing Visual Studio developer environment..."
+                    Write-Host "[SecureCloud] Initializing Visual Studio x64 developer environment..."
                     & $devShell -Arch amd64 -HostArch amd64
                     break
                 }

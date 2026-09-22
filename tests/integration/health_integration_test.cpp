@@ -237,7 +237,6 @@ class HealthIntegrationTest : public ::testing::Test {
     static void shutdown_server(std::unique_ptr<grpc::Server>& server) {
         if (server) {
             server->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
-            server->Wait();
             server.reset();
         }
     }
