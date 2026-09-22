@@ -24,20 +24,45 @@ if (-not $PythonCmd) {
     exit 1
 }
 
-# Proactively discover MSYS2 binary directories and prepend to PATH
-$MsysCandidates = @(
-    "C:\msys64\mingw64\bin",
-    "C:\msys64\ucrt64\bin",
-    "C:\msys64\clang64\bin",
-    "C:\msys64\usr\bin",
-    "D:\msys64\mingw64\bin",
-    "D:\msys64\ucrt64\bin",
-    "D:\msys64\clang64\bin",
-    "D:\msys64\usr\bin"
-)
-foreach ($Candidate in $MsysCandidates) {
-    if ((Test-Path $Candidate) -and ($env:PATH -notlike "*$Candidate*")) {
-        $env:PATH = "$Candidate;$env:PATH"
+# Automatically initialize MSVC environment if cl.exe is not in PATH
+if (-not (Get-Command cl -ErrorAction SilentlyContinue)) {
+    $vswhereCandidates = @(
+        "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe",
+        "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe"
+    )
+    foreach ($vswhere in $vswhereCandidates) {
+        if (Test-Path $vswhere) {
+            $vsPath = & $vswhere -latest -property installationPath
+            if ($vsPath) {
+                $devShell = Join-Path $vsPath "Common7\Tools\Launch-VsDevShell.ps1"
+                if (Test-Path $devShell) {
+                    Write-Host "[SecureCloud] Initializing Visual Studio developer environment..."
+                    & $devShell -Arch amd64 -HostArch amd64
+                    break
+                }
+            }
+        }
+    }
+}
+
+# Proactively discover a single compatible MSYS2 binary directory and prepend to PATH
+$FoundMsys = $false
+foreach ($Base in @("C:\msys64", "D:\msys64")) {
+    if (-not $FoundMsys -and (Test-Path $Base)) {
+        foreach ($EnvName in @("mingw64", "ucrt64", "clang64")) {
+            $Candidate = Join-Path $Base "$EnvName\bin"
+            if (Test-Path $Candidate) {
+                if ($env:PATH -notlike "*$Candidate*") {
+                    $env:PATH = "$Candidate;$env:PATH"
+                }
+                $FoundMsys = $true
+                break
+            }
+        }
+        $UsrBin = Join-Path $Base "usr\bin"
+        if ((Test-Path $UsrBin) -and ($env:PATH -notlike "*$UsrBin*")) {
+            $env:PATH = "$UsrBin;$env:PATH"
+        }
     }
 }
 

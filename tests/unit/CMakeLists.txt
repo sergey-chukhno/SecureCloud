@@ -56,7 +56,7 @@ gtest_discover_tests(securecloud_proto_smoke_test)
 
 # Custom target to explicitly execute generated contract verification
 if(WIN32)
-    # Ensure Windows runtime finds dependent DLLs (Protobuf, gRPC, OpenSSL, GTest, MinGW runtime)
+    # Ensure Windows runtime finds dependent DLLs from the active compiler toolchain
     set(_CONTRACTS_ENV_FLAGS "")
     if(CMAKE_CXX_COMPILER)
         get_filename_component(_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
@@ -64,11 +64,6 @@ if(WIN32)
             list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${_COMPILER_BIN_DIR}")
         endif()
     endif()
-    foreach(_PREFIX IN LISTS CMAKE_PREFIX_PATH)
-        if(EXISTS "${_PREFIX}/bin")
-            list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${_PREFIX}/bin")
-        endif()
-    endforeach()
 
     add_custom_target(verify-contracts
         COMMAND ${CMAKE_COMMAND} -E env ${_CONTRACTS_ENV_FLAGS} $<TARGET_FILE:securecloud_proto_smoke_test>
