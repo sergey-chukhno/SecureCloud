@@ -251,7 +251,57 @@ class VerificationOrchestrator:
             return exit_code
 
 
+def setup_windows_environment() -> None:
+    """
+    On Windows, ensure MSYS2 / MinGW binary search paths are discovered and
+    prepended to PATH. This enables CMake, Ninja, compiler binaries, and runtime
+    dynamic libraries (.dll for Protobuf, gRPC, OpenSSL, GTest) to be located
+    reliably when invoked from standard PowerShell or Command Prompt.
+    """
+    if platform.system() != "Windows":
+        return
+
+    paths_to_add: List[str] = []
+
+    # 1. Inspect MSYSTEM_PREFIX if active in shell
+    msystem_prefix = os.environ.get("MSYSTEM_PREFIX")
+    if msystem_prefix:
+        p = Path(msystem_prefix) / "bin"
+        if p.exists():
+            paths_to_add.append(str(p.resolve()))
+
+    # 2. Proactively probe well-known MSYS2 installation prefixes
+    for drive in ["C:", "D:"]:
+        for msys_dir in ["msys64", "msys2"]:
+            base = Path(f"{drive}/{msys_dir}")
+            if base.exists():
+                for sub in ["mingw64", "ucrt64", "clang64", "usr"]:
+                    bin_dir = base / sub / "bin"
+                    if bin_dir.exists():
+                        paths_to_add.append(str(bin_dir.resolve()))
+
+    # 3. Discovered compiler or build tools parent directories
+    import shutil
+    for tool in ["g++", "gcc", "clang++", "ninja"]:
+        found = shutil.which(tool)
+        if found:
+            paths_to_add.append(str(Path(found).resolve().parent))
+
+    curr_path = os.environ.get("PATH", "")
+    curr_parts = [p.rstrip("\\/").lower() for p in curr_path.split(os.pathsep) if p]
+
+    final_additions: List[str] = []
+    for p in paths_to_add:
+        norm = p.rstrip("\\/").lower()
+        if norm not in curr_parts and norm not in [a.rstrip("\\/").lower() for a in final_additions]:
+            final_additions.append(p)
+
+    if final_additions:
+        os.environ["PATH"] = os.pathsep.join(final_additions) + os.pathsep + curr_path
+
+
 def auto_detect_preset() -> str:
+    setup_windows_environment()
     system = platform.system()
     if system == "Darwin":
         return "ci-macos"
@@ -350,6 +400,8 @@ def main() -> int:
     )
 
     args = parser.parse_args()
+
+    setup_windows_environment()
 
     if args.preset:
         preset = args.preset

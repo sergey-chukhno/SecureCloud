@@ -55,12 +55,35 @@ target_link_libraries(securecloud_proto_smoke_test PRIVATE
 gtest_discover_tests(securecloud_proto_smoke_test)
 
 # Custom target to explicitly execute generated contract verification
-add_custom_target(verify-contracts
-    COMMAND $<TARGET_FILE:securecloud_proto_smoke_test>
-    DEPENDS securecloud_proto_smoke_test
-    COMMENT "Executing Protobuf & gRPC generated-contracts validation smoke test..."
-    VERBATIM
-)
+if(WIN32)
+    # Ensure Windows runtime finds dependent DLLs (Protobuf, gRPC, OpenSSL, GTest, MinGW runtime)
+    set(_CONTRACTS_ENV_FLAGS "")
+    if(CMAKE_CXX_COMPILER)
+        get_filename_component(_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
+        if(EXISTS "${_COMPILER_BIN_DIR}")
+            list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${_COMPILER_BIN_DIR}")
+        endif()
+    endif()
+    foreach(_PREFIX IN LISTS CMAKE_PREFIX_PATH)
+        if(EXISTS "${_PREFIX}/bin")
+            list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${_PREFIX}/bin")
+        endif()
+    endforeach()
+
+    add_custom_target(verify-contracts
+        COMMAND ${CMAKE_COMMAND} -E env ${_CONTRACTS_ENV_FLAGS} $<TARGET_FILE:securecloud_proto_smoke_test>
+        DEPENDS securecloud_proto_smoke_test
+        COMMENT "Executing Protobuf & gRPC generated-contracts validation smoke test..."
+        VERBATIM
+    )
+else()
+    add_custom_target(verify-contracts
+        COMMAND $<TARGET_FILE:securecloud_proto_smoke_test>
+        DEPENDS securecloud_proto_smoke_test
+        COMMENT "Executing Protobuf & gRPC generated-contracts validation smoke test..."
+        VERBATIM
+    )
+endif()
 
 # gRPC mTLS Configuration & Security Unit Test Suite
 add_executable(securecloud_mtls_config_test

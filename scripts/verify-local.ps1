@@ -24,6 +24,23 @@ if (-not $PythonCmd) {
     exit 1
 }
 
+# Proactively discover MSYS2 binary directories and prepend to PATH
+$MsysCandidates = @(
+    "C:\msys64\mingw64\bin",
+    "C:\msys64\ucrt64\bin",
+    "C:\msys64\clang64\bin",
+    "C:\msys64\usr\bin",
+    "D:\msys64\mingw64\bin",
+    "D:\msys64\ucrt64\bin",
+    "D:\msys64\clang64\bin",
+    "D:\msys64\usr\bin"
+)
+foreach ($Candidate in $MsysCandidates) {
+    if ((Test-Path $Candidate) -and ($env:PATH -notlike "*$Candidate*")) {
+        $env:PATH = "$Candidate;$env:PATH"
+    }
+}
+
 & $PythonCmd.Source $PythonScript @ForwardArgs
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE

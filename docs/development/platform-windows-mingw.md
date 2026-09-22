@@ -22,12 +22,13 @@ pacman -S --needed \
     mingw-w64-x86_64-protobuf \
     mingw-w64-x86_64-grpc \
     mingw-w64-x86_64-gtest \
+    mingw-w64-x86_64-clang-tools-extra \
     git python3
 ```
 
 Or run directly from Windows **PowerShell** (single command):
 ```powershell
-C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-openssl mingw-w64-x86_64-protobuf mingw-w64-x86_64-grpc mingw-w64-x86_64-gtest git python3
+C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-x86_64-toolchain mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-openssl mingw-w64-x86_64-protobuf mingw-w64-x86_64-grpc mingw-w64-x86_64-gtest mingw-w64-x86_64-clang-tools-extra git python3
 ```
 
 ### Option B: UCRT64 Environment (Universal CRT, Recommended)
@@ -42,12 +43,13 @@ pacman -S --needed \
     mingw-w64-ucrt-x86_64-protobuf \
     mingw-w64-ucrt-x86_64-grpc \
     mingw-w64-ucrt-x86_64-gtest \
+    mingw-w64-ucrt-x86_64-clang-tools-extra \
     git python3
 ```
 
 Or run directly from Windows **PowerShell** (single command):
 ```powershell
-C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-protobuf mingw-w64-ucrt-x86_64-grpc mingw-w64-ucrt-x86_64-gtest git python3
+C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-ucrt-x86_64-toolchain mingw-w64-ucrt-x86_64-cmake mingw-w64-ucrt-x86_64-ninja mingw-w64-ucrt-x86_64-openssl mingw-w64-ucrt-x86_64-protobuf mingw-w64-ucrt-x86_64-grpc mingw-w64-ucrt-x86_64-gtest mingw-w64-ucrt-x86_64-clang-tools-extra git python3
 ```
 
 ---
@@ -162,3 +164,19 @@ export MSYS_NO_PATHCONV=1
 
 ### Issue 3: Linker Errors on Windows Socket APIs (`WSAStartup`)
 SecureCloud automatically links `ws2_32` on Windows platforms via target definitions in `cmake/modules/SecureCloudCompilerFlags.cmake`.
+
+### Issue 4: `ninja: error: unknown target 'check-format'`
+This indicates that `clang-format` was not detected during initial CMake configuration.
+- To enable code formatting, install `clang-tools-extra`:
+  ```powershell
+  # For MinGW64:
+  C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-x86_64-clang-tools-extra
+
+  # For UCRT64:
+  C:\msys64\usr\bin\pacman.exe -S --needed mingw-w64-ucrt-x86_64-clang-tools-extra
+  ```
+  Then re-run `cmake --preset ci-windows-mingw`.
+- Alternatively, bypass Stage 2 formatting in the orchestrator:
+  ```powershell
+  py scripts\verify-local.py --skip-format
+  ```
