@@ -64,9 +64,19 @@ fi
 OPENSSL_VER="$("${OPENSSL_BIN}" version)"
 echo "[SecureCloud PKI] Using OpenSSL tool: ${OPENSSL_VER}"
 
-# Create root PKI and subdirectories with strict permissions (0700)
+# Directory and key permissions: on Windows, NTFS DACLs mapped into Docker WSL2
+# require read permission for container non-root UID 10001
+if [[ "$(uname -s)" =~ (MINGW|MSYS|CYGWIN) ]]; then
+    DIR_PERM=755
+    SVC_KEY_PERM=644
+else
+    DIR_PERM=700
+    SVC_KEY_PERM=600
+fi
+
+# Create root PKI and subdirectories with appropriate permissions
 mkdir -p "${CA_DIR}" "${SERVICES_DIR}"
-chmod 700 "${PKI_DIR}" "${CA_DIR}" "${SERVICES_DIR}" 2>/dev/null || true
+chmod "${DIR_PERM}" "${PKI_DIR}" "${CA_DIR}" "${SERVICES_DIR}" 2>/dev/null || true
 
 CA_KEY="${CA_DIR}/ca.key"
 CA_CRT="${CA_DIR}/ca.crt"
@@ -102,7 +112,7 @@ chmod 644 "${CA_CRT}" 2>/dev/null || true
 for service in "${SERVICES[@]}"; do
     SVC_DIR="${SERVICES_DIR}/${service}"
     mkdir -p "${SVC_DIR}"
-    chmod 700 "${SVC_DIR}" 2>/dev/null || true
+    chmod "${DIR_PERM}" "${SVC_DIR}" 2>/dev/null || true
 
     SVC_KEY="${SVC_DIR}/${service}.key"
     SVC_CRT="${SVC_DIR}/${service}.crt"
@@ -111,7 +121,7 @@ for service in "${SERVICES[@]}"; do
 
     if [[ -f "${SVC_KEY}" && -f "${SVC_CRT}" && "${FORCE_REGEN}" == "false" && "${CA_REGENERATED}" == "false" ]]; then
         echo "[SecureCloud PKI] Service '${service}' certificate already exists. Preserving identity."
-        chmod 600 "${SVC_KEY}" 2>/dev/null || true
+        chmod "${SVC_KEY_PERM}" "${SVC_KEY}" 2>/dev/null || true
         chmod 644 "${SVC_CRT}" 2>/dev/null || true
         continue
     fi
@@ -120,7 +130,7 @@ for service in "${SERVICES[@]}"; do
 
     # Generate unique ECDSA P-256 private key for service with explicit named curve encoding
     "${OPENSSL_BIN}" ecparam -name prime256v1 -genkey -param_enc named_curve -noout -out "${SVC_KEY}" >/dev/null
-    chmod 600 "${SVC_KEY}" 2>/dev/null || true
+    chmod "${SVC_KEY_PERM}" "${SVC_KEY}" 2>/dev/null || true
 
     # Generate CSR for service
     "${OPENSSL_BIN}" req -new -key "${SVC_KEY}" -sha256 -out "${SVC_CSR}" \
@@ -141,7 +151,7 @@ EOF
         -CA "${CA_CRT}" -CAkey "${CA_KEY}" -CAserial "${CA_SRL}" -CAcreateserial \
         -out "${SVC_CRT}" -days 365 -extfile "${SVC_EXT}" >/dev/null
 
-    chmod 600 "${SVC_KEY}" 2>/dev/null || true
+    chmod "${SVC_KEY_PERM}" "${SVC_KEY}" 2>/dev/null || true
     chmod 644 "${SVC_CRT}" 2>/dev/null || true
 
     # Cleanup temporary CSR and extension files
