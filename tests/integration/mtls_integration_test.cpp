@@ -5,12 +5,45 @@
 
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+// clang-format off
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+// clang-format on
+
+inline void ensure_integration_winsock() noexcept {
+    struct WinsockInit {
+        WinsockInit() noexcept {
+            WSADATA wsa{};
+            (void)::WSAStartup(MAKEWORD(2, 2), &wsa);
+        }
+        ~WinsockInit() noexcept { ::WSACleanup(); }
+    };
+    static WinsockInit init;
+}
+
+class WinsockEnvironment : public ::testing::Environment {
+  public:
+    void SetUp() override { ensure_integration_winsock(); }
+};
+
+static ::testing::Environment* const k_winsock_env = ::testing::AddGlobalTestEnvironment(new WinsockEnvironment);
+#else
+inline void ensure_integration_winsock() noexcept {}
+#endif
 
 namespace securecloud::common::security {
 namespace {
@@ -51,6 +84,7 @@ class MtlsIntegrationTest : public ::testing::Test {
     }
 
     void SetUp() override {
+        ensure_integration_winsock();
         health_manager_.set_live(true);
         health_manager_.set_ready(true);
 
@@ -110,9 +144,22 @@ class MtlsIntegrationTest : public ::testing::Test {
     }
 
     static void shutdown_server(std::unique_ptr<grpc::Server>& server) {
-        if (server) {
-            server->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
-            server.reset();
+        if (!server) {
+            return;
+        }
+        auto s = std::move(server);
+        std::promise<void> promise;
+        auto future = promise.get_future();
+        std::thread cleanup_thread([srv = std::move(s), p = std::move(promise)]() mutable {
+            srv->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
+            srv.reset();
+            p.set_value();
+        });
+
+        if (future.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
+            cleanup_thread.detach();
+        } else {
+            cleanup_thread.join();
         }
     }
 
@@ -147,9 +194,9 @@ TEST_F(MtlsIntegrationTest, PositiveValidGatewayToAuthMtlsSucceeds) {
     EXPECT_TRUE(status.ok()) << "RPC failed: " << status.error_message();
     EXPECT_EQ(response.status(), securecloud::common::v1::HealthCheckResponse::SERVING);
 
+    shutdown_server(server);
     stub.reset();
     channel.reset();
-    shutdown_server(server);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeUntrustedCaFailsClosed) {
@@ -184,9 +231,9 @@ TEST_F(MtlsIntegrationTest, NegativeUntrustedCaFailsClosed) {
     EXPECT_FALSE(status.ok());
     EXPECT_NE(status.error_code(), grpc::StatusCode::OK);
 
+    shutdown_server(server);
     stub.reset();
     channel.reset();
-    shutdown_server(server);
     std::filesystem::remove_all(temp_dir);
 }
 
@@ -214,9 +261,9 @@ TEST_F(MtlsIntegrationTest, NegativeMissingClientCertificateFailsClosed) {
 
     EXPECT_FALSE(status.ok()) << "Server unexpectedly accepted missing client certificate";
 
+    shutdown_server(server);
     stub.reset();
     channel.reset();
-    shutdown_server(server);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeServerSanMismatchFailsClosed) {
@@ -236,9 +283,9 @@ TEST_F(MtlsIntegrationTest, NegativeServerSanMismatchFailsClosed) {
 
     EXPECT_FALSE(status.ok()) << "RPC unexpectedly succeeded when server SAN mismatched target SAN override";
 
+    shutdown_server(server);
     stub.reset();
     channel.reset();
-    shutdown_server(server);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeWrongClientIdentityRejectedPostHandshake) {
@@ -261,9 +308,9 @@ TEST_F(MtlsIntegrationTest, NegativeWrongClientIdentityRejectedPostHandshake) {
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
     EXPECT_EQ(status.error_message(), "Peer service identity mismatch");
 
+    shutdown_server(server);
     stub.reset();
     channel.reset();
-    shutdown_server(server);
 }
 
 TEST_F(MtlsIntegrationTest, NegativePlaintextConnectionAttackRejected) {
@@ -283,9 +330,9 @@ TEST_F(MtlsIntegrationTest, NegativePlaintextConnectionAttackRejected) {
 
     EXPECT_FALSE(status.ok()) << "Plaintext client connection was unexpectedly accepted by mTLS server";
 
+    shutdown_server(server);
     stub.reset();
     channel.reset();
-    shutdown_server(server);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeMismatchedKeyCertStartupFailsClosed) {
@@ -320,9 +367,9 @@ TEST_F(MtlsIntegrationTest, NegativeMismatchedKeyCertStartupFailsClosed) {
         grpc::Status status = stub->Check(&context, request, &response);
         EXPECT_FALSE(status.ok());
 
+        shutdown_server(server);
         stub.reset();
         channel.reset();
-        shutdown_server(server);
     }
 }
 
