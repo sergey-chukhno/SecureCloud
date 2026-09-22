@@ -228,6 +228,13 @@ fi
 
 # Step 11: Verify Container Non-Root Read Access and Write Protection
 echo "[Check 11/11] Verifying container UID 10001 read access and read-only mount protection..."
+if ! docker info >/dev/null 2>&1; then
+    log_fail "Docker daemon is not running or unreachable. Please start Docker Desktop (ensure Linux Engine is running) and re-run."
+    echo ""
+    echo "[SecureCloud PKI Verification] FAILURE: Docker daemon unreachable." >&2
+    exit 1
+fi
+
 if [ "$IS_WINDOWS" = true ]; then
     # On Windows, ensure NTFS DACLs mapped to Docker WSL2 allow non-root container UID 10001 to read mounted certificates and keys
     if command -v icacls.exe >/dev/null 2>&1; then
@@ -239,19 +246,30 @@ if [ "$IS_WINDOWS" = true ]; then
 fi
 
 for service in "${SERVICES[@]}"; do
-    # Check Readability of CA cert, service cert, and service key inside container
-    if docker compose -f "${COMPOSE_FILE}" run --rm --entrypoint "" "${service}" test -r /etc/securecloud/certs/service.key >/dev/null 2>&1; then
-        log_pass "Container '${service}' process (UID 10001) can read service.key"
-    else
-        ERR_DIAG="$(docker compose -f "${COMPOSE_FILE}" run --rm --entrypoint "" "${service}" cat /etc/securecloud/certs/service.key 2>&1 >/dev/null || true)"
-        log_fail "Container '${service}' process (UID 10001) CANNOT read service.key: ${ERR_DIAG}"
-    fi
+    # Run a single isolated container per service without starting dependent databases (--no-deps)
+    OUT="$(docker compose -f "${COMPOSE_FILE}" run --no-deps --rm --entrypoint "" "${service}" sh -c '
+        if ! test -r /etc/securecloud/certs/service.key; then
+            echo "ERR_UNREADABLE"
+            cat /etc/securecloud/certs/service.key 2>&1 || true
+            exit 10
+        fi
+        if touch /etc/securecloud/certs/service.key 2>/dev/null; then
+            echo "ERR_WRITABLE"
+            exit 20
+        fi
+        echo "OK"
+        exit 0
+    ' 2>&1 || true)"
 
-    # Check Write Protection (touch should fail with exit code != 0)
-    if docker compose -f "${COMPOSE_FILE}" run --rm --entrypoint "" "${service}" touch /etc/securecloud/certs/service.key >/dev/null 2>&1; then
+    if echo "${OUT}" | grep -q "OK"; then
+        log_pass "Container '${service}' process (UID 10001) can read service.key"
+        log_pass "Container '${service}' write operation correctly blocked (Read-only volume mount)"
+    elif echo "${OUT}" | grep -q "ERR_UNREADABLE"; then
+        log_fail "Container '${service}' process (UID 10001) CANNOT read service.key: ${OUT}"
+    elif echo "${OUT}" | grep -q "ERR_WRITABLE"; then
         log_fail "Container '${service}' process was able to modify service.key (Write protection missing)"
     else
-        log_pass "Container '${service}' write operation correctly blocked (Read-only volume mount)"
+        log_fail "Container '${service}' verification failed: ${OUT}"
     fi
 done
 

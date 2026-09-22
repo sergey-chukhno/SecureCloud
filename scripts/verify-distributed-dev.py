@@ -352,7 +352,16 @@ class DistributedOrchestrator:
         """
         Inspects docker compose config to ensure all exposed host ports are bound
         strictly to loopback (127.0.0.1) and postgres uses host port 5433 (never 5432).
+        Also verifies that the Docker daemon is active and responsive.
         """
+        # Fast fail if Docker daemon is not running
+        docker_info = subprocess.run(["docker", "info"], capture_output=True, text=True, check=False)
+        if docker_info.returncode != 0:
+            return False, (
+                "Docker daemon is not running or unreachable.\n"
+                "  Please launch Docker Desktop and ensure the Linux container engine is started before running verification."
+            )
+
         proc = subprocess.run(
             self.compose_cmd + ["config", "--format", "json"],
             cwd=str(self.repo_root),
