@@ -20,7 +20,7 @@ target_link_libraries(securecloud_mtls_integration_test PRIVATE
     securecloud::common
     securecloud_proto
     securecloud::compiler_flags
-    GTest::gtest_main
+    GTest::gtest
 )
 
 target_compile_definitions(securecloud_mtls_integration_test PRIVATE
@@ -38,7 +38,7 @@ target_link_libraries(securecloud_health_integration_test PRIVATE
     securecloud::common
     securecloud_proto
     securecloud::compiler_flags
-    GTest::gtest_main
+    GTest::gtest
 )
 
 target_compile_definitions(securecloud_health_integration_test PRIVATE

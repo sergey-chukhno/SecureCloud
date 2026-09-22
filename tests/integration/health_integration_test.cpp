@@ -7,6 +7,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -60,22 +61,12 @@ inline void close_socket_handle(socket_handle_t s) noexcept {
 }
 
 inline void ensure_integration_winsock() noexcept {
-    struct WinsockInit {
-        WinsockInit() noexcept {
-            WSADATA wsa{};
-            (void)::WSAStartup(MAKEWORD(2, 2), &wsa);
-        }
-        ~WinsockInit() noexcept { ::WSACleanup(); }
-    };
-    static WinsockInit init;
+    static const bool initialized = []() noexcept {
+        WSADATA wsa{};
+        return ::WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+    }();
+    (void)initialized;
 }
-
-class WinsockEnvironment : public ::testing::Environment {
-  public:
-    void SetUp() override { ensure_integration_winsock(); }
-};
-
-static ::testing::Environment* const k_winsock_env = ::testing::AddGlobalTestEnvironment(new WinsockEnvironment);
 
 using socklen_val_t = int;
 #else
@@ -722,3 +713,14 @@ TEST_F(HealthIntegrationTest, HealthProbeCliTimeoutValidation) {
 
 } // namespace
 } // namespace securecloud::common
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    int result = RUN_ALL_TESTS();
+#ifdef _WIN32
+    std::fflush(nullptr);
+    ::TerminateProcess(::GetCurrentProcess(), static_cast<UINT>(result));
+#else
+    return result;
+#endif
+}

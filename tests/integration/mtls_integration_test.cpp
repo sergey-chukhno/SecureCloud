@@ -3,6 +3,8 @@
 #include "securecloud/health/health_status_manager.hpp"
 #include "securecloud/security/mtls_config.hpp"
 
+#include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -25,22 +27,12 @@
 // clang-format on
 
 inline void ensure_integration_winsock() noexcept {
-    struct WinsockInit {
-        WinsockInit() noexcept {
-            WSADATA wsa{};
-            (void)::WSAStartup(MAKEWORD(2, 2), &wsa);
-        }
-        ~WinsockInit() noexcept { ::WSACleanup(); }
-    };
-    static WinsockInit init;
+    static const bool initialized = []() noexcept {
+        WSADATA wsa{};
+        return ::WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+    }();
+    (void)initialized;
 }
-
-class WinsockEnvironment : public ::testing::Environment {
-  public:
-    void SetUp() override { ensure_integration_winsock(); }
-};
-
-static ::testing::Environment* const k_winsock_env = ::testing::AddGlobalTestEnvironment(new WinsockEnvironment);
 #else
 inline void ensure_integration_winsock() noexcept {}
 #endif
@@ -361,3 +353,14 @@ TEST_F(MtlsIntegrationTest, NegativeMismatchedKeyCertStartupFailsClosed) {
 
 } // namespace
 } // namespace securecloud::common::security
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    int result = RUN_ALL_TESTS();
+#ifdef _WIN32
+    std::fflush(nullptr);
+    ::TerminateProcess(::GetCurrentProcess(), static_cast<UINT>(result));
+#else
+    return result;
+#endif
+}
