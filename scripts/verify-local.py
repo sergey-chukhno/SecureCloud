@@ -270,22 +270,50 @@ def setup_windows_environment() -> None:
         if p.exists():
             paths_to_add.append(str(p.resolve()))
 
-    # 2. Proactively probe well-known MSYS2 installation prefixes
-    for drive in ["C:", "D:"]:
-        for msys_dir in ["msys64", "msys2"]:
-            base = Path(f"{drive}/{msys_dir}")
-            if base.exists():
-                for sub in ["mingw64", "ucrt64", "clang64", "usr"]:
-                    bin_dir = base / sub / "bin"
-                    if bin_dir.exists():
-                        paths_to_add.append(str(bin_dir.resolve()))
-
-    # 3. Discovered compiler or build tools parent directories
+    # 2. Prioritize active compiler directory if already in PATH
     import shutil
-    for tool in ["g++", "gcc", "clang++", "ninja"]:
+    for tool in ["g++", "gcc", "clang++"]:
         found = shutil.which(tool)
         if found:
             paths_to_add.append(str(Path(found).resolve().parent))
+            break
+
+    # 3. If no MSYS2 environment found yet, probe candidate installations (pick ONE, do not mix)
+    if not paths_to_add:
+        preferred = ["mingw64", "ucrt64", "clang64"]
+        msystem = os.environ.get("MSYSTEM", "").lower()
+        if "ucrt" in msystem:
+            preferred = ["ucrt64", "mingw64", "clang64"]
+        elif "clang" in msystem:
+            preferred = ["clang64", "ucrt64", "mingw64"]
+
+        for drive in ["C:", "D:"]:
+            for msys_dir in ["msys64", "msys2"]:
+                base = Path(f"{drive}/{msys_dir}")
+                if base.exists():
+                    for sub in preferred:
+                        bin_dir = base / sub / "bin"
+                        if bin_dir.exists():
+                            paths_to_add.append(str(bin_dir.resolve()))
+                            break
+                    if paths_to_add:
+                        usr_bin = base / "usr" / "bin"
+                        if usr_bin.exists():
+                            paths_to_add.append(str(usr_bin.resolve()))
+                        break
+            if paths_to_add:
+                break
+
+    # 4. Probe Visual Studio bundled Ninja if ninja is not found in PATH
+    if not shutil.which("ninja"):
+        vs_editions = ["Community", "Professional", "Enterprise", "BuildTools"]
+        for drive in ["C:", "D:"]:
+            for prog in ["Program Files", "Program Files (x86)"]:
+                for edition in vs_editions:
+                    cand = Path(f"{drive}/{prog}/Microsoft Visual Studio/2022/{edition}/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe")
+                    if cand.exists():
+                        paths_to_add.append(str(cand.parent.resolve()))
+                        break
 
     curr_path = os.environ.get("PATH", "")
     curr_parts = [p.rstrip("\\/").lower() for p in curr_path.split(os.pathsep) if p]
