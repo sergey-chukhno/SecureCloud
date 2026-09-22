@@ -25,6 +25,6 @@ echo "[SecureCloud MinIO Init] Creating service account '$FILES_USER'..."
 mc admin user add local "$FILES_USER" "$FILES_PASS" || true
 
 echo "[SecureCloud MinIO Init] Attaching readwrite policy to '$FILES_USER'..."
-mc admin policy attach local readwrite --user "$FILES_USER" || mc admin policy set local readwrite user="$FILES_USER"
+mc admin policy attach local readwrite --user "$FILES_USER" || mc admin policy set local readwrite user="$FILES_USER" || true
 
 echo "[SecureCloud MinIO Init] MinIO initialization complete."

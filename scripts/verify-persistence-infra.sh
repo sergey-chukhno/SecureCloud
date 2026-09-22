@@ -29,6 +29,10 @@ log_fail() {
 
 log_info "Starting SecureCloud Persistence Infrastructure Verification Suite..."
 
+# Ensure compose shell scripts use Unix line endings (LF) even if checked out with CRLF on Windows
+sed -i.bak 's/\r$//' deploy/compose/minio/init-minio.sh deploy/compose/postgres/init-databases.sh 2>/dev/null || sed -i '' 's/\r$//' deploy/compose/minio/init-minio.sh deploy/compose/postgres/init-databases.sh 2>/dev/null || true
+rm -f deploy/compose/minio/init-minio.sh.bak deploy/compose/postgres/init-databases.sh.bak 2>/dev/null || true
+
 # Ensure full stack is running
 log_info "Ensuring full Compose stack is up..."
 $COMPOSE_CMD up -d >/dev/null
