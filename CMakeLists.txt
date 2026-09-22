@@ -11,6 +11,16 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Enforce 64-bit architecture requirement across all platforms
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+    message(FATAL_ERROR
+        "[SecureCloud] Error: A 32-bit (x86) architecture or compiler was detected (${CMAKE_CXX_COMPILER}). "
+        "SecureCloud strictly requires a 64-bit (x64) target architecture across all dependencies (e.g. VCPKG_TARGET_TRIPLET=x64-windows). "
+        "On Windows MSVC, please launch the 'x64 Native Tools Command Prompt for VS' (or run 'vcvars64.bat') "
+        "and clean the build directory before re-configuring."
+    )
+endif()
+
 # Standard CMake test build option
 option(BUILD_TESTING "Build test suite targets" ON)
 

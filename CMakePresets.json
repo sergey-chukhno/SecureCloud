@@ -56,6 +56,14 @@
       "description": "Strict build configuration for Windows MSVC CI environment",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/ci-windows-msvc",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "toolset": {
+        "value": "host=x64",
+        "strategy": "external"
+      },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
@@ -83,6 +91,14 @@
       "description": "Strict build configuration for Windows CI environment",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/ci-windows",
+      "architecture": {
+        "value": "x64",
+        "strategy": "external"
+      },
+      "toolset": {
+        "value": "host=x64",
+        "strategy": "external"
+      },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
