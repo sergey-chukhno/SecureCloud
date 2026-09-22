@@ -38,7 +38,7 @@ target_link_libraries(securecloud_gtest_smoke_test PRIVATE
 )
 
 # Automatic CTest discovery for GoogleTest test cases
-gtest_discover_tests(securecloud_gtest_smoke_test)
+gtest_discover_tests(securecloud_gtest_smoke_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Protobuf & gRPC Code Generation Pipeline Smoke Test
 add_executable(securecloud_proto_smoke_test
@@ -52,7 +52,7 @@ target_link_libraries(securecloud_proto_smoke_test PRIVATE
     GTest::gtest_main
 )
 
-gtest_discover_tests(securecloud_proto_smoke_test)
+gtest_discover_tests(securecloud_proto_smoke_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Custom target to explicitly execute generated contract verification
 if(WIN32)
@@ -91,7 +91,7 @@ target_link_libraries(securecloud_mtls_config_test PRIVATE
     GTest::gtest_main
 )
 
-gtest_discover_tests(securecloud_mtls_config_test)
+gtest_discover_tests(securecloud_mtls_config_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Configuration Primitives & Parser Unit Test Suite (SC12-T01)
 add_executable(securecloud_config_parser_test
@@ -104,7 +104,7 @@ target_link_libraries(securecloud_config_parser_test PRIVATE
     GTest::gtest_main
 )
 
-gtest_discover_tests(securecloud_config_parser_test)
+gtest_discover_tests(securecloud_config_parser_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Common Service Configuration Model Unit Test Suite (SC12-T02)
 add_executable(securecloud_common_service_config_test
@@ -117,7 +117,7 @@ target_link_libraries(securecloud_common_service_config_test PRIVATE
     GTest::gtest_main
 )
 
-gtest_discover_tests(securecloud_common_service_config_test)
+gtest_discover_tests(securecloud_common_service_config_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Service Configuration Boundaries Unit Test Suite (SC12-T03)
 add_executable(securecloud_service_config_boundaries_test
@@ -135,7 +135,7 @@ target_link_libraries(securecloud_service_config_boundaries_test PRIVATE
     GTest::gtest_main
 )
 
-gtest_discover_tests(securecloud_service_config_boundaries_test)
+gtest_discover_tests(securecloud_service_config_boundaries_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Health Status Manager & Service Unit Test Suite (SC13-T03)
 add_executable(securecloud_health_status_manager_test
@@ -149,7 +149,7 @@ target_link_libraries(securecloud_health_status_manager_test PRIVATE
     GTest::gtest_main
 )
 
-gtest_discover_tests(securecloud_health_status_manager_test)
+gtest_discover_tests(securecloud_health_status_manager_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Transport Probe Unit Test Suite (SC13-T03)
 add_executable(securecloud_transport_probe_test
@@ -162,5 +162,5 @@ target_link_libraries(securecloud_transport_probe_test PRIVATE
     GTest::gtest_main
 )
 
-gtest_discover_tests(securecloud_transport_probe_test)
+gtest_discover_tests(securecloud_transport_probe_test ${SECURECLOUD_TEST_PROPERTIES})
 
