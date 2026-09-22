@@ -143,23 +143,23 @@ class MtlsIntegrationTest : public ::testing::Test {
         return {std::move(server), server_address};
     }
 
-    static void shutdown_server(std::unique_ptr<grpc::Server>& server) {
-        if (!server) {
-            return;
+    template <typename StubType>
+    static void shutdown_server(std::unique_ptr<grpc::Server>& server, std::unique_ptr<StubType>& stub,
+                                std::shared_ptr<grpc::Channel>& channel) {
+        if (server) {
+            server->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
         }
-        auto s = std::move(server);
-        std::promise<void> promise;
-        auto future = promise.get_future();
-        std::thread cleanup_thread([srv = std::move(s), p = std::move(promise)]() mutable {
-            srv->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
-            srv.reset();
-            p.set_value();
-        });
+        stub.reset();
+        channel.reset();
+        if (server) {
+            server.reset();
+        }
+    }
 
-        if (future.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
-            cleanup_thread.detach();
-        } else {
-            cleanup_thread.join();
+    static void shutdown_server(std::unique_ptr<grpc::Server>& server) {
+        if (server) {
+            server->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
+            server.reset();
         }
     }
 
@@ -194,9 +194,7 @@ TEST_F(MtlsIntegrationTest, PositiveValidGatewayToAuthMtlsSucceeds) {
     EXPECT_TRUE(status.ok()) << "RPC failed: " << status.error_message();
     EXPECT_EQ(response.status(), securecloud::common::v1::HealthCheckResponse::SERVING);
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeUntrustedCaFailsClosed) {
@@ -231,9 +229,7 @@ TEST_F(MtlsIntegrationTest, NegativeUntrustedCaFailsClosed) {
     EXPECT_FALSE(status.ok());
     EXPECT_NE(status.error_code(), grpc::StatusCode::OK);
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
     std::filesystem::remove_all(temp_dir);
 }
 
@@ -261,9 +257,7 @@ TEST_F(MtlsIntegrationTest, NegativeMissingClientCertificateFailsClosed) {
 
     EXPECT_FALSE(status.ok()) << "Server unexpectedly accepted missing client certificate";
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeServerSanMismatchFailsClosed) {
@@ -283,9 +277,7 @@ TEST_F(MtlsIntegrationTest, NegativeServerSanMismatchFailsClosed) {
 
     EXPECT_FALSE(status.ok()) << "RPC unexpectedly succeeded when server SAN mismatched target SAN override";
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeWrongClientIdentityRejectedPostHandshake) {
@@ -308,9 +300,7 @@ TEST_F(MtlsIntegrationTest, NegativeWrongClientIdentityRejectedPostHandshake) {
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
     EXPECT_EQ(status.error_message(), "Peer service identity mismatch");
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(MtlsIntegrationTest, NegativePlaintextConnectionAttackRejected) {
@@ -330,9 +320,7 @@ TEST_F(MtlsIntegrationTest, NegativePlaintextConnectionAttackRejected) {
 
     EXPECT_FALSE(status.ok()) << "Plaintext client connection was unexpectedly accepted by mTLS server";
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(MtlsIntegrationTest, NegativeMismatchedKeyCertStartupFailsClosed) {
@@ -367,9 +355,7 @@ TEST_F(MtlsIntegrationTest, NegativeMismatchedKeyCertStartupFailsClosed) {
         grpc::Status status = stub->Check(&context, request, &response);
         EXPECT_FALSE(status.ok());
 
-        shutdown_server(server);
-        stub.reset();
-        channel.reset();
+        shutdown_server(server, stub, channel);
     }
 }
 

@@ -246,23 +246,23 @@ class HealthIntegrationTest : public ::testing::Test {
         return {std::move(server), server_address};
     }
 
-    static void shutdown_server(std::unique_ptr<grpc::Server>& server) {
-        if (!server) {
-            return;
+    template <typename StubType>
+    static void shutdown_server(std::unique_ptr<grpc::Server>& server, std::unique_ptr<StubType>& stub,
+                                std::shared_ptr<grpc::Channel>& channel) {
+        if (server) {
+            server->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
         }
-        auto s = std::move(server);
-        std::promise<void> promise;
-        auto future = promise.get_future();
-        std::thread cleanup_thread([srv = std::move(s), p = std::move(promise)]() mutable {
-            srv->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
-            srv.reset();
-            p.set_value();
-        });
+        stub.reset();
+        channel.reset();
+        if (server) {
+            server.reset();
+        }
+    }
 
-        if (future.wait_for(std::chrono::seconds(2)) == std::future_status::timeout) {
-            cleanup_thread.detach();
-        } else {
-            cleanup_thread.join();
+    static void shutdown_server(std::unique_ptr<grpc::Server>& server) {
+        if (server) {
+            server->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
+            server.reset();
         }
     }
 
@@ -298,9 +298,7 @@ TEST_F(HealthIntegrationTest, CheckLivenessEmptyServiceReturnsServing) {
     EXPECT_TRUE(status.ok()) << "RPC failed: " << status.error_message();
     EXPECT_EQ(response.status(), v1::HealthCheckResponse::SERVING);
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(HealthIntegrationTest, CheckLivenessCanonicalServiceReturnsServing) {
@@ -321,9 +319,7 @@ TEST_F(HealthIntegrationTest, CheckLivenessCanonicalServiceReturnsServing) {
     EXPECT_TRUE(status.ok()) << "RPC failed: " << status.error_message();
     EXPECT_EQ(response.status(), v1::HealthCheckResponse::SERVING);
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(HealthIntegrationTest, CheckReadinessWithHealthyDependencyReturnsServing) {
@@ -351,9 +347,8 @@ TEST_F(HealthIntegrationTest, CheckReadinessWithHealthyDependencyReturnsServing)
     EXPECT_TRUE(status.ok()) << "RPC failed: " << status.error_message();
     EXPECT_EQ(response.status(), v1::HealthCheckResponse::SERVING);
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    dep_listener.stop();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(HealthIntegrationTest, CheckReadinessDegradesOnDependencyOutageWhileLivenessRemainsServing) {
@@ -406,9 +401,7 @@ TEST_F(HealthIntegrationTest, CheckReadinessDegradesOnDependencyOutageWhileLiven
         EXPECT_EQ(resp.status(), v1::HealthCheckResponse::SERVING);
     }
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(HealthIntegrationTest, CheckReadinessDegradesImmediatelyOnShutdown) {
@@ -450,9 +443,8 @@ TEST_F(HealthIntegrationTest, CheckReadinessDegradesImmediatelyOnShutdown) {
         EXPECT_EQ(resp.status(), v1::HealthCheckResponse::SERVING);
     }
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    dep_listener.stop();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(HealthIntegrationTest, CheckUnknownServiceReturnsServiceUnknown) {
@@ -473,9 +465,7 @@ TEST_F(HealthIntegrationTest, CheckUnknownServiceReturnsServiceUnknown) {
     EXPECT_TRUE(status.ok()) << "RPC failed: " << status.error_message();
     EXPECT_EQ(response.status(), v1::HealthCheckResponse::SERVICE_UNKNOWN);
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(HealthIntegrationTest, SecurityPlaintextClientRejected) {
@@ -496,9 +486,7 @@ TEST_F(HealthIntegrationTest, SecurityPlaintextClientRejected) {
     EXPECT_FALSE(status.ok());
     EXPECT_NE(status.error_code(), grpc::StatusCode::OK);
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(HealthIntegrationTest, SecurityUntrustedCaRejected) {
@@ -525,6 +513,7 @@ TEST_F(HealthIntegrationTest, SecurityUntrustedCaRejected) {
     grpc::ClientContext context;
     context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
     v1::HealthCheckRequest request;
+    request.set_service("");
     v1::HealthCheckResponse response;
 
     grpc::Status status = stub->Check(&context, request, &response);
@@ -532,9 +521,7 @@ TEST_F(HealthIntegrationTest, SecurityUntrustedCaRejected) {
     EXPECT_FALSE(status.ok());
     EXPECT_NE(status.error_code(), grpc::StatusCode::OK);
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
     std::filesystem::remove_all(temp_dir);
 }
 
@@ -555,6 +542,7 @@ TEST_F(HealthIntegrationTest, SecurityUnauthenticatedClientRejected) {
     grpc::ClientContext context;
     context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
     v1::HealthCheckRequest request;
+    request.set_service("");
     v1::HealthCheckResponse response;
 
     grpc::Status status = stub->Check(&context, request, &response);
@@ -562,9 +550,7 @@ TEST_F(HealthIntegrationTest, SecurityUnauthenticatedClientRejected) {
     EXPECT_FALSE(status.ok());
     EXPECT_NE(status.error_code(), grpc::StatusCode::OK);
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 TEST_F(HealthIntegrationTest, SecurityWrongClientIdentityRejectedPostHandshake) {
@@ -587,9 +573,7 @@ TEST_F(HealthIntegrationTest, SecurityWrongClientIdentityRejectedPostHandshake) 
     EXPECT_FALSE(status.ok());
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
 
-    shutdown_server(server);
-    stub.reset();
-    channel.reset();
+    shutdown_server(server, stub, channel);
 }
 
 int run_health_probe_cli(const std::vector<std::string>& extra_args) {
