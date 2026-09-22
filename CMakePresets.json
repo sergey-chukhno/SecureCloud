@@ -175,6 +175,9 @@
       "name": "ci-windows-mingw",
       "displayName": "Test CI Windows MinGW",
       "configurePreset": "ci-windows-mingw",
+      "environment": {
+        "PATH": "C:/msys64/mingw64/bin;C:/msys64/usr/bin;$penv{PATH}"
+      },
       "output": {
         "outputOnFailure": true
       }

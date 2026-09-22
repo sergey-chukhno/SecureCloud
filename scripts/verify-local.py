@@ -74,6 +74,7 @@ class VerificationOrchestrator:
         self.repo_root = repo_root
         self.preset = preset
         self.verbose = verbose
+        setup_windows_environment(self.preset)
         self.presets_data = self._load_presets()
         self.results: List[StageResult] = []
 
@@ -251,81 +252,92 @@ class VerificationOrchestrator:
             return exit_code
 
 
-def setup_windows_environment() -> None:
+def setup_windows_environment(preset: str = "") -> None:
     """
-    On Windows, ensure MSYS2 / MinGW binary search paths are discovered and
-    prepended to PATH. This enables CMake, Ninja, compiler binaries, and runtime
-    dynamic libraries (.dll for Protobuf, gRPC, OpenSSL, GTest) to be located
-    reliably when invoked from standard PowerShell or Command Prompt.
+    On Windows, ensure MSYS2 / MinGW binary search paths are discovered,
+    sanitized, and prepended to PATH. Incompatible environments (e.g. mixing
+    ucrt64 and mingw64) are filtered out to prevent DLL ABI/entrypoint mismatch.
     """
     if platform.system() != "Windows":
         return
 
-    paths_to_add: List[str] = []
+    # Determine preferred MSYS2 environment
+    preset_lower = preset.lower() if preset else ""
+    is_ucrt = ("ucrt" in preset_lower or os.environ.get("MSYSTEM", "").upper() == "UCRT64")
+    is_clang = ("clang" in preset_lower or os.environ.get("MSYSTEM", "").upper() == "CLANG64")
 
-    # 1. Inspect MSYSTEM_PREFIX if active in shell
+    target_env = "mingw64"
+    if is_ucrt:
+        target_env = "ucrt64"
+    elif is_clang:
+        target_env = "clang64"
+
+    # Identify incompatible environments that should NOT be in PATH
+    incompatible_envs = {"mingw64", "ucrt64", "clang64"} - {target_env}
+
+    # Discover candidate installation directory
+    target_bin: Optional[str] = None
+    usr_bin: Optional[str] = None
+
+    # Check MSYSTEM_PREFIX if active
     msystem_prefix = os.environ.get("MSYSTEM_PREFIX")
-    if msystem_prefix:
+    if msystem_prefix and Path(msystem_prefix).exists():
         p = Path(msystem_prefix) / "bin"
         if p.exists():
-            paths_to_add.append(str(p.resolve()))
+            target_bin = str(p.resolve())
 
-    # 2. Prioritize active compiler directory if already in PATH
-    import shutil
-    for tool in ["g++", "gcc", "clang++"]:
-        found = shutil.which(tool)
-        if found:
-            paths_to_add.append(str(Path(found).resolve().parent))
-            break
-
-    # 3. If no MSYS2 environment found yet, probe candidate installations (pick ONE, do not mix)
-    if not paths_to_add:
-        preferred = ["mingw64", "ucrt64", "clang64"]
-        msystem = os.environ.get("MSYSTEM", "").lower()
-        if "ucrt" in msystem:
-            preferred = ["ucrt64", "mingw64", "clang64"]
-        elif "clang" in msystem:
-            preferred = ["clang64", "ucrt64", "mingw64"]
-
+    # Check drive candidates
+    if not target_bin:
         for drive in ["C:", "D:"]:
             for msys_dir in ["msys64", "msys2"]:
                 base = Path(f"{drive}/{msys_dir}")
-                if base.exists():
-                    for sub in preferred:
-                        bin_dir = base / sub / "bin"
-                        if bin_dir.exists():
-                            paths_to_add.append(str(bin_dir.resolve()))
-                            break
-                    if paths_to_add:
-                        usr_bin = base / "usr" / "bin"
-                        if usr_bin.exists():
-                            paths_to_add.append(str(usr_bin.resolve()))
-                        break
-            if paths_to_add:
+                cand = base / target_env / "bin"
+                if cand.exists():
+                    target_bin = str(cand.resolve())
+                    u_cand = base / "usr" / "bin"
+                    if u_cand.exists():
+                        usr_bin = str(u_cand.resolve())
+                    break
+            if target_bin:
                 break
 
-    # 4. Probe Visual Studio bundled Ninja if ninja is not found in PATH
-    if not shutil.which("ninja"):
-        vs_editions = ["Community", "Professional", "Enterprise", "BuildTools"]
+    # Clean existing PATH
+    curr_path = os.environ.get("PATH", "")
+    parts = [p.strip() for p in curr_path.split(os.pathsep) if p.strip()]
+
+    # Filter out incompatible MSYS2 directories from PATH to prevent DLL pollution
+    filtered_parts: List[str] = []
+    for p in parts:
+        p_lower = p.lower()
+        if any(f"\\{inc}\\bin" in p_lower or f"/{inc}/bin" in p_lower for inc in incompatible_envs):
+            continue
+        if target_bin and p_lower == target_bin.lower():
+            continue
+        if usr_bin and p_lower == usr_bin.lower():
+            continue
+        filtered_parts.append(p)
+
+    # Prepend target_bin and usr_bin to the VERY FRONT of PATH
+    new_parts: List[str] = []
+    if target_bin:
+        new_parts.append(target_bin)
+    if usr_bin:
+        new_parts.append(usr_bin)
+
+    # If ninja is not in PATH, probe VS bundled Ninja
+    import shutil
+    has_ninja = (shutil.which("ninja") is not None)
+    if not has_ninja:
         for drive in ["C:", "D:"]:
             for prog in ["Program Files", "Program Files (x86)"]:
-                for edition in vs_editions:
+                for edition in ["Community", "Professional", "Enterprise", "BuildTools"]:
                     cand = Path(f"{drive}/{prog}/Microsoft Visual Studio/2022/{edition}/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe")
                     if cand.exists():
-                        paths_to_add.append(str(cand.parent.resolve()))
+                        new_parts.append(str(cand.parent.resolve()))
                         break
 
-    curr_path = os.environ.get("PATH", "")
-    curr_parts = [p.rstrip("\\/").lower() for p in curr_path.split(os.pathsep) if p]
-
-    final_additions: List[str] = []
-    for p in paths_to_add:
-        norm = p.rstrip("\\/").lower()
-        if norm not in curr_parts and norm not in [a.rstrip("\\/").lower() for a in final_additions]:
-            final_additions.append(p)
-
-    if final_additions:
-        os.environ["PATH"] = os.pathsep.join(final_additions) + os.pathsep + curr_path
+    final_path = new_parts + filtered_parts
+    os.environ["PATH"] = os.pathsep.join(final_path)
 
 
 def auto_detect_preset() -> str:
