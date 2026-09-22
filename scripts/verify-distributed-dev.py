@@ -64,20 +64,116 @@ if not sys.stdout.isatty() or os.environ.get("NO_COLOR") or platform.system() ==
             Colors.disable()
 
 
+def setup_windows_environment(preset: str = "") -> None:
+    """
+    On Windows, ensure MSYS2 / MinGW binary search paths are discovered,
+    sanitized, and prepended to PATH. Incompatible environments (e.g. mixing
+    ucrt64 and mingw64) are filtered out to prevent DLL ABI/entrypoint mismatch.
+    """
+    if platform.system() != "Windows":
+        return
+
+    preset_lower = preset.lower() if preset else ""
+    is_ucrt = ("ucrt" in preset_lower or os.environ.get("MSYSTEM", "").upper() == "UCRT64")
+    is_clang = ("clang" in preset_lower or os.environ.get("MSYSTEM", "").upper() == "CLANG64")
+
+    target_env = "mingw64"
+    if is_ucrt:
+        target_env = "ucrt64"
+    elif is_clang:
+        target_env = "clang64"
+
+    incompatible_envs = {"mingw64", "ucrt64", "clang64"} - {target_env}
+
+    target_bin: Optional[str] = None
+    usr_bin: Optional[str] = None
+
+    msystem_prefix = os.environ.get("MSYSTEM_PREFIX")
+    if msystem_prefix and Path(msystem_prefix).exists():
+        p = Path(msystem_prefix) / "bin"
+        if p.exists():
+            target_bin = str(p.resolve())
+        u_cand = Path(msystem_prefix).parent / "usr" / "bin"
+        if u_cand.exists():
+            usr_bin = str(u_cand.resolve())
+
+    if not target_bin:
+        for drive in ["C:", "D:"]:
+            for msys_dir in ["msys64", "msys2"]:
+                base = Path(f"{drive}/{msys_dir}")
+                cand = base / target_env / "bin"
+                if cand.exists():
+                    target_bin = str(cand.resolve())
+                    u_cand = base / "usr" / "bin"
+                    if u_cand.exists():
+                        usr_bin = str(u_cand.resolve())
+                    break
+            if target_bin:
+                break
+
+    curr_path = os.environ.get("PATH", "")
+    parts = [p.strip() for p in curr_path.split(os.pathsep) if p.strip()]
+
+    filtered_parts: List[str] = []
+    for p in parts:
+        p_lower = p.lower()
+        if any(f"\\{inc}\\bin" in p_lower or f"/{inc}/bin" in p_lower for inc in incompatible_envs):
+            continue
+        if target_bin and p_lower == target_bin.lower():
+            continue
+        if usr_bin and p_lower == usr_bin.lower():
+            continue
+        filtered_parts.append(p)
+
+    new_parts: List[str] = []
+    if target_bin:
+        new_parts.append(target_bin)
+    if usr_bin:
+        new_parts.append(usr_bin)
+
+    final_path = new_parts + filtered_parts
+    os.environ["PATH"] = os.pathsep.join(final_path)
+
+
 def find_bash() -> str:
-    found = shutil.which("bash")
-    if found:
-        return found
     if platform.system() == "Windows":
-        for candidate in [
-            Path("C:/Program Files/Git/bin/bash.exe"),
-            Path("C:/Program Files/Git/usr/bin/bash.exe"),
-            Path("C:/msys64/usr/bin/bash.exe"),
-            Path("C:/msys64/bin/bash.exe"),
-        ]:
-            if candidate.exists():
-                return str(candidate)
-    return "bash"
+        # 1. Active MSYSTEM_PREFIX parent usr/bin
+        msystem_prefix = os.environ.get("MSYSTEM_PREFIX")
+        if msystem_prefix:
+            cand = Path(msystem_prefix).parent / "usr" / "bin" / "bash.exe"
+            if cand.exists():
+                return str(cand.resolve())
+
+        # 2. Standard MSYS2 and Git Bash installation paths
+        for drive in ["C:", "D:"]:
+            for cand in [
+                Path(f"{drive}/msys64/usr/bin/bash.exe"),
+                Path(f"{drive}/msys64/bin/bash.exe"),
+                Path(f"{drive}/msys2/usr/bin/bash.exe"),
+                Path(f"{drive}/Program Files/Git/bin/bash.exe"),
+                Path(f"{drive}/Program Files/Git/usr/bin/bash.exe"),
+                Path(f"{drive}/Program Files (x86)/Git/bin/bash.exe"),
+            ]:
+                if cand.exists():
+                    return str(cand.resolve())
+
+        # 3. Search PATH, strictly avoiding the WSL proxy in System32 / Windows
+        path_dirs = os.environ.get("PATH", "").split(os.pathsep)
+        for p in path_dirs:
+            p_clean = p.strip().strip('"')
+            if not p_clean:
+                continue
+            cand = Path(p_clean) / "bash.exe"
+            cand_lower = str(cand).lower()
+            if "system32" in cand_lower or "syswow64" in cand_lower or "\\windows\\" in cand_lower or "/windows/" in cand_lower:
+                continue
+            if cand.exists():
+                return str(cand.resolve())
+
+        return "bash"
+
+    found = shutil.which("bash")
+    return found if found else "bash"
 
 
 @dataclass
@@ -122,9 +218,12 @@ class DistributedOrchestrator:
         self.repo_root = repo_root
         self.verbose = verbose
         self.preset = preset or self._detect_preset()
+        setup_windows_environment(self.preset)
         self.compose_file = self.repo_root / "deploy" / "compose" / "docker-compose.yml"
         self.results: List[StageResult] = []
         self.compose_cmd = ["docker", "compose", "--ansi", "never", "-f", str(self.compose_file)]
+        # Export BUILD_DIR so downstream verification scripts know the active preset build tree
+        os.environ["BUILD_DIR"] = str((self.repo_root / "build" / self.preset).resolve())
 
     def _detect_preset(self) -> str:
         system = platform.system()
@@ -376,27 +475,23 @@ class DistributedOrchestrator:
             return self._summarize_and_exit(total_start)
 
         # Stage 4: Dev PKI Generation and Verification
-        pki_gen = self.repo_root / "scripts" / "generate-dev-pki.sh"
-        pki_verify = self.repo_root / "scripts" / "verify-dev-pki.sh"
-        cmd_pki_gen = [bash_bin, str(pki_gen)]
+        cmd_pki_gen = [bash_bin, "scripts/generate-dev-pki.sh"]
         if not self._execute_stage("4a. Generate Dev PKI Certificates (generate-dev-pki.sh)", cmd_pki_gen, skip=skip_pki):
             return self._summarize_and_exit(total_start)
 
-        cmd_pki_verify = [bash_bin, str(pki_verify)]
+        cmd_pki_verify = [bash_bin, "scripts/verify-dev-pki.sh"]
         if not self._execute_stage("4b. Validate Dev PKI Certificates & x509 SANs (verify-dev-pki.sh)", cmd_pki_verify, skip=skip_pki):
             return self._summarize_and_exit(total_start)
 
         # Stage 5: Persistence Infrastructure Verification (SC-011 reuse)
-        persist_script = self.repo_root / "scripts" / "verify-persistence-infra.sh"
-        cmd_persist = [bash_bin, str(persist_script)]
+        cmd_persist = [bash_bin, "scripts/verify-persistence-infra.sh"]
         if not self._execute_stage("5. Persistence Infrastructure Verification (verify-persistence-infra.sh)", cmd_persist, skip=skip_persistence):
             if not skip_teardown:
                 self.teardown()
             return self._summarize_and_exit(total_start)
 
         # Stage 6: Health Endpoints, Readiness Degradation & Recovery (SC-013 reuse)
-        health_script = self.repo_root / "scripts" / "verify-health-endpoints.sh"
-        cmd_health = [bash_bin, str(health_script)]
+        cmd_health = [bash_bin, "scripts/verify-health-endpoints.sh"]
         if not self._execute_stage("6. Health Endpoints & Outage Recovery (verify-health-endpoints.sh)", cmd_health, skip=skip_health):
             if not skip_teardown:
                 self.teardown()

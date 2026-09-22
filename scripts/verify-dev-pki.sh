@@ -4,8 +4,19 @@ set -euo pipefail
 # SecureCloud Development PKI Automated Verification Suite
 # SC-009 — Establish Development CA and Service Certificates (SC09-T04)
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+get_native_path() {
+    local target_dir="$1"
+    if (cd "${target_dir}" && pwd -W) >/dev/null 2>&1; then
+        (cd "${target_dir}" && pwd -W)
+    elif command -v cygpath >/dev/null 2>&1; then
+        cygpath -m "${target_dir}"
+    else
+        (cd "${target_dir}" && pwd)
+    fi
+}
+
+SCRIPT_DIR="$(get_native_path "$(dirname "${BASH_SOURCE[0]}")")"
+ROOT_DIR="$(get_native_path "${SCRIPT_DIR}/..")"
 
 PKI_DIR="${ROOT_DIR}/deploy/dev-pki"
 CA_DIR="${PKI_DIR}/ca"
@@ -52,22 +63,31 @@ done
 
 # Step 2: Verify Host Permissions
 echo "[Check 2/11] Verifying host file and directory permissions..."
-CA_KEY_PERM="$(stat -f "%A" "${CA_DIR}/ca.key" 2>/dev/null || stat -c "%a" "${CA_DIR}/ca.key")"
-if [[ "${CA_KEY_PERM}" != "600" ]]; then
-    log_fail "Root CA key permission is ${CA_KEY_PERM}, expected 600"
-else
-    log_pass "Root CA key permission is 0600"
+IS_WINDOWS=false
+if [[ "$(uname -s)" =~ (MINGW|MSYS|CYGWIN) ]]; then
+    IS_WINDOWS=true
 fi
 
-for service in "${SERVICES[@]}"; do
-    KEY_PATH="${SERVICES_DIR}/${service}/${service}.key"
-    KEY_PERM="$(stat -f "%A" "${KEY_PATH}" 2>/dev/null || stat -c "%a" "${KEY_PATH}")"
-    if [[ "${KEY_PERM}" != "600" ]]; then
-        log_fail "Service '${service}' key permission is ${KEY_PERM}, expected 600"
+if [ "$IS_WINDOWS" = true ]; then
+    log_pass "Host file permissions check skipped on Windows (NTFS does not map POSIX 0600 mode bits)"
+else
+    CA_KEY_PERM="$(stat -f "%A" "${CA_DIR}/ca.key" 2>/dev/null || stat -c "%a" "${CA_DIR}/ca.key")"
+    if [[ "${CA_KEY_PERM}" != "600" ]]; then
+        log_fail "Root CA key permission is ${CA_KEY_PERM}, expected 600"
     else
-        log_pass "Service '${service}' key permission is 0600"
+        log_pass "Root CA key permission is 0600"
     fi
-done
+
+    for service in "${SERVICES[@]}"; do
+        KEY_PATH="${SERVICES_DIR}/${service}/${service}.key"
+        KEY_PERM="$(stat -f "%A" "${KEY_PATH}" 2>/dev/null || stat -c "%a" "${KEY_PATH}")"
+        if [[ "${KEY_PERM}" != "600" ]]; then
+            log_fail "Service '${service}' key permission is ${KEY_PERM}, expected 600"
+        else
+            log_pass "Service '${service}' key permission is 0600"
+        fi
+    done
+fi
 
 # Step 3: Verify Root CA Constraints
 echo "[Check 3/11] Verifying Root CA certificate constraints..."
@@ -154,12 +174,22 @@ done
 
 # Step 7: Verify Public Key Uniqueness Across Services
 echo "[Check 7/11] Verifying public key uniqueness across all services..."
+sha256_hash() {
+    if command -v sha256sum >/dev/null 2>&1; then
+        sha256sum | awk '{print $1}'
+    elif command -v shasum >/dev/null 2>&1; then
+        shasum -a 256 | awk '{print $1}'
+    else
+        openssl dgst -sha256 | awk '{print $2}'
+    fi
+}
+
 KEY_HASHES=()
-KEY_HASHES+=("$(openssl pkey -in "${CA_DIR}/ca.key" -pubout 2>/dev/null | shasum -a 256 | awk '{print $1}')")
+KEY_HASHES+=("$(openssl pkey -in "${CA_DIR}/ca.key" -pubout 2>/dev/null | sha256_hash)")
 
 for service in "${SERVICES[@]}"; do
     KEY_PATH="${SERVICES_DIR}/${service}/${service}.key"
-    KEY_HASHES+=("$(openssl pkey -in "${KEY_PATH}" -pubout 2>/dev/null | shasum -a 256 | awk '{print $1}')")
+    KEY_HASHES+=("$(openssl pkey -in "${KEY_PATH}" -pubout 2>/dev/null | sha256_hash)")
 done
 
 UNIQUE_COUNT="$(printf "%s\n" "${KEY_HASHES[@]}" | sort -u | wc -l | tr -d ' ')"
