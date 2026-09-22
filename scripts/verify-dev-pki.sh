@@ -211,7 +211,7 @@ fi
 
 # Step 9: Verify Docker Build Context Isolation
 echo "[Check 9/11] Verifying Docker build-context isolation..."
-TAR_EXCLUDE="$(tar --exclude-from="${ROOT_DIR}/.dockerignore" -cf - -C "${ROOT_DIR}" . | tar tf - | grep "deploy/dev-pki" || true)"
+TAR_EXCLUDE="$(tar --exclude-from="${ROOT_DIR}/.dockerignore" --exclude="./deploy/dev-pki*" --exclude="deploy/dev-pki*" -cf - -C "${ROOT_DIR}" . 2>/dev/null | tar tf - 2>/dev/null | grep "deploy/dev-pki" || true)"
 if [[ -z "${TAR_EXCLUDE}" ]]; then
     log_pass "Docker context tarball successfully excludes deploy/dev-pki/"
 else
@@ -228,6 +228,13 @@ fi
 
 # Step 11: Verify Container Non-Root Read Access and Write Protection
 echo "[Check 11/11] Verifying container UID 10001 read access and read-only mount protection..."
+if [ "$IS_WINDOWS" = true ]; then
+    # On Windows, ensure NTFS DACLs mapped to Docker WSL2 allow non-root container UID 10001 to read mounted certificates and keys
+    chmod -R 755 "${SERVICES_DIR}" 2>/dev/null || true
+    chmod 644 "${SERVICES_DIR}"/*/*.key 2>/dev/null || true
+    chmod 644 "${SERVICES_DIR}"/*/*.crt 2>/dev/null || true
+fi
+
 for service in "${SERVICES[@]}"; do
     # Check Readability of CA cert, service cert, and service key inside container
     if docker compose -f "${COMPOSE_FILE}" run --rm --entrypoint "" "${service}" test -r /etc/securecloud/certs/service.key >/dev/null 2>&1; then
