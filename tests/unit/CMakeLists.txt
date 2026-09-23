@@ -230,7 +230,11 @@ target_link_libraries(securecloud_channel_manager_test PRIVATE
     securecloud::gateway_config
     securecloud::common
     securecloud::compiler_flags
-    GTest::gtest_main
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_channel_manager_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
 )
 
 gtest_discover_tests(securecloud_channel_manager_test ${SECURECLOUD_TEST_PROPERTIES})

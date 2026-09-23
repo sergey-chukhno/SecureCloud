@@ -6,6 +6,16 @@
 #include <gtest/gtest.h>
 #include <string>
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 namespace securecloud::gateway::grpc {
 namespace {
 
@@ -133,3 +143,14 @@ TEST(ChannelManagerTest, InitializesFromGatewayConfig) {
 
 } // namespace
 } // namespace securecloud::gateway::grpc
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    int result = RUN_ALL_TESTS();
+#ifdef _WIN32
+    std::fflush(nullptr);
+    ::TerminateProcess(::GetCurrentProcess(), static_cast<UINT>(result));
+#else
+    return result;
+#endif
+}
