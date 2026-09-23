@@ -58,7 +58,7 @@ using test_socklen_t = socklen_t;
 #endif
 
 constexpr uint16_t k_http_port = 80;
-constexpr uint16_t k_https_port = 443;
+constexpr uint16_t k_unassigned_blackhole_port = 49151;
 constexpr int k_listen_backlog = 5;
 constexpr std::chrono::milliseconds k_test_timeout{250};
 constexpr std::chrono::milliseconds k_short_timeout{50};
@@ -157,8 +157,11 @@ TEST(TransportProbeTest, ConnectToClosedPortFailsWithinDeadline) {
 
 TEST(TransportProbeTest, TimeoutOnNonRoutableEndpointIsBounded) {
     // 192.0.2.1 is TEST-NET-1 (RFC 5737), reserved for documentation and non-routable.
+    // Use an unassigned non-web port (49151) rather than a web port (443) so that
+    // host security software, transparent proxies, and WFP web filters do not intercept
+    // the outbound SYN and falsely complete the TCP handshake.
     auto start = std::chrono::steady_clock::now();
-    bool connected = probe_tcp_connectivity("192.0.2.1", k_https_port, k_short_timeout);
+    bool connected = probe_tcp_connectivity("192.0.2.1", k_unassigned_blackhole_port, k_short_timeout);
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
 
     EXPECT_FALSE(connected);

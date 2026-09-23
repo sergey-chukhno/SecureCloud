@@ -134,6 +134,91 @@ def setup_windows_environment(preset: str = "") -> None:
     final_path = new_parts + filtered_parts
     os.environ["PATH"] = os.pathsep.join(final_path)
 
+    # If ninja is not in PATH, probe VS bundled Ninja
+    if shutil.which("ninja") is None:
+        for drive in ["C:", "D:"]:
+            for prog in ["Program Files", "Program Files (x86)"]:
+                for edition in ["Community", "Professional", "Enterprise", "BuildTools"]:
+                    cand = Path(f"{drive}/{prog}/Microsoft Visual Studio/2022/{edition}/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe")
+                    if cand.exists():
+                        os.environ["PATH"] = f"{cand.parent.resolve()}{os.pathsep}{os.environ['PATH']}"
+                        break
+
+    if "msvc" in preset_lower or (not target_bin and shutil.which("cl") is None and shutil.which("g++") is None):
+        setup_msvc_environment()
+
+
+def setup_msvc_environment() -> bool:
+    """
+    On Windows, ensure Visual Studio 64-bit developer environment (cl.exe, ninja)
+    is discovered and loaded into os.environ if cl is not already in PATH.
+    """
+    if platform.system() != "Windows":
+        return False
+    if shutil.which("cl") is not None:
+        return True
+
+    vswhere_candidates = [
+        Path(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe",
+        Path(os.environ.get("ProgramFiles", r"C:\Program Files")) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe",
+        Path(os.environ.get("ProgramW6432", r"C:\Program Files")) / "Microsoft Visual Studio" / "Installer" / "vswhere.exe",
+    ]
+    vs_path: Optional[Path] = None
+    for vswhere in vswhere_candidates:
+        if vswhere.exists():
+            try:
+                out = subprocess.check_output(
+                    [
+                        str(vswhere),
+                        "-latest",
+                        "-products",
+                        "*",
+                        "-requires",
+                        "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
+                        "-property",
+                        "installationPath",
+                    ],
+                    text=True,
+                    timeout=5,
+                    stderr=subprocess.DEVNULL,
+                ).strip()
+                if out and Path(out).exists():
+                    vs_path = Path(out)
+                    break
+            except Exception:
+                pass
+
+    if not vs_path:
+        for drive in ["C:", "D:"]:
+            for prog in ["Program Files", "Program Files (x86)"]:
+                for edition in ["Community", "Professional", "Enterprise", "BuildTools"]:
+                    cand = Path(f"{drive}/{prog}/Microsoft Visual Studio/2022/{edition}")
+                    if cand.exists():
+                        vs_path = cand
+                        break
+                if vs_path:
+                    break
+            if vs_path:
+                break
+
+    if not vs_path:
+        return False
+
+    vcvars64 = vs_path / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
+    if not vcvars64.exists():
+        return False
+
+    try:
+        cmd = f'cmd.exe /s /c "call "{vcvars64}" && set"'
+        env_output = subprocess.check_output(cmd, shell=True, text=True, timeout=15, stderr=subprocess.DEVNULL)
+        for line in env_output.splitlines():
+            if "=" in line:
+                key, val = line.split("=", 1)
+                os.environ[key] = val
+        return shutil.which("cl") is not None
+    except Exception:
+        return False
+
 
 def find_bash() -> str:
     if platform.system() == "Windows":
@@ -233,10 +318,27 @@ class DistributedOrchestrator:
             msystem = os.environ.get("MSYSTEM", "").upper()
             if "MINGW" in msystem or "UCRT" in msystem or "CLANG" in msystem:
                 return "ci-windows-mingw"
-            has_gcc = shutil.which("gcc") is not None or shutil.which("g++") is not None
+
+            has_mingw_cxx = shutil.which("g++") is not None
             has_cl = shutil.which("cl") is not None
-            if has_gcc and not has_cl:
+
+            if has_mingw_cxx and not has_cl:
                 return "ci-windows-mingw"
+
+            if has_cl:
+                return "ci-windows-msvc"
+
+            if setup_msvc_environment():
+                return "ci-windows-msvc"
+
+            for candidate in [
+                Path("C:/msys64/mingw64/bin/g++.exe"),
+                Path("C:/msys64/ucrt64/bin/g++.exe"),
+                Path("C:/msys64/clang64/bin/clang++.exe"),
+            ]:
+                if candidate.exists():
+                    return "ci-windows-mingw"
+
             return "ci-windows-msvc"
         return "dev-debug"
 

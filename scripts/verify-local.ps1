@@ -35,7 +35,8 @@ if ($clCmd) {
 if (-not $clCmd -or $is32BitCl) {
     $vswhereCandidates = @(
         "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe",
-        "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe"
+        "${env:ProgramFiles}\Microsoft Visual Studio\Installer\vswhere.exe",
+        "${env:ProgramW6432}\Microsoft Visual Studio\Installer\vswhere.exe"
     )
     foreach ($vswhere in $vswhereCandidates) {
         if (Test-Path $vswhere) {
