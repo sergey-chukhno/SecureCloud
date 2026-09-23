@@ -164,3 +164,17 @@ target_link_libraries(securecloud_transport_probe_test PRIVATE
 
 gtest_discover_tests(securecloud_transport_probe_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files PostgreSQL Connection Pool Unit Test Suite (FILES-001-T02)
+add_executable(securecloud_files_connection_pool_test
+    files/files_connection_pool_test.cpp
+)
+
+target_link_libraries(securecloud_files_connection_pool_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_connection_pool_test ${SECURECLOUD_TEST_PROPERTIES})

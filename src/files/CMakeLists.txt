@@ -6,9 +6,27 @@ add_library(securecloud::files_config ALIAS securecloud_files_config)
 
 target_include_directories(securecloud_files_config PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
 )
 
 target_link_libraries(securecloud_files_config PUBLIC
+    securecloud::common
+    securecloud::compiler_flags
+)
+
+add_library(securecloud_files_db STATIC
+    db/files_connection_pool.cpp
+)
+
+add_library(securecloud::files_db ALIAS securecloud_files_db)
+
+target_include_directories(securecloud_files_db PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(securecloud_files_db PUBLIC
+    securecloud::files_config
     securecloud::common
     securecloud::compiler_flags
 )
@@ -18,6 +36,7 @@ add_executable(securecloud-files
 )
 
 target_link_libraries(securecloud-files PRIVATE
+    securecloud::files_db
     securecloud::files_config
     securecloud::common
     securecloud::compiler_flags
