@@ -178,3 +178,16 @@ target_link_libraries(securecloud_http_smoke_test PRIVATE
 
 gtest_discover_tests(securecloud_http_smoke_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Configuration Model & Strict No-DB Invariant Test (GW-001-T02)
+add_executable(securecloud_gateway_config_test
+    gateway/gateway_config_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_config_test PRIVATE
+    securecloud::gateway_config
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_config_test ${SECURECLOUD_TEST_PROPERTIES})
+
