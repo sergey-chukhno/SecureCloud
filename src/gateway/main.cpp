@@ -1,4 +1,8 @@
 #include "gateway_config.hpp"
+#include "grpc/channel_manager.hpp"
+#include "health/gateway_health_evaluator.hpp"
+#include "http/http_server.hpp"
+#include "http/router.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
 #include "securecloud/configuration/configuration_source.hpp"
@@ -11,6 +15,7 @@
 #include <chrono>
 #include <csignal>
 #include <grpcpp/grpcpp.h>
+#include <httplib.h>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -28,6 +33,9 @@ void signal_handler(int signal) {
         g_shutdown_requested.store(true);
     }
 }
+
+constexpr int k_http_status_ok = 200;
+constexpr int k_http_status_service_unavailable = 503;
 
 int run_service() {
     std::signal(SIGINT, signal_handler);
@@ -66,6 +74,10 @@ int run_service() {
     securecloud::common::health::HealthStatusManager health_manager(config.common.service_name);
     securecloud::common::health::HealthServiceImpl health_service(config.common.service_name, health_manager);
 
+    securecloud::gateway::grpc::GrpcChannelManager channel_manager(config);
+    securecloud::gateway::health::GatewayHealthEvaluator health_evaluator(channel_manager);
+    health_manager.set_readiness_evaluator([&health_evaluator] { return health_evaluator.evaluate_readiness(); });
+
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);
     builder.RegisterService(&health_service);
@@ -82,6 +94,39 @@ int run_service() {
 
     std::cout << "[SecureCloud] [" << config.common.service_name << "] mTLS server listening strictly on "
               << server_address << " with service identity 'DNS:" << config.common.service_name << "'\n";
+
+    securecloud::gateway::http::Router router;
+    router.get("/health/live", [&health_manager](const httplib::Request&, httplib::Response& res) {
+        if (health_manager.is_live()) {
+            res.status = k_http_status_ok;
+            res.set_content(R"({"status":"SERVING"})", "application/json");
+        } else {
+            res.status = k_http_status_service_unavailable;
+            res.set_content(R"({"status":"NOT_SERVING"})", "application/json");
+        }
+    });
+
+    router.get("/health/ready", [&health_manager](const httplib::Request&, httplib::Response& res) {
+        if (health_manager.is_ready() && health_manager.evaluate_readiness()) {
+            res.status = k_http_status_ok;
+            res.set_content(R"({"status":"SERVING"})", "application/json");
+        } else {
+            res.status = k_http_status_service_unavailable;
+            res.set_content(R"({"status":"NOT_SERVING"})", "application/json");
+        }
+    });
+
+    securecloud::gateway::http::HttpServer http_server(config);
+    router.register_into(http_server);
+
+    if (!http_server.start_async()) {
+        std::cerr << "[SecureCloud] [" << config.common.service_name << "] FATAL: Failed to start HTTP server on "
+                  << config.http_listen_endpoint() << "\n";
+        server->Shutdown();
+        return 1;
+    }
+    std::cout << "[SecureCloud] [" << config.common.service_name << "] HTTP server listening on "
+              << config.http_listen_endpoint() << "\n";
 
     if (!config.peer_probe_target.empty() && !config.peer_probe_name.empty()) {
         std::cout << "[SecureCloud] [" << config.common.service_name << "] Initiating mTLS peer probe to target "
@@ -116,6 +161,9 @@ int run_service() {
     }
 
     health_manager.set_shutting_down(true);
+    std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down HTTP server...\n";
+    http_server.stop();
+    channel_manager.reset();
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down mTLS server...\n";
     server->Shutdown();
     return 0;

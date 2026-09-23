@@ -164,3 +164,78 @@ target_link_libraries(securecloud_transport_probe_test PRIVATE
 
 gtest_discover_tests(securecloud_transport_probe_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
+add_executable(securecloud_http_smoke_test
+    gateway/http_smoke_test.cpp
+)
+
+target_link_libraries(securecloud_http_smoke_test PRIVATE
+    securecloud::json
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_http_smoke_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Configuration Model & Strict No-DB Invariant Test (GW-001-T02)
+add_executable(securecloud_gateway_config_test
+    gateway/gateway_config_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_config_test PRIVATE
+    securecloud::gateway_config
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_config_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Modular HTTP Server Lifecycle Test (GW-001-T03)
+add_executable(securecloud_http_server_lifecycle_test
+    gateway/http_server_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_http_server_lifecycle_test PRIVATE
+    securecloud::gateway_http
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_http_server_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Router, Middleware Pipeline & Error Mapper Test (GW-001-T04)
+add_executable(securecloud_router_middleware_test
+    gateway/router_middleware_test.cpp
+)
+
+target_link_libraries(securecloud_router_middleware_test PRIVATE
+    securecloud::gateway_http
+    securecloud::httplib
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_router_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Downstream gRPC Channel Manager Test (GW-001-T05)
+add_executable(securecloud_channel_manager_test
+    gateway/channel_manager_test.cpp
+)
+
+target_link_libraries(securecloud_channel_manager_test PRIVATE
+    securecloud::gateway_grpc
+    securecloud::gateway_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_channel_manager_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_channel_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
