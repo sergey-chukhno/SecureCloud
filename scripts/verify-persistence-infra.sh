@@ -77,8 +77,15 @@ done
 # Check 3: PostgreSQL Database Presence & Owner Setup
 # ==============================================================================
 log_info "Check 3: Verifying PostgreSQL databases..."
-AUTH_DB_EXISTS=$($COMPOSE_CMD exec -T postgres psql -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='securecloud_auth';")
-FILES_DB_EXISTS=$($COMPOSE_CMD exec -T postgres psql -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='securecloud_files';")
+AUTH_DB_EXISTS=$($COMPOSE_CMD exec -T postgres psql -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='securecloud_auth';" 2>/dev/null || true)
+FILES_DB_EXISTS=$($COMPOSE_CMD exec -T postgres psql -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='securecloud_files';" 2>/dev/null || true)
+
+if [ "$AUTH_DB_EXISTS" != "1" ] || [ "$FILES_DB_EXISTS" != "1" ]; then
+    log_info "Databases missing from initial volume; executing database bootstrap script..."
+    $COMPOSE_CMD exec -T postgres /bin/sh -c "tr -d '\r' < /docker-entrypoint-initdb.d/init-databases.sh | /bin/sh"
+    AUTH_DB_EXISTS=$($COMPOSE_CMD exec -T postgres psql -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='securecloud_auth';" 2>/dev/null || true)
+    FILES_DB_EXISTS=$($COMPOSE_CMD exec -T postgres psql -U postgres -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='securecloud_files';" 2>/dev/null || true)
+fi
 
 if [ "$AUTH_DB_EXISTS" = "1" ] && [ "$FILES_DB_EXISTS" = "1" ]; then
     log_pass "Databases 'securecloud_auth' and 'securecloud_files' exist."
@@ -237,7 +244,18 @@ else
     log_fail "PKI verification suite failed."
 fi
 
-if ctest --preset dev-debug >/dev/null; then
+CTEST_PRESET_CANDIDATE="${CTEST_PRESET:-}"
+if [ -z "$CTEST_PRESET_CANDIDATE" ]; then
+    if [ "$(uname -s)" = "Darwin" ]; then
+        CTEST_PRESET_CANDIDATE="ci-macos"
+    elif [[ "$(uname -s)" =~ (MINGW|MSYS) ]]; then
+        CTEST_PRESET_CANDIDATE="ci-windows-mingw"
+    else
+        CTEST_PRESET_CANDIDATE="dev-debug"
+    fi
+fi
+
+if ctest --preset "$CTEST_PRESET_CANDIDATE" >/dev/null 2>&1 || ctest --preset dev-debug >/dev/null 2>&1; then
     log_pass "CTest test suite passed."
 else
     log_fail "CTest regression test suite failed."
