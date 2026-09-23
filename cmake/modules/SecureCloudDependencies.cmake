@@ -187,10 +187,35 @@ if(NOT httplib_FOUND)
     find_package(httplib QUIET)
 endif()
 
+if(NOT TARGET httplib::httplib AND NOT TARGET httplib)
+    # Automatic fallback via FetchContent when system package is unavailable (e.g. MSYS2/MinGW)
+    include(FetchContent)
+    message(STATUS "[SecureCloud] cpp-httplib not found in system paths; fetching via FetchContent (v0.18.6)...")
+    FetchContent_Declare(
+        httplib
+        GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+        GIT_TAG v0.18.6
+        GIT_SHALLOW TRUE
+    )
+    set(HTTPLIB_COMPILE OFF CACHE INTERNAL "")
+    set(HTTPLIB_REQUIRE_OPENSSL OFF CACHE INTERNAL "")
+    set(HTTPLIB_REQUIRE_ZLIB OFF CACHE INTERNAL "")
+    set(HTTPLIB_REQUIRE_BROTLI OFF CACHE INTERNAL "")
+    FetchContent_MakeAvailable(httplib)
+endif()
+
 if(TARGET httplib::httplib)
+    set(_SECURECLOUD_HTTPLIB_UPSTREAM httplib::httplib)
+elseif(TARGET httplib)
+    set(_SECURECLOUD_HTTPLIB_UPSTREAM httplib)
+else()
+    set(_SECURECLOUD_HTTPLIB_UPSTREAM "")
+endif()
+
+if(_SECURECLOUD_HTTPLIB_UPSTREAM)
     if(NOT TARGET securecloud_httplib)
         add_library(securecloud_httplib INTERFACE)
-        target_link_libraries(securecloud_httplib INTERFACE httplib::httplib)
+        target_link_libraries(securecloud_httplib INTERFACE ${_SECURECLOUD_HTTPLIB_UPSTREAM})
         target_compile_definitions(securecloud_httplib INTERFACE CPPHTTPLIB_OPENSSL_SUPPORT)
         if(TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
             target_link_libraries(securecloud_httplib INTERFACE OpenSSL::SSL OpenSSL::Crypto)
@@ -207,9 +232,7 @@ else()
         "  Active CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}\n"
         "  Remediation:\n"
         "    - On macOS: Run 'brew install cpp-httplib'\n"
-        "    - On MSYS2 MinGW64: Run 'pacman -S --needed mingw-w64-x86_64-cpp-httplib'\n"
-        "    - On MSYS2 UCRT64:  Run 'pacman -S --needed mingw-w64-ucrt-x86_64-cpp-httplib'\n"
-        "    - On MSVC / vcpkg:  Ensure vcpkg.json contains \"cpp-httplib\""
+        "    - On MSVC / vcpkg: Ensure vcpkg.json contains \"cpp-httplib\""
     )
 endif()
 

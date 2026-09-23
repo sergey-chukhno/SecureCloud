@@ -172,7 +172,6 @@ jobs:
             mingw-w64-ucrt-x86_64-gtest
             mingw-w64-ucrt-x86_64-openssl
             mingw-w64-ucrt-x86_64-nlohmann-json
-            mingw-w64-ucrt-x86_64-cpp-httplib
 
       - name: Configure CMake (MinGW UCRT64)
         shell: msys2 {0}
