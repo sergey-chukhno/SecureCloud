@@ -52,6 +52,23 @@ target_link_libraries(securecloud_gateway_grpc PUBLIC
     securecloud::compiler_flags
 )
 
+add_library(securecloud_gateway_health STATIC
+    health/gateway_health_evaluator.cpp
+)
+
+add_library(securecloud::gateway_health ALIAS securecloud_gateway_health)
+
+target_include_directories(securecloud_gateway_health PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/health
+)
+
+target_link_libraries(securecloud_gateway_health PUBLIC
+    securecloud::gateway_grpc
+    securecloud::common
+    securecloud::compiler_flags
+)
+
 add_executable(securecloud-gateway
     main.cpp
 )
@@ -60,6 +77,7 @@ target_link_libraries(securecloud-gateway PRIVATE
     securecloud::gateway_config
     securecloud::gateway_http
     securecloud::gateway_grpc
+    securecloud::gateway_health
     securecloud::common
     securecloud::compiler_flags
 )

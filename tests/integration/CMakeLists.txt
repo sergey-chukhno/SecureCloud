@@ -60,3 +60,28 @@ target_link_libraries(securecloud_health_probe PRIVATE
     securecloud_proto
     securecloud::compiler_flags
 )
+
+# Gateway Dual-Stack Integration Test Suite (GW-001-T06)
+add_executable(securecloud_gateway_integration_test
+    gateway_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_integration_test PRIVATE
+    securecloud::gateway_config
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_health
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_gateway_integration_test PRIVATE
+    SECURECLOUD_HEALTH_PROBE_BIN="$<TARGET_FILE:securecloud_health_probe>"
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+add_dependencies(securecloud_gateway_integration_test securecloud_health_probe)
+
+gtest_discover_tests(securecloud_gateway_integration_test ${SECURECLOUD_TEST_PROPERTIES})
