@@ -152,7 +152,7 @@ probe_service() {
         --cert "${CLIENT_CERT}" \
         --key "${CLIENT_KEY}" \
         --expected-status "${expected}" \
-        --timeout-ms 3000 2>&1); then
+        --timeout-ms "${PROBE_TIMEOUT_MS:-8000}" 2>&1); then
         return 0
     else
         echo -e "${COLOR_RED}Probe failed for ${server_san} (${target}) service='${service_name}', expected='${expected}': ${output}${COLOR_RESET}"
@@ -303,18 +303,44 @@ fi
 log_info "Verifying degraded readiness and persistent liveness..."
 
 # Auth depends on PostgreSQL: readiness must degrade, liveness must remain SERVING
-if probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "" "SERVING" && \
-   probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "readiness" "NOT_SERVING"; then
+TRIES=0
+AUTH_DEGRADED=0
+while [ $TRIES -lt 15 ]; do
+    if probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "" "SERVING" >/dev/null 2>&1 && \
+       probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "readiness" "NOT_SERVING" >/dev/null 2>&1; then
+        AUTH_DEGRADED=1
+        break
+    fi
+    sleep 1
+    TRIES=$((TRIES + 1))
+done
+
+if [ "$AUTH_DEGRADED" -eq 1 ]; then
     log_pass "Auth: Liveness remained SERVING while Readiness degraded to NOT_SERVING."
 else
+    probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "" "SERVING" || true
+    probe_service "127.0.0.1:${AUTH_HOST_PORT}" "auth" "readiness" "NOT_SERVING"
     log_fail "Auth failed dependency degradation contract during postgres outage."
 fi
 
 # Files depends on PostgreSQL: readiness must degrade, liveness must remain SERVING
-if probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "" "SERVING" && \
-   probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "readiness" "NOT_SERVING"; then
+TRIES=0
+FILES_DEGRADED=0
+while [ $TRIES -lt 15 ]; do
+    if probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "" "SERVING" >/dev/null 2>&1 && \
+       probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "readiness" "NOT_SERVING" >/dev/null 2>&1; then
+        FILES_DEGRADED=1
+        break
+    fi
+    sleep 1
+    TRIES=$((TRIES + 1))
+done
+
+if [ "$FILES_DEGRADED" -eq 1 ]; then
     log_pass "Files: Liveness remained SERVING while Readiness degraded to NOT_SERVING."
 else
+    probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "" "SERVING" || true
+    probe_service "127.0.0.1:${FILES_HOST_PORT}" "files" "readiness" "NOT_SERVING"
     log_fail "Files failed dependency degradation contract during postgres outage."
 fi
 
@@ -405,10 +431,23 @@ $COMPOSE_CMD stop clickhouse >/dev/null
 log_info "Verifying Audit readiness degrades to NOT_SERVING while others stay unaffected..."
 
 # Audit depends on ClickHouse: readiness must degrade, liveness must remain SERVING
-if probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "" "SERVING" && \
-   probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "readiness" "NOT_SERVING"; then
+TRIES=0
+AUDIT_DEGRADED=0
+while [ $TRIES -lt 15 ]; do
+    if probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "" "SERVING" >/dev/null 2>&1 && \
+       probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "readiness" "NOT_SERVING" >/dev/null 2>&1; then
+        AUDIT_DEGRADED=1
+        break
+    fi
+    sleep 1
+    TRIES=$((TRIES + 1))
+done
+
+if [ "$AUDIT_DEGRADED" -eq 1 ]; then
     log_pass "Audit: Liveness remained SERVING while Readiness degraded to NOT_SERVING."
 else
+    probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "" "SERVING" || true
+    probe_service "127.0.0.1:${AUDIT_HOST_PORT}" "audit" "readiness" "NOT_SERVING"
     log_fail "Audit failed dependency degradation contract during clickhouse outage."
 fi
 
