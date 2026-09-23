@@ -1,4 +1,5 @@
 #include "gateway_config.hpp"
+#include "http/http_server.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
 #include "securecloud/configuration/configuration_source.hpp"
@@ -83,6 +84,16 @@ int run_service() {
     std::cout << "[SecureCloud] [" << config.common.service_name << "] mTLS server listening strictly on "
               << server_address << " with service identity 'DNS:" << config.common.service_name << "'\n";
 
+    securecloud::gateway::http::HttpServer http_server(config);
+    if (!http_server.start_async()) {
+        std::cerr << "[SecureCloud] [" << config.common.service_name << "] FATAL: Failed to start HTTP server on "
+                  << config.http_listen_endpoint() << "\n";
+        server->Shutdown();
+        return 1;
+    }
+    std::cout << "[SecureCloud] [" << config.common.service_name << "] HTTP server listening on "
+              << config.http_listen_endpoint() << "\n";
+
     if (!config.peer_probe_target.empty() && !config.peer_probe_name.empty()) {
         std::cout << "[SecureCloud] [" << config.common.service_name << "] Initiating mTLS peer probe to target "
                   << config.peer_probe_target << " (expected SAN: DNS:" << config.peer_probe_name << ")...\n";
@@ -116,6 +127,8 @@ int run_service() {
     }
 
     health_manager.set_shutting_down(true);
+    std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down HTTP server...\n";
+    http_server.stop();
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down mTLS server...\n";
     server->Shutdown();
     return 0;

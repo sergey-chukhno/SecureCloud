@@ -191,3 +191,17 @@ target_link_libraries(securecloud_gateway_config_test PRIVATE
 
 gtest_discover_tests(securecloud_gateway_config_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Modular HTTP Server Lifecycle Test (GW-001-T03)
+add_executable(securecloud_http_server_lifecycle_test
+    gateway/http_server_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_http_server_lifecycle_test PRIVATE
+    securecloud::gateway_http
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_http_server_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
