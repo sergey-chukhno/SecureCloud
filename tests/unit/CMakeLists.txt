@@ -164,3 +164,15 @@ target_link_libraries(securecloud_transport_probe_test PRIVATE
 
 gtest_discover_tests(securecloud_transport_probe_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# PostgreSQL C++ Driver (libpqxx) Integration Smoke Test (AUTH-001-T02)
+add_executable(securecloud_pqxx_smoke_test
+        pqxx_smoke_test.cpp
+)
+
+target_link_libraries(securecloud_pqxx_smoke_test PRIVATE
+        securecloud::libpqxx
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_pqxx_smoke_test ${SECURECLOUD_TEST_PROPERTIES})

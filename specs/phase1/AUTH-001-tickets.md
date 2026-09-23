@@ -114,9 +114,14 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Use standard gRPC status codes (`INVALID_ARGUMENT`, `NOT_FOUND`, `UNAUTHENTICATED`, `PERMISSION_DENIED`, `UNIMPLEMENTED`).
 19. **Testing Requirements**: `tests/unit/proto_smoke_test.cpp` instantiates generated request types and service stubs.
 20. **Validation Commands**:
+    - Windows (MSYS2 / MinGW64 toolchains only) :
+    ```shell
+    $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+    ```
+    - Build & Test Execution (All platforms & toolchains):
     ```bash
     cmake --preset dev-debug
-    cmake --build --preset dev-debug --target securecloud_proto
+    cmake --build --preset dev-debug --target securecloud_proto_smoke_test
     ctest --preset dev-debug -R proto_smoke_test --output-on-failure
     ```
 21. **Expected Validation Evidence**: Generated headers (`auth.pb.h`, `auth.grpc.pb.h`) compile without warnings; `verify-contracts` target passes.
@@ -152,6 +157,11 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Clear fatal diagnostic if `libpqxx` is missing with platform remediation steps.
 19. **Testing Requirements**: `securecloud_pqxx_smoke_test` compiles and passes in CTest.
 20. **Validation Commands**:
+    - Windows (MSYS2 / MinGW64 toolchains only) :
+    ```shell
+    $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+    ```
+    - Build & Test Execution (All platforms & toolchains):
     ```bash
     cmake --preset dev-debug
     cmake --build --preset dev-debug --target securecloud_pqxx_smoke_test
