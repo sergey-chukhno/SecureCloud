@@ -31,7 +31,7 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew install protobuf grpc googletest llvm@18 ninja
+          brew install openssl@3 protobuf grpc googletest llvm@18 ninja nlohmann-json cpp-httplib
           echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
 
       - name: Configure CMake with Static Analysis
@@ -65,7 +65,7 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew install openssl@3 protobuf grpc googletest ninja
+          brew install openssl@3 protobuf grpc googletest ninja nlohmann-json cpp-httplib
           echo "/opt/homebrew/opt/openssl@3/bin" >> "$GITHUB_PATH"
 
       - name: Generate Development PKI Certificates
@@ -171,6 +171,8 @@ jobs:
             mingw-w64-ucrt-x86_64-grpc
             mingw-w64-ucrt-x86_64-gtest
             mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-nlohmann-json
+            mingw-w64-ucrt-x86_64-cpp-httplib
 
       - name: Configure CMake (MinGW UCRT64)
         shell: msys2 {0}

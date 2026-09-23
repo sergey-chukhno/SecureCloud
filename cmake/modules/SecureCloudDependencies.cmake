@@ -141,4 +141,76 @@ if(BUILD_TESTING)
     message(STATUS "[SecureCloud] GoogleTest framework discovered successfully (Targets: GTest::gtest, GTest::gtest_main, GTest::gmock)")
 endif()
 
+# 4. Discover OpenSSL framework (needed for TLS transport and cpp-httplib HTTPS support)
+if(APPLE AND NOT DEFINED OPENSSL_ROOT_DIR)
+    if(EXISTS "/opt/homebrew/opt/openssl@3")
+        set(OPENSSL_ROOT_DIR "/opt/homebrew/opt/openssl@3")
+    elseif(EXISTS "/usr/local/opt/openssl@3")
+        set(OPENSSL_ROOT_DIR "/usr/local/opt/openssl@3")
+    endif()
+endif()
+find_package(OpenSSL QUIET)
+if(TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
+    message(STATUS "[SecureCloud] Discovered OpenSSL targets: OpenSSL::SSL, OpenSSL::Crypto (Version: ${OPENSSL_VERSION})")
+endif()
+
+# 5. Discover nlohmann_json serialization framework
+message(STATUS "[SecureCloud] Discovering nlohmann_json...")
+find_package(nlohmann_json CONFIG QUIET)
+if(NOT nlohmann_json_FOUND)
+    find_package(nlohmann_json QUIET)
+endif()
+
+if(TARGET nlohmann_json::nlohmann_json)
+    if(NOT TARGET securecloud_json)
+        add_library(securecloud_json INTERFACE)
+        target_link_libraries(securecloud_json INTERFACE nlohmann_json::nlohmann_json)
+        add_library(securecloud::json ALIAS securecloud_json)
+    endif()
+    message(STATUS "[SecureCloud] Discovered nlohmann_json target: securecloud::json")
+else()
+    message(FATAL_ERROR
+        "[SecureCloud] nlohmann_json package was not found.\n"
+        "  Active CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}\n"
+        "  Remediation:\n"
+        "    - On macOS: Run 'brew install nlohmann-json'\n"
+        "    - On MSYS2 MinGW64: Run 'pacman -S --needed mingw-w64-x86_64-nlohmann-json'\n"
+        "    - On MSYS2 UCRT64:  Run 'pacman -S --needed mingw-w64-ucrt-x86_64-nlohmann-json'\n"
+        "    - On MSVC / vcpkg:  Ensure vcpkg.json contains \"nlohmann-json\""
+    )
+endif()
+
+# 6. Discover cpp-httplib HTTP runtime framework
+message(STATUS "[SecureCloud] Discovering cpp-httplib...")
+find_package(httplib CONFIG QUIET)
+if(NOT httplib_FOUND)
+    find_package(httplib QUIET)
+endif()
+
+if(TARGET httplib::httplib)
+    if(NOT TARGET securecloud_httplib)
+        add_library(securecloud_httplib INTERFACE)
+        target_link_libraries(securecloud_httplib INTERFACE httplib::httplib)
+        target_compile_definitions(securecloud_httplib INTERFACE CPPHTTPLIB_OPENSSL_SUPPORT)
+        if(TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
+            target_link_libraries(securecloud_httplib INTERFACE OpenSSL::SSL OpenSSL::Crypto)
+        endif()
+        if(WIN32)
+            target_link_libraries(securecloud_httplib INTERFACE ws2_32 crypt32)
+        endif()
+        add_library(securecloud::httplib ALIAS securecloud_httplib)
+    endif()
+    message(STATUS "[SecureCloud] Discovered cpp-httplib target: securecloud::httplib")
+else()
+    message(FATAL_ERROR
+        "[SecureCloud] cpp-httplib package was not found.\n"
+        "  Active CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}\n"
+        "  Remediation:\n"
+        "    - On macOS: Run 'brew install cpp-httplib'\n"
+        "    - On MSYS2 MinGW64: Run 'pacman -S --needed mingw-w64-x86_64-cpp-httplib'\n"
+        "    - On MSYS2 UCRT64:  Run 'pacman -S --needed mingw-w64-ucrt-x86_64-cpp-httplib'\n"
+        "    - On MSVC / vcpkg:  Ensure vcpkg.json contains \"cpp-httplib\""
+    )
+endif()
+
 message(STATUS "[SecureCloud] Dependency discovery pipeline established successfully")
