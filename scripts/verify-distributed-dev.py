@@ -462,6 +462,7 @@ class DistributedOrchestrator:
 
         total_start = time.monotonic()
         bash_bin = find_bash()
+        os.environ["CTEST_PRESET"] = self.preset
 
         # Stage 1: Pre-flight Observational Host Conflict Guard (Port 5432)
         if not self._execute_stage(

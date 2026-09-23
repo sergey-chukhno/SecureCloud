@@ -31,18 +31,36 @@ ROOT_DIR="$(get_native_path "${SCRIPT_DIR}/..")"
 cd "${ROOT_DIR}"
 
 COMPOSE_CMD="docker compose --ansi never -f deploy/compose/docker-compose.yml"
-BUILD_DIR="${BUILD_DIR:-${ROOT_DIR}/build/dev-debug}"
+BUILD_DIR="${BUILD_DIR:-}"
+if [ -z "${BUILD_DIR}" ] || [ ! -d "${BUILD_DIR}" ]; then
+    if [ -d "${ROOT_DIR}/build/ci-windows-mingw" ]; then
+        BUILD_DIR="${ROOT_DIR}/build/ci-windows-mingw"
+    elif [ -d "${ROOT_DIR}/build/ci-windows-msvc" ]; then
+        BUILD_DIR="${ROOT_DIR}/build/ci-windows-msvc"
+    elif [ -d "${ROOT_DIR}/build/ci-macos" ]; then
+        BUILD_DIR="${ROOT_DIR}/build/ci-macos"
+    else
+        BUILD_DIR="${ROOT_DIR}/build/dev-debug"
+    fi
+fi
 
 find_probe_bin() {
-    for cand in \
-        "${BUILD_DIR}/tests/integration/securecloud_health_probe" \
-        "${BUILD_DIR}/tests/integration/securecloud_health_probe.exe" \
-        "${BUILD_DIR}/tests/integration/Debug/securecloud_health_probe.exe" \
-        "${BUILD_DIR}/tests/integration/Release/securecloud_health_probe.exe"; do
-        if [ -f "${cand}" ]; then
-            echo "${cand}"
-            return 0
-        fi
+    for bdir in \
+        "${BUILD_DIR}" \
+        "${ROOT_DIR}/build/ci-windows-mingw" \
+        "${ROOT_DIR}/build/ci-windows-msvc" \
+        "${ROOT_DIR}/build/ci-macos" \
+        "${ROOT_DIR}/build/dev-debug"; do
+        for cand in \
+            "${bdir}/tests/integration/securecloud_health_probe" \
+            "${bdir}/tests/integration/securecloud_health_probe.exe" \
+            "${bdir}/tests/integration/Debug/securecloud_health_probe.exe" \
+            "${bdir}/tests/integration/Release/securecloud_health_probe.exe"; do
+            if [ -f "${cand}" ]; then
+                echo "${cand}"
+                return 0
+            fi
+        done
     done
     echo "${BUILD_DIR}/tests/integration/securecloud_health_probe"
 }
@@ -259,15 +277,16 @@ fi
 
 # 2. Untrusted CA Certificate Rejection
 FAKE_CA="${ROOT_DIR}/build/fake_ca.crt"
-openssl req -x509 -newkey rsa:2048 -keyout /dev/null -out "${FAKE_CA}" -days 1 -nodes -subj "/CN=FakeCA" >/dev/null 2>&1 || true
+FAKE_KEY="${ROOT_DIR}/build/fake_ca.key"
+openssl req -x509 -newkey rsa:2048 -keyout "${FAKE_KEY}" -out "${FAKE_CA}" -days 1 -nodes -subj "/CN=FakeCA" >/dev/null 2>&1 || true
 if [ -f "${FAKE_CA}" ]; then
     if "${PROBE_BIN}" --target "127.0.0.1:${AUTH_HOST_PORT}" --server-name "auth" --service-name "" --ca "${FAKE_CA}" --cert "${CLIENT_CERT}" --key "${CLIENT_KEY}" --expected-status "SERVING" --timeout-ms 1500 >/dev/null 2>&1; then
-        rm -f "${FAKE_CA}"
+        rm -f "${FAKE_CA}" "${FAKE_KEY}"
         log_fail "Security vulnerability: Untrusted CA connection was accepted by auth service!"
     else
         log_pass "Untrusted CA rejected fail-closed."
     fi
-    rm -f "${FAKE_CA}"
+    rm -f "${FAKE_CA}" "${FAKE_KEY}"
 fi
 
 # ==============================================================================
