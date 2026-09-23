@@ -1,0 +1,208 @@
+syntax = "proto3";
+
+package securecloud.auth.v1;
+
+option cc_generic_services = false;
+
+import "google/protobuf/timestamp.proto";
+
+// Authentification status enum
+enum DeviceStatus {
+  DEVICE_STATUS_UNSPECIFIED = 0;
+  DEVICE_STATUS_ACTIVE = 1;
+  DEVICE_STATUS_REVOKED = 2;
+}
+
+enum AuthenticationLevel {
+  AUTHENTICATION_LEVEL_UNSPECIFIED = 0;
+  AUTHENTICATION_LEVEL_PRIMARY_ONLY = 1;
+  AUTHENTICATION_LEVEL_MFA_VERIFIED = 2;
+}
+
+enum KeyType {
+  KEY_TYPE_UNSPECIFIED = 0;
+  KEY_TYPE_IDENTITY_SIGNING = 1;
+  KEY_TYPE_IDENTITY_AGREEMENT = 2;
+  KEY_TYPE_PREKEY = 3;
+}
+
+// Authoritative RPC methods
+
+// --- Authenticate ---
+message AuthenticateRequest {
+  string credential_identifier = 1;
+  string password = 2;
+  string device_id = 3;
+}
+
+message AuthenticateResponse {
+  string user_id = 1;
+  string device_id = 2;
+  string session_id = 3;
+  string access_token = 4;
+  string refresh_token = 5;
+  AuthenticationLevel authentication_level = 6;
+  bool mfa_required = 7;
+  string mfa_challenge_id = 8;
+}
+
+// --- RefreshSession ---
+message RefreshSessionRequest {
+  string refresh_token = 1;
+}
+message RefreshSessionResponse {
+  string refresh_token = 1;
+  string access_token = 2;
+  string user_id = 3;
+  string device_id = 4;
+  string session_id = 5;
+  AuthenticationLevel authentication_level = 6;
+}
+
+// --- ValidateSession ---
+message ValidateSessionRequest {
+  string session_id = 1;
+}
+
+message ValidateSessionResponse {
+  bool is_valid = 1;
+  string user_id = 2;
+  string device_id = 3;
+  string session_id = 4;
+  AuthenticationLevel authentication_level = 5;
+  google.protobuf.Timestamp expires_at = 6;
+}
+
+// --- RevokeSession ---
+message RevokeSessionRequest {
+  string session_id = 1;
+  string revocation_reason = 2;
+}
+
+message RevokeSessionResponse {
+  bool success = 1;
+}
+
+// --- GetUser ---
+message GetUserRequest {
+  string user_id = 1;
+}
+
+message GetUserResponse {
+  string user_id = 1;
+  string credential_identifier = 2;
+  string account_status = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+// --- GetDevice ---
+message GetDeviceRequest {
+  string device_id =1;
+}
+
+message GetDeviceResponse {
+  string device_id = 1;
+  string user_id = 2;
+  DeviceStatus device_status = 3;
+  google.protobuf.Timestamp registered_at = 4;
+  google.protobuf.Timestamp revoked_at = 5;
+  string revocation_reason = 6;
+  google.protobuf.Timestamp last_authenticated_at = 7;
+}
+
+// --- ListUserDevices ---
+message ListUserDevicesRequest {
+  string user_id = 1;
+}
+
+message ListUserDevicesResponse {
+  repeated GetDeviceResponse devices = 1;
+}
+
+// --- RegisterDevice ---
+message RegisterDeviceRequest {
+  string user_id = 1;
+  bytes public_identity_key = 2;
+}
+
+message RegisterDeviceResponse {
+  string device_id = 1;
+  DeviceStatus device_status = 2;
+  google.protobuf.Timestamp registered_at = 3;
+}
+
+// --- RevokeDevice ---
+message RevokeDeviceRequest {
+  string device_id = 1;
+  string revocation_reason = 2;
+}
+
+message RevokeDeviceResponse {
+  bool success = 1;
+  google.protobuf.Timestamp revoked_at = 2;
+}
+
+// --- GetDeviceCryptoDirectory ---
+message GetDeviceCryptoDirectoryRequest {
+  string user_id = 1;
+}
+
+message GetDeviceCryptoDirectoryResponse {
+  message OneTimePrekey {
+    string key_id = 1;
+    bytes public_key = 2;
+  }
+
+  message DeviceCryptoBundle {
+    string device_id = 1;
+    bytes identity_public_key = 2;
+    bytes signed_prekey = 3;
+    bytes signed_prekey_signature = 4;
+    OneTimePrekey one_time_prekey = 5;
+  }
+
+  string user_id = 1;
+  repeated DeviceCryptoBundle device_bundles = 2;
+}
+
+// --- GetCryptoIdentity ---
+message GetCryptoIdentityRequest {
+  string device_id = 1;
+}
+
+message GetCryptoIdentityResponse {
+  string device_id = 1;
+  bytes identity_public_key = 2;
+  KeyType key_type = 3;
+}
+
+// --- UpdateCryptoPrekeys ---
+message UpdateCryptoPrekeysRequest {
+  string device_id = 1;
+  bytes signed_prekey = 2;
+  bytes signed_prekey_signature = 3;
+  repeated bytes one_time_prekeys = 4;
+}
+
+message UpdateCryptoPrekeysResponse {
+  bool success = 1;
+  uint32 remaining_one_time_prekeys = 2;
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+// Authentification service interface
+service AuthService {
+  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+  rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse);
+  rpc ValidateSession(ValidateSessionRequest) returns (ValidateSessionResponse);
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
+  rpc GetUser(GetUserRequest) returns (GetUserResponse);
+  rpc GetDevice(GetDeviceRequest) returns (GetDeviceResponse);
+  rpc ListUserDevices(ListUserDevicesRequest) returns (ListUserDevicesResponse);
+  rpc RegisterDevice(RegisterDeviceRequest) returns (RegisterDeviceResponse);
+  rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
+  rpc GetDeviceCryptoDirectory(GetDeviceCryptoDirectoryRequest) returns (GetDeviceCryptoDirectoryResponse);
+  rpc GetCryptoIdentity(GetCryptoIdentityRequest) returns (GetCryptoIdentityResponse);
+  rpc UpdateCryptoPrekeys(UpdateCryptoPrekeysRequest) returns (UpdateCryptoPrekeysResponse);
+}
