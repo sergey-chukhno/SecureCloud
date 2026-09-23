@@ -602,7 +602,16 @@ def main() -> int:
         help="Stream full stdout/stderr from underlying tools",
     )
 
-    args = parser.parse_args()
+    normalized_argv: List[str] = []
+    for arg in sys.argv[1:]:
+        if arg.lower() in ("-preset", "--preset"):
+            normalized_argv.append("--preset")
+        elif arg.lower() in ("-verbose", "--verbose"):
+            normalized_argv.append("--verbose")
+        else:
+            normalized_argv.append(arg)
+
+    args = parser.parse_args(normalized_argv)
 
     orchestrator = DistributedOrchestrator(
         repo_root=repo_root,
