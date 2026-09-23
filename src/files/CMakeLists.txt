@@ -31,13 +31,41 @@ target_link_libraries(securecloud_files_db PUBLIC
     securecloud::compiler_flags
 )
 
+find_package(OpenSSL REQUIRED)
+
+add_library(securecloud_files_storage STATIC
+    storage/s3_client.cpp
+)
+
+add_library(securecloud::files_storage ALIAS securecloud_files_storage)
+
+target_include_directories(securecloud_files_storage PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(securecloud_files_storage PUBLIC
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    OpenSSL::SSL
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_files_storage PUBLIC ws2_32)
+endif()
+
 add_executable(securecloud-files
     main.cpp
 )
 
 target_link_libraries(securecloud-files PRIVATE
+    securecloud::files_storage
     securecloud::files_db
     securecloud::files_config
     securecloud::common
     securecloud::compiler_flags
 )
+
+

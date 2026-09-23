@@ -178,3 +178,21 @@ target_link_libraries(securecloud_files_connection_pool_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_files_connection_pool_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files S3 Storage Client Unit Test Suite (FILES-001-T03)
+add_executable(securecloud_s3_client_test
+    files/s3_client_test.cpp
+)
+
+target_link_libraries(securecloud_s3_client_test PRIVATE
+    securecloud::files_storage
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_s3_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
+
