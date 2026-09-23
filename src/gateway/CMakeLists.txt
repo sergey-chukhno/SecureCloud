@@ -15,6 +15,9 @@ target_link_libraries(securecloud_gateway_config PUBLIC
 
 add_library(securecloud_gateway_http STATIC
     http/http_server.cpp
+    http/error_mapper.cpp
+    http/middleware.cpp
+    http/router.cpp
 )
 
 add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
@@ -27,6 +30,7 @@ target_include_directories(securecloud_gateway_http PUBLIC
 target_link_libraries(securecloud_gateway_http PUBLIC
     securecloud::gateway_config
     securecloud::httplib
+    securecloud::json
     securecloud::common
     securecloud::compiler_flags
 )

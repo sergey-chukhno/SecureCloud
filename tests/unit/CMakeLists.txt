@@ -205,3 +205,18 @@ target_link_libraries(securecloud_http_server_lifecycle_test PRIVATE
 
 gtest_discover_tests(securecloud_http_server_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Router, Middleware Pipeline & Error Mapper Test (GW-001-T04)
+add_executable(securecloud_router_middleware_test
+    gateway/router_middleware_test.cpp
+)
+
+target_link_libraries(securecloud_router_middleware_test PRIVATE
+    securecloud::gateway_http
+    securecloud::httplib
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_router_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
+
