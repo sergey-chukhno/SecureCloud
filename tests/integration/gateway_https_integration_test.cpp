@@ -333,7 +333,8 @@ TEST(GatewayHttpsIntegrationTest, OversizedPayloadRejectedWithHttp413) {
     auto client = create_ssl_client(port, ca_file);
 
     std::string oversized_body(k_oversized_body_bytes, 'B');
-    auto res = client->Post("/api/v1/upload", oversized_body, "application/octet-stream");
+    httplib::Headers headers = {{"Expect", "100-continue"}};
+    auto res = client->Post("/api/v1/upload", headers, oversized_body, "application/octet-stream");
     EXPECT_EQ(check_problem_details(res, k_http_status_payload_too_large, "Payload Too Large"), "");
 
     server.stop();
