@@ -69,6 +69,26 @@ target_link_libraries(securecloud_gateway_health PUBLIC
     securecloud::compiler_flags
 )
 
+add_library(securecloud_gateway_tls STATIC
+    tls/tls_handler.cpp
+)
+
+add_library(securecloud::gateway_tls ALIAS securecloud_gateway_tls)
+
+target_include_directories(securecloud_gateway_tls PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tls
+)
+
+target_link_libraries(securecloud_gateway_tls PUBLIC
+    securecloud::gateway_config
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::common
+    securecloud::compiler_flags
+)
+
+
 add_executable(securecloud-gateway
     main.cpp
 )

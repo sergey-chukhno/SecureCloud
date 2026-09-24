@@ -252,4 +252,22 @@ target_link_libraries(securecloud_gateway_tls_config_test PRIVATE
 
 gtest_discover_tests(securecloud_gateway_tls_config_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway OpenSSL TLS Context & Certificate Pair Validator Test (GW-002-T02)
+add_executable(securecloud_tls_handler_test
+    gateway/tls_handler_test.cpp
+)
+
+target_link_libraries(securecloud_tls_handler_test PRIVATE
+    securecloud::gateway_tls
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_tls_handler_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_tls_handler_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 
