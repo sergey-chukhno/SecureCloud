@@ -116,7 +116,7 @@ GatewayConfig make_integration_gateway_config(size_t max_header_bytes = k_defaul
     cfg.limits.max_header_bytes = max_header_bytes;
     cfg.limits.max_body_bytes = max_body_bytes;
     cfg.limits.max_concurrent_connections = max_concurrent;
-    cfg.max_payload_bytes = max_body_bytes;
+    cfg.max_payload_bytes = k_default_body_limit_bytes;
 
     return cfg;
 }
