@@ -81,6 +81,7 @@ void ResourceLimiterMiddleware::write_problem_details(httplib::Response& res, in
     }
 
     res.status = status;
+    res.set_header("Connection", "close");
     res.set_content(problem.dump(), k_content_type_problem_json);
 }
 
