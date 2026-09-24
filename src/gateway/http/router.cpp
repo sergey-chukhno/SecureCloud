@@ -2,6 +2,7 @@
 
 #include "http/http_server.hpp"
 #include "http/https_server.hpp"
+#include "http/request_id_middleware.hpp"
 
 #include <exception>
 #include <httplib.h>

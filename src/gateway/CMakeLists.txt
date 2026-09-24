@@ -37,6 +37,9 @@ add_library(securecloud_gateway_http STATIC
     http/https_server.cpp
     http/error_mapper.cpp
     http/middleware.cpp
+    http/request_id_middleware.cpp
+    http/logging_middleware.cpp
+    http/resource_limiter_middleware.cpp
     http/router.cpp
 )
 

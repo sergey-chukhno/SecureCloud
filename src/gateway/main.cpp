@@ -3,6 +3,7 @@
 #include "health/gateway_health_evaluator.hpp"
 #include "http/http_server.hpp"
 #include "http/https_server.hpp"
+#include "http/resource_limiter_middleware.hpp"
 #include "http/router.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
@@ -97,6 +98,7 @@ int run_service() {
               << server_address << " with service identity 'DNS:" << config.common.service_name << "'\n";
 
     securecloud::gateway::http::Router router;
+    router.use(std::make_shared<securecloud::gateway::http::ResourceLimiterMiddleware>(config));
     router.get("/health/live", [&health_manager](const httplib::Request&, httplib::Response& res) {
         if (health_manager.is_live()) {
             res.status = k_http_status_ok;

@@ -1,5 +1,7 @@
 #include "http/error_mapper.hpp"
+#include "http/logging_middleware.hpp"
 #include "http/middleware.hpp"
+#include "http/request_id_middleware.hpp"
 #include "http/router.hpp"
 
 #include <grpcpp/support/status_code_enum.h>

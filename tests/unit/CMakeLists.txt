@@ -288,5 +288,18 @@ target_compile_definitions(securecloud_https_server_lifecycle_test PRIVATE
 
 gtest_discover_tests(securecloud_https_server_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Request & Resource Limiter Middleware Test (GW-002-T04)
+add_executable(securecloud_resource_limiter_middleware_test
+    gateway/resource_limiter_middleware_test.cpp
+)
 
+target_link_libraries(securecloud_resource_limiter_middleware_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_config
+    securecloud::httplib
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
 
+gtest_discover_tests(securecloud_resource_limiter_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
