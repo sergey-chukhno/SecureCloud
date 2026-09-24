@@ -119,9 +119,9 @@ HttpRedirectServer::HttpRedirectServer(std::string host, uint16_t http_port, uin
                                        std::chrono::milliseconds timeout)
     : impl_(std::make_unique<Impl>(std::move(host), http_port, https_port, threads, timeout)) {
     impl_->server->set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        std::string host = req.get_header_value("Host");
+        std::string host_header = req.get_header_value("Host");
         std::string target = req.target.empty() ? "/" : req.target;
-        std::string location = build_redirect_url(host, target);
+        std::string location = build_redirect_url(host_header, target);
 
         res.status = k_http_status_permanent_redirect;
         res.set_header("Location", location);

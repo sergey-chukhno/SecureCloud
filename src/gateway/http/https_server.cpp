@@ -43,6 +43,19 @@ void ensure_winsock_initialized() noexcept {
 void ensure_winsock_initialized() noexcept {}
 #endif
 
+template <typename ServerT> SSL_CTX* extract_ssl_context(ServerT* server) noexcept {
+    if (server == nullptr) {
+        return nullptr;
+    }
+    if constexpr (requires { server->ssl_context(); }) {
+        return static_cast<SSL_CTX*>(server->ssl_context());
+    } else if constexpr (requires { server->tls_context(); }) {
+        return static_cast<SSL_CTX*>(server->tls_context());
+    } else {
+        return nullptr;
+    }
+}
+
 constexpr uint32_t k_default_server_threads = 4;
 constexpr uint64_t k_default_max_payload_bytes = 10485760;
 constexpr auto k_default_timeout = std::chrono::milliseconds(5000);
@@ -144,7 +157,7 @@ bool HttpsServer::start_async() {
     }
 
     // 3. Configure TLS 1.3 protocol clamping, AEAD ciphersuites, and ALPN
-    auto* ssl_ctx = static_cast<SSL_CTX*>(impl_->server->tls_context());
+    auto* ssl_ctx = extract_ssl_context(impl_->server.get());
     if (ssl_ctx == nullptr) {
         impl_->state.store(ServerState::Stopped);
         return false;
