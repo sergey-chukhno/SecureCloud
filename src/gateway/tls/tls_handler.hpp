@@ -47,6 +47,11 @@ class TlsHandler {
     /// modern AEAD cipher suites, ALPN negotiation, and fail-closed certificate binding.
     [[nodiscard]] static SslCtxPtr create_server_context(const GatewayTlsConfig& config, std::string& out_error);
 
+    /// Configures an existing OpenSSL server context enforcing TLS 1.3 protocol clamping,
+    /// modern AEAD cipher suites, disabled session tickets/compression, and ALPN negotiation.
+    [[nodiscard]] static bool configure_server_context(SSL_CTX* ctx, const GatewayTlsConfig& config,
+                                                       std::string& out_error);
+
     /// OpenSSL ALPN callback negotiating HTTP/2 ("h2") and HTTP/1.1 ("http/1.1").
     static int alpn_select_callback(SSL* ssl, const unsigned char** out, unsigned char* outlen, const unsigned char* in,
                                     unsigned int inlen, void* arg);

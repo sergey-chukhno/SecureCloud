@@ -1,6 +1,7 @@
 #include "http/router.hpp"
 
 #include "http/http_server.hpp"
+#include "http/https_server.hpp"
 
 #include <exception>
 #include <httplib.h>
@@ -91,6 +92,13 @@ void Router::dispatch_route(const httplib::Request& req, httplib::Response& res)
 }
 
 void Router::register_into(HttpServer& server) {
+    server.raw_server().set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
+        this->handle(req, res);
+        return httplib::Server::HandlerResponse::Handled;
+    });
+}
+
+void Router::register_into(HttpsServer& server) {
     server.raw_server().set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
         this->handle(req, res);
         return httplib::Server::HandlerResponse::Handled;

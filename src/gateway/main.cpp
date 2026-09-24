@@ -2,6 +2,7 @@
 #include "grpc/channel_manager.hpp"
 #include "health/gateway_health_evaluator.hpp"
 #include "http/http_server.hpp"
+#include "http/https_server.hpp"
 #include "http/router.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
@@ -128,6 +129,21 @@ int run_service() {
     std::cout << "[SecureCloud] [" << config.common.service_name << "] HTTP server listening on "
               << config.http_listen_endpoint() << "\n";
 
+    std::unique_ptr<securecloud::gateway::http::HttpsServer> https_server;
+    if (config.tls.enabled) {
+        https_server = std::make_unique<securecloud::gateway::http::HttpsServer>(config);
+        router.register_into(*https_server);
+        if (!https_server->start_async()) {
+            std::cerr << "[SecureCloud] [" << config.common.service_name << "] FATAL: Failed to start HTTPS server on "
+                      << config.http_listen_address << ":" << config.tls.https_listen_port << "\n";
+            http_server.stop();
+            server->Shutdown();
+            return 1;
+        }
+        std::cout << "[SecureCloud] [" << config.common.service_name << "] HTTPS server listening on "
+                  << config.http_listen_address << ":" << config.tls.https_listen_port << " (TLS 1.3 strict)\n";
+    }
+
     if (!config.peer_probe_target.empty() && !config.peer_probe_name.empty()) {
         std::cout << "[SecureCloud] [" << config.common.service_name << "] Initiating mTLS peer probe to target "
                   << config.peer_probe_target << " (expected SAN: DNS:" << config.peer_probe_name << ")...\n";
@@ -161,6 +177,10 @@ int run_service() {
     }
 
     health_manager.set_shutting_down(true);
+    if (https_server) {
+        std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down HTTPS server...\n";
+        https_server->stop();
+    }
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down HTTP server...\n";
     http_server.stop();
     channel_manager.reset();

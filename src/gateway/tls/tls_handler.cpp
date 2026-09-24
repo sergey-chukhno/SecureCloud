@@ -200,6 +200,14 @@ SslCtxPtr TlsHandler::create_server_context(const GatewayTlsConfig& config, std:
     return ctx_ptr;
 }
 
+bool TlsHandler::configure_server_context(SSL_CTX* ctx, const GatewayTlsConfig& config, std::string& out_error) {
+    if (ctx == nullptr) {
+        out_error = "SSL_CTX pointer is null";
+        return false;
+    }
+    return configure_context_security(ctx, config, out_error);
+}
+
 int TlsHandler::alpn_select_callback(SSL* /*ssl*/, const unsigned char** out, unsigned char* outlen,
                                      const unsigned char* in, unsigned int inlen, void* /*arg*/) {
     static const std::array<unsigned char, k_server_protos_len> k_server_protos = {

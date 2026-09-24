@@ -269,5 +269,24 @@ target_compile_definitions(securecloud_tls_handler_test PRIVATE
 
 gtest_discover_tests(securecloud_tls_handler_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway HTTPS Server Engine Integration Test (GW-002-T03)
+add_executable(securecloud_https_server_lifecycle_test
+    gateway/https_server_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_https_server_lifecycle_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_tls
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_https_server_lifecycle_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_https_server_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
 
