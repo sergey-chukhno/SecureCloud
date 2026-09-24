@@ -303,3 +303,25 @@ target_link_libraries(securecloud_resource_limiter_middleware_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_resource_limiter_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Insecure Protocol Downgrade Rejection & HTTP Redirect Guard Test (GW-002-T05)
+add_executable(securecloud_downgrade_guard_test
+    gateway/downgrade_guard_test.cpp
+)
+
+target_link_libraries(securecloud_downgrade_guard_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_tls
+    securecloud::httplib
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_downgrade_guard_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_downgrade_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+

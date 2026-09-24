@@ -35,6 +35,7 @@ target_link_libraries(securecloud_gateway_tls PUBLIC
 add_library(securecloud_gateway_http STATIC
     http/http_server.cpp
     http/https_server.cpp
+    http/http_redirect_server.cpp
     http/error_mapper.cpp
     http/middleware.cpp
     http/request_id_middleware.cpp

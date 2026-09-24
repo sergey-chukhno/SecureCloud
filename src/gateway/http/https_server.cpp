@@ -79,6 +79,9 @@ struct HttpsServer::Impl {
             server->set_payload_max_length(max_payload_bytes);
             server->set_read_timeout(timeout);
             server->set_write_timeout(timeout);
+            server->set_default_headers({
+                {"Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload"},
+            });
         }
     }
 
