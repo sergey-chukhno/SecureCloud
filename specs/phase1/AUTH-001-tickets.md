@@ -216,6 +216,11 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Custom exceptions (`ConnectionAcquisitionTimeoutException`, `PoolShuttingDownException`). `ping()` never throws unhandled exceptions.
 19. **Testing Requirements**: `tests/unit/auth/connection_pool_test.cpp` validates queue bounding, timeout expiry, thread contention, RAII release, and state transitions.
 20. **Validation Commands**:
+    - Windows (MSYS2 / MinGW64 toolchains only) :
+    ```shell
+    $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+    ```
+    - Build & Test Execution (All platforms & toolchains):
     ```bash
     cmake --preset dev-debug
     cmake --build --preset dev-debug --target securecloud_connection_pool_test
