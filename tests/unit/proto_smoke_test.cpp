@@ -32,17 +32,22 @@ TEST(ProtoSmokeTest, ServiceStubTypeLinkage) {
         (std::is_same_v<securecloud::common::v1::HealthService::Stub, securecloud::common::v1::HealthService::Stub>));
 }
 
+namespace {
+constexpr uint64_t k_test_encrypted_size = 10485760;
+constexpr uint32_t k_test_expected_chunks = 3;
+} // namespace
+
 TEST(ProtoSmokeTest, FilesMessageConstructionAndSerialization) {
     securecloud::files::v1::CreateFileUploadRequest request;
     request.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
     request.set_owner_user_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
     request.set_owner_device_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36002");
-    request.set_encrypted_size_bytes(10485760);
-    request.set_expected_chunk_count(3);
+    request.set_encrypted_size_bytes(k_test_encrypted_size);
+    request.set_expected_chunk_count(k_test_expected_chunks);
     request.set_encryption_version("v1-xchacha20poly1305");
 
     EXPECT_EQ(request.file_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
-    EXPECT_EQ(request.expected_chunk_count(), 3);
+    EXPECT_EQ(request.expected_chunk_count(), k_test_expected_chunks);
 
     std::string serialized;
     ASSERT_TRUE(request.SerializeToString(&serialized));
@@ -51,7 +56,7 @@ TEST(ProtoSmokeTest, FilesMessageConstructionAndSerialization) {
     securecloud::files::v1::CreateFileUploadRequest restored;
     ASSERT_TRUE(restored.ParseFromString(serialized));
     EXPECT_EQ(restored.file_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
-    EXPECT_EQ(restored.expected_chunk_count(), 3);
+    EXPECT_EQ(restored.expected_chunk_count(), k_test_expected_chunks);
     EXPECT_EQ(restored.encryption_version(), "v1-xchacha20poly1305");
 
     securecloud::files::v1::CreateFileUploadResponse response;

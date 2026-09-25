@@ -257,7 +257,11 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
         return HttpResponse{0, "DNS resolution failed", {}, ""};
     }
 
+#ifdef _WIN32
+    if (::connect(sock, res_info->ai_addr, static_cast<int>(res_info->ai_addrlen)) != 0) {
+#else
     if (::connect(sock, res_info->ai_addr, res_info->ai_addrlen) != 0) {
+#endif
         ::freeaddrinfo(res_info);
         close_socket(sock);
         return HttpResponse{0, "TCP connection failed", {}, ""};
