@@ -118,7 +118,7 @@ struct HttpsServer::Impl {
 
 HttpsServer::HttpsServer(const GatewayConfig& config)
     : HttpsServer(config.http_listen_address, config.tls.https_listen_port, config.tls, config.server_threads,
-                  config.limits.max_body_bytes, std::chrono::milliseconds(config.limits.read_timeout_ms)) {}
+                  config.max_payload_bytes, config.request_timeout_ms) {}
 
 HttpsServer::HttpsServer(std::string host, uint16_t port, GatewayTlsConfig tls_config, uint32_t threads,
                          uint64_t max_payload_bytes, std::chrono::milliseconds timeout)
