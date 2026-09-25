@@ -238,7 +238,7 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
     ::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout_ms), sizeof(timeout_ms));
     ::setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&timeout_ms), sizeof(timeout_ms));
 #else
-    struct timeval tv{};
+    timeval tv{};
     tv.tv_sec = static_cast<time_t>(req.timeout.count() / 1000);
     tv.tv_usec = static_cast<suseconds_t>((req.timeout.count() % 1000) * 1000);
     ::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
@@ -246,10 +246,10 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
 #endif
 
     // Resolve address
-    struct addrinfo hints{};
+    addrinfo hints{};
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    struct addrinfo* res_info = nullptr;
+    addrinfo* res_info = nullptr;
     const std::string port_str = std::to_string(req.port);
 
     if (::getaddrinfo(req.host.c_str(), port_str.c_str(), &hints, &res_info) != 0 || !res_info) {
