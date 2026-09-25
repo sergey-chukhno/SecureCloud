@@ -258,5 +258,20 @@ target_link_libraries(securecloud_domain_entities_test PRIVATE
 
 gtest_discover_tests(securecloud_domain_entities_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files File & Version Repositories Unit Test Suite (FILES-002-T03)
+add_executable(securecloud_file_repository_test
+    files/file_repository_test.cpp
+)
+
+target_link_libraries(securecloud_file_repository_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_file_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
 
