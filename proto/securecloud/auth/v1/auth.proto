@@ -1,0 +1,264 @@
+syntax = "proto3";
+
+package securecloud.auth.v1;
+
+option cc_generic_services = false;
+
+// ============================================================================
+// Enums
+// ============================================================================
+
+enum DeviceStatus {
+    DEVICE_STATUS_UNSPECIFIED = 0;
+    DEVICE_STATUS_ACTIVE = 1;
+    DEVICE_STATUS_REVOKED = 2;
+}
+
+enum AuthenticationLevel {
+    AUTHENTICATION_LEVEL_UNSPECIFIED = 0;
+    AUTHENTICATION_LEVEL_PRIMARY = 1;
+    AUTHENTICATION_LEVEL_MFA_VERIFIED = 2;
+}
+
+enum KeyType {
+    KEY_TYPE_UNSPECIFIED = 0;
+    KEY_TYPE_IDENTITY_SIGNING = 1;
+    KEY_TYPE_IDENTITY_AGREEMENT = 2;
+    KEY_TYPE_SIGNED_PREKEY = 3;
+    KEY_TYPE_ONE_TIME_PREKEY = 4;
+}
+
+enum AccountStatus {
+    ACCOUNT_STATUS_UNSPECIFIED = 0;
+    ACCOUNT_STATUS_ACTIVE = 1;
+    ACCOUNT_STATUS_DISABLED = 2;
+}
+
+enum SessionStatus {
+    SESSION_STATUS_UNSPECIFIED = 0;
+    SESSION_STATUS_ACTIVE = 1;
+    SESSION_STATUS_REVOKED = 2;
+    SESSION_STATUS_EXPIRED = 3;
+}
+
+// ============================================================================
+// Domain Entity Messages
+// ============================================================================
+
+// User represents the public account identity and lifecycle state.
+// user_id is a canonical lowercase RFC 4122 UUIDv4/UUIDv7 string.
+message User {
+    string user_id = 1;
+    string credential_identifier = 2;
+    AccountStatus account_status = 3;
+    int64 created_at_epoch_ms = 4;
+    int64 updated_at_epoch_ms = 5;
+}
+
+// Device represents an enrolled user device endpoint.
+message Device {
+    string device_id = 1;
+    string user_id = 2;
+    DeviceStatus device_status = 3;
+    int64 registered_at_epoch_ms = 4;
+    int64 revoked_at_epoch_ms = 5;
+    string revocation_reason = 6;
+    int64 last_authenticated_at_epoch_ms = 7;
+}
+
+// Session represents an active or historical authenticated session.
+message Session {
+    string session_id = 1;
+    string user_id = 2;
+    string device_id = 3;
+    SessionStatus session_status = 4;
+    AuthenticationLevel authentication_level = 5;
+    int64 created_at_epoch_ms = 6;
+    int64 expires_at_epoch_ms = 7;
+    int64 revoked_at_epoch_ms = 8;
+    int64 last_used_at_epoch_ms = 9;
+}
+
+// DeviceCryptoRecord represents public cryptographic material for end-to-end encryption.
+// Private keys are NEVER present in this record.
+message DeviceCryptoRecord {
+    string device_id = 1;
+    bytes identity_key = 2;
+    bytes signed_prekey = 3;
+    bytes signed_prekey_signature = 4;
+    bytes one_time_prekey = 5;
+    string one_time_prekey_id = 6;
+}
+
+// ============================================================================
+// RPC Request & Response Messages
+// ============================================================================
+
+// Authenticate verifies client credentials and produces session tokens.
+message AuthenticateRequest {
+    string credential_identifier = 1;
+    string password = 2; // Sensitive authentication credential. Never echoed or logged.
+    string device_id = 3;
+}
+
+message AuthenticateResponse {
+    string session_id = 1;
+    string access_token = 2;
+    string refresh_token = 3;
+    AuthenticationLevel authentication_level = 4;
+    int64 expires_at_epoch_ms = 5;
+    string user_id = 6;
+    bool mfa_required = 7;
+    string mfa_challenge_id = 8;
+}
+
+// RefreshSession renews an expired or expiring access token using a valid refresh token.
+message RefreshSessionRequest {
+    string refresh_token = 1;
+    string device_id = 2;
+}
+
+message RefreshSessionResponse {
+    string session_id = 1;
+    string access_token = 2;
+    string new_refresh_token = 3;
+    int64 expires_at_epoch_ms = 4;
+}
+
+// ValidateSession verifies session authenticity and active status for incoming requests.
+message ValidateSessionRequest {
+    string session_id = 1;
+    string access_token = 2;
+}
+
+message ValidateSessionResponse {
+    bool is_valid = 1;
+    string user_id = 2;
+    string device_id = 3;
+    AuthenticationLevel authentication_level = 4;
+    int64 expires_at_epoch_ms = 5;
+}
+
+// RevokeSession terminates an active session and invalidates its refresh token.
+message RevokeSessionRequest {
+    string session_id = 1;
+    string reason = 2;
+}
+
+message RevokeSessionResponse {
+    bool revoked = 1;
+}
+
+// GetUser retrieves account details for a given user ID.
+message GetUserRequest {
+    string user_id = 1;
+}
+
+message GetUserResponse {
+    User user = 1;
+}
+
+// GetDevice retrieves details for a registered device.
+message GetDeviceRequest {
+    string device_id = 1;
+}
+
+message GetDeviceResponse {
+    Device device = 1;
+}
+
+// ListUserDevices returns all registered devices for an account.
+message ListUserDevicesRequest {
+    string user_id = 1;
+    bool include_revoked = 2;
+}
+
+message ListUserDevicesResponse {
+    repeated Device devices = 1;
+}
+
+// RegisterDevice enrolls a new device and stores its public cryptographic material.
+message RegisterDeviceRequest {
+    string user_id = 1;
+    bytes identity_key = 2;
+    bytes signed_prekey = 3;
+    bytes signed_prekey_signature = 4;
+    repeated bytes one_time_prekeys = 5;
+}
+
+message RegisterDeviceResponse {
+    string device_id = 1;
+    DeviceStatus status = 2;
+    int64 registered_at_epoch_ms = 3;
+}
+
+// RevokeDevice revokes a device, invalidating all associated sessions.
+message RevokeDeviceRequest {
+    string device_id = 1;
+    string user_id = 2;
+    string reason = 3;
+}
+
+message RevokeDeviceResponse {
+    bool revoked = 1;
+    int64 revoked_at_epoch_ms = 2;
+}
+
+// GetDeviceCryptoDirectory discovers public keys for one or all devices of a user.
+message GetDeviceCryptoDirectoryRequest {
+    string user_id = 1;
+    repeated string device_ids = 2;
+}
+
+message GetDeviceCryptoDirectoryResponse {
+    repeated DeviceCryptoRecord devices = 1;
+}
+
+// GetCryptoIdentity retrieves public identity keys for a specific device.
+message GetCryptoIdentityRequest {
+    string device_id = 1;
+}
+
+message GetCryptoIdentityResponse {
+    string device_id = 1;
+    string user_id = 2;
+    bytes identity_key = 3;
+    bytes signed_prekey = 4;
+    bytes signed_prekey_signature = 5;
+}
+
+// UpdateCryptoPrekeys uploads new one-time prekeys and/or rotates the signed prekey.
+message UpdateCryptoPrekeysRequest {
+    string device_id = 1;
+    bytes signed_prekey = 2;
+    bytes signed_prekey_signature = 3;
+    repeated bytes one_time_prekeys = 4;
+}
+
+message UpdateCryptoPrekeysResponse {
+    int32 active_one_time_prekey_count = 1;
+    int64 updated_at_epoch_ms = 2;
+}
+
+// ============================================================================
+// Service Interface
+// ============================================================================
+
+// AuthService defines the authoritative 12 internal gRPC operations of the Authentication Service.
+service AuthService {
+    rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+    rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse);
+    rpc ValidateSession(ValidateSessionRequest) returns (ValidateSessionResponse);
+    rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
+
+    rpc GetUser(GetUserRequest) returns (GetUserResponse);
+    rpc GetDevice(GetDeviceRequest) returns (GetDeviceResponse);
+    rpc ListUserDevices(ListUserDevicesRequest) returns (ListUserDevicesResponse);
+
+    rpc RegisterDevice(RegisterDeviceRequest) returns (RegisterDeviceResponse);
+    rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
+
+    rpc GetDeviceCryptoDirectory(GetDeviceCryptoDirectoryRequest) returns (GetDeviceCryptoDirectoryResponse);
+    rpc GetCryptoIdentity(GetCryptoIdentityRequest) returns (GetCryptoIdentityResponse);
+    rpc UpdateCryptoPrekeys(UpdateCryptoPrekeysRequest) returns (UpdateCryptoPrekeysResponse);
+}
