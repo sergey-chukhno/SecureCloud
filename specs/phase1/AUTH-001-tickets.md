@@ -267,11 +267,16 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Returns `grpc::Status(grpc::StatusCode::UNIMPLEMENTED, ...)`.
 19. **Testing Requirements**: Verified via integration test client in T06.
 20. **Validation Commands**:
-    ```bash
-    cmake --preset dev-debug
-    cmake --build --preset dev-debug --target securecloud-auth
-    python3 scripts/verify-local.py
-    ```
+- Windows (MSYS2 / MinGW64 toolchains only) :
+  ```shell
+  $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+  ```
+  - Build & Test Execution (All platforms & toolchains):
+  ```bash
+  cmake --preset dev-debug
+  cmake --build --preset dev-debug --target securecloud-auth
+  python3 scripts/verify-local.py
+  ```
 21. **Expected Validation Evidence**: `securecloud-auth` compiles and links cleanly.
 22. **Acceptance Criteria**: All 12 RPCs registered, mTLS enforced, zero secrets logged.
 23. **M1 Regression Requirements**: `HealthServiceImpl` continues to serve alongside `AuthServiceImpl`.

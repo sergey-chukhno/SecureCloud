@@ -1,3 +1,4 @@
+#include "auth/service/auth_service_impl.hpp"
 #include "auth_config.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
@@ -68,9 +69,15 @@ int run_service() {
         [&config] { return securecloud::common::health::probe_tcp_connectivity(config.db_host, config.db_port); });
     securecloud::common::health::HealthServiceImpl health_service(config.common.service_name, health_manager);
 
+    // Instantiate AuthServiceImpl
+    securecloud::auth::service::AuthServiceImpl auth_service;
+
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);
+
+    // Register both Health and Auth services
     builder.RegisterService(&health_service);
+    builder.RegisterService(&auth_service);
 
     std::unique_ptr<grpc::Server> server = builder.BuildAndStart();
     if (!server) {
