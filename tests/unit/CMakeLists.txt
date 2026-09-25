@@ -325,3 +325,66 @@ target_compile_definitions(securecloud_downgrade_guard_test PRIVATE
 
 gtest_discover_tests(securecloud_downgrade_guard_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files PostgreSQL Connection Pool Unit Test Suite (FILES-001-T02)
+add_executable(securecloud_files_connection_pool_test
+    files/files_connection_pool_test.cpp
+)
+
+target_link_libraries(securecloud_files_connection_pool_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_connection_pool_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files S3 Storage Client Unit Test Suite (FILES-001-T03)
+add_executable(securecloud_s3_client_test
+    files/s3_client_test.cpp
+)
+
+target_link_libraries(securecloud_s3_client_test PRIVATE
+    securecloud::files_storage
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_s3_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Service Implementation Unit Test Suite (FILES-001-T04)
+add_executable(securecloud_files_service_impl_test
+    files/files_service_impl_test.cpp
+)
+
+target_link_libraries(securecloud_files_service_impl_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_service_impl_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Dual-Dependency Health Evaluator Unit Test Suite (FILES-001-T05)
+add_executable(securecloud_files_health_evaluator_test
+    files/files_health_evaluator_test.cpp
+)
+
+target_link_libraries(securecloud_files_health_evaluator_test PRIVATE
+    securecloud::files_health
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_health_evaluator_test ${SECURECLOUD_TEST_PROPERTIES})
