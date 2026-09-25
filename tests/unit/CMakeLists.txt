@@ -273,5 +273,20 @@ target_link_libraries(securecloud_file_repository_test PRIVATE
 
 gtest_discover_tests(securecloud_file_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Resumable Transfer & Idempotent Chunk Repositories Unit Test Suite (FILES-002-T04)
+add_executable(securecloud_transfer_chunk_repository_test
+    files/transfer_chunk_repository_test.cpp
+)
+
+target_link_libraries(securecloud_transfer_chunk_repository_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_transfer_chunk_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
 

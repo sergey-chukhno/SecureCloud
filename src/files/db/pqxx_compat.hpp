@@ -179,6 +179,8 @@ public:
         files_.clear();
         metadata_.clear();
         versions_.clear();
+        transfers_.clear();
+        chunks_.clear();
     }
 
     // Tables data structures
@@ -217,10 +219,40 @@ public:
         bool is_active{true};
     };
 
+    struct StoredTransfer {
+        std::string transfer_id;
+        std::string file_id;
+        std::string transfer_type;
+        std::string initiator_user_id;
+        std::string initiator_device_id;
+        std::string status;
+        int32_t total_chunks{0};
+        int32_t accepted_chunks{0};
+        int64_t total_bytes{0};
+        int64_t transferred_bytes{0};
+        std::string created_at;
+        std::string updated_at;
+        std::string expires_at;
+    };
+
+    struct StoredChunk {
+        std::string chunk_id;
+        std::string transfer_id;
+        int32_t chunk_index{0};
+        int64_t byte_offset{0};
+        int32_t chunk_size{0};
+        std::string chunk_hash_sha256;
+        std::string minio_chunk_key;
+        std::string status;
+        std::string created_at;
+    };
+
     std::mutex mutex_;
     std::map<std::string, StoredFile> files_;
     std::map<std::string, StoredMetadata> metadata_;
     std::map<std::pair<std::string, int32_t>, StoredVersion> versions_;
+    std::map<std::string, StoredTransfer> transfers_;
+    std::map<std::pair<std::string, int32_t>, StoredChunk> chunks_;
 };
 
 /// RAII transaction handle abstraction (compatible with pqxx::work)
@@ -241,8 +273,10 @@ public:
         : committed_(other.committed_),
           staged_files_(std::move(other.staged_files_)),
           staged_metadata_(std::move(other.staged_metadata_)),
-          staged_versions_(std::move(other.staged_versions_)) {
-        other.committed_ = true; // Prevent abort on moved-from
+          staged_versions_(std::move(other.staged_versions_)),
+          staged_transfers_(std::move(other.staged_transfers_)),
+          staged_chunks_(std::move(other.staged_chunks_)) {
+        other.committed_ = true;
     }
 
     work& operator=(work&& other) noexcept {
@@ -252,6 +286,8 @@ public:
             staged_files_ = std::move(other.staged_files_);
             staged_metadata_ = std::move(other.staged_metadata_);
             staged_versions_ = std::move(other.staged_versions_);
+            staged_transfers_ = std::move(other.staged_transfers_);
+            staged_chunks_ = std::move(other.staged_chunks_);
             other.committed_ = true;
         }
         return *this;
@@ -283,10 +319,18 @@ public:
         for (auto& [key, ver] : staged_versions_) {
             store.versions_[key] = std::move(ver);
         }
+        for (auto& [id, trans] : staged_transfers_) {
+            store.transfers_[id] = std::move(trans);
+        }
+        for (auto& [key, chunk] : staged_chunks_) {
+            store.chunks_[key] = std::move(chunk);
+        }
 
         staged_files_.clear();
         staged_metadata_.clear();
         staged_versions_.clear();
+        staged_transfers_.clear();
+        staged_chunks_.clear();
         committed_ = true;
     }
 
@@ -294,6 +338,8 @@ public:
         staged_files_.clear();
         staged_metadata_.clear();
         staged_versions_.clear();
+        staged_transfers_.clear();
+        staged_chunks_.clear();
         committed_ = true;
     }
 
@@ -373,6 +419,48 @@ private:
         add("checksum_sha256", v.checksum_sha256);
         add("created_at", v.created_at);
         add("is_active", v.is_active ? "t" : "f");
+        return row(std::move(fields), std::move(map));
+    }
+
+    static row build_transfer_row(const MockStorage::StoredTransfer& t) {
+        std::vector<field> fields;
+        std::map<std::string, size_t> map;
+        auto add = [&](std::string name, std::optional<std::string> val) {
+            map[name] = fields.size();
+            fields.emplace_back(std::move(val), std::move(name));
+        };
+        add("transfer_id", t.transfer_id);
+        add("file_id", t.file_id);
+        add("transfer_type", t.transfer_type);
+        add("initiator_user_id", t.initiator_user_id);
+        add("initiator_device_id", t.initiator_device_id);
+        add("status", t.status);
+        add("total_chunks", std::to_string(t.total_chunks));
+        add("accepted_chunks", std::to_string(t.accepted_chunks));
+        add("total_bytes", std::to_string(t.total_bytes));
+        add("transferred_bytes", std::to_string(t.transferred_bytes));
+        add("created_at", t.created_at);
+        add("updated_at", t.updated_at);
+        add("expires_at", t.expires_at);
+        return row(std::move(fields), std::move(map));
+    }
+
+    static row build_chunk_row(const MockStorage::StoredChunk& c) {
+        std::vector<field> fields;
+        std::map<std::string, size_t> map;
+        auto add = [&](std::string name, std::optional<std::string> val) {
+            map[name] = fields.size();
+            fields.emplace_back(std::move(val), std::move(name));
+        };
+        add("chunk_id", c.chunk_id);
+        add("transfer_id", c.transfer_id);
+        add("chunk_index", std::to_string(c.chunk_index));
+        add("byte_offset", std::to_string(c.byte_offset));
+        add("chunk_size", std::to_string(c.chunk_size));
+        add("chunk_hash_sha256", c.chunk_hash_sha256);
+        add("minio_chunk_key", c.minio_chunk_key);
+        add("status", c.status);
+        add("created_at", c.created_at);
         return row(std::move(fields), std::move(map));
     }
 
@@ -485,7 +573,6 @@ private:
             std::string now_str = params[0].value_or("");
             size_t limit = params.size() > 1 ? static_cast<size_t>(std::stoul(params[1].value_or("100"))) : 100;
 
-            // Merge committed and staged
             std::map<std::string, MockStorage::StoredFile> all_files = store.files_;
             for (const auto& [id, f] : staged_files_) {
                 all_files[id] = f;
@@ -540,7 +627,6 @@ private:
             int32_t ver_num = std::stoi(params[1].value_or("0"));
 
             size_t count = 0;
-            // Update in store and staged
             for (auto& [key, ver] : store.versions_) {
                 if (key.first == file_id && key.second != ver_num && ver.is_active) {
                     ver.is_active = false;
@@ -608,6 +694,223 @@ private:
             return result(std::move(rows), rows.size());
         }
 
+        // 12. INSERT INTO file_transfers
+        if (query.find("INSERT INTO file_transfers") != std::string_view::npos) {
+            MockStorage::StoredTransfer t;
+            t.transfer_id = params[0].value_or("");
+            t.file_id = params[1].value_or("");
+            t.transfer_type = params[2].value_or("UPLOAD");
+            t.initiator_user_id = params[3].value_or("");
+            t.initiator_device_id = params[4].value_or("");
+            t.status = params[5].value_or("CREATED");
+            t.total_chunks = std::stoi(params[6].value_or("0"));
+            t.accepted_chunks = std::stoi(params[7].value_or("0"));
+            t.total_bytes = std::stoll(params[8].value_or("0"));
+            t.transferred_bytes = std::stoll(params[9].value_or("0"));
+            t.created_at = params[10].value_or("");
+            t.updated_at = params[11].value_or("");
+            t.expires_at = params[12].value_or("");
+            staged_transfers_[t.transfer_id] = t;
+            return result({}, 1);
+        }
+
+        // 13. SELECT ... FROM file_transfers WHERE transfer_id = $1
+        if (query.find("FROM file_transfers WHERE transfer_id = $1") != std::string_view::npos) {
+            std::string id = params.empty() ? "" : params[0].value_or("");
+            if (staged_transfers_.find(id) != staged_transfers_.end()) {
+                return result({build_transfer_row(staged_transfers_[id])}, 1);
+            }
+            if (store.transfers_.find(id) != store.transfers_.end()) {
+                return result({build_transfer_row(store.transfers_[id])}, 1);
+            }
+            return result({}, 0);
+        }
+
+        // 14. UPDATE file_transfers SET status = $1, updated_at = $2 WHERE transfer_id = $3
+        if (query.find("UPDATE file_transfers SET status = $1") != std::string_view::npos) {
+            std::string new_status = params[0].value_or("");
+            std::string updated_at = params[1].value_or("");
+            std::string transfer_id = params[2].value_or("");
+
+            MockStorage::StoredTransfer* t = nullptr;
+            if (staged_transfers_.find(transfer_id) != staged_transfers_.end()) {
+                t = &staged_transfers_[transfer_id];
+            } else if (store.transfers_.find(transfer_id) != store.transfers_.end()) {
+                staged_transfers_[transfer_id] = store.transfers_[transfer_id];
+                t = &staged_transfers_[transfer_id];
+            }
+
+            if (t) {
+                t->status = new_status;
+                t->updated_at = updated_at;
+                return result({}, 1);
+            }
+            return result({}, 0);
+        }
+
+        // 15. UPDATE file_transfers SET accepted_chunks = accepted_chunks + 1
+        if (query.find("accepted_chunks = accepted_chunks + 1") != std::string_view::npos) {
+            int64_t bytes_added = std::stoll(params[0].value_or("0"));
+            std::string updated_at = params[1].value_or("");
+            std::string transfer_id = params[2].value_or("");
+
+            MockStorage::StoredTransfer* t = nullptr;
+            if (staged_transfers_.find(transfer_id) != staged_transfers_.end()) {
+                t = &staged_transfers_[transfer_id];
+            } else if (store.transfers_.find(transfer_id) != store.transfers_.end()) {
+                staged_transfers_[transfer_id] = store.transfers_[transfer_id];
+                t = &staged_transfers_[transfer_id];
+            }
+
+            if (t) {
+                t->accepted_chunks++;
+                t->transferred_bytes += bytes_added;
+                t->updated_at = updated_at;
+                return result({}, 1);
+            }
+            return result({}, 0);
+        }
+
+        // 16. INSERT INTO file_chunks ... ON CONFLICT (transfer_id, chunk_index) DO NOTHING
+        if (query.find("INSERT INTO file_chunks") != std::string_view::npos) {
+            MockStorage::StoredChunk c;
+            c.chunk_id = params[0].value_or("");
+            c.transfer_id = params[1].value_or("");
+            c.chunk_index = std::stoi(params[2].value_or("0"));
+            c.byte_offset = std::stoll(params[3].value_or("0"));
+            c.chunk_size = std::stoi(params[4].value_or("0"));
+            c.chunk_hash_sha256 = params[5].value_or("");
+            c.minio_chunk_key = params[6].value_or("");
+            c.status = params[7].value_or("RECEIVED");
+            c.created_at = params[8].value_or("");
+
+            auto key = std::make_pair(c.transfer_id, c.chunk_index);
+            if (staged_chunks_.find(key) != staged_chunks_.end() ||
+                store.chunks_.find(key) != store.chunks_.end()) {
+                // Conflict: DO NOTHING (affected rows = 0)
+                return result({}, 0);
+            }
+
+            staged_chunks_[key] = c;
+            return result({}, 1);
+        }
+
+        // 17. SELECT chunk_hash_sha256 FROM file_chunks WHERE transfer_id = $1 AND chunk_index = $2
+        if (query.find("SELECT chunk_hash_sha256 FROM file_chunks") != std::string_view::npos) {
+            std::string transfer_id = params[0].value_or("");
+            int32_t chunk_idx = std::stoi(params[1].value_or("0"));
+            auto key = std::make_pair(transfer_id, chunk_idx);
+
+            std::string hash;
+            if (staged_chunks_.find(key) != staged_chunks_.end()) {
+                hash = staged_chunks_[key].chunk_hash_sha256;
+            } else if (store.chunks_.find(key) != store.chunks_.end()) {
+                hash = store.chunks_[key].chunk_hash_sha256;
+            }
+
+            if (!hash.empty()) {
+                std::vector<field> f;
+                std::map<std::string, size_t> map;
+                map["chunk_hash_sha256"] = 0;
+                f.emplace_back(hash, "chunk_hash_sha256");
+                return result({row(std::move(f), std::move(map))}, 1);
+            }
+            return result({}, 0);
+        }
+
+        // 18. SELECT chunk_index FROM file_chunks WHERE transfer_id = $1 ... ORDER BY chunk_index ASC
+        if (query.find("SELECT chunk_index FROM file_chunks") != std::string_view::npos) {
+            std::string transfer_id = params[0].value_or("");
+
+            std::map<std::pair<std::string, int32_t>, MockStorage::StoredChunk> all_chunks = store.chunks_;
+            for (const auto& [k, c] : staged_chunks_) {
+                all_chunks[k] = c;
+            }
+
+            std::vector<int32_t> indices;
+            for (const auto& [k, c] : all_chunks) {
+                if (k.first == transfer_id) {
+                    indices.push_back(k.second);
+                }
+            }
+            std::sort(indices.begin(), indices.end());
+
+            std::vector<row> rows;
+            for (int32_t idx : indices) {
+                std::vector<field> f;
+                std::map<std::string, size_t> map;
+                map["chunk_index"] = 0;
+                f.emplace_back(std::to_string(idx), "chunk_index");
+                rows.emplace_back(std::move(f), std::move(map));
+            }
+            return result(std::move(rows), rows.size());
+        }
+
+        // 19. SELECT COUNT(*) FROM file_chunks WHERE transfer_id = $1
+        if (query.find("SELECT COUNT(*) FROM file_chunks") != std::string_view::npos) {
+            std::string transfer_id = params[0].value_or("");
+
+            std::map<std::pair<std::string, int32_t>, MockStorage::StoredChunk> all_chunks = store.chunks_;
+            for (const auto& [k, c] : staged_chunks_) {
+                all_chunks[k] = c;
+            }
+
+            int32_t count = 0;
+            for (const auto& [k, c] : all_chunks) {
+                if (k.first == transfer_id) count++;
+            }
+
+            std::vector<field> f;
+            std::map<std::string, size_t> map;
+            map["count"] = 0;
+            f.emplace_back(std::to_string(count), "count");
+            return result({row(std::move(f), std::move(map))}, 1);
+        }
+
+        // 20. SELECT 1 FROM file_chunks WHERE transfer_id = $1 AND chunk_index = $2
+        if (query.find("SELECT 1 FROM file_chunks") != std::string_view::npos) {
+            std::string transfer_id = params[0].value_or("");
+            int32_t chunk_idx = std::stoi(params[1].value_or("0"));
+            auto key = std::make_pair(transfer_id, chunk_idx);
+
+            if (staged_chunks_.find(key) != staged_chunks_.end() ||
+                store.chunks_.find(key) != store.chunks_.end()) {
+                std::vector<field> f;
+                std::map<std::string, size_t> map;
+                map["?column?"] = 0;
+                f.emplace_back("1", "?column?");
+                return result({row(std::move(f), std::move(map))}, 1);
+            }
+            return result({}, 0);
+        }
+
+        // 21. SELECT ... FROM file_chunks WHERE transfer_id = $1 ORDER BY chunk_index ASC
+        if (query.find("FROM file_chunks WHERE transfer_id = $1 ORDER BY chunk_index") != std::string_view::npos) {
+            std::string transfer_id = params[0].value_or("");
+
+            std::map<std::pair<std::string, int32_t>, MockStorage::StoredChunk> all_chunks = store.chunks_;
+            for (const auto& [k, c] : staged_chunks_) {
+                all_chunks[k] = c;
+            }
+
+            std::vector<MockStorage::StoredChunk> matching;
+            for (const auto& [k, c] : all_chunks) {
+                if (k.first == transfer_id) {
+                    matching.push_back(c);
+                }
+            }
+
+            std::sort(matching.begin(), matching.end(), [](const auto& a, const auto& b) {
+                return a.chunk_index < b.chunk_index;
+            });
+
+            std::vector<row> rows;
+            for (const auto& c : matching) {
+                rows.push_back(build_chunk_row(c));
+            }
+            return result(std::move(rows), rows.size());
+        }
+
         return result({}, 0);
     }
 
@@ -615,6 +918,8 @@ private:
     std::map<std::string, MockStorage::StoredFile> staged_files_;
     std::map<std::string, MockStorage::StoredMetadata> staged_metadata_;
     std::map<std::pair<std::string, int32_t>, MockStorage::StoredVersion> staged_versions_;
+    std::map<std::string, MockStorage::StoredTransfer> staged_transfers_;
+    std::map<std::pair<std::string, int32_t>, MockStorage::StoredChunk> staged_chunks_;
 };
 
 } // namespace pqxx

@@ -20,6 +20,8 @@ add_library(securecloud_files_db STATIC
     db/pqxx_mappers.cpp
     repository/file_repository.cpp
     repository/file_version_repository.cpp
+    repository/file_transfer_repository.cpp
+    repository/file_chunk_repository.cpp
 )
 
 add_library(securecloud::files_db ALIAS securecloud_files_db)
