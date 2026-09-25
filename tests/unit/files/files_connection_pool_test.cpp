@@ -1,9 +1,8 @@
 #include "files/db/files_connection_pool.hpp"
 
-#include <gtest/gtest.h>
-
 #include <atomic>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <thread>
@@ -14,13 +13,11 @@ namespace {
 
 /// Mock database connection handle for unit testing pool mechanics
 class MockDbConnection : public IDbConnection {
-public:
+  public:
     explicit MockDbConnection(std::string id, bool is_open = true, bool ping_success = true)
         : id_(std::move(id)), is_open_(is_open), ping_success_(ping_success) {}
 
-    [[nodiscard]] bool is_open() const noexcept override {
-        return is_open_;
-    }
+    [[nodiscard]] bool is_open() const noexcept override { return is_open_; }
 
     void close() noexcept override {
         is_open_ = false;
@@ -32,23 +29,15 @@ public:
         return is_open_ && ping_success_;
     }
 
-    [[nodiscard]] const std::string& connection_id() const noexcept override {
-        return id_;
-    }
+    [[nodiscard]] const std::string& connection_id() const noexcept override { return id_; }
 
-    void set_ping_success(bool success) noexcept {
-        ping_success_ = success;
-    }
+    void set_ping_success(bool success) noexcept { ping_success_ = success; }
 
-    [[nodiscard]] size_t close_count() const noexcept {
-        return close_count_;
-    }
+    [[nodiscard]] size_t close_count() const noexcept { return close_count_; }
 
-    [[nodiscard]] size_t ping_count() const noexcept {
-        return ping_count_;
-    }
+    [[nodiscard]] size_t ping_count() const noexcept { return ping_count_; }
 
-private:
+  private:
     std::string id_;
     bool is_open_{true};
     bool ping_success_{true};
@@ -225,7 +214,8 @@ TEST(FilesDbConnectionPoolTest, AcquisitionTimeoutWhenPoolIsExhausted) {
     // Third acquire must time out
     const auto start = std::chrono::steady_clock::now();
     EXPECT_THROW((void)pool.acquire(), PoolTimeoutException);
-    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
 
     EXPECT_GE(elapsed.count(), 40); // Blocked for approximately acquire_timeout
     EXPECT_EQ(pool.active_leases(), 2);

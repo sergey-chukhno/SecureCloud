@@ -5,34 +5,22 @@
 
 namespace securecloud::files::health {
 
-FilesHealthEvaluator::FilesHealthEvaluator(
-    common::health::HealthStatusManager& health_manager,
-    std::shared_ptr<db::FilesDbConnectionPool> db_pool,
-    std::shared_ptr<storage::S3Client> s3_client,
-    FilesHealthEvaluatorConfig config)
+FilesHealthEvaluator::FilesHealthEvaluator(common::health::HealthStatusManager& health_manager,
+                                           std::shared_ptr<db::FilesDbConnectionPool> db_pool,
+                                           std::shared_ptr<storage::S3Client> s3_client,
+                                           FilesHealthEvaluatorConfig config)
     : FilesHealthEvaluator(
           health_manager,
           [pool = std::move(db_pool), timeout = config.probe_timeout]() -> bool {
               return pool ? pool->ping(timeout) : false;
           },
-          [client = std::move(s3_client)]() -> bool {
-              return client ? client->ping_bucket() : false;
-          },
-          config) {}
+          [client = std::move(s3_client)]() -> bool { return client ? client->ping_bucket() : false; }, config) {}
 
-FilesHealthEvaluator::FilesHealthEvaluator(
-    common::health::HealthStatusManager& health_manager,
-    HealthProbeFn db_probe,
-    HealthProbeFn s3_probe,
-    FilesHealthEvaluatorConfig config)
-    : health_manager_(health_manager),
-      db_probe_(std::move(db_probe)),
-      s3_probe_(std::move(s3_probe)),
-      config_(config) {
+FilesHealthEvaluator::FilesHealthEvaluator(common::health::HealthStatusManager& health_manager, HealthProbeFn db_probe,
+                                           HealthProbeFn s3_probe, FilesHealthEvaluatorConfig config)
+    : health_manager_(health_manager), db_probe_(std::move(db_probe)), s3_probe_(std::move(s3_probe)), config_(config) {
     // Hook non-blocking cached evaluator into common HealthStatusManager
-    health_manager_.set_readiness_evaluator([this] {
-        return this->is_ready();
-    });
+    health_manager_.set_readiness_evaluator([this] { return this->is_ready(); });
 
     if (config_.auto_start) {
         start();
@@ -51,8 +39,8 @@ bool FilesHealthEvaluator::evaluate_once() noexcept {
         try {
             db_ok = db_probe_();
         } catch (const std::exception& ex) {
-            std::cerr << "[SecureCloud] [files] WARNING: Exception during PostgreSQL health probe: "
-                      << ex.what() << "\n";
+            std::cerr << "[SecureCloud] [files] WARNING: Exception during PostgreSQL health probe: " << ex.what()
+                      << "\n";
             db_ok = false;
         } catch (...) {
             std::cerr << "[SecureCloud] [files] WARNING: Unknown error during PostgreSQL health probe\n";
@@ -64,8 +52,7 @@ bool FilesHealthEvaluator::evaluate_once() noexcept {
         try {
             s3_ok = s3_probe_();
         } catch (const std::exception& ex) {
-            std::cerr << "[SecureCloud] [files] WARNING: Exception during MinIO S3 health probe: "
-                      << ex.what() << "\n";
+            std::cerr << "[SecureCloud] [files] WARNING: Exception during MinIO S3 health probe: " << ex.what() << "\n";
             s3_ok = false;
         } catch (...) {
             std::cerr << "[SecureCloud] [files] WARNING: Unknown error during MinIO S3 health probe\n";
@@ -132,9 +119,8 @@ void FilesHealthEvaluator::background_loop() {
         evaluate_once();
 
         std::unique_lock<std::mutex> lock(loop_mutex_);
-        cv_loop_.wait_for(lock, config_.check_interval, [this] {
-            return stop_requested_.load(std::memory_order_acquire);
-        });
+        cv_loop_.wait_for(lock, config_.check_interval,
+                          [this] { return stop_requested_.load(std::memory_order_acquire); });
     }
 }
 

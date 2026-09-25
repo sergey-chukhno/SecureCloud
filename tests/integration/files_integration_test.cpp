@@ -94,7 +94,7 @@ constexpr std::chrono::seconds k_rpc_deadline{2};
 
 /// RAII helper managing an ephemeral listening TCP socket for probing.
 class ScopedTcpListener {
-public:
+  public:
     ScopedTcpListener() {
         ensure_integration_winsock();
         listen_fd_ = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -145,13 +145,13 @@ public:
     [[nodiscard]] uint16_t port() const noexcept { return port_; }
     [[nodiscard]] bool is_listening() const noexcept { return listen_fd_ != k_invalid_socket; }
 
-private:
+  private:
     socket_handle_t listen_fd_{k_invalid_socket};
     uint16_t port_{0};
 };
 
 class FilesIntegrationTest : public ::testing::Test {
-protected:
+  protected:
     static std::filesystem::path find_pki_root() {
 #ifdef SECURECLOUD_DEV_PKI_DIR
         std::filesystem::path defined_path(SECURECLOUD_DEV_PKI_DIR);
@@ -182,10 +182,8 @@ protected:
         audit_key_path_ = pki_root / "services" / "audit" / "audit.key";
 
         const std::vector<std::filesystem::path> required_paths = {
-            ca_path_, files_cert_path_, files_key_path_,
-            gateway_cert_path_, gateway_key_path_,
-            audit_cert_path_, audit_key_path_
-        };
+            ca_path_,          files_cert_path_, files_key_path_, gateway_cert_path_,
+            gateway_key_path_, audit_cert_path_, audit_key_path_};
 
         for (const auto& path : required_paths) {
             ASSERT_TRUE(std::filesystem::exists(path)) << "Required dev PKI credential missing: " << path;
@@ -228,9 +226,7 @@ protected:
         std::string address;
     };
 
-    RunningServer start_files_mtls_server(
-        service::FilesServiceImpl* files_svc,
-        HealthServiceImpl* health_svc) {
+    RunningServer start_files_mtls_server(service::FilesServiceImpl* files_svc, HealthServiceImpl* health_svc) {
         auto server_creds = MtlsCredentialLoader::create_server_credentials(files_config_);
         EXPECT_NE(server_creds, nullptr);
 
@@ -471,10 +467,8 @@ TEST_F(FilesIntegrationTest, ReadinessReturnsServingWhenBothDependenciesHealthy)
     eval_cfg.auto_start = false;
 
     health::FilesHealthEvaluator health_evaluator(
-        health_manager,
-        [db_port] { return probe_tcp_connectivity("127.0.0.1", db_port, k_test_probe_timeout); },
-        [s3_port] { return probe_tcp_connectivity("127.0.0.1", s3_port, k_test_probe_timeout); },
-        eval_cfg);
+        health_manager, [db_port] { return probe_tcp_connectivity("127.0.0.1", db_port, k_test_probe_timeout); },
+        [s3_port] { return probe_tcp_connectivity("127.0.0.1", s3_port, k_test_probe_timeout); }, eval_cfg);
 
     health_evaluator.evaluate_once();
 
@@ -515,10 +509,8 @@ TEST_F(FilesIntegrationTest, ReadinessDegradesWhenEitherDependencyFailsWhileLive
     eval_cfg.auto_start = false;
 
     health::FilesHealthEvaluator health_evaluator(
-        health_manager,
-        [db_port] { return probe_tcp_connectivity("127.0.0.1", db_port, k_test_probe_timeout); },
-        [s3_port] { return probe_tcp_connectivity("127.0.0.1", s3_port, k_test_probe_timeout); },
-        eval_cfg);
+        health_manager, [db_port] { return probe_tcp_connectivity("127.0.0.1", db_port, k_test_probe_timeout); },
+        [s3_port] { return probe_tcp_connectivity("127.0.0.1", s3_port, k_test_probe_timeout); }, eval_cfg);
 
     health_evaluator.evaluate_once();
 
@@ -599,9 +591,7 @@ TEST_F(FilesIntegrationTest, ObservationalGuardEnforcesPort5432Invariant) {
     // Verify rejection of 5432 at pool creation
     db::ConnectionPoolConfig bad_config = pool_config;
     bad_config.port = 5432;
-    EXPECT_THROW(
-        { db::FilesDbConnectionPool bad_pool(bad_config); },
-        db::PortForbiddenException);
+    EXPECT_THROW({ db::FilesDbConnectionPool bad_pool(bad_config); }, db::PortForbiddenException);
 }
 
 // Test 8: Deterministic graceful shutdown completes without memory leaks or deadlocks
@@ -614,11 +604,7 @@ TEST_F(FilesIntegrationTest, GracefulShutdownCompletesDeterministically) {
     eval_cfg.auto_start = true;
     eval_cfg.check_interval = std::chrono::milliseconds(20);
 
-    health::FilesHealthEvaluator health_evaluator(
-        health_manager,
-        [] { return true; },
-        [] { return true; },
-        eval_cfg);
+    health::FilesHealthEvaluator health_evaluator(health_manager, [] { return true; }, [] { return true; }, eval_cfg);
 
     HealthServiceImpl health_service("files", health_manager, "gateway");
     service::FilesServiceImpl files_service(db_pool_, s3_client_, "gateway");

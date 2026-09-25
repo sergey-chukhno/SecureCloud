@@ -40,11 +40,7 @@ class PortForbiddenException : public ConnectionPoolException {
 };
 
 /// 3-state lifecycle for the connection pool
-enum class PoolState {
-    OPEN,
-    DRAINING,
-    CLOSED
-};
+enum class PoolState { OPEN, DRAINING, CLOSED };
 
 /// Strongly typed configuration model for PostgreSQL connection pool
 struct ConnectionPoolConfig {
@@ -68,11 +64,12 @@ struct ConnectionPoolConfig {
 };
 
 /// Factory function signature for creating new IDbConnection instances
-using ConnectionFactory = std::function<std::unique_ptr<IDbConnection>(const ConnectionPoolConfig&, const std::string&)>;
+using ConnectionFactory =
+    std::function<std::unique_ptr<IDbConnection>(const ConnectionPoolConfig&, const std::string&)>;
 
 /// Default connection implementation executing TCP reachability / ping checks
 class DefaultDbConnection : public IDbConnection {
-public:
+  public:
     DefaultDbConnection(std::string id, std::string host, uint16_t port, std::chrono::milliseconds connect_timeout);
     ~DefaultDbConnection() override;
 
@@ -81,7 +78,7 @@ public:
     [[nodiscard]] bool execute_ping(std::chrono::milliseconds timeout) override;
     [[nodiscard]] const std::string& connection_id() const noexcept override;
 
-private:
+  private:
     std::string id_;
     std::string host_;
     uint16_t port_;
@@ -91,7 +88,7 @@ private:
 
 /// Thread-safe bounded PostgreSQL connection pool with move-only RAII leases and dedicated health probe
 class FilesDbConnectionPool {
-public:
+  public:
     explicit FilesDbConnectionPool(ConnectionPoolConfig config, ConnectionFactory factory = nullptr);
     ~FilesDbConnectionPool();
 
@@ -127,7 +124,7 @@ public:
     [[nodiscard]] size_t waiting_threads() const noexcept;
     [[nodiscard]] const ConnectionPoolConfig& config() const noexcept;
 
-private:
+  private:
     std::unique_ptr<IDbConnection> create_connection(const std::string& role);
 
     ConnectionPoolConfig config_;

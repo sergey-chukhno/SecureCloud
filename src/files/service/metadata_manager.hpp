@@ -29,7 +29,7 @@ struct FileMetadataRecord {
 
 /// Interface defining the contract for file metadata persistence in PostgreSQL.
 class IMetadataManager {
-public:
+  public:
     virtual ~IMetadataManager() = default;
 
     /// Persists a new file record in CREATED state.
@@ -47,14 +47,12 @@ public:
 
 /// Default implementation of IMetadataManager wrapping FilesDbConnectionPool.
 class MetadataManager : public IMetadataManager {
-public:
+  public:
     explicit MetadataManager(std::shared_ptr<db::FilesDbConnectionPool> db_pool = nullptr)
         : db_pool_(std::move(db_pool)) {}
     ~MetadataManager() override = default;
 
-    bool create_file_record(const FileMetadataRecord& /*record*/) override {
-        return false;
-    }
+    bool create_file_record(const FileMetadataRecord& /*record*/) override { return false; }
 
     bool update_file_state(const std::string& /*file_id*/, v1::FileLifecycleState /*new_state*/) override {
         return false;
@@ -64,15 +62,11 @@ public:
         return std::nullopt;
     }
 
-    bool mark_file_deleted(const std::string& /*file_id*/) override {
-        return false;
-    }
+    bool mark_file_deleted(const std::string& /*file_id*/) override { return false; }
 
-    [[nodiscard]] std::shared_ptr<db::FilesDbConnectionPool> db_pool() const noexcept {
-        return db_pool_;
-    }
+    [[nodiscard]] std::shared_ptr<db::FilesDbConnectionPool> db_pool() const noexcept { return db_pool_; }
 
-private:
+  private:
     std::shared_ptr<db::FilesDbConnectionPool> db_pool_;
 };
 

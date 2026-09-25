@@ -47,18 +47,14 @@ struct FilesServiceDependencies {
 /// - Enforces mTLS client certificate SAN peer identity verification (Gateway: DNS:gateway).
 /// - Implements secret-safe operational logging (never logging ciphertext or secret keys).
 class FilesServiceImpl final : public v1::FilesService::Service {
-public:
+  public:
     static constexpr std::string_view k_unimplemented_skeleton_message =
         "FilesService method not implemented in FILES-001 skeleton";
 
-    explicit FilesServiceImpl(
-        FilesServiceDependencies deps = {},
-        std::string expected_client_identity = "");
+    explicit FilesServiceImpl(FilesServiceDependencies deps = {}, std::string expected_client_identity = "");
 
-    FilesServiceImpl(
-        std::shared_ptr<db::FilesDbConnectionPool> db_pool,
-        std::shared_ptr<storage::S3Client> s3_client,
-        std::string expected_client_identity = "");
+    FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db_pool, std::shared_ptr<storage::S3Client> s3_client,
+                     std::string expected_client_identity = "");
 
     ~FilesServiceImpl() override = default;
 
@@ -74,88 +70,59 @@ public:
 
     // --- gRPC Service Virtual Overrides ---
 
-    grpc::Status CreateFileUpload(
-        grpc::ServerContext* context,
-        const v1::CreateFileUploadRequest* request,
-        v1::CreateFileUploadResponse* response) override;
+    grpc::Status CreateFileUpload(grpc::ServerContext* context, const v1::CreateFileUploadRequest* request,
+                                  v1::CreateFileUploadResponse* response) override;
 
-    grpc::Status UploadChunk(
-        grpc::ServerContext* context,
-        const v1::UploadChunkRequest* request,
-        v1::UploadChunkResponse* response) override;
+    grpc::Status UploadChunk(grpc::ServerContext* context, const v1::UploadChunkRequest* request,
+                             v1::UploadChunkResponse* response) override;
 
-    grpc::Status FinalizeFileUpload(
-        grpc::ServerContext* context,
-        const v1::FinalizeFileUploadRequest* request,
-        v1::FinalizeFileUploadResponse* response) override;
+    grpc::Status FinalizeFileUpload(grpc::ServerContext* context, const v1::FinalizeFileUploadRequest* request,
+                                    v1::FinalizeFileUploadResponse* response) override;
 
-    grpc::Status GetFileMetadata(
-        grpc::ServerContext* context,
-        const v1::GetFileMetadataRequest* request,
-        v1::GetFileMetadataResponse* response) override;
+    grpc::Status GetFileMetadata(grpc::ServerContext* context, const v1::GetFileMetadataRequest* request,
+                                 v1::GetFileMetadataResponse* response) override;
 
-    grpc::Status DownloadChunk(
-        grpc::ServerContext* context,
-        const v1::DownloadChunkRequest* request,
-        v1::DownloadChunkResponse* response) override;
+    grpc::Status DownloadChunk(grpc::ServerContext* context, const v1::DownloadChunkRequest* request,
+                               v1::DownloadChunkResponse* response) override;
 
-    grpc::Status CancelFileUpload(
-        grpc::ServerContext* context,
-        const v1::CancelFileUploadRequest* request,
-        v1::CancelFileUploadResponse* response) override;
+    grpc::Status CancelFileUpload(grpc::ServerContext* context, const v1::CancelFileUploadRequest* request,
+                                  v1::CancelFileUploadResponse* response) override;
 
-    grpc::Status DeleteFile(
-        grpc::ServerContext* context,
-        const v1::DeleteFileRequest* request,
-        v1::DeleteFileResponse* response) override;
+    grpc::Status DeleteFile(grpc::ServerContext* context, const v1::DeleteFileRequest* request,
+                            v1::DeleteFileResponse* response) override;
 
     // --- Direct AuthContext Overloads (for unit testing and direct invocation) ---
 
-    grpc::Status CreateFileUpload(
-        const grpc::AuthContext* auth_ctx,
-        const v1::CreateFileUploadRequest* request,
-        v1::CreateFileUploadResponse* response);
+    grpc::Status CreateFileUpload(const grpc::AuthContext* auth_ctx, const v1::CreateFileUploadRequest* request,
+                                  v1::CreateFileUploadResponse* response);
 
-    grpc::Status UploadChunk(
-        const grpc::AuthContext* auth_ctx,
-        const v1::UploadChunkRequest* request,
-        v1::UploadChunkResponse* response);
+    grpc::Status UploadChunk(const grpc::AuthContext* auth_ctx, const v1::UploadChunkRequest* request,
+                             v1::UploadChunkResponse* response);
 
-    grpc::Status FinalizeFileUpload(
-        const grpc::AuthContext* auth_ctx,
-        const v1::FinalizeFileUploadRequest* request,
-        v1::FinalizeFileUploadResponse* response);
+    grpc::Status FinalizeFileUpload(const grpc::AuthContext* auth_ctx, const v1::FinalizeFileUploadRequest* request,
+                                    v1::FinalizeFileUploadResponse* response);
 
-    grpc::Status GetFileMetadata(
-        const grpc::AuthContext* auth_ctx,
-        const v1::GetFileMetadataRequest* request,
-        v1::GetFileMetadataResponse* response);
+    grpc::Status GetFileMetadata(const grpc::AuthContext* auth_ctx, const v1::GetFileMetadataRequest* request,
+                                 v1::GetFileMetadataResponse* response);
 
-    grpc::Status DownloadChunk(
-        const grpc::AuthContext* auth_ctx,
-        const v1::DownloadChunkRequest* request,
-        v1::DownloadChunkResponse* response);
+    grpc::Status DownloadChunk(const grpc::AuthContext* auth_ctx, const v1::DownloadChunkRequest* request,
+                               v1::DownloadChunkResponse* response);
 
-    grpc::Status CancelFileUpload(
-        const grpc::AuthContext* auth_ctx,
-        const v1::CancelFileUploadRequest* request,
-        v1::CancelFileUploadResponse* response);
+    grpc::Status CancelFileUpload(const grpc::AuthContext* auth_ctx, const v1::CancelFileUploadRequest* request,
+                                  v1::CancelFileUploadResponse* response);
 
-    grpc::Status DeleteFile(
-        const grpc::AuthContext* auth_ctx,
-        const v1::DeleteFileRequest* request,
-        v1::DeleteFileResponse* response);
+    grpc::Status DeleteFile(const grpc::AuthContext* auth_ctx, const v1::DeleteFileRequest* request,
+                            v1::DeleteFileResponse* response);
 
     // --- Security & Identity Helpers ---
 
     [[nodiscard]] std::optional<std::string> extract_peer_identity(const grpc::AuthContext* auth_ctx) const;
-    [[nodiscard]] bool verify_caller_identity(const grpc::AuthContext* auth_ctx, std::string_view expected_service) const;
+    [[nodiscard]] bool verify_caller_identity(const grpc::AuthContext* auth_ctx,
+                                              std::string_view expected_service) const;
 
-private:
-    grpc::Status check_peer_authorization(
-        const grpc::AuthContext* auth_ctx,
-        std::string_view rpc_name,
-        std::string& out_peer) const;
+  private:
+    grpc::Status check_peer_authorization(const grpc::AuthContext* auth_ctx, std::string_view rpc_name,
+                                          std::string& out_peer) const;
 
     FilesServiceDependencies deps_;
     std::string expected_client_identity_;

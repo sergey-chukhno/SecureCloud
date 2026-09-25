@@ -38,15 +38,16 @@ void ConnectionPoolConfig::validate() const {
     }
     if (min_connections > max_connections) {
         throw std::invalid_argument("ConnectionPoolConfig: min_connections (" + std::to_string(min_connections) +
-                                   ") cannot exceed max_connections (" + std::to_string(max_connections) + ")");
+                                    ") cannot exceed max_connections (" + std::to_string(max_connections) + ")");
     }
 
     // Port 5432 Hard Security Invariant (ADR-005, FILES-001-T02)
-    const bool is_loopback = (host == "localhost" || host == "127.0.0.1" || host == "::1" ||
-                              host == "host.docker.internal");
+    const bool is_loopback =
+        (host == "localhost" || host == "127.0.0.1" || host == "::1" || host == "host.docker.internal");
     if (is_loopback && port == 5432) {
         throw PortForbiddenException(
-            "[SecureCloud] Port 5432 Invariant Violation: Connecting to " + host + ":5432 is strictly forbidden. "
+            "[SecureCloud] Port 5432 Invariant Violation: Connecting to " + host +
+            ":5432 is strictly forbidden. "
             "Host PostgreSQL 14 must remain untouched. SecureCloud PostgreSQL 17 binds to port 5433.");
     }
 }
@@ -154,9 +155,8 @@ PooledConnection FilesDbConnectionPool::acquire() {
     // 3. Pool is exhausted: wait with acquire_timeout for a returned connection
     waiting_threads_++;
     const auto deadline = std::chrono::steady_clock::now() + config_.acquire_timeout;
-    const bool acquired = cv_available_.wait_until(lock, deadline, [this]() {
-        return state_ != PoolState::OPEN || !available_connections_.empty();
-    });
+    const bool acquired = cv_available_.wait_until(
+        lock, deadline, [this]() { return state_ != PoolState::OPEN || !available_connections_.empty(); });
     waiting_threads_--;
 
     if (state_ == PoolState::DRAINING) {
@@ -248,9 +248,7 @@ void FilesDbConnectionPool::close() noexcept {
     {
         std::unique_lock<std::mutex> lock(mutex_);
         if (active_leases_ > 0) {
-            cv_drained_.wait_for(lock, std::chrono::milliseconds(2000), [this]() {
-                return active_leases_ == 0;
-            });
+            cv_drained_.wait_for(lock, std::chrono::milliseconds(2000), [this]() { return active_leases_ == 0; });
         }
         state_ = PoolState::CLOSED;
     }

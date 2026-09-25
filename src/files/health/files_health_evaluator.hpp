@@ -30,20 +30,15 @@ struct FilesHealthEvaluatorConfig {
 /// - NOT_SERVING if either dependency degrades or fails.
 /// - Non-blocking: maintains cached atomic states so incoming gRPC health checks are never blocked.
 class FilesHealthEvaluator {
-public:
+  public:
     /// Production constructor using real PostgreSQL pool and S3 client.
-    FilesHealthEvaluator(
-        common::health::HealthStatusManager& health_manager,
-        std::shared_ptr<db::FilesDbConnectionPool> db_pool,
-        std::shared_ptr<storage::S3Client> s3_client,
-        FilesHealthEvaluatorConfig config = {});
+    FilesHealthEvaluator(common::health::HealthStatusManager& health_manager,
+                         std::shared_ptr<db::FilesDbConnectionPool> db_pool,
+                         std::shared_ptr<storage::S3Client> s3_client, FilesHealthEvaluatorConfig config = {});
 
     /// Flexible constructor accepting custom probe functions (used in unit testing).
-    FilesHealthEvaluator(
-        common::health::HealthStatusManager& health_manager,
-        HealthProbeFn db_probe,
-        HealthProbeFn s3_probe,
-        FilesHealthEvaluatorConfig config = {});
+    FilesHealthEvaluator(common::health::HealthStatusManager& health_manager, HealthProbeFn db_probe,
+                         HealthProbeFn s3_probe, FilesHealthEvaluatorConfig config = {});
 
     ~FilesHealthEvaluator();
 
@@ -68,7 +63,7 @@ public:
     [[nodiscard]] bool is_ready() const noexcept;
     [[nodiscard]] bool is_running() const noexcept;
 
-private:
+  private:
     void background_loop();
     void update_states(bool db_ok, bool s3_ok) noexcept;
 

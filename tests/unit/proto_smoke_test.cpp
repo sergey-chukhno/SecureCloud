@@ -66,9 +66,8 @@ TEST(ProtoSmokeTest, FilesMessageConstructionAndSerialization) {
 }
 
 TEST(ProtoSmokeTest, FilesServiceStubTypeLinkage) {
-    EXPECT_TRUE((std::is_same_v<securecloud::files::v1::FilesService::Service,
-                                securecloud::files::v1::FilesService::Service>));
-    EXPECT_TRUE((std::is_same_v<securecloud::files::v1::FilesService::Stub,
-                                securecloud::files::v1::FilesService::Stub>));
+    EXPECT_TRUE(
+        (std::is_same_v<securecloud::files::v1::FilesService::Service, securecloud::files::v1::FilesService::Service>));
+    EXPECT_TRUE(
+        (std::is_same_v<securecloud::files::v1::FilesService::Stub, securecloud::files::v1::FilesService::Stub>));
 }
-

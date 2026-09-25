@@ -76,14 +76,13 @@ int run_service() {
     auto s3_client = std::make_shared<securecloud::files::storage::S3Client>(std::move(s3_config));
 
     // Initialize FilesServiceImpl enforcing Gateway mTLS client identity (DNS:gateway)
-    securecloud::files::service::FilesServiceImpl files_service(
-        db_pool, s3_client, /*expected_client_identity=*/"gateway");
+    securecloud::files::service::FilesServiceImpl files_service(db_pool, s3_client,
+                                                                /*expected_client_identity=*/"gateway");
 
     std::string server_address = config.common.listen_address();
 
     securecloud::common::health::HealthStatusManager health_manager(config.common.service_name);
-    securecloud::files::health::FilesHealthEvaluator health_evaluator(
-        health_manager, db_pool, s3_client);
+    securecloud::files::health::FilesHealthEvaluator health_evaluator(health_manager, db_pool, s3_client);
     securecloud::common::health::HealthServiceImpl health_service(config.common.service_name, health_manager);
 
     grpc::ServerBuilder builder;

@@ -1,9 +1,8 @@
 #include "files/storage/s3_client.hpp"
 #include "files/storage/s3_exceptions.hpp"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
+#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -13,7 +12,7 @@ namespace {
 
 /// Mock HTTP transport for unit testing S3Client requests and SigV4 verification
 class MockHttpTransport : public IHttpTransport {
-public:
+  public:
     explicit MockHttpTransport(int status_code = 200, std::string body = "")
         : status_code_(status_code), body_(std::move(body)) {}
 
@@ -28,15 +27,11 @@ public:
         body_ = std::move(body);
     }
 
-    [[nodiscard]] const HttpRequest& last_request() const noexcept {
-        return last_request_;
-    }
+    [[nodiscard]] const HttpRequest& last_request() const noexcept { return last_request_; }
 
-    [[nodiscard]] size_t execution_count() const noexcept {
-        return execution_count_;
-    }
+    [[nodiscard]] size_t execution_count() const noexcept { return execution_count_; }
 
-private:
+  private:
     int status_code_{200};
     std::string body_;
     HttpRequest last_request_;
@@ -60,8 +55,8 @@ TEST(S3ClientTest, SigV4Sha256AndHmacDerivation) {
     EXPECT_EQ(hmac_hex, "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8");
 
     // 4. AWS SigV4 5-stage key derivation returns 32-byte binary key
-    const auto signing_key = SigV4Signer::derive_signing_key("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
-                                                             "20130524", "us-east-1", "s3");
+    const auto signing_key =
+        SigV4Signer::derive_signing_key("wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY", "20130524", "us-east-1", "s3");
     EXPECT_EQ(signing_key.size(), 32);
     const std::string signing_key_hex = SigV4Signer::hex_encode(signing_key.data(), signing_key.size());
     EXPECT_FALSE(signing_key_hex.empty());
