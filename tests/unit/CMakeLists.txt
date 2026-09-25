@@ -243,5 +243,20 @@ target_link_libraries(securecloud_files_schema_migration_test PRIVATE
 
 gtest_discover_tests(securecloud_files_schema_migration_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Domain Entities & Type Mappers Unit Test Suite (FILES-002-T02)
+add_executable(securecloud_domain_entities_test
+    files/domain_entities_test.cpp
+)
+
+target_link_libraries(securecloud_domain_entities_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_domain_entities_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
 
