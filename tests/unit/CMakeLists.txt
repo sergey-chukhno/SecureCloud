@@ -228,5 +228,20 @@ target_link_libraries(securecloud_files_health_evaluator_test PRIVATE
 
 gtest_discover_tests(securecloud_files_health_evaluator_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Schema Migration Unit Test Suite (FILES-002-T01)
+add_executable(securecloud_files_schema_migration_test
+    files/schema_migration_test.cpp
+)
+
+target_link_libraries(securecloud_files_schema_migration_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_schema_migration_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
 

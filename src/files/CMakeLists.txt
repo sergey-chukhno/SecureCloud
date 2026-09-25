@@ -16,6 +16,7 @@ target_link_libraries(securecloud_files_config PUBLIC
 
 add_library(securecloud_files_db STATIC
     db/files_connection_pool.cpp
+    db/migration_runner.cpp
 )
 
 add_library(securecloud::files_db ALIAS securecloud_files_db)
