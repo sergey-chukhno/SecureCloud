@@ -448,3 +448,17 @@ target_link_libraries(securecloud_transfer_chunk_repository_test PRIVATE
 
 gtest_discover_tests(securecloud_transfer_chunk_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Access Control & Transactional Outbox Repositories Unit Test Suite (FILES-002-T05)
+add_executable(securecloud_access_outbox_repository_test
+    files/access_outbox_repository_test.cpp
+)
+
+target_link_libraries(securecloud_access_outbox_repository_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_access_outbox_repository_test ${SECURECLOUD_TEST_PROPERTIES})

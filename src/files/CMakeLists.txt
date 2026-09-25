@@ -22,6 +22,8 @@ add_library(securecloud_files_db STATIC
     repository/file_version_repository.cpp
     repository/file_transfer_repository.cpp
     repository/file_chunk_repository.cpp
+    repository/file_access_repository.cpp
+    repository/files_outbox_repository.cpp
 )
 
 add_library(securecloud::files_db ALIAS securecloud_files_db)
