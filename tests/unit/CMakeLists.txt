@@ -164,6 +164,167 @@ target_link_libraries(securecloud_transport_probe_test PRIVATE
 
 gtest_discover_tests(securecloud_transport_probe_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
+add_executable(securecloud_http_smoke_test
+    gateway/http_smoke_test.cpp
+)
+
+target_link_libraries(securecloud_http_smoke_test PRIVATE
+    securecloud::json
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_http_smoke_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Configuration Model & Strict No-DB Invariant Test (GW-001-T02)
+add_executable(securecloud_gateway_config_test
+    gateway/gateway_config_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_config_test PRIVATE
+    securecloud::gateway_config
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_config_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Modular HTTP Server Lifecycle Test (GW-001-T03)
+add_executable(securecloud_http_server_lifecycle_test
+    gateway/http_server_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_http_server_lifecycle_test PRIVATE
+    securecloud::gateway_http
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_http_server_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Router, Middleware Pipeline & Error Mapper Test (GW-001-T04)
+add_executable(securecloud_router_middleware_test
+    gateway/router_middleware_test.cpp
+)
+
+target_link_libraries(securecloud_router_middleware_test PRIVATE
+    securecloud::gateway_http
+    securecloud::httplib
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_router_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Downstream gRPC Channel Manager Test (GW-001-T05)
+add_executable(securecloud_channel_manager_test
+    gateway/channel_manager_test.cpp
+)
+
+target_link_libraries(securecloud_channel_manager_test PRIVATE
+    securecloud::gateway_grpc
+    securecloud::gateway_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_channel_manager_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_channel_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway TLS & Transport Resource Configuration Model Test (GW-002-T01)
+add_executable(securecloud_gateway_tls_config_test
+    gateway/gateway_tls_config_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_tls_config_test PRIVATE
+    securecloud::gateway_config
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_tls_config_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway OpenSSL TLS Context & Certificate Pair Validator Test (GW-002-T02)
+add_executable(securecloud_tls_handler_test
+    gateway/tls_handler_test.cpp
+)
+
+target_link_libraries(securecloud_tls_handler_test PRIVATE
+    securecloud::gateway_tls
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_tls_handler_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_tls_handler_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway HTTPS Server Engine Integration Test (GW-002-T03)
+add_executable(securecloud_https_server_lifecycle_test
+    gateway/https_server_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_https_server_lifecycle_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_tls
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_https_server_lifecycle_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_https_server_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Request & Resource Limiter Middleware Test (GW-002-T04)
+add_executable(securecloud_resource_limiter_middleware_test
+    gateway/resource_limiter_middleware_test.cpp
+)
+
+target_link_libraries(securecloud_resource_limiter_middleware_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_config
+    securecloud::httplib
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_resource_limiter_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Insecure Protocol Downgrade Rejection & HTTP Redirect Guard Test (GW-002-T05)
+add_executable(securecloud_downgrade_guard_test
+    gateway/downgrade_guard_test.cpp
+)
+
+target_link_libraries(securecloud_downgrade_guard_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_tls
+    securecloud::httplib
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_downgrade_guard_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_downgrade_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Files PostgreSQL Connection Pool Unit Test Suite (FILES-001-T02)
 add_executable(securecloud_files_connection_pool_test
     files/files_connection_pool_test.cpp
@@ -227,6 +388,3 @@ target_link_libraries(securecloud_files_health_evaluator_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_files_health_evaluator_test ${SECURECLOUD_TEST_PROPERTIES})
-
-
-
