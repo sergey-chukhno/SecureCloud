@@ -56,11 +56,31 @@ if(WIN32)
     target_link_libraries(securecloud_files_storage PUBLIC ws2_32)
 endif()
 
+add_library(securecloud_files_service STATIC
+    service/files_service_impl.cpp
+)
+
+add_library(securecloud::files_service ALIAS securecloud_files_service)
+
+target_include_directories(securecloud_files_service PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(securecloud_files_service PUBLIC
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+)
+
 add_executable(securecloud-files
     main.cpp
 )
 
 target_link_libraries(securecloud-files PRIVATE
+    securecloud::files_service
     securecloud::files_storage
     securecloud::files_db
     securecloud::files_config

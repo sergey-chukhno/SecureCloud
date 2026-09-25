@@ -194,5 +194,22 @@ target_link_libraries(securecloud_s3_client_test PRIVATE
 
 gtest_discover_tests(securecloud_s3_client_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Service Implementation Unit Test Suite (FILES-001-T04)
+add_executable(securecloud_files_service_impl_test
+    files/files_service_impl_test.cpp
+)
+
+target_link_libraries(securecloud_files_service_impl_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_service_impl_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
 

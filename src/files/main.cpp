@@ -1,4 +1,7 @@
-#include "files_config.hpp"
+#include "files/db/files_connection_pool.hpp"
+#include "files/files_config.hpp"
+#include "files/service/files_service_impl.hpp"
+#include "files/storage/s3_client.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
 #include "securecloud/configuration/configuration_source.hpp"
@@ -97,6 +100,17 @@ int run_service() {
         return 1;
     }
 
+    // Initialize PostgreSQL connection pool and MinIO S3 client
+    auto db_pool_config = securecloud::files::db::ConnectionPoolConfig::from_files_config(config);
+    auto db_pool = std::make_shared<securecloud::files::db::FilesDbConnectionPool>(std::move(db_pool_config));
+
+    auto s3_config = securecloud::files::storage::S3ClientConfig::from_files_config(config);
+    auto s3_client = std::make_shared<securecloud::files::storage::S3Client>(std::move(s3_config));
+
+    // Initialize FilesServiceImpl enforcing Gateway mTLS client identity (DNS:gateway)
+    securecloud::files::service::FilesServiceImpl files_service(
+        db_pool, s3_client, /*expected_client_identity=*/"gateway");
+
     std::string server_address = config.common.listen_address();
     auto s3_endpoint_info = parse_endpoint(config.s3_endpoint);
 
@@ -109,6 +123,7 @@ int run_service() {
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);
+    builder.RegisterService(&files_service);
     builder.RegisterService(&health_service);
 
     std::unique_ptr<grpc::Server> server = builder.BuildAndStart();
@@ -130,7 +145,12 @@ int run_service() {
 
     health_manager.set_shutting_down(true);
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down mTLS server...\n";
-    server->Shutdown();
+    server->Shutdown(std::chrono::system_clock::now() + std::chrono::seconds(5));
+
+    std::cout << "[SecureCloud] [" << config.common.service_name << "] Draining database connection pool...\n";
+    db_pool->drain();
+    db_pool->close();
+
     return 0;
 }
 
