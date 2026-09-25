@@ -85,3 +85,28 @@ target_compile_definitions(securecloud_gateway_integration_test PRIVATE
 add_dependencies(securecloud_gateway_integration_test securecloud_health_probe)
 
 gtest_discover_tests(securecloud_gateway_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway HTTPS Security & Handshake Integration Test Suite (GW-002-T06)
+add_executable(securecloud_gateway_https_integration_test
+    gateway_https_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_https_integration_test PRIVATE
+    securecloud::gateway_config
+    securecloud::gateway_http
+    securecloud::gateway_tls
+    securecloud::common
+    securecloud::httplib
+    securecloud::json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_gateway_https_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_gateway_https_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+

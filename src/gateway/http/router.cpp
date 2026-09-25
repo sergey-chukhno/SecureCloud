@@ -1,6 +1,8 @@
 #include "http/router.hpp"
 
 #include "http/http_server.hpp"
+#include "http/https_server.hpp"
+#include "http/request_id_middleware.hpp"
 
 #include <exception>
 #include <httplib.h>
@@ -91,10 +93,23 @@ void Router::dispatch_route(const httplib::Request& req, httplib::Response& res)
 }
 
 void Router::register_into(HttpServer& server) {
-    server.raw_server().set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
-        this->handle(req, res);
-        return httplib::Server::HandlerResponse::Handled;
-    });
+    auto handler = [this](const httplib::Request& req, httplib::Response& res) { this->handle(req, res); };
+    server.raw_server().Get(".*", handler);
+    server.raw_server().Post(".*", handler);
+    server.raw_server().Put(".*", handler);
+    server.raw_server().Delete(".*", handler);
+    server.raw_server().Patch(".*", handler);
+    server.raw_server().Options(".*", handler);
+}
+
+void Router::register_into(HttpsServer& server) {
+    auto handler = [this](const httplib::Request& req, httplib::Response& res) { this->handle(req, res); };
+    server.raw_server().Get(".*", handler);
+    server.raw_server().Post(".*", handler);
+    server.raw_server().Put(".*", handler);
+    server.raw_server().Delete(".*", handler);
+    server.raw_server().Patch(".*", handler);
+    server.raw_server().Options(".*", handler);
 }
 
 } // namespace securecloud::gateway::http

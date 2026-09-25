@@ -13,10 +13,34 @@ target_link_libraries(securecloud_gateway_config PUBLIC
     securecloud::compiler_flags
 )
 
+add_library(securecloud_gateway_tls STATIC
+    tls/tls_handler.cpp
+)
+
+add_library(securecloud::gateway_tls ALIAS securecloud_gateway_tls)
+
+target_include_directories(securecloud_gateway_tls PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tls
+)
+
+target_link_libraries(securecloud_gateway_tls PUBLIC
+    securecloud::gateway_config
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::common
+    securecloud::compiler_flags
+)
+
 add_library(securecloud_gateway_http STATIC
     http/http_server.cpp
+    http/https_server.cpp
+    http/http_redirect_server.cpp
     http/error_mapper.cpp
     http/middleware.cpp
+    http/request_id_middleware.cpp
+    http/logging_middleware.cpp
+    http/resource_limiter_middleware.cpp
     http/router.cpp
 )
 
@@ -29,6 +53,7 @@ target_include_directories(securecloud_gateway_http PUBLIC
 
 target_link_libraries(securecloud_gateway_http PUBLIC
     securecloud::gateway_config
+    securecloud::gateway_tls
     securecloud::httplib
     securecloud::json
     securecloud::common
@@ -78,6 +103,7 @@ target_link_libraries(securecloud-gateway PRIVATE
     securecloud::gateway_http
     securecloud::gateway_grpc
     securecloud::gateway_health
+    securecloud::gateway_tls
     securecloud::common
     securecloud::compiler_flags
 )

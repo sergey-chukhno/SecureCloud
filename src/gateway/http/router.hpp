@@ -18,6 +18,7 @@ struct Response;
 namespace securecloud::gateway::http {
 
 class HttpServer;
+class HttpsServer;
 
 using RouteHandler = std::function<void(const httplib::Request&, httplib::Response&)>;
 
@@ -37,6 +38,7 @@ class Router {
     void handle(const httplib::Request& req, httplib::Response& res);
 
     void register_into(HttpServer& server);
+    void register_into(HttpsServer& server);
 
     [[nodiscard]] size_t route_count() const noexcept { return routes_.size(); }
 

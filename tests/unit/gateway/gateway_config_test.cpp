@@ -80,7 +80,7 @@ constexpr uint64_t k_expected_default_payload_bytes = 10485760; // 10 MB
 constexpr std::chrono::milliseconds k_expected_default_timeout{5000};
 constexpr uint32_t k_expected_default_server_threads = 4;
 
-constexpr uint16_t k_custom_http_port = 8443;
+constexpr uint16_t k_custom_http_port = 8088;
 constexpr uint64_t k_custom_payload_bytes = 20971520; // 20 MB
 constexpr std::chrono::milliseconds k_custom_timeout{10000};
 constexpr uint32_t k_custom_server_threads = 8;
@@ -108,7 +108,7 @@ TEST(GatewayConfigTest, DefaultValuesAreSound) {
 TEST(GatewayConfigTest, LoadsValidConfigurationFromSource) {
     common::configuration::InMemoryConfigurationSource source({
         {"SECURECLOUD_GATEWAY_HTTP_HOST", "0.0.0.0"},
-        {"SECURECLOUD_GATEWAY_HTTP_PORT", "8443"},
+        {"SECURECLOUD_GATEWAY_HTTP_PORT", "8088"},
         {"SECURECLOUD_GATEWAY_MAX_PAYLOAD_BYTES", "20971520"},
         {"SECURECLOUD_GATEWAY_REQUEST_TIMEOUT_MS", "10000"},
         {"SECURECLOUD_GATEWAY_SERVER_THREADS", "8"},
@@ -127,7 +127,7 @@ TEST(GatewayConfigTest, LoadsValidConfigurationFromSource) {
     EXPECT_EQ(config.max_payload_bytes, k_custom_payload_bytes);
     EXPECT_EQ(config.request_timeout_ms, k_custom_timeout);
     EXPECT_EQ(config.server_threads, k_custom_server_threads);
-    EXPECT_EQ(config.http_listen_endpoint(), "0.0.0.0:8443");
+    EXPECT_EQ(config.http_listen_endpoint(), "0.0.0.0:8088");
 
     EXPECT_EQ(config.auth_endpoint, "auth-prod:50052");
     EXPECT_EQ(config.messaging_endpoint, "messaging-prod:50053");

@@ -239,3 +239,89 @@ target_compile_definitions(securecloud_channel_manager_test PRIVATE
 
 gtest_discover_tests(securecloud_channel_manager_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway TLS & Transport Resource Configuration Model Test (GW-002-T01)
+add_executable(securecloud_gateway_tls_config_test
+    gateway/gateway_tls_config_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_tls_config_test PRIVATE
+    securecloud::gateway_config
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_tls_config_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway OpenSSL TLS Context & Certificate Pair Validator Test (GW-002-T02)
+add_executable(securecloud_tls_handler_test
+    gateway/tls_handler_test.cpp
+)
+
+target_link_libraries(securecloud_tls_handler_test PRIVATE
+    securecloud::gateway_tls
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_tls_handler_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_tls_handler_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway HTTPS Server Engine Integration Test (GW-002-T03)
+add_executable(securecloud_https_server_lifecycle_test
+    gateway/https_server_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_https_server_lifecycle_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_tls
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_https_server_lifecycle_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_https_server_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Request & Resource Limiter Middleware Test (GW-002-T04)
+add_executable(securecloud_resource_limiter_middleware_test
+    gateway/resource_limiter_middleware_test.cpp
+)
+
+target_link_libraries(securecloud_resource_limiter_middleware_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_config
+    securecloud::httplib
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_resource_limiter_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Insecure Protocol Downgrade Rejection & HTTP Redirect Guard Test (GW-002-T05)
+add_executable(securecloud_downgrade_guard_test
+    gateway/downgrade_guard_test.cpp
+)
+
+target_link_libraries(securecloud_downgrade_guard_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_tls
+    securecloud::httplib
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_downgrade_guard_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_downgrade_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+
