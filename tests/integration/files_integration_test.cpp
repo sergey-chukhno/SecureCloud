@@ -34,6 +34,9 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 // clang-format on
+#ifdef DeleteFile
+#undef DeleteFile
+#endif
 #else
 #include <arpa/inet.h>
 #include <fcntl.h>

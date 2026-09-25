@@ -77,6 +77,17 @@ std::string trim(std::string_view str) {
     return std::string(str.substr(first, last - first));
 }
 
+constexpr size_t kDateStampLen = 8;
+constexpr uint16_t kDefaultHttpPort = 80;
+constexpr uint16_t kDefaultHttpsPort = 443;
+constexpr int64_t kMsPerSec = 1000;
+constexpr int64_t kUsPerMs = 1000;
+constexpr size_t kSocketBufferSize = 4096;
+constexpr int kBase10 = 10;
+constexpr int kHttpStatusOk = 200;
+constexpr int kHttpStatusForbidden = 403;
+constexpr int kHttpStatusNotFound = 404;
+
 } // namespace
 
 // --- S3ClientConfig Implementation ---
@@ -153,17 +164,17 @@ void SigV4Signer::sign_request(HttpRequest& req, const std::string& access_key, 
     gmtime_r(&t, &gm);
 #endif
 
-    char amz_date_buf[32];
-    std::strftime(amz_date_buf, sizeof(amz_date_buf), "%Y%m%dT%H%M%SZ", &gm);
-    const std::string amz_date(amz_date_buf);
-    const std::string date_stamp = amz_date.substr(0, 8);
+    std::array<char, 32> amz_date_buf{};
+    std::strftime(amz_date_buf.data(), amz_date_buf.size(), "%Y%m%dT%H%M%SZ", &gm);
+    const std::string amz_date(amz_date_buf.data());
+    const std::string date_stamp = amz_date.substr(0, kDateStampLen);
 
     // Payload Hash
     const std::string payload_hash = sha256_hex(req.body);
 
     // Host header representation
     std::string host_header_val = req.host;
-    if (req.port != 80 && req.port != 443) {
+    if (req.port != kDefaultHttpPort && req.port != kDefaultHttpsPort) {
         host_header_val += ":" + std::to_string(req.port);
     }
 
@@ -229,7 +240,7 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
 
     sock_t sock = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sock == k_invalid) {
-        return HttpResponse{0, "Socket creation failed", {}, ""};
+        return HttpResponse{.status_code = 0, .status_message = "Socket creation failed", .headers = {}, .body = ""};
     }
 
     // Configure timeout
@@ -239,8 +250,8 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
     ::setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&timeout_ms), sizeof(timeout_ms));
 #else
     timeval tv{};
-    tv.tv_sec = static_cast<time_t>(req.timeout.count() / 1000);
-    tv.tv_usec = static_cast<suseconds_t>((req.timeout.count() % 1000) * 1000);
+    tv.tv_sec = static_cast<time_t>(req.timeout.count() / kMsPerSec);
+    tv.tv_usec = static_cast<suseconds_t>((req.timeout.count() % kMsPerSec) * kUsPerMs);
     ::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     ::setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #endif
@@ -254,7 +265,7 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
 
     if (::getaddrinfo(req.host.c_str(), port_str.c_str(), &hints, &res_info) != 0 || !res_info) {
         close_socket(sock);
-        return HttpResponse{0, "DNS resolution failed", {}, ""};
+        return HttpResponse{.status_code = 0, .status_message = "DNS resolution failed", .headers = {}, .body = ""};
     }
 
 #ifdef _WIN32
@@ -264,7 +275,7 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
 #endif
         ::freeaddrinfo(res_info);
         close_socket(sock);
-        return HttpResponse{0, "TCP connection failed", {}, ""};
+        return HttpResponse{.status_code = 0, .status_message = "TCP connection failed", .headers = {}, .body = ""};
     }
     ::freeaddrinfo(res_info);
 
@@ -285,20 +296,20 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
     if (::send(sock, req_str.c_str(), req_str.size(), 0) < 0) {
 #endif
         close_socket(sock);
-        return HttpResponse{0, "Socket send failed", {}, ""};
+        return HttpResponse{.status_code = 0, .status_message = "Socket send failed", .headers = {}, .body = ""};
     }
 
     // Read HTTP response header
     std::string response_data;
-    char buffer[4096];
+    std::array<char, kSocketBufferSize> buffer{};
 #ifdef _WIN32
     int bytes_read = 0;
-    while ((bytes_read = ::recv(sock, buffer, static_cast<int>(sizeof(buffer) - 1), 0)) > 0) {
+    while ((bytes_read = ::recv(sock, buffer.data(), static_cast<int>(buffer.size() - 1), 0)) > 0) {
 #else
     ssize_t bytes_read = 0;
-    while ((bytes_read = ::recv(sock, buffer, sizeof(buffer) - 1, 0)) > 0) {
+    while ((bytes_read = ::recv(sock, buffer.data(), buffer.size() - 1, 0)) > 0) {
 #endif
-        response_data.append(buffer, static_cast<size_t>(bytes_read));
+        response_data.append(buffer.data(), static_cast<size_t>(bytes_read));
         if (req.method == "HEAD" && response_data.find("\r\n\r\n") != std::string::npos) {
             break; // Finished reading headers for HEAD
         }
@@ -307,17 +318,18 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
 
     // Parse HTTP status line: "HTTP/1.1 <code status_message>\r\n"
     HttpResponse res;
-    if (response_data.rfind("HTTP/", 0) == 0) {
+    if (response_data.starts_with("HTTP/")) {
         const size_t first_space = response_data.find(' ');
         if (first_space != std::string::npos) {
             const size_t second_space = response_data.find(' ', first_space + 1);
             const size_t eol = response_data.find("\r\n");
             if (second_space != std::string::npos && second_space < eol) {
-                res.status_code =
-                    std::atoi(response_data.substr(first_space + 1, second_space - first_space - 1).c_str());
+                res.status_code = static_cast<int>(std::strtol(
+                    response_data.substr(first_space + 1, second_space - first_space - 1).c_str(), nullptr, kBase10));
                 res.status_message = response_data.substr(second_space + 1, eol - second_space - 1);
             } else if (eol != std::string::npos) {
-                res.status_code = std::atoi(response_data.substr(first_space + 1, eol - first_space - 1).c_str());
+                res.status_code = static_cast<int>(std::strtol(
+                    response_data.substr(first_space + 1, eol - first_space - 1).c_str(), nullptr, kBase10));
             }
         }
     }
@@ -338,15 +350,18 @@ S3Client::S3Client(S3ClientConfig config, std::shared_ptr<IHttpTransport> transp
 }
 
 void S3Client::parse_endpoint() {
+    constexpr std::string_view kHttpsPrefix = "https://";
+    constexpr std::string_view kHttpPrefix = "http://";
+
     std::string ep = config_.endpoint;
-    if (ep.rfind("https://", 0) == 0) {
+    if (ep.starts_with(kHttpsPrefix)) {
         is_https_ = true;
-        ep = ep.substr(8);
-        port_ = 443;
-    } else if (ep.rfind("http://", 0) == 0) {
+        ep = ep.substr(kHttpsPrefix.size());
+        port_ = kDefaultHttpsPort;
+    } else if (ep.starts_with(kHttpPrefix)) {
         is_https_ = false;
-        ep = ep.substr(7);
-        port_ = 80;
+        ep = ep.substr(kHttpPrefix.size());
+        port_ = kDefaultHttpPort;
     }
 
     // Strip trailing slash
@@ -358,7 +373,7 @@ void S3Client::parse_endpoint() {
     const size_t colon_pos = ep.find(':');
     if (colon_pos != std::string::npos) {
         host_ = ep.substr(0, colon_pos);
-        port_ = static_cast<uint16_t>(std::atoi(ep.substr(colon_pos + 1).c_str()));
+        port_ = static_cast<uint16_t>(std::strtol(ep.substr(colon_pos + 1).c_str(), nullptr, kBase10));
     } else {
         host_ = ep;
     }
@@ -377,7 +392,7 @@ bool S3Client::ping_bucket(std::chrono::milliseconds timeout) noexcept {
                                   config_.region, "s3");
 
         const HttpResponse res = transport_->execute(req);
-        return res.status_code == 200;
+        return res.status_code == kHttpStatusOk;
     } catch (...) {
         return false;
     }
@@ -396,13 +411,13 @@ bool S3Client::object_exists(const std::string& object_key, std::chrono::millise
 
     const HttpResponse res = transport_->execute(req);
 
-    if (res.status_code == 200) {
+    if (res.status_code == kHttpStatusOk) {
         return true;
     }
-    if (res.status_code == 404) {
+    if (res.status_code == kHttpStatusNotFound) {
         return false;
     }
-    if (res.status_code == 403) {
+    if (res.status_code == kHttpStatusForbidden) {
         throw S3AuthenticationException("MinIO S3 rejected request: 403 Forbidden");
     }
     if (res.status_code == 0) {
