@@ -1,0 +1,163 @@
+syntax = "proto3";
+
+package securecloud.files.v1;
+
+option cc_generic_services = false;
+
+// Lifecycle states of a logical file
+enum FileLifecycleState {
+  FILE_LIFECYCLE_STATE_UNSPECIFIED = 0;
+  FILE_LIFECYCLE_STATE_CREATED = 1;
+  FILE_LIFECYCLE_STATE_UPLOADING = 2;
+  FILE_LIFECYCLE_STATE_FINALIZING = 3;
+  FILE_LIFECYCLE_STATE_AVAILABLE = 4;
+  FILE_LIFECYCLE_STATE_EXPIRED = 5;
+  FILE_LIFECYCLE_STATE_DELETED = 6;
+  FILE_LIFECYCLE_STATE_FAILED = 7;
+}
+
+// Operational status of an upload or download transfer session
+enum TransferStatus {
+  TRANSFER_STATUS_UNSPECIFIED = 0;
+  TRANSFER_STATUS_PENDING = 1;
+  TRANSFER_STATUS_IN_PROGRESS = 2;
+  TRANSFER_STATUS_COMPLETED = 3;
+  TRANSFER_STATUS_CANCELLED = 4;
+  TRANSFER_STATUS_FAILED = 5;
+}
+
+// ==========================================
+// 1. Create File Upload
+// ==========================================
+
+message CreateFileUploadRequest {
+  string file_id = 1;                 // Canonical UUIDv7 string
+  string owner_user_id = 2;           // Opaque UUIDv7 string
+  string owner_device_id = 3;         // Opaque UUIDv7 string
+  string conversation_id = 4;         // Optional opaque UUIDv7 string
+  uint64 encrypted_size_bytes = 5;    // Total size of encrypted ciphertext
+  uint32 expected_chunk_count = 6;    // Number of 4 MiB chunks
+  string encryption_version = 7;      // Encryption format version (e.g. "v1")
+  bytes client_crypto_metadata = 8;   // Pre-encrypted client metadata
+}
+
+message CreateFileUploadResponse {
+  string upload_id = 1;               // Durable upload session ID (UUIDv7)
+  string file_id = 2;                 // Assigned file ID
+  TransferStatus status = 3;          // Initial status (PENDING)
+  int64 expires_at_unix_ms = 4;       // Transfer session expiry timestamp
+}
+
+// ==========================================
+// 2. Upload Chunk
+// ==========================================
+
+message UploadChunkRequest {
+  string upload_id = 1;               // Target upload session
+  uint32 chunk_index = 2;             // 0-based chunk index
+  bytes encrypted_data = 3;           // Pre-encrypted chunk ciphertext
+  uint32 chunk_size_bytes = 4;        // Size of this chunk in bytes
+  string ciphertext_sha256 = 5;       // SHA-256 hash of this encrypted chunk
+}
+
+message UploadChunkResponse {
+  string upload_id = 1;               // Upload session ID
+  uint32 chunk_index = 2;             // Acknowledged chunk index
+  bool accepted = 3;                  // True if chunk was durably accepted
+  string received_sha256 = 4;         // Verified SHA-256 digest
+}
+
+// ==========================================
+// 3. Finalize File Upload
+// ==========================================
+
+message FinalizeFileUploadRequest {
+  string upload_id = 1;               // Upload session ID
+  string file_id = 2;                 // File ID to finalize
+  string expected_ciphertext_sha256 = 3; // Final SHA-256 over entire ciphertext
+}
+
+message FinalizeFileUploadResponse {
+  string file_id = 1;                 // Finalized file ID
+  FileLifecycleState lifecycle_state = 2; // AVAILABLE if finalized successfully
+  int64 available_at_unix_ms = 3;     // Availability timestamp
+}
+
+// ==========================================
+// 4. Get File Metadata
+// ==========================================
+
+message GetFileMetadataRequest {
+  string file_id = 1;                 // Target file ID
+}
+
+message GetFileMetadataResponse {
+  string file_id = 1;                 // File ID
+  FileLifecycleState lifecycle_state = 2; // Current lifecycle state
+  uint64 encrypted_size_bytes = 3;    // Total ciphertext size
+  uint32 chunk_count = 4;             // Total number of chunks
+  string encryption_version = 5;      // Encryption format version
+  string ciphertext_integrity_hash = 6; // Whole-ciphertext SHA-256 hash
+  int64 created_at_unix_ms = 7;       // Creation timestamp
+  int64 available_at_unix_ms = 8;     // Availability timestamp (0 if not available)
+  int64 expires_at_unix_ms = 9;       // Expiration timestamp (0 if none)
+}
+
+// ==========================================
+// 5. Download Chunk
+// ==========================================
+
+message DownloadChunkRequest {
+  string file_id = 1;                 // Target file ID
+  uint32 chunk_index = 2;             // 0-based chunk index
+}
+
+message DownloadChunkResponse {
+  string file_id = 1;                 // File ID
+  uint32 chunk_index = 2;             // Chunk index
+  bytes encrypted_data = 3;           // Encrypted chunk bytes
+  uint32 chunk_size_bytes = 4;        // Size of chunk in bytes
+  string ciphertext_sha256 = 5;       // SHA-256 hash of this encrypted chunk
+}
+
+// ==========================================
+// 6. Cancel File Upload
+// ==========================================
+
+message CancelFileUploadRequest {
+  string upload_id = 1;               // Upload session ID to cancel
+  string reason = 2;                  // Optional operational cancellation reason
+}
+
+message CancelFileUploadResponse {
+  string upload_id = 1;               // Cancelled upload session ID
+  TransferStatus status = 2;          // Updated status (CANCELLED)
+}
+
+// ==========================================
+// 7. Delete File
+// ==========================================
+
+message DeleteFileRequest {
+  string file_id = 1;                 // File ID to delete
+}
+
+message DeleteFileResponse {
+  string file_id = 1;                 // File ID
+  FileLifecycleState lifecycle_state = 2; // DELETED
+  bool deleted = 3;                   // True if logical deletion succeeded
+}
+
+// ==========================================
+// Files Service Interface
+// ==========================================
+
+service FilesService {
+  rpc CreateFileUpload(CreateFileUploadRequest) returns (CreateFileUploadResponse);
+  rpc UploadChunk(UploadChunkRequest) returns (UploadChunkResponse);
+  rpc FinalizeFileUpload(FinalizeFileUploadRequest) returns (FinalizeFileUploadResponse);
+  rpc GetFileMetadata(GetFileMetadataRequest) returns (GetFileMetadataResponse);
+  rpc DownloadChunk(DownloadChunkRequest) returns (DownloadChunkResponse);
+  rpc CancelFileUpload(CancelFileUploadRequest) returns (CancelFileUploadResponse);
+  rpc DeleteFile(DeleteFileRequest) returns (DeleteFileResponse);
+}
