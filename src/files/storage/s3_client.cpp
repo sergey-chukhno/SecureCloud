@@ -1,9 +1,5 @@
 #include "files/storage/s3_client.hpp"
 
-#include <openssl/evp.h>
-#include <openssl/hmac.h>
-#include <openssl/sha.h>
-
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -11,6 +7,9 @@
 #include <cstring>
 #include <ctime>
 #include <iomanip>
+#include <openssl/evp.h>
+#include <openssl/hmac.h>
+#include <openssl/sha.h>
 #include <sstream>
 
 #ifdef _WIN32
@@ -78,6 +77,17 @@ std::string trim(std::string_view str) {
     return std::string(str.substr(first, last - first));
 }
 
+constexpr size_t kDateStampLen = 8;
+constexpr uint16_t kDefaultHttpPort = 80;
+constexpr uint16_t kDefaultHttpsPort = 443;
+constexpr int64_t kMsPerSec = 1000;
+constexpr int64_t kUsPerMs = 1000;
+constexpr size_t kSocketBufferSize = 4096;
+constexpr int kBase10 = 10;
+constexpr int kHttpStatusOk = 200;
+constexpr int kHttpStatusForbidden = 403;
+constexpr int kHttpStatusNotFound = 404;
+
 } // namespace
 
 // --- S3ClientConfig Implementation ---
@@ -128,17 +138,14 @@ std::string SigV4Signer::sha256_hex(std::string_view data) {
 std::vector<uint8_t> SigV4Signer::hmac_sha256(const void* key, size_t key_len, std::string_view data) {
     std::vector<uint8_t> result(EVP_MAX_MD_SIZE);
     unsigned int result_len = 0;
-    HMAC(EVP_sha256(), key, static_cast<int>(key_len),
-         reinterpret_cast<const unsigned char*>(data.data()), data.size(),
+    HMAC(EVP_sha256(), key, static_cast<int>(key_len), reinterpret_cast<const unsigned char*>(data.data()), data.size(),
          result.data(), &result_len);
     result.resize(result_len);
     return result;
 }
 
-std::vector<uint8_t> SigV4Signer::derive_signing_key(const std::string& secret_key,
-                                                     const std::string& date_stamp,
-                                                     const std::string& region,
-                                                     const std::string& service) {
+std::vector<uint8_t> SigV4Signer::derive_signing_key(const std::string& secret_key, const std::string& date_stamp,
+                                                     const std::string& region, const std::string& service) {
     const std::string k_secret = "AWS4" + secret_key;
     const auto k_date = hmac_sha256(k_secret.data(), k_secret.size(), date_stamp);
     const auto k_region = hmac_sha256(k_date.data(), k_date.size(), region);
@@ -157,17 +164,17 @@ void SigV4Signer::sign_request(HttpRequest& req, const std::string& access_key, 
     gmtime_r(&t, &gm);
 #endif
 
-    char amz_date_buf[32];
-    std::strftime(amz_date_buf, sizeof(amz_date_buf), "%Y%m%dT%H%M%SZ", &gm);
-    const std::string amz_date(amz_date_buf);
-    const std::string date_stamp = amz_date.substr(0, 8);
+    std::array<char, 32> amz_date_buf{};
+    std::strftime(amz_date_buf.data(), amz_date_buf.size(), "%Y%m%dT%H%M%SZ", &gm);
+    const std::string amz_date(amz_date_buf.data());
+    const std::string date_stamp = amz_date.substr(0, kDateStampLen);
 
     // Payload Hash
     const std::string payload_hash = sha256_hex(req.body);
 
     // Host header representation
     std::string host_header_val = req.host;
-    if (req.port != 80 && req.port != 443) {
+    if (req.port != kDefaultHttpPort && req.port != kDefaultHttpsPort) {
         host_header_val += ":" + std::to_string(req.port);
     }
 
@@ -200,18 +207,13 @@ void SigV4Signer::sign_request(HttpRequest& req, const std::string& access_key, 
     }
 
     // Canonical Request
-    std::string canonical_request = req.method + "\n" +
-                                    canonical_uri + "\n\n" +
-                                    canonical_headers + "\n" +
-                                    signed_headers + "\n" +
-                                    payload_hash;
+    std::string canonical_request =
+        req.method + "\n" + canonical_uri + "\n\n" + canonical_headers + "\n" + signed_headers + "\n" + payload_hash;
 
     // String to Sign
     const std::string credential_scope = date_stamp + "/" + region + "/" + service + "/aws4_request";
-    const std::string string_to_sign = "AWS4-HMAC-SHA256\n" +
-                                       amz_date + "\n" +
-                                       credential_scope + "\n" +
-                                       sha256_hex(canonical_request);
+    const std::string string_to_sign =
+        "AWS4-HMAC-SHA256\n" + amz_date + "\n" + credential_scope + "\n" + sha256_hex(canonical_request);
 
     // Signature calculation
     const auto signing_key = derive_signing_key(secret_key, date_stamp, region, service);
@@ -220,8 +222,7 @@ void SigV4Signer::sign_request(HttpRequest& req, const std::string& access_key, 
 
     // Authorization Header
     req.headers["authorization"] = "AWS4-HMAC-SHA256 Credential=" + access_key + "/" + credential_scope +
-                                   ", SignedHeaders=" + signed_headers +
-                                   ", Signature=" + signature;
+                                   ", SignedHeaders=" + signed_headers + ", Signature=" + signature;
 }
 
 // --- DefaultHttpTransport Implementation ---
@@ -239,7 +240,7 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
 
     sock_t sock = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sock == k_invalid) {
-        return HttpResponse{0, "Socket creation failed", {}, ""};
+        return HttpResponse{.status_code = 0, .status_message = "Socket creation failed", .headers = {}, .body = ""};
     }
 
     // Configure timeout
@@ -248,29 +249,33 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
     ::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&timeout_ms), sizeof(timeout_ms));
     ::setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&timeout_ms), sizeof(timeout_ms));
 #else
-    struct timeval tv {};
-    tv.tv_sec = static_cast<long>(req.timeout.count() / 1000);
-    tv.tv_usec = static_cast<long>((req.timeout.count() % 1000) * 1000);
+    timeval tv{};
+    tv.tv_sec = static_cast<time_t>(req.timeout.count() / kMsPerSec);
+    tv.tv_usec = static_cast<suseconds_t>((req.timeout.count() % kMsPerSec) * kUsPerMs);
     ::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     ::setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #endif
 
     // Resolve address
-    struct addrinfo hints {};
+    addrinfo hints{};
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
-    struct addrinfo* res_info = nullptr;
+    addrinfo* res_info = nullptr;
     const std::string port_str = std::to_string(req.port);
 
     if (::getaddrinfo(req.host.c_str(), port_str.c_str(), &hints, &res_info) != 0 || !res_info) {
         close_socket(sock);
-        return HttpResponse{0, "DNS resolution failed", {}, ""};
+        return HttpResponse{.status_code = 0, .status_message = "DNS resolution failed", .headers = {}, .body = ""};
     }
 
+#ifdef _WIN32
     if (::connect(sock, res_info->ai_addr, static_cast<int>(res_info->ai_addrlen)) != 0) {
+#else
+    if (::connect(sock, res_info->ai_addr, res_info->ai_addrlen) != 0) {
+#endif
         ::freeaddrinfo(res_info);
         close_socket(sock);
-        return HttpResponse{0, "TCP connection failed", {}, ""};
+        return HttpResponse{.status_code = 0, .status_message = "TCP connection failed", .headers = {}, .body = ""};
     }
     ::freeaddrinfo(res_info);
 
@@ -285,17 +290,26 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
     wire_req << req.body;
 
     const std::string req_str = wire_req.str();
+#ifdef _WIN32
     if (::send(sock, req_str.c_str(), static_cast<int>(req_str.size()), 0) < 0) {
+#else
+    if (::send(sock, req_str.c_str(), req_str.size(), 0) < 0) {
+#endif
         close_socket(sock);
-        return HttpResponse{0, "Socket send failed", {}, ""};
+        return HttpResponse{.status_code = 0, .status_message = "Socket send failed", .headers = {}, .body = ""};
     }
 
     // Read HTTP response header
     std::string response_data;
-    char buffer[4096];
+    std::array<char, kSocketBufferSize> buffer{};
+#ifdef _WIN32
     int bytes_read = 0;
-    while ((bytes_read = ::recv(sock, buffer, sizeof(buffer) - 1, 0)) > 0) {
-        response_data.append(buffer, static_cast<size_t>(bytes_read));
+    while ((bytes_read = ::recv(sock, buffer.data(), static_cast<int>(buffer.size() - 1), 0)) > 0) {
+#else
+    ssize_t bytes_read = 0;
+    while ((bytes_read = ::recv(sock, buffer.data(), buffer.size() - 1, 0)) > 0) {
+#endif
+        response_data.append(buffer.data(), static_cast<size_t>(bytes_read));
         if (req.method == "HEAD" && response_data.find("\r\n\r\n") != std::string::npos) {
             break; // Finished reading headers for HEAD
         }
@@ -304,16 +318,18 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
 
     // Parse HTTP status line: "HTTP/1.1 <code status_message>\r\n"
     HttpResponse res;
-    if (response_data.rfind("HTTP/", 0) == 0) {
+    if (response_data.starts_with("HTTP/")) {
         const size_t first_space = response_data.find(' ');
         if (first_space != std::string::npos) {
             const size_t second_space = response_data.find(' ', first_space + 1);
             const size_t eol = response_data.find("\r\n");
             if (second_space != std::string::npos && second_space < eol) {
-                res.status_code = std::atoi(response_data.substr(first_space + 1, second_space - first_space - 1).c_str());
+                res.status_code = static_cast<int>(std::strtol(
+                    response_data.substr(first_space + 1, second_space - first_space - 1).c_str(), nullptr, kBase10));
                 res.status_message = response_data.substr(second_space + 1, eol - second_space - 1);
             } else if (eol != std::string::npos) {
-                res.status_code = std::atoi(response_data.substr(first_space + 1, eol - first_space - 1).c_str());
+                res.status_code = static_cast<int>(std::strtol(
+                    response_data.substr(first_space + 1, eol - first_space - 1).c_str(), nullptr, kBase10));
             }
         }
     }
@@ -334,15 +350,18 @@ S3Client::S3Client(S3ClientConfig config, std::shared_ptr<IHttpTransport> transp
 }
 
 void S3Client::parse_endpoint() {
+    constexpr std::string_view kHttpsPrefix = "https://";
+    constexpr std::string_view kHttpPrefix = "http://";
+
     std::string ep = config_.endpoint;
-    if (ep.rfind("https://", 0) == 0) {
+    if (ep.starts_with(kHttpsPrefix)) {
         is_https_ = true;
-        ep = ep.substr(8);
-        port_ = 443;
-    } else if (ep.rfind("http://", 0) == 0) {
+        ep = ep.substr(kHttpsPrefix.size());
+        port_ = kDefaultHttpsPort;
+    } else if (ep.starts_with(kHttpPrefix)) {
         is_https_ = false;
-        ep = ep.substr(7);
-        port_ = 80;
+        ep = ep.substr(kHttpPrefix.size());
+        port_ = kDefaultHttpPort;
     }
 
     // Strip trailing slash
@@ -354,7 +373,7 @@ void S3Client::parse_endpoint() {
     const size_t colon_pos = ep.find(':');
     if (colon_pos != std::string::npos) {
         host_ = ep.substr(0, colon_pos);
-        port_ = static_cast<uint16_t>(std::atoi(ep.substr(colon_pos + 1).c_str()));
+        port_ = static_cast<uint16_t>(std::strtol(ep.substr(colon_pos + 1).c_str(), nullptr, kBase10));
     } else {
         host_ = ep;
     }
@@ -369,12 +388,11 @@ bool S3Client::ping_bucket(std::chrono::milliseconds timeout) noexcept {
         req.port = port_;
         req.timeout = timeout;
 
-        SigV4Signer::sign_request(req, config_.access_key,
-                                  config_.secret_key.expose_unredacted_secret(),
+        SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(),
                                   config_.region, "s3");
 
         const HttpResponse res = transport_->execute(req);
-        return res.status_code == 200;
+        return res.status_code == kHttpStatusOk;
     } catch (...) {
         return false;
     }
@@ -388,19 +406,18 @@ bool S3Client::object_exists(const std::string& object_key, std::chrono::millise
     req.port = port_;
     req.timeout = timeout;
 
-    SigV4Signer::sign_request(req, config_.access_key,
-                              config_.secret_key.expose_unredacted_secret(),
-                              config_.region, "s3");
+    SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
+                              "s3");
 
     const HttpResponse res = transport_->execute(req);
 
-    if (res.status_code == 200) {
+    if (res.status_code == kHttpStatusOk) {
         return true;
     }
-    if (res.status_code == 404) {
+    if (res.status_code == kHttpStatusNotFound) {
         return false;
     }
-    if (res.status_code == 403) {
+    if (res.status_code == kHttpStatusForbidden) {
         throw S3AuthenticationException("MinIO S3 rejected request: 403 Forbidden");
     }
     if (res.status_code == 0) {

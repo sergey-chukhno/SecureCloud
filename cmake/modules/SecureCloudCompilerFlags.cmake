@@ -24,6 +24,8 @@ if(MSVC)
         _CRT_SECURE_NO_WARNINGS
         UNICODE
         _UNICODE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
     )
 else()
     # Clang / AppleClang / GCC compile options
@@ -44,5 +46,12 @@ else()
     # Hardening preprocessor definitions
     target_compile_definitions(securecloud_compiler_flags INTERFACE
         _FORTIFY_SOURCE=3
+    )
+endif()
+
+if(WIN32 AND NOT MSVC)
+    target_compile_definitions(securecloud_compiler_flags INTERFACE
+        WIN32_LEAN_AND_MEAN
+        NOMINMAX
     )
 endif()

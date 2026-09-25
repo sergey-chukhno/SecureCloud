@@ -10,7 +10,7 @@ namespace securecloud::files::db {
 /// Abstract interface representing a managed database connection handle.
 /// Allows unit test injection and future backend driver abstraction (e.g., libpqxx).
 class IDbConnection {
-public:
+  public:
     virtual ~IDbConnection() = default;
 
     [[nodiscard]] virtual bool is_open() const noexcept = 0;
@@ -25,7 +25,7 @@ class FilesDbConnectionPool;
 /// RAII move-only lease for a pooled database connection.
 /// Automatically returns the borrowed connection to its owning FilesDbConnectionPool upon destruction.
 class PooledConnection {
-public:
+  public:
     PooledConnection() noexcept = default;
 
     PooledConnection(std::unique_ptr<IDbConnection> conn, FilesDbConnectionPool* pool) noexcept
@@ -53,38 +53,24 @@ public:
         return *this;
     }
 
-    [[nodiscard]] bool is_valid() const noexcept {
-        return conn_ != nullptr && pool_ != nullptr && conn_->is_open();
-    }
+    [[nodiscard]] bool is_valid() const noexcept { return conn_ != nullptr && pool_ != nullptr && conn_->is_open(); }
 
-    explicit operator bool() const noexcept {
-        return is_valid();
-    }
+    explicit operator bool() const noexcept { return is_valid(); }
 
-    [[nodiscard]] IDbConnection* get() const noexcept {
-        return conn_.get();
-    }
+    [[nodiscard]] IDbConnection* get() const noexcept { return conn_.get(); }
 
-    IDbConnection* operator->() const noexcept {
-        return conn_.get();
-    }
+    IDbConnection* operator->() const noexcept { return conn_.get(); }
 
-    IDbConnection& operator*() const noexcept {
-        return *conn_;
-    }
+    IDbConnection& operator*() const noexcept { return *conn_; }
 
     [[nodiscard]] const std::string& connection_id() const noexcept {
         static const std::string k_empty;
         return conn_ ? conn_->connection_id() : k_empty;
     }
 
-    void mark_unhealthy() noexcept {
-        is_healthy_ = false;
-    }
+    void mark_unhealthy() noexcept { is_healthy_ = false; }
 
-    [[nodiscard]] bool is_healthy() const noexcept {
-        return is_healthy_;
-    }
+    [[nodiscard]] bool is_healthy() const noexcept { return is_healthy_; }
 
     /// Discards pool tracking and releases ownership of the underlying connection without returning it.
     std::unique_ptr<IDbConnection> release() noexcept {
@@ -92,7 +78,7 @@ public:
         return std::move(conn_);
     }
 
-private:
+  private:
     void return_to_pool() noexcept;
 
     std::unique_ptr<IDbConnection> conn_{nullptr};

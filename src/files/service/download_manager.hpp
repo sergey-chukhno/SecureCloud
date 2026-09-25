@@ -20,7 +20,7 @@ struct DownloadChunkResult {
 
 /// Interface defining the contract for validating download authorizations and retrieving chunks.
 class IDownloadManager {
-public:
+  public:
     virtual ~IDownloadManager() = default;
 
     /// Validates whether the caller has authorization to download chunks of the specified file.
@@ -32,7 +32,7 @@ public:
 
 /// Default skeleton implementation of IDownloadManager.
 class DownloadManager : public IDownloadManager {
-public:
+  public:
     DownloadManager() = default;
     ~DownloadManager() override = default;
 

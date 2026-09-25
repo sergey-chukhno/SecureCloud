@@ -13,12 +13,12 @@ namespace securecloud::files::service {
 
 /// Interface defining the object storage engine layer wrapping MinIO/S3.
 class IStorageEngine {
-public:
+  public:
     virtual ~IStorageEngine() = default;
 
     /// Stores an encrypted chunk object in S3.
-    virtual bool put_chunk(const std::string& file_id, uint32_t chunk_index,
-                           std::string_view encrypted_data, const std::string& expected_sha256) = 0;
+    virtual bool put_chunk(const std::string& file_id, uint32_t chunk_index, std::string_view encrypted_data,
+                           const std::string& expected_sha256) = 0;
 
     /// Retrieves an encrypted chunk object from S3.
     virtual std::optional<std::string> get_chunk(const std::string& file_id, uint32_t chunk_index) = 0;
@@ -29,13 +29,12 @@ public:
 
 /// Default implementation of IStorageEngine wrapping S3Client.
 class StorageEngine : public IStorageEngine {
-public:
-    explicit StorageEngine(std::shared_ptr<storage::S3Client> s3_client = nullptr)
-        : s3_client_(std::move(s3_client)) {}
+  public:
+    explicit StorageEngine(std::shared_ptr<storage::S3Client> s3_client = nullptr) : s3_client_(std::move(s3_client)) {}
     ~StorageEngine() override = default;
 
-    bool put_chunk(const std::string& /*file_id*/, uint32_t /*chunk_index*/,
-                   std::string_view /*encrypted_data*/, const std::string& /*expected_sha256*/) override {
+    bool put_chunk(const std::string& /*file_id*/, uint32_t /*chunk_index*/, std::string_view /*encrypted_data*/,
+                   const std::string& /*expected_sha256*/) override {
         return false;
     }
 
@@ -43,15 +42,11 @@ public:
         return std::nullopt;
     }
 
-    bool delete_file_objects(const std::string& /*file_id*/) override {
-        return false;
-    }
+    bool delete_file_objects(const std::string& /*file_id*/) override { return false; }
 
-    [[nodiscard]] std::shared_ptr<storage::S3Client> s3_client() const noexcept {
-        return s3_client_;
-    }
+    [[nodiscard]] std::shared_ptr<storage::S3Client> s3_client() const noexcept { return s3_client_; }
 
-private:
+  private:
     std::shared_ptr<storage::S3Client> s3_client_;
 };
 

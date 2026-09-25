@@ -28,7 +28,7 @@ struct UploadSession {
 /// Interface defining the contract for managing upload transfer sessions,
 /// chunk sequence tracking, lease timeouts, and lifecycle transitions.
 class IUploadSessionManager {
-public:
+  public:
     virtual ~IUploadSessionManager() = default;
 
     /// Initiates a new upload session, generating an upload_id and storing transfer metadata.
@@ -50,7 +50,7 @@ public:
 
 /// Default skeleton implementation of IUploadSessionManager.
 class UploadSessionManager : public IUploadSessionManager {
-public:
+  public:
     UploadSessionManager() = default;
     ~UploadSessionManager() override = default;
 
@@ -67,13 +67,9 @@ public:
         return false;
     }
 
-    bool cancel_session(const std::string& /*upload_id*/, const std::string& /*reason*/) override {
-        return false;
-    }
+    bool cancel_session(const std::string& /*upload_id*/, const std::string& /*reason*/) override { return false; }
 
-    std::optional<UploadSession> get_session(const std::string& /*upload_id*/) const override {
-        return std::nullopt;
-    }
+    std::optional<UploadSession> get_session(const std::string& /*upload_id*/) const override { return std::nullopt; }
 };
 
 } // namespace securecloud::files::service

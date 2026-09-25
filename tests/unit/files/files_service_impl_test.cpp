@@ -20,21 +20,18 @@ namespace {
 // ============================================================================
 
 class TestAuthPropertyIterator : public grpc::AuthPropertyIterator {
-public:
+  public:
     TestAuthPropertyIterator() = default;
 };
 
 class TestAuthContext : public grpc::AuthContext {
-public:
-    explicit TestAuthContext(bool is_authenticated,
-                             std::vector<std::pair<std::string, std::string>> properties = {})
+  public:
+    explicit TestAuthContext(bool is_authenticated, std::vector<std::pair<std::string, std::string>> properties = {})
         : is_authenticated_(is_authenticated), properties_(std::move(properties)) {}
 
     [[nodiscard]] bool IsPeerAuthenticated() const override { return is_authenticated_; }
 
-    [[nodiscard]] std::string GetPeerIdentityPropertyName() const override {
-        return "x509_subject_alternative_name";
-    }
+    [[nodiscard]] std::string GetPeerIdentityPropertyName() const override { return "x509_subject_alternative_name"; }
 
     [[nodiscard]] std::vector<grpc::string_ref> GetPeerIdentity() const override {
         std::vector<grpc::string_ref> result;
@@ -61,7 +58,7 @@ public:
     void AddProperty(const std::string& /*name*/, const grpc::string_ref& /*value*/) override {}
     bool SetPeerIdentityPropertyName(const std::string& /*name*/) override { return false; }
 
-private:
+  private:
     bool is_authenticated_;
     std::vector<std::pair<std::string, std::string>> properties_;
 };
@@ -71,7 +68,7 @@ private:
 // ============================================================================
 
 class FilesServiceInProcessTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         // Construct FilesServiceImpl with empty expected identity for in-process channel testing
         service_impl_ = std::make_unique<FilesServiceImpl>(FilesServiceDependencies{}, "");

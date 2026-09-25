@@ -15,11 +15,7 @@ TEST(FilesHealthEvaluatorTest, InitialStateManualStart) {
     FilesHealthEvaluatorConfig config;
     config.auto_start = false;
 
-    FilesHealthEvaluator evaluator(
-        health_manager,
-        [] { return false; },
-        [] { return false; },
-        config);
+    FilesHealthEvaluator evaluator(health_manager, [] { return false; }, [] { return false; }, config);
 
     EXPECT_FALSE(evaluator.is_running());
     EXPECT_FALSE(evaluator.is_db_healthy());
@@ -39,10 +35,7 @@ TEST(FilesHealthEvaluatorTest, DualDependencyTruthTable) {
     bool s3_status = false;
 
     FilesHealthEvaluator evaluator(
-        health_manager,
-        [&db_status] { return db_status; },
-        [&s3_status] { return s3_status; },
-        config);
+        health_manager, [&db_status] { return db_status; }, [&s3_status] { return s3_status; }, config);
 
     // Permutation 1: DB = false, S3 = false -> NOT_SERVING
     db_status = false;
@@ -91,11 +84,7 @@ TEST(FilesHealthEvaluatorTest, DynamicTransitionsAndRecovery) {
     bool db_ok = true;
     bool s3_ok = true;
 
-    FilesHealthEvaluator evaluator(
-        health_manager,
-        [&db_ok] { return db_ok; },
-        [&s3_ok] { return s3_ok; },
-        config);
+    FilesHealthEvaluator evaluator(health_manager, [&db_ok] { return db_ok; }, [&s3_ok] { return s3_ok; }, config);
 
     // 1. Initial healthy state
     EXPECT_TRUE(evaluator.evaluate_once());
@@ -141,10 +130,8 @@ TEST(FilesHealthEvaluatorTest, ExceptionSafety) {
 
     // Both probes throw exceptions
     FilesHealthEvaluator evaluator(
-        health_manager,
-        []() -> bool { throw std::runtime_error("Simulated DB connection failure"); },
-        []() -> bool { throw std::logic_error("Simulated MinIO S3 auth failure"); },
-        config);
+        health_manager, []() -> bool { throw std::runtime_error("Simulated DB connection failure"); },
+        []() -> bool { throw std::logic_error("Simulated MinIO S3 auth failure"); }, config);
 
     EXPECT_NO_THROW({
         bool result = evaluator.evaluate_once();
@@ -165,11 +152,7 @@ TEST(FilesHealthEvaluatorTest, NonStdExceptionSafety) {
     config.auto_start = false;
 
     // Probe throws non-std exception
-    FilesHealthEvaluator evaluator(
-        health_manager,
-        []() -> bool { throw 42; },
-        []() -> bool { return true; },
-        config);
+    FilesHealthEvaluator evaluator(health_manager, []() -> bool { throw 42; }, []() -> bool { return true; }, config);
 
     EXPECT_NO_THROW({
         bool result = evaluator.evaluate_once();
@@ -191,11 +174,7 @@ TEST(FilesHealthEvaluatorTest, NullProbeSafety) {
     HealthProbeFn null_db_probe;
     HealthProbeFn null_s3_probe;
 
-    FilesHealthEvaluator evaluator(
-        health_manager,
-        null_db_probe,
-        null_s3_probe,
-        config);
+    FilesHealthEvaluator evaluator(health_manager, null_db_probe, null_s3_probe, config);
 
     EXPECT_NO_THROW({
         bool result = evaluator.evaluate_once();
@@ -214,11 +193,7 @@ TEST(FilesHealthEvaluatorTest, GracefulShutdownImmediateReadinessDrop) {
     FilesHealthEvaluatorConfig config;
     config.auto_start = false;
 
-    FilesHealthEvaluator evaluator(
-        health_manager,
-        [] { return true; },
-        [] { return true; },
-        config);
+    FilesHealthEvaluator evaluator(health_manager, [] { return true; }, [] { return true; }, config);
 
     EXPECT_TRUE(evaluator.evaluate_once());
     EXPECT_TRUE(evaluator.is_ready());
@@ -244,10 +219,7 @@ TEST(FilesHealthEvaluatorTest, BackgroundPollingThreadAutoDetect) {
     config.auto_start = true;
 
     FilesHealthEvaluator evaluator(
-        health_manager,
-        [&db_online] { return db_online.load(); },
-        [&s3_online] { return s3_online.load(); },
-        config);
+        health_manager, [&db_online] { return db_online.load(); }, [&s3_online] { return s3_online.load(); }, config);
 
     EXPECT_TRUE(evaluator.is_running());
 

@@ -32,14 +32,12 @@ struct HttpResponse {
     std::map<std::string, std::string> headers;
     std::string body;
 
-    [[nodiscard]] bool is_2xx() const noexcept {
-        return status_code >= 200 && status_code < 300;
-    }
+    [[nodiscard]] bool is_2xx() const noexcept { return status_code >= 200 && status_code < 300; }
 };
 
 /// Abstract HTTP transport interface enabling zero-network deterministic unit test mocks
 class IHttpTransport {
-public:
+  public:
     virtual ~IHttpTransport() = default;
     virtual HttpResponse execute(const HttpRequest& req) = 0;
 };
@@ -62,7 +60,7 @@ struct S3ClientConfig {
 
 /// AWS Signature Version 4 (SigV4) cryptographic request signer using OpenSSL
 class SigV4Signer {
-public:
+  public:
     /// Computes lowercase hex-encoded SHA-256 digest of input
     [[nodiscard]] static std::string sha256_hex(std::string_view data);
 
@@ -75,8 +73,7 @@ public:
     /// Derives 5-stage AWS SigV4 signing key
     [[nodiscard]] static std::vector<uint8_t> derive_signing_key(const std::string& secret_key,
                                                                  const std::string& date_stamp,
-                                                                 const std::string& region,
-                                                                 const std::string& service);
+                                                                 const std::string& region, const std::string& service);
 
     /// Signs an HttpRequest in-place with AWS4-HMAC-SHA256 Authorization header
     static void sign_request(HttpRequest& req, const std::string& access_key, const std::string& secret_key,
@@ -86,7 +83,7 @@ public:
 
 /// Default socket-based HTTP/1.1 transport implementation
 class DefaultHttpTransport : public IHttpTransport {
-public:
+  public:
     DefaultHttpTransport() = default;
     ~DefaultHttpTransport() override = default;
 
@@ -95,7 +92,7 @@ public:
 
 /// Lightweight, non-blocking S3 client wrapper for MinIO storage
 class S3Client {
-public:
+  public:
     explicit S3Client(S3ClientConfig config, std::shared_ptr<IHttpTransport> transport = nullptr);
     ~S3Client() = default;
 
@@ -121,7 +118,7 @@ public:
     [[nodiscard]] const std::string& endpoint_host() const noexcept;
     [[nodiscard]] uint16_t endpoint_port() const noexcept;
 
-private:
+  private:
     void parse_endpoint();
 
     S3ClientConfig config_;
