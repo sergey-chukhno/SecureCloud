@@ -54,6 +54,20 @@ target_link_libraries(securecloud_proto_smoke_test PRIVATE
 
 gtest_discover_tests(securecloud_proto_smoke_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Service Protobuf & gRPC Contract Smoke Test (GW-003-T01)
+add_executable(securecloud_auth_proto_smoke_test
+    gateway/auth_proto_smoke_test.cpp
+)
+
+target_link_libraries(securecloud_auth_proto_smoke_test PRIVATE
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_proto_smoke_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Custom target to explicitly execute generated contract verification
 if(WIN32)
     # Ensure Windows runtime finds dependent DLLs from the active compiler toolchain
@@ -67,18 +81,21 @@ if(WIN32)
 
     add_custom_target(verify-contracts
         COMMAND ${CMAKE_COMMAND} -E env ${_CONTRACTS_ENV_FLAGS} $<TARGET_FILE:securecloud_proto_smoke_test>
-        DEPENDS securecloud_proto_smoke_test
-        COMMENT "Executing Protobuf & gRPC generated-contracts validation smoke test..."
+        COMMAND ${CMAKE_COMMAND} -E env ${_CONTRACTS_ENV_FLAGS} $<TARGET_FILE:securecloud_auth_proto_smoke_test>
+        DEPENDS securecloud_proto_smoke_test securecloud_auth_proto_smoke_test
+        COMMENT "Executing Protobuf & gRPC generated-contracts validation smoke tests..."
         VERBATIM
     )
 else()
     add_custom_target(verify-contracts
         COMMAND $<TARGET_FILE:securecloud_proto_smoke_test>
-        DEPENDS securecloud_proto_smoke_test
-        COMMENT "Executing Protobuf & gRPC generated-contracts validation smoke test..."
+        COMMAND $<TARGET_FILE:securecloud_auth_proto_smoke_test>
+        DEPENDS securecloud_proto_smoke_test securecloud_auth_proto_smoke_test
+        COMMENT "Executing Protobuf & gRPC generated-contracts validation smoke tests..."
         VERBATIM
     )
 endif()
+
 
 # gRPC mTLS Configuration & Security Unit Test Suite
 add_executable(securecloud_mtls_config_test
@@ -239,7 +256,56 @@ target_compile_definitions(securecloud_channel_manager_test PRIVATE
 
 gtest_discover_tests(securecloud_channel_manager_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Channel Manager Lifecycle & Connection Health Test (GW-003-T03)
+add_executable(securecloud_channel_manager_lifecycle_test
+    gateway/channel_manager_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_channel_manager_lifecycle_test PRIVATE
+    securecloud::gateway_grpc
+    securecloud::gateway_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_channel_manager_lifecycle_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_channel_manager_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway RPC Call Context, Deadline & Cancellation Test (GW-003-T02)
+add_executable(securecloud_client_call_context_test
+    gateway/client_call_context_test.cpp
+)
+
+target_link_libraries(securecloud_client_call_context_test PRIVATE
+    securecloud::gateway_grpc
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_client_call_context_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Typed AuthServiceClient Test (GW-003-T04)
+add_executable(securecloud_auth_service_client_test
+    gateway/auth_service_client_test.cpp
+)
+
+target_link_libraries(securecloud_auth_service_client_test PRIVATE
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+gtest_discover_tests(securecloud_auth_service_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway TLS & Transport Resource Configuration Model Test (GW-002-T01)
+
 add_executable(securecloud_gateway_tls_config_test
     gateway/gateway_tls_config_test.cpp
 )

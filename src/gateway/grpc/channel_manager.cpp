@@ -69,6 +69,7 @@ std::shared_ptr<::grpc::Channel> GrpcChannelManager::create_channel_for_service(
     channel_args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, k_keepalive_time_ms);
     channel_args.SetInt(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, k_keepalive_timeout_ms);
     channel_args.SetInt(GRPC_ARG_KEEPALIVE_PERMIT_WITHOUT_CALLS, 1);
+    channel_args.SetInt(GRPC_ARG_HTTP2_MAX_PINGS_WITHOUT_DATA, 0);
     if (!expected_san.empty()) {
         channel_args.SetSslTargetNameOverride(expected_san);
     }
@@ -106,7 +107,44 @@ std::shared_ptr<::grpc::Channel> GrpcChannelManager::get_audit_channel() {
     return get_channel(k_service_audit);
 }
 
-bool GrpcChannelManager::check_connectivity(const std::string& service_name,
+grpc_connectivity_state GrpcChannelManager::get_connection_state(const std::string& service_name,
+                                                                 bool try_to_connect) noexcept {
+    try {
+        std::shared_ptr<::grpc::Channel> channel;
+        {
+            std::scoped_lock lock(channels_mutex_);
+            auto it = channels_.find(service_name);
+            if (it != channels_.end()) {
+                channel = it->second;
+            }
+        }
+
+        if (!channel) {
+            if (!try_to_connect) {
+                return GRPC_CHANNEL_SHUTDOWN;
+            }
+            channel = get_channel(service_name);
+            if (!channel) {
+                return GRPC_CHANNEL_SHUTDOWN;
+            }
+        }
+
+        return channel->GetState(try_to_connect);
+    } catch (...) {
+        return GRPC_CHANNEL_SHUTDOWN;
+    }
+}
+
+bool GrpcChannelManager::is_channel_ready(const std::string& service_name) noexcept {
+    return get_connection_state(service_name, false) == GRPC_CHANNEL_READY;
+}
+
+bool GrpcChannelManager::is_channel_healthy(const std::string& service_name) noexcept {
+    auto state = get_connection_state(service_name, false);
+    return state == GRPC_CHANNEL_READY || state == GRPC_CHANNEL_IDLE || state == GRPC_CHANNEL_CONNECTING;
+}
+
+bool GrpcChannelManager::wait_for_connected(const std::string& service_name,
                                             std::chrono::milliseconds timeout) noexcept {
     try {
         auto channel = get_channel(service_name);
@@ -121,6 +159,26 @@ bool GrpcChannelManager::check_connectivity(const std::string& service_name,
 
         auto deadline = std::chrono::system_clock::now() + timeout;
         return channel->WaitForConnected(deadline);
+    } catch (...) {
+        return false;
+    }
+}
+
+bool GrpcChannelManager::check_connectivity(const std::string& service_name,
+                                            std::chrono::milliseconds timeout) noexcept {
+    return wait_for_connected(service_name, timeout);
+}
+
+bool GrpcChannelManager::reconnect(const std::string& service_name) noexcept {
+    try {
+        std::scoped_lock lock(channels_mutex_);
+        channels_.erase(service_name);
+        auto new_channel = create_channel_for_service(service_name);
+        if (new_channel) {
+            channels_[service_name] = new_channel;
+            return true;
+        }
+        return false;
     } catch (...) {
         return false;
     }

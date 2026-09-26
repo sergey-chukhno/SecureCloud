@@ -2,6 +2,7 @@
 securecloud_add_proto_library(securecloud_proto
     PROTO_FILES
         securecloud/common/v1/health.proto
+        securecloud/auth/v1/auth.proto
         securecloud/files/v1/files.proto
 )
 
@@ -17,4 +18,3 @@ if(WIN32)
         )
     endif()
 endif()
-
