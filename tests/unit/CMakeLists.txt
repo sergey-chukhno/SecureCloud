@@ -256,6 +256,25 @@ target_compile_definitions(securecloud_channel_manager_test PRIVATE
 
 gtest_discover_tests(securecloud_channel_manager_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Channel Manager Lifecycle & Connection Health Test (GW-003-T03)
+add_executable(securecloud_channel_manager_lifecycle_test
+    gateway/channel_manager_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_channel_manager_lifecycle_test PRIVATE
+    securecloud::gateway_grpc
+    securecloud::gateway_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_channel_manager_lifecycle_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_channel_manager_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway RPC Call Context, Deadline & Cancellation Test (GW-003-T02)
 add_executable(securecloud_client_call_context_test
     gateway/client_call_context_test.cpp
