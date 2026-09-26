@@ -379,11 +379,14 @@ TEST_F(GatewayAuthGrpcIntegrationTest, ServerOutageAndReconnectionRecovery) {
     // 2. Shut down server
     stop_auth_server();
 
-    // 3. Next RPC fails immediately with ServiceUnavailable
+    // 3. Next RPC fails due to server outage (either UNAVAILABLE via TCP RST or TIMEOUT if connection retry spans
+    // deadline)
     ClientCallContext ctx2(std::chrono::milliseconds(200));
     auto res2 = client_->validate_session(req, ctx2);
     ASSERT_TRUE(res2.has_error());
-    EXPECT_EQ(res2.error().kind, DependencyErrorKind::ServiceUnavailable);
+    EXPECT_TRUE(res2.error().kind == DependencyErrorKind::ServiceUnavailable ||
+                res2.error().kind == DependencyErrorKind::Timeout)
+        << "Expected ServiceUnavailable or Timeout during outage, got: " << res2.error().message;
 
     // 4. Restart server on same endpoint address
     start_auth_server(server_port_);
