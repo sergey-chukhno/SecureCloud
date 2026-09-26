@@ -136,3 +136,26 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_files_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files PostgreSQL Persistence Integration Test Suite (FILES-002-T06)
+add_executable(securecloud_files_postgres_persistence_integration_test
+    files_postgres_persistence_integration_test.cpp
+)
+
+target_link_libraries(securecloud_files_postgres_persistence_integration_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_files_postgres_persistence_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_files_postgres_persistence_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_files_postgres_persistence_integration_test ${SECURECLOUD_TEST_PROPERTIES})

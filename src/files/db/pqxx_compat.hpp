@@ -19,6 +19,22 @@
 
 namespace pqxx {
 
+/// Standard pqxx exception hierarchy when libpqxx is not bundled
+class failure : public std::runtime_error {
+public:
+    using std::runtime_error::runtime_error;
+};
+
+class broken_connection : public failure {
+public:
+    using failure::failure;
+};
+
+class sql_error : public failure {
+public:
+    using failure::failure;
+};
+
 /// Lightweight abstraction for a PostgreSQL row field when libpqxx is not bundled.
 class field {
 public:
