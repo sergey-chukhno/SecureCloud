@@ -42,6 +42,7 @@ add_library(securecloud_gateway_http STATIC
     http/logging_middleware.cpp
     http/resource_limiter_middleware.cpp
     http/router.cpp
+    http/bearer_token_extractor.cpp
 )
 
 add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
