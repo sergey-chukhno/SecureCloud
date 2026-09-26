@@ -63,6 +63,7 @@ target_link_libraries(securecloud_gateway_http PUBLIC
 add_library(securecloud_gateway_grpc STATIC
     grpc/channel_manager.cpp
     grpc/client_call_context.cpp
+    grpc/auth_service_client.cpp
 )
 
 
