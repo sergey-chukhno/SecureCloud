@@ -360,13 +360,13 @@ The primary initial integration target is the **Authentication Service** (`secur
 
 Before Card **GW-003** can be submitted for review and merged into `main`, the developer must verify:
 
-- [ ] `proto/securecloud/auth/v1/auth.proto` is registered and compiles cleanly into `securecloud_proto`.
-- [ ] Gateway establishes mTLS channels exclusively with mutual authentication (`gateway.crt` client cert).
-- [ ] Server certificate verification is enforced with strict SAN validation (`DNS:auth`).
-- [ ] Bounded deadlines are enforced on all outgoing gRPC calls via `ClientCallContext`.
-- [ ] In-flight call cancellation propagates cleanly from Gateway context to server context.
-- [ ] Connection failures and backend timeouts map to explicit, typed `DependencyError` values.
-- [ ] Zero database headers, libraries, or connection strings are present in Gateway source files (ADR-005).
-- [ ] Host PostgreSQL on `localhost:5432` remains untouched and unreferenced.
-- [ ] All 169+ existing tests plus all new GW-003 tests pass cleanly via `verify-local.py`.
-- [ ] Code is 100% compliant with `.clang-format` and passes `clang-tidy` with zero warnings treated as errors.
+- [x] `proto/securecloud/auth/v1/auth.proto` is registered and compiles cleanly into `securecloud_proto`.
+- [x] Gateway establishes mTLS channels exclusively with mutual authentication (`gateway.crt` client cert).
+- [x] Server certificate verification is enforced with strict SAN validation (`DNS:auth`).
+- [x] Bounded deadlines are enforced on all outgoing gRPC calls via `ClientCallContext`.
+- [x] In-flight call cancellation propagates cleanly from Gateway context to server context.
+- [x] Connection failures and backend timeouts map to explicit, typed `DependencyError` values.
+- [x] Zero database headers, libraries, or connection strings are present in Gateway source files (ADR-005).
+- [x] Host PostgreSQL on `localhost:5432` remains untouched and unreferenced.
+- [x] All 169+ existing tests plus all new GW-003 tests pass cleanly via `verify-local.py`.
+- [x] Code is 100% compliant with `.clang-format` and passes `clang-tidy` with zero warnings treated as errors.

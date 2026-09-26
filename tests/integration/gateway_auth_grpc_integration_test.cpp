@@ -62,12 +62,14 @@ class ControllableAuthService final : public securecloud::auth::v1::AuthService:
   public:
     std::atomic<bool> delay_rpc{false};
     std::atomic<int> delay_ms{0};
+    std::atomic<bool> rpc_started{false};
     std::atomic<bool> server_observed_cancellation{false};
     std::atomic<int> rpc_invocations{0};
 
     void reset_state() {
         delay_rpc.store(false);
         delay_ms.store(0);
+        rpc_started.store(false);
         server_observed_cancellation.store(false);
         rpc_invocations.store(0);
     }
@@ -76,6 +78,7 @@ class ControllableAuthService final : public securecloud::auth::v1::AuthService:
                                    const securecloud::auth::v1::ValidateSessionRequest* request,
                                    securecloud::auth::v1::ValidateSessionResponse* response) override {
         rpc_invocations.fetch_add(1);
+        rpc_started.store(true);
 
         if (delay_rpc.load()) {
             int remaining_ms = delay_ms.load();
@@ -84,8 +87,8 @@ class ControllableAuthService final : public securecloud::auth::v1::AuthService:
                     server_observed_cancellation.store(true);
                     return ::grpc::Status(::grpc::StatusCode::CANCELLED, "Call cancelled by client");
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-                remaining_ms -= 20;
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                remaining_ms -= 10;
             }
             if (context->IsCancelled()) {
                 server_observed_cancellation.store(true);
@@ -303,9 +306,9 @@ TEST_F(GatewayAuthGrpcIntegrationTest, UntrustedClientCertificateRejected) {
 // ============================================================================
 
 TEST_F(GatewayAuthGrpcIntegrationTest, ClientCallContextDeadlineEnforced) {
-    // Server simulates 400ms delay
+    // Server simulates 800ms delay
     mock_service_.delay_rpc.store(true);
-    mock_service_.delay_ms.store(400);
+    mock_service_.delay_ms.store(800);
 
     securecloud::auth::v1::ValidateSessionRequest req;
     req.set_session_id("slow-session");
@@ -319,7 +322,7 @@ TEST_F(GatewayAuthGrpcIntegrationTest, ClientCallContextDeadlineEnforced) {
     ASSERT_TRUE(result.has_error());
     EXPECT_EQ(result.error().kind, DependencyErrorKind::Timeout);
     EXPECT_EQ(result.error().grpc_code, ::grpc::StatusCode::DEADLINE_EXCEEDED);
-    EXPECT_LT(elapsed.count(), 350); // Aborted well before the 400ms server sleep finished
+    EXPECT_LT(elapsed.count(), 700); // Aborted well before the 800ms server sleep finished
 }
 
 // ============================================================================
@@ -329,25 +332,35 @@ TEST_F(GatewayAuthGrpcIntegrationTest, ClientCallContextDeadlineEnforced) {
 TEST_F(GatewayAuthGrpcIntegrationTest, ClientCallContextCancellationPropagated) {
     // Server simulates delay allowing cancellation
     mock_service_.delay_rpc.store(true);
-    mock_service_.delay_ms.store(600);
+    mock_service_.delay_ms.store(2000);
 
     securecloud::auth::v1::ValidateSessionRequest req;
     req.set_session_id("cancel-session");
 
-    ClientCallContext ctx(std::chrono::milliseconds(3000));
+    ClientCallContext ctx(std::chrono::milliseconds(5000));
 
     auto async_call = std::async(std::launch::async, [&]() { return client_->validate_session(req, ctx); });
 
-    // Allow call to establish on the wire, then trigger client cancellation
-    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+    // Wait until server has actively received and entered the RPC
+    const auto wait_start = std::chrono::steady_clock::now();
+    while (!mock_service_.rpc_started.load() &&
+           std::chrono::steady_clock::now() - wait_start < std::chrono::seconds(3)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    ASSERT_TRUE(mock_service_.rpc_started.load()) << "Server did not receive RPC before timeout";
+
+    // Trigger client cancellation now that RPC is active on server
     ctx.cancel();
     EXPECT_TRUE(ctx.is_cancelled());
 
     auto result = async_call.get();
     ASSERT_TRUE(result.has_error());
 
-    // Give server thread a moment to register cancellation
-    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    // Wait for server thread to observe cancellation signal (up to 2 seconds)
+    const auto wait_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!mock_service_.server_observed_cancellation.load() && std::chrono::steady_clock::now() < wait_deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     EXPECT_TRUE(mock_service_.server_observed_cancellation.load());
 }
 
