@@ -1,11 +1,13 @@
 #pragma once
 
+#include "http/auth/authenticated_context.hpp"
 #include "http/error_mapper.hpp"
 #include "http/middleware/middleware.hpp"
 
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -21,6 +23,8 @@ class HttpServer;
 class HttpsServer;
 
 using RouteHandler = std::function<void(const httplib::Request&, httplib::Response&)>;
+using AuthenticatedRouteHandler =
+    std::function<void(const httplib::Request&, httplib::Response&, const AuthenticatedContext&)>;
 
 class Router {
   public:
@@ -32,6 +36,14 @@ class Router {
     void post(std::string path, RouteHandler handler);
     void put(std::string path, RouteHandler handler);
     void del(std::string path, RouteHandler handler);
+
+    void add_authenticated_route(std::string method, std::string path, AuthenticatedRouteHandler handler);
+    void get_authenticated(std::string path, AuthenticatedRouteHandler handler);
+    void post_authenticated(std::string path, AuthenticatedRouteHandler handler);
+    void put_authenticated(std::string path, AuthenticatedRouteHandler handler);
+    void del_authenticated(std::string path, AuthenticatedRouteHandler handler);
+
+    [[nodiscard]] static std::optional<AuthenticatedContext> get_authenticated_context(const httplib::Request& req);
 
     void use(std::shared_ptr<Middleware> middleware);
 

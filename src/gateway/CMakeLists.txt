@@ -65,6 +65,7 @@ add_library(securecloud_gateway_http STATIC
     http/auth/authenticated_context.cpp
     http/auth/auth_service_token_validator.cpp
     http/auth/gateway_security_policy.cpp
+    http/auth/authentication_middleware.cpp
 )
 
 add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
