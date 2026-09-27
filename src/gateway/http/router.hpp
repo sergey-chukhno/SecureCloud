@@ -1,7 +1,7 @@
 #pragma once
 
 #include "http/error_mapper.hpp"
-#include "http/middleware.hpp"
+#include "http/middleware/middleware.hpp"
 
 #include <functional>
 #include <map>

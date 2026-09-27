@@ -1,4 +1,4 @@
-#include "http/bearer_token_extractor.hpp"
+#include "http/auth/bearer_token_extractor.hpp"
 
 #include <cctype>
 #include <httplib.h>

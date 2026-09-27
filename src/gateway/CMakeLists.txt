@@ -37,12 +37,13 @@ add_library(securecloud_gateway_http STATIC
     http/https_server.cpp
     http/http_redirect_server.cpp
     http/error_mapper.cpp
-    http/middleware.cpp
-    http/request_id_middleware.cpp
-    http/logging_middleware.cpp
-    http/resource_limiter_middleware.cpp
     http/router.cpp
-    http/bearer_token_extractor.cpp
+    http/middleware/middleware.cpp
+    http/middleware/request_id_middleware.cpp
+    http/middleware/logging_middleware.cpp
+    http/middleware/resource_limiter_middleware.cpp
+    http/auth/bearer_token_extractor.cpp
+    http/auth/authenticated_context.cpp
 )
 
 add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
@@ -50,6 +51,8 @@ add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
 target_include_directories(securecloud_gateway_http PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/http
+    ${CMAKE_CURRENT_SOURCE_DIR}/http/middleware
+    ${CMAKE_CURRENT_SOURCE_DIR}/http/auth
 )
 
 target_link_libraries(securecloud_gateway_http PUBLIC

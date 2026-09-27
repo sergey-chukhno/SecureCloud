@@ -1,6 +1,6 @@
-#include "http/logging_middleware.hpp"
+#include "http/middleware/logging_middleware.hpp"
 
-#include "http/request_id_middleware.hpp"
+#include "http/middleware/request_id_middleware.hpp"
 
 #include <chrono>
 #include <httplib.h>

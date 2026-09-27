@@ -112,7 +112,7 @@ The Gateway serves as the single external HTTPS entry point for the entire Secur
 3. **Objective**: Implement robust, zero-allocation-optimized parsing and extraction of the HTTP `Authorization: Bearer <token>` header from `httplib::Request`.
 4. **Architectural Purpose**: Ensures safe, standardized ingestion of bearer tokens, shielding the rest of the authentication pipeline from malformed headers, header injection attacks, whitespace spoofing, and invalid character sets.
 5. **Scope**:
-   - Create `src/gateway/http/bearer_token_extractor.hpp` and `.cpp`:
+   - Create `src/gateway/http/auth/bearer_token_extractor.hpp` and `.cpp`:
      - Inspect `Authorization` header according to RFC 6750 Section 2.1.
      - Case-insensitive scheme detection (`Bearer` or `bearer`).
      - Rejection criteria:
@@ -125,10 +125,10 @@ The Gateway serves as the single external HTTPS entry point for the entire Secur
      - Return monadic result: `Result<std::string, TokenExtractionError>`.
 6. **Explicit Out-of-Scope**: Cryptographic signature verification or session lookup.
 7. **Dependencies**: None (uses standard library and `httplib`).
-8. **Exact Repository Starting Point**: `src/gateway/http/`.
+8. **Exact Repository Starting Point**: `src/gateway/http/auth/`.
 9. **Files/Directories to Create**:
-   - `src/gateway/http/bearer_token_extractor.hpp`
-   - `src/gateway/http/bearer_token_extractor.cpp`
+   - `src/gateway/http/auth/bearer_token_extractor.hpp`
+   - `src/gateway/http/auth/bearer_token_extractor.cpp`
    - `tests/unit/gateway/bearer_token_extractor_test.cpp`
 10. **Files/Directories That May Be Modified**:
     - `src/gateway/CMakeLists.txt`
@@ -155,7 +155,7 @@ The Gateway serves as the single external HTTPS entry point for the entire Secur
 3. **Objective**: Define the core domain structures representing verified caller identity and claims passed to downstream route handlers and microservices.
 4. **Architectural Purpose**: Establishes the authoritative internal trust boundary. Downstream handlers rely on this validated context rather than re-parsing raw credentials, preventing identity spoofing and claim tampering.
 5. **Scope**:
-   - Create `src/gateway/http/authenticated_context.hpp`:
+   - Create `src/gateway/http/auth/authenticated_context.hpp`:
      - Struct `AuthenticatedContext`:
        - `user_id`: opaque user identifier (`std::string`)
        - `device_id`: opaque device identifier (`std::string`)
@@ -164,15 +164,15 @@ The Gateway serves as the single external HTTPS entry point for the entire Secur
        - `scopes`: list of authorized scopes (`std::vector<std::string>`)
        - `expires_at_epoch_ms`: expiration timestamp (`int64_t`)
        - Helper methods: `is_mfa_verified() const`, `has_scope(std::string_view scope) const`, `is_expired(int64_t now_epoch_ms) const`.
-   - Create `src/gateway/http/token_validation_result.hpp`:
+   - Create `src/gateway/http/auth/token_validation_result.hpp`:
      - Monadic result representing success (`AuthenticatedContext`) or failure reason (`TokenExpired`, `SessionRevoked`, `InvalidSignature`, `MfaRequired`, `ServiceUnavailable`, `InternalError`).
 6. **Explicit Out-of-Scope**: Network IPC or database queries.
 7. **Dependencies**: `securecloud_proto` (for `AuthenticationLevel` enum).
-8. **Exact Repository Starting Point**: `src/gateway/http/`.
+8. **Exact Repository Starting Point**: `src/gateway/http/auth/`.
 9. **Files/Directories to Create**:
-   - `src/gateway/http/authenticated_context.hpp`
-   - `src/gateway/http/authenticated_context.cpp`
-   - `src/gateway/http/token_validation_result.hpp`
+   - `src/gateway/http/auth/authenticated_context.hpp`
+   - `src/gateway/http/auth/authenticated_context.cpp`
+   - `src/gateway/http/auth/token_validation_result.hpp`
    - `tests/unit/gateway/authenticated_context_test.cpp`
 10. **Files/Directories That May Be Modified**:
     - `src/gateway/CMakeLists.txt`
@@ -199,7 +199,7 @@ The Gateway serves as the single external HTTPS entry point for the entire Secur
 3. **Objective**: Implement the `ITokenValidator` interface and its concrete adapter delegating session and token verification to `IAuthClient` over internal mTLS.
 4. **Architectural Purpose**: Decouples token validation logic from HTTP handling and provides a pluggable boundary for mock testing, local cryptographic caching, and resilient gRPC error handling.
 5. **Scope**:
-   - Create `src/gateway/http/token_validator_interface.hpp`:
+   - Create `src/gateway/http/auth/token_validator_interface.hpp`:
      - Pure virtual interface:
        ```cpp
        class ITokenValidator {
@@ -210,7 +210,7 @@ The Gateway serves as the single external HTTPS entry point for the entire Secur
                const std::string& session_id = "") = 0;
        };
        ```
-   - Create `src/gateway/http/auth_service_token_validator.hpp` and `.cpp`:
+   - Create `src/gateway/http/auth/auth_service_token_validator.hpp` and `.cpp`:
      - Injects `std::shared_ptr<IAuthClient>` (from GW-003).
      - Calls `IAuthClient::validate_session()` with bounded `ClientCallContext` (e.g. 500ms timeout).
      - Implements thread-safe short-lived TTL cache (bounded size, e.g. 10 seconds TTL) to reduce gRPC traffic on repeated requests while maintaining rapid revocation propagation.
@@ -220,11 +220,11 @@ The Gateway serves as the single external HTTPS entry point for the entire Secur
        - gRPC `DEADLINE_EXCEEDED` / `UNAVAILABLE` -> returns `ServiceUnavailable`
 6. **Explicit Out-of-Scope**: Handling HTTP headers or writing HTTP response bodies.
 7. **Dependencies**: GW-003 (`IAuthClient`, `ClientCallContext`, `DependencyError`).
-8. **Exact Repository Starting Point**: `src/gateway/http/`.
+8. **Exact Repository Starting Point**: `src/gateway/http/auth/`.
 9. **Files/Directories to Create**:
-   - `src/gateway/http/token_validator_interface.hpp`
-   - `src/gateway/http/auth_service_token_validator.hpp`
-   - `src/gateway/http/auth_service_token_validator.cpp`
+   - `src/gateway/http/auth/token_validator_interface.hpp`
+   - `src/gateway/http/auth/auth_service_token_validator.hpp`
+   - `src/gateway/http/auth/auth_service_token_validator.cpp`
    - `tests/unit/gateway/token_validator_test.cpp`
 10. **Files/Directories That May Be Modified**:
     - `src/gateway/CMakeLists.txt`
@@ -251,7 +251,7 @@ The Gateway serves as the single external HTTPS entry point for the entire Secur
 3. **Objective**: Implement declarative route authorization policy configuring authentication requirements, minimum assurance levels, and required scopes per route.
 4. **Architectural Purpose**: Provides a centralized, auditable security policy rule engine that determines whether an endpoint is public, protected, or MFA-sensitive, preventing accidental exposure of sensitive routes.
 5. **Scope**:
-   - Create `src/gateway/http/gateway_security_policy.hpp` and `.cpp`:
+   - Create `src/gateway/http/auth/gateway_security_policy.hpp` and `.cpp`:
      - Route security categories:
        - `RouteAccess::Public`: Anonymous access allowed (e.g. `/health/live`, `/health/ready`, `/api/v1/auth/login`, `/api/v1/auth/register`).
        - `RouteAccess::Protected`: Requires valid `AuthenticatedContext` (e.g. `/api/v1/user/profile`, `/api/v1/messages/*`, `/api/v1/files/*`).
@@ -262,10 +262,10 @@ The Gateway serves as the single external HTTPS entry point for the entire Secur
      - Policy evaluation method: `evaluate(method, path) -> RouteSecurityRule`.
 6. **Explicit Out-of-Scope**: Fine-grained business logic authorization (e.g. group membership, file ownership).
 7. **Dependencies**: None.
-8. **Exact Repository Starting Point**: `src/gateway/http/`.
+8. **Exact Repository Starting Point**: `src/gateway/http/auth/`.
 9. **Files/Directories to Create**:
-   - `src/gateway/http/gateway_security_policy.hpp`
-   - `src/gateway/http/gateway_security_policy.cpp`
+   - `src/gateway/http/auth/gateway_security_policy.hpp`
+   - `src/gateway/http/auth/gateway_security_policy.cpp`
    - `tests/unit/gateway/gateway_security_policy_test.cpp`
 10. **Files/Directories That May Be Modified**:
     - `src/gateway/CMakeLists.txt`
@@ -292,7 +292,7 @@ The Gateway serves as the single external HTTPS entry point for the entire Secur
 3. **Objective**: Implement `AuthenticationMiddleware` and integrate it into the Gateway's `Router` pipeline, binding verified `AuthenticatedContext` to the request execution scope.
 4. **Architectural Purpose**: Enforces the authentication boundary on live HTTP traffic. Invalid requests are terminated immediately with RFC 7807 problem details; valid requests pass downstream enriched with authoritative caller identity.
 5. **Scope**:
-   - Create `src/gateway/http/authentication_middleware.hpp` and `.cpp`:
+   - Create `src/gateway/http/auth/authentication_middleware.hpp` and `.cpp`:
      - Inherits from `securecloud::gateway::http::Middleware`.
      - Injects `std::shared_ptr<GatewaySecurityPolicy>` and `std::shared_ptr<ITokenValidator>`.
      - Intercepts incoming `httplib::Request`:
@@ -312,10 +312,10 @@ The Gateway serves as the single external HTTPS entry point for the entire Secur
      - Provide context-aware route registration helper or request context lookup helper `get_authenticated_context(req)`.
 6. **Explicit Out-of-Scope**: Microservice dispatch (owned by GW-006).
 7. **Dependencies**: GW-004-T01 through GW-004-T04, GW-001 (`Middleware`, `Router`, `ErrorMapper`).
-8. **Exact Repository Starting Point**: `src/gateway/http/`.
+8. **Exact Repository Starting Point**: `src/gateway/http/auth/`.
 9. **Files/Directories to Create**:
-   - `src/gateway/http/authentication_middleware.hpp`
-   - `src/gateway/http/authentication_middleware.cpp`
+   - `src/gateway/http/auth/authentication_middleware.hpp`
+   - `src/gateway/http/auth/authentication_middleware.cpp`
    - `tests/unit/gateway/authentication_middleware_test.cpp`
 10. **Files/Directories That May Be Modified**:
     - `src/gateway/http/router.hpp`

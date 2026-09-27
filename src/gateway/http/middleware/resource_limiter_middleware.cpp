@@ -1,6 +1,6 @@
-#include "http/resource_limiter_middleware.hpp"
+#include "http/middleware/resource_limiter_middleware.hpp"
 
-#include "http/request_id_middleware.hpp"
+#include "http/middleware/request_id_middleware.hpp"
 
 #include <charconv>
 #include <exception>
