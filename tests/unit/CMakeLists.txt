@@ -281,6 +281,20 @@ target_link_libraries(securecloud_token_validator_test PRIVATE
 
 gtest_discover_tests(securecloud_token_validator_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Security Policy Test (GW-004-T04)
+add_executable(securecloud_gateway_security_policy_test
+    gateway/gateway_security_policy_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_security_policy_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_security_policy_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Downstream gRPC Channel Manager Test (GW-001-T05)
 add_executable(securecloud_channel_manager_test
     gateway/channel_manager_test.cpp
