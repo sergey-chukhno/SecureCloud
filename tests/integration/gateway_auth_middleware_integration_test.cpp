@@ -446,8 +446,14 @@ TEST_F(GatewayAuthMiddlewareIntegrationTest, TestCase8_DownstreamAuthServiceOuta
 
 TEST_F(GatewayAuthMiddlewareIntegrationTest, TestCase9_ZeroDatabaseAndPort5432Invariant) {
     // Assert workstation port 5432 isolation
+#ifdef _WIN32
+    ensure_integration_winsock();
+    SOCKET test_sock = socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_NE(test_sock, INVALID_SOCKET);
+#else
     int test_sock = socket(AF_INET, SOCK_STREAM, 0);
     ASSERT_GE(test_sock, 0);
+#endif
 
     sockaddr_in target_addr{};
     target_addr.sin_family = AF_INET;
