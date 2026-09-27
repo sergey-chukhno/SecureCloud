@@ -1,8 +1,9 @@
 #include "http/router.hpp"
 
+#include "http/auth/authentication_middleware.hpp"
 #include "http/http_server.hpp"
 #include "http/https_server.hpp"
-#include "http/request_id_middleware.hpp"
+#include "http/middleware/request_id_middleware.hpp"
 
 #include <exception>
 #include <httplib.h>
@@ -49,6 +50,40 @@ void Router::put(std::string path, RouteHandler handler) {
 
 void Router::del(std::string path, RouteHandler handler) {
     add_route("DELETE", std::move(path), std::move(handler));
+}
+
+void Router::add_authenticated_route(std::string method, std::string path, AuthenticatedRouteHandler handler) {
+    add_route(std::move(method), std::move(path),
+              [h = std::move(handler)](const httplib::Request& req, httplib::Response& res) {
+                  auto ctx_opt = get_authenticated_context(req);
+                  if (!ctx_opt.has_value()) {
+                      std::string req_id = extract_request_id(res);
+                      ErrorMapper::write_error(res, 401, "UNAUTHENTICATED",
+                                               "Authenticated context missing from request execution scope", req_id);
+                      return;
+                  }
+                  h(req, res, *ctx_opt);
+              });
+}
+
+void Router::get_authenticated(std::string path, AuthenticatedRouteHandler handler) {
+    add_authenticated_route("GET", std::move(path), std::move(handler));
+}
+
+void Router::post_authenticated(std::string path, AuthenticatedRouteHandler handler) {
+    add_authenticated_route("POST", std::move(path), std::move(handler));
+}
+
+void Router::put_authenticated(std::string path, AuthenticatedRouteHandler handler) {
+    add_authenticated_route("PUT", std::move(path), std::move(handler));
+}
+
+void Router::del_authenticated(std::string path, AuthenticatedRouteHandler handler) {
+    add_authenticated_route("DELETE", std::move(path), std::move(handler));
+}
+
+std::optional<AuthenticatedContext> Router::get_authenticated_context(const httplib::Request& req) {
+    return AuthenticationMiddleware::get_context(req);
 }
 
 void Router::use(std::shared_ptr<Middleware> middleware) {

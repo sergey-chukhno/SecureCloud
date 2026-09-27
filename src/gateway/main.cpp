@@ -4,7 +4,7 @@
 #include "http/http_redirect_server.hpp"
 #include "http/http_server.hpp"
 #include "http/https_server.hpp"
-#include "http/resource_limiter_middleware.hpp"
+#include "http/middleware/resource_limiter_middleware.hpp"
 #include "http/router.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"

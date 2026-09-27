@@ -32,40 +32,11 @@ target_link_libraries(securecloud_gateway_tls PUBLIC
     securecloud::compiler_flags
 )
 
-add_library(securecloud_gateway_http STATIC
-    http/http_server.cpp
-    http/https_server.cpp
-    http/http_redirect_server.cpp
-    http/error_mapper.cpp
-    http/middleware.cpp
-    http/request_id_middleware.cpp
-    http/logging_middleware.cpp
-    http/resource_limiter_middleware.cpp
-    http/router.cpp
-)
-
-add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
-
-target_include_directories(securecloud_gateway_http PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/http
-)
-
-target_link_libraries(securecloud_gateway_http PUBLIC
-    securecloud::gateway_config
-    securecloud::gateway_tls
-    securecloud::httplib
-    securecloud::json
-    securecloud::common
-    securecloud::compiler_flags
-)
-
 add_library(securecloud_gateway_grpc STATIC
     grpc/channel_manager.cpp
     grpc/client_call_context.cpp
     grpc/auth_service_client.cpp
 )
-
 
 add_library(securecloud::gateway_grpc ALIAS securecloud_gateway_grpc)
 
@@ -76,6 +47,42 @@ target_include_directories(securecloud_gateway_grpc PUBLIC
 
 target_link_libraries(securecloud_gateway_grpc PUBLIC
     securecloud::gateway_config
+    securecloud::common
+    securecloud::compiler_flags
+)
+
+add_library(securecloud_gateway_http STATIC
+    http/http_server.cpp
+    http/https_server.cpp
+    http/http_redirect_server.cpp
+    http/error_mapper.cpp
+    http/router.cpp
+    http/middleware/middleware.cpp
+    http/middleware/request_id_middleware.cpp
+    http/middleware/logging_middleware.cpp
+    http/middleware/resource_limiter_middleware.cpp
+    http/auth/bearer_token_extractor.cpp
+    http/auth/authenticated_context.cpp
+    http/auth/auth_service_token_validator.cpp
+    http/auth/gateway_security_policy.cpp
+    http/auth/authentication_middleware.cpp
+)
+
+add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
+
+target_include_directories(securecloud_gateway_http PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/http
+    ${CMAKE_CURRENT_SOURCE_DIR}/http/middleware
+    ${CMAKE_CURRENT_SOURCE_DIR}/http/auth
+)
+
+target_link_libraries(securecloud_gateway_http PUBLIC
+    securecloud::gateway_config
+    securecloud::gateway_tls
+    securecloud::gateway_grpc
+    securecloud::httplib
+    securecloud::json
     securecloud::common
     securecloud::compiler_flags
 )

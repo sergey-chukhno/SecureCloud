@@ -1,7 +1,7 @@
 #pragma once
 
 #include "gateway_config.hpp"
-#include "http/middleware.hpp"
+#include "http/middleware/middleware.hpp"
 
 #include <atomic>
 #include <cstddef>

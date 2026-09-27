@@ -237,6 +237,80 @@ target_link_libraries(securecloud_router_middleware_test PRIVATE
 
 gtest_discover_tests(securecloud_router_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Bearer Token Extractor Test (GW-004-T01)
+add_executable(securecloud_bearer_token_extractor_test
+    gateway/bearer_token_extractor_test.cpp
+)
+
+target_link_libraries(securecloud_bearer_token_extractor_test PRIVATE
+    securecloud::gateway_http
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_bearer_token_extractor_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Authenticated Context Domain Model Test (GW-004-T02)
+add_executable(securecloud_authenticated_context_test
+    gateway/authenticated_context_test.cpp
+)
+
+target_link_libraries(securecloud_authenticated_context_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_authenticated_context_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Token Validator Test (GW-004-T03)
+add_executable(securecloud_token_validator_test
+    gateway/token_validator_test.cpp
+)
+
+target_link_libraries(securecloud_token_validator_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_token_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Security Policy Test (GW-004-T04)
+add_executable(securecloud_gateway_security_policy_test
+    gateway/gateway_security_policy_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_security_policy_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_security_policy_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Authentication Middleware Test (GW-004-T05)
+add_executable(securecloud_authentication_middleware_test
+    gateway/authentication_middleware_test.cpp
+)
+
+target_link_libraries(securecloud_authentication_middleware_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_authentication_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Downstream gRPC Channel Manager Test (GW-001-T05)
 add_executable(securecloud_channel_manager_test
     gateway/channel_manager_test.cpp
