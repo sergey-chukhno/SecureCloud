@@ -265,6 +265,22 @@ target_link_libraries(securecloud_authenticated_context_test PRIVATE
 
 gtest_discover_tests(securecloud_authenticated_context_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Token Validator Test (GW-004-T03)
+add_executable(securecloud_token_validator_test
+    gateway/token_validator_test.cpp
+)
+
+target_link_libraries(securecloud_token_validator_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_token_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Downstream gRPC Channel Manager Test (GW-001-T05)
 add_executable(securecloud_channel_manager_test
     gateway/channel_manager_test.cpp

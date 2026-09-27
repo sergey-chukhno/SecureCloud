@@ -32,6 +32,25 @@ target_link_libraries(securecloud_gateway_tls PUBLIC
     securecloud::compiler_flags
 )
 
+add_library(securecloud_gateway_grpc STATIC
+    grpc/channel_manager.cpp
+    grpc/client_call_context.cpp
+    grpc/auth_service_client.cpp
+)
+
+add_library(securecloud::gateway_grpc ALIAS securecloud_gateway_grpc)
+
+target_include_directories(securecloud_gateway_grpc PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_CURRENT_SOURCE_DIR}/grpc
+)
+
+target_link_libraries(securecloud_gateway_grpc PUBLIC
+    securecloud::gateway_config
+    securecloud::common
+    securecloud::compiler_flags
+)
+
 add_library(securecloud_gateway_http STATIC
     http/http_server.cpp
     http/https_server.cpp
@@ -44,6 +63,7 @@ add_library(securecloud_gateway_http STATIC
     http/middleware/resource_limiter_middleware.cpp
     http/auth/bearer_token_extractor.cpp
     http/auth/authenticated_context.cpp
+    http/auth/auth_service_token_validator.cpp
 )
 
 add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
@@ -58,28 +78,9 @@ target_include_directories(securecloud_gateway_http PUBLIC
 target_link_libraries(securecloud_gateway_http PUBLIC
     securecloud::gateway_config
     securecloud::gateway_tls
+    securecloud::gateway_grpc
     securecloud::httplib
     securecloud::json
-    securecloud::common
-    securecloud::compiler_flags
-)
-
-add_library(securecloud_gateway_grpc STATIC
-    grpc/channel_manager.cpp
-    grpc/client_call_context.cpp
-    grpc/auth_service_client.cpp
-)
-
-
-add_library(securecloud::gateway_grpc ALIAS securecloud_gateway_grpc)
-
-target_include_directories(securecloud_gateway_grpc PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    ${CMAKE_CURRENT_SOURCE_DIR}/grpc
-)
-
-target_link_libraries(securecloud_gateway_grpc PUBLIC
-    securecloud::gateway_config
     securecloud::common
     securecloud::compiler_flags
 )

@@ -23,6 +23,8 @@ enum class TokenValidationErrorKind {
 struct TokenValidationError {
     TokenValidationErrorKind kind{TokenValidationErrorKind::InternalError};
     std::string message;
+
+    bool operator==(const TokenValidationError& other) const = default;
 };
 
 /// Lightweight monadic result container for token validation.
