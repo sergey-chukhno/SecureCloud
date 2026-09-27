@@ -77,7 +77,14 @@ AuthenticatedResult AuthServiceTokenValidator::validate(const std::string& token
         return TokenValidationError{TokenValidationErrorKind::TokenExpired, "Access token has expired"};
     }
 
-    std::vector<std::string> scopes{"access"};
+    std::vector<std::string> scopes{
+        "access", "messages:read", "messages:write", "files:read", "files:write", "auth:profile",
+    };
+    if (resp.authentication_level() == securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED) {
+        scopes.push_back("auth:device:register");
+        scopes.push_back("auth:keys:rotate");
+    }
+
     AuthenticatedContext context(resp.user_id(), resp.device_id(), session_id, resp.authentication_level(),
                                  std::move(scopes), resp.expires_at_epoch_ms());
 
