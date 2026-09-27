@@ -16,8 +16,11 @@
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
+// clang-format off
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <windows.h>
+// clang-format on
 #else
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -474,3 +477,14 @@ TEST_F(GatewayAuthMiddlewareIntegrationTest, TestCase9_ZeroDatabaseAndPort5432In
 
 } // namespace
 } // namespace securecloud::gateway
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    int result = RUN_ALL_TESTS();
+#ifdef _WIN32
+    std::fflush(nullptr);
+    ::TerminateProcess(::GetCurrentProcess(), static_cast<UINT>(result));
+#else
+    return result;
+#endif
+}

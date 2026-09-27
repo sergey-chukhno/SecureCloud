@@ -151,7 +151,7 @@ target_link_libraries(securecloud_gateway_auth_middleware_integration_test PRIVA
     OpenSSL::SSL
     OpenSSL::Crypto
     securecloud::compiler_flags
-    GTest::gtest_main
+    GTest::gtest
 )
 
 target_compile_definitions(securecloud_gateway_auth_middleware_integration_test PRIVATE
