@@ -1,6 +1,7 @@
 #include "http/auth/authentication_middleware.hpp"
 
 #include "http/auth/bearer_token_extractor.hpp"
+#include "http/auth/header_sanitizer.hpp"
 #include "http/error_mapper.hpp"
 
 #include <httplib.h>
@@ -36,6 +37,15 @@ AuthenticationMiddleware::AuthenticationMiddleware(std::shared_ptr<GatewaySecuri
 }
 
 void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Response& res, const NextHandler& next) {
+    // 0. Extract optional session ID hint before perimeter sanitization
+    std::string session_id;
+    if (req.has_header("x-session-id")) {
+        session_id = req.get_header_value("x-session-id");
+    }
+
+    // 1. Sanitize untrusted perimeter identity headers in-place
+    HeaderSanitizer::sanitize(const_cast<httplib::Request&>(req));
+
     std::string request_id;
     if (req.has_header("x-request-id")) {
         request_id = req.get_header_value("x-request-id");
@@ -43,10 +53,10 @@ void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Res
         request_id = res.get_header_value("x-request-id");
     }
 
-    // 1. Evaluate route access rule
+    // 2. Evaluate route access rule
     const auto rule = security_policy_->evaluate(req.method, req.path);
 
-    // 2. Public bypass
+    // 3. Public bypass
     if (rule.is_public()) {
         next(req, res);
         return;
@@ -62,11 +72,6 @@ void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Res
         return;
     }
     const std::string& token = token_opt.value();
-
-    std::string session_id;
-    if (req.has_header("x-session-id")) {
-        session_id = req.get_header_value("x-session-id");
-    }
 
     // 4. Validate token against authority
     auto val_res = token_validator_->validate(token, session_id, request_id);
