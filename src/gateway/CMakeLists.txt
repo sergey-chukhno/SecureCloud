@@ -69,6 +69,7 @@ add_library(securecloud_gateway_http STATIC
     http/auth/request_context.cpp
     http/auth/authentication_middleware.cpp
     http/proxy/auth_proxy_handler.cpp
+    http/gateway_route_registrar.cpp
 )
 
 add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
