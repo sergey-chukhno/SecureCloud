@@ -1,8 +1,11 @@
 #include "http/auth/authentication_middleware.hpp"
 
 #include "http/auth/bearer_token_extractor.hpp"
+#include "http/auth/header_sanitizer.hpp"
+#include "http/auth/request_context.hpp"
 #include "http/error_mapper.hpp"
 
+#include <chrono>
 #include <httplib.h>
 #include <stdexcept>
 #include <utility>
@@ -36,6 +39,15 @@ AuthenticationMiddleware::AuthenticationMiddleware(std::shared_ptr<GatewaySecuri
 }
 
 void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Response& res, const NextHandler& next) {
+    // 0. Extract optional session ID hint before perimeter sanitization
+    std::string session_id;
+    if (req.has_header("x-session-id")) {
+        session_id = req.get_header_value("x-session-id");
+    }
+
+    // 1. Sanitize untrusted perimeter identity headers in-place
+    HeaderSanitizer::sanitize(const_cast<httplib::Request&>(req));
+
     std::string request_id;
     if (req.has_header("x-request-id")) {
         request_id = req.get_header_value("x-request-id");
@@ -43,11 +55,18 @@ void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Res
         request_id = res.get_header_value("x-request-id");
     }
 
-    // 1. Evaluate route access rule
+    int64_t now_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    std::string client_ip = req.remote_addr;
+
+    // 2. Evaluate route access rule
     const auto rule = security_policy_->evaluate(req.method, req.path);
 
-    // 2. Public bypass
+    // 3. Public bypass
     if (rule.is_public()) {
+        RequestContext req_ctx(request_id, client_ip, now_ms, std::nullopt);
+        ScopedRequestContext scoped_req_ctx(req_ctx);
         next(req, res);
         return;
     }
@@ -62,11 +81,6 @@ void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Res
         return;
     }
     const std::string& token = token_opt.value();
-
-    std::string session_id;
-    if (req.has_header("x-session-id")) {
-        session_id = req.get_header_value("x-session-id");
-    }
 
     // 4. Validate token against authority
     auto val_res = token_validator_->validate(token, session_id, request_id);
@@ -136,6 +150,8 @@ void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Res
     }
 
     // 7. Bind verified context to execution scope and proceed downstream
+    RequestContext req_ctx(request_id, client_ip, now_ms, ctx);
+    ScopedRequestContext scoped_req_ctx(req_ctx);
     ScopedContextBinding binding(&ctx);
     next(req, res);
 }

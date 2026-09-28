@@ -209,7 +209,13 @@ class GatewayAuthMiddlewareIntegrationTest : public ::testing::Test {
         router_->use(auth_middleware_);
 
         // Public route
-        router_->get("/health/live", [](const httplib::Request&, httplib::Response& res) {
+        router_->get("/health/live", [](const httplib::Request& req, httplib::Response& res) {
+            if (req.has_header("x-user-id") || req.has_header("x-authenticated-role") ||
+                req.has_header("x-securecloud-identity-bypass")) {
+                res.status = 400;
+                res.set_content("SPOOFED_HEADER_DETECTED", "text/plain");
+                return;
+            }
             res.status = k_http_status_ok;
             res.set_content("LIVE", "text/plain");
         });
@@ -217,11 +223,13 @@ class GatewayAuthMiddlewareIntegrationTest : public ::testing::Test {
         // Protected route
         router_->add_authenticated_route(
             "GET", "/api/v1/messages/inbox",
-            [](const httplib::Request&, httplib::Response& res, const http::AuthenticatedContext& ctx) {
+            [](const httplib::Request& req, httplib::Response& res, const http::AuthenticatedContext& ctx) {
                 nlohmann::json j;
                 j["user_id"] = ctx.user_id();
                 j["device_id"] = ctx.device_id();
                 j["mfa_verified"] = ctx.is_mfa_verified();
+                j["has_spoofed_user_header"] = req.has_header("x-user-id") || req.has_header("X-User-Id");
+                j["has_spoofed_device_header"] = req.has_header("x-device-id") || req.has_header("X-Device-Id");
                 res.status = k_http_status_ok;
                 res.set_content(j.dump(), "application/json");
             });
@@ -473,6 +481,70 @@ TEST_F(GatewayAuthMiddlewareIntegrationTest, TestCase9_ZeroDatabaseAndPort5432In
     // Port 5432 must never be bound or connected by our Gateway process
     (void)conn_res;
     EXPECT_TRUE(true) << "Gateway verified isolated from host database port 5432";
+}
+
+TEST_F(GatewayAuthMiddlewareIntegrationTest, TestCase10_PerimeterAntiFabricationAndHeaderSanitization) {
+    auto client = create_client();
+
+    // 1. Stage A: Public route - Verify client-injected spoofed identity headers are stripped
+    httplib::Headers spoofed_public_headers = {
+        {"x-user-id", "attacker-impostor"},
+        {"x-device-id", "fake-device-999"},
+        {"x-auth-level", "AUTHENTICATION_LEVEL_MFA_VERIFIED"},
+        {"x-scopes", "all,admin"},
+        {"x-authenticated-role", "root"},
+        {"x-securecloud-identity-bypass", "true"},
+        {"x-request-id", "req-public-anti-spoof"},
+    };
+
+    auto pub_res = client->Get("/health/live", spoofed_public_headers);
+    ASSERT_TRUE(pub_res);
+    EXPECT_EQ(pub_res->status, k_http_status_ok);
+    EXPECT_EQ(pub_res->body, "LIVE");
+
+    // 2. Stage B: Protected route - Attempt to fabricate identity headers without valid Bearer token
+    httplib::Headers spoofed_unauth_headers = {
+        {"x-user-id", "attacker-impostor"},
+        {"x-device-id", "fake-device-999"},
+        {"x-auth-level", "AUTHENTICATION_LEVEL_MFA_VERIFIED"},
+        {"x-scopes", "messages:read"},
+        {"x-authenticated-role", "root"},
+        {"x-request-id", "req-protected-spoof"},
+    };
+
+    auto unauth_res = client->Get("/api/v1/messages/inbox", spoofed_unauth_headers);
+    ASSERT_TRUE(unauth_res);
+    // Gateway must reject unauthenticated request with 401 UNAUTHENTICATED despite spoofed headers
+    EXPECT_EQ(unauth_res->status, k_http_status_unauthorized);
+    auto unauth_json = nlohmann::json::parse(unauth_res->body);
+    EXPECT_EQ(unauth_json["error"]["code"], "UNAUTHENTICATED");
+    EXPECT_EQ(unauth_json["error"]["request_id"], "req-protected-spoof");
+
+    // 3. Stage C: Protected route - Valid Bearer token + spoofed identity headers
+    // Injected spoofed identity claims must NOT override authentic token claims from AuthService
+    httplib::Headers spoofed_auth_headers = {
+        {"Authorization", "Bearer valid-token-for-user-123"},
+        {"X-User-Id", "spoofed-super-admin"},
+        {"X-Device-Id", "spoofed-hardware-token"},
+        {"X-Auth-Level", "AUTHENTICATION_LEVEL_PRIMARY"},
+        {"x-authenticated-scopes", "all-powerful"},
+        {"x-request-id", "req-auth-anti-spoof"},
+    };
+
+    auto auth_res = client->Get("/api/v1/messages/inbox", spoofed_auth_headers);
+    ASSERT_TRUE(auth_res);
+    EXPECT_EQ(auth_res->status, k_http_status_ok);
+
+    auto auth_json = nlohmann::json::parse(auth_res->body);
+    // Must match mock_auth_service authoritative credentials ("verified-user-123", "verified-device-456")
+    EXPECT_EQ(auth_json["user_id"], "verified-user-123");
+    EXPECT_EQ(auth_json["device_id"], "verified-device-456");
+    EXPECT_NE(auth_json["user_id"], "spoofed-super-admin");
+    EXPECT_NE(auth_json["device_id"], "spoofed-hardware-token");
+    EXPECT_FALSE(auth_json["has_spoofed_user_header"].get<bool>());
+    EXPECT_FALSE(auth_json["has_spoofed_device_header"].get<bool>());
+    EXPECT_TRUE(auth_json["mfa_verified"].get<bool>());
+    EXPECT_EQ(auth_res->get_header_value("x-request-id"), "req-auth-anti-spoof");
 }
 
 } // namespace

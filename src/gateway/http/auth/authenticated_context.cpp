@@ -31,4 +31,16 @@ bool AuthenticatedContext::is_valid_at(int64_t current_epoch_ms) const noexcept 
     return !is_expired(current_epoch_ms);
 }
 
+nlohmann::json AuthenticatedContext::to_audit_info() const {
+    nlohmann::json j;
+    j["user_id"] = user_id_;
+    j["device_id"] = device_id_;
+    j["session_id"] = session_id_;
+    j["auth_level"] = securecloud::auth::v1::AuthenticationLevel_Name(auth_level_);
+    j["scopes"] = scopes_;
+    j["mfa_verified"] = is_mfa_verified();
+    j["expires_at_epoch_ms"] = expires_at_epoch_ms_;
+    return j;
+}
+
 } // namespace securecloud::gateway::http

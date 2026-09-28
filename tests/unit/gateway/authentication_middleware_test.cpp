@@ -279,5 +279,111 @@ TEST_F(AuthenticationMiddlewareTest, NullDependenciesThrowInvalidArgument) {
     EXPECT_THROW(AuthenticationMiddleware(policy_, nullptr), std::invalid_argument);
 }
 
+TEST_F(AuthenticationMiddlewareTest, SpoofedIdentityHeadersAreSanitizedOnPublicRoute) {
+    policy_->add_rule("GET", "/health/public-status", RouteAccess::Public);
+    EXPECT_CALL(*mock_validator_, validate(_, _, _)).Times(0);
+
+    bool handler_executed = false;
+    router_->get("/health/public-status", [&](const httplib::Request& req, httplib::Response& res) {
+        handler_executed = true;
+        // Verify all spoofed identity headers have been scrubbed by perimeter sanitizer
+        EXPECT_FALSE(req.has_header("x-user-id"));
+        EXPECT_FALSE(req.has_header("X-User-Id"));
+        EXPECT_FALSE(req.has_header("x-device-id"));
+        EXPECT_FALSE(req.has_header("X-Auth-Level"));
+        EXPECT_FALSE(req.has_header("x-scopes"));
+        EXPECT_FALSE(req.has_header("x-authenticated-role"));
+        EXPECT_FALSE(req.has_header("x-securecloud-identity-hash"));
+
+        // Legitimate correlation headers preserved
+        EXPECT_TRUE(req.has_header("x-request-id"));
+        EXPECT_EQ(req.get_header_value("x-request-id"), "req-public-test");
+
+        // Public route receives no AuthenticatedContext
+        auto ctx_opt = AuthenticationMiddleware::get_context(req);
+        EXPECT_FALSE(ctx_opt.has_value());
+
+        res.status = 200;
+        res.set_content("PUBLIC_OK", "text/plain");
+    });
+
+    httplib::Request req;
+    req.method = "GET";
+    req.path = "/health/public-status";
+    req.set_header("x-request-id", "req-public-test");
+    req.set_header("X-User-Id", "spoofed-admin");
+    req.set_header("x-device-id", "fake-device-777");
+    req.set_header("X-Auth-Level", "AUTHENTICATION_LEVEL_MFA_VERIFIED");
+    req.set_header("x-scopes", "admin,superuser");
+    req.set_header("x-authenticated-role", "root");
+    req.set_header("x-securecloud-identity-hash", "fake-hash");
+
+    httplib::Response res;
+    router_->handle(req, res);
+
+    EXPECT_TRUE(handler_executed);
+    EXPECT_EQ(res.status, 200);
+}
+
+TEST_F(AuthenticationMiddlewareTest, SpoofedIdentityHeadersAreSanitizedOnProtectedRoute) {
+    auto valid_ctx = make_test_context("usr-alice", "dev-alice-laptop",
+                                       securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED,
+                                       {"messages:write", "messages:read", "access"});
+
+    EXPECT_CALL(*mock_validator_, validate("valid-token-alice", _, _)).WillOnce(Return(valid_ctx));
+
+    bool handler_executed = false;
+    router_->add_authenticated_route(
+        "POST", "/api/v1/messages/verify-headers",
+        [&](const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx) {
+            handler_executed = true;
+            // Spoofed headers must be absent from req.headers
+            EXPECT_FALSE(req.has_header("x-user-id"));
+            EXPECT_FALSE(req.has_header("X-User-Id"));
+            EXPECT_FALSE(req.has_header("x-device-id"));
+            EXPECT_FALSE(req.has_header("X-Auth-Level"));
+            EXPECT_FALSE(req.has_header("x-authenticated-permissions"));
+
+            // Authenticated context must strictly reflect the authoritative validator token payload
+            EXPECT_EQ(ctx.user_id(), "usr-alice");
+            EXPECT_EQ(ctx.device_id(), "dev-alice-laptop");
+
+            res.status = 200;
+        });
+
+    httplib::Request req;
+    req.method = "POST";
+    req.path = "/api/v1/messages/verify-headers";
+    req.set_header("Authorization", "Bearer valid-token-alice");
+    req.set_header("X-User-Id", "spoofed-bob");
+    req.set_header("x-device-id", "spoofed-device-bob");
+    req.set_header("X-Auth-Level", "AUTHENTICATION_LEVEL_PRIMARY");
+    req.set_header("x-authenticated-permissions", "all");
+
+    httplib::Response res;
+    router_->handle(req, res);
+
+    EXPECT_TRUE(handler_executed);
+    EXPECT_EQ(res.status, 200);
+}
+
+TEST_F(AuthenticationMiddlewareTest, UnauthenticatedRequestCannotFabricateContext) {
+    EXPECT_CALL(*mock_validator_, validate(_, _, _)).Times(0);
+
+    httplib::Request req;
+    req.method = "GET";
+    req.path = "/health/live";
+    req.set_header("x-user-id", "attacker");
+    req.set_header("x-authenticated-scopes", "all");
+
+    httplib::Response res;
+    router_->handle(req, res);
+
+    EXPECT_EQ(res.status, 200);
+    // Unauthenticated request cannot fabricate context
+    EXPECT_FALSE(AuthenticationMiddleware::get_context(req).has_value());
+    EXPECT_FALSE(Router::get_authenticated_context(req).has_value());
+}
+
 } // namespace
 } // namespace securecloud::gateway::http

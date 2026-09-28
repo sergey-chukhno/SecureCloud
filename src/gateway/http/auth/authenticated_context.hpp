@@ -4,6 +4,7 @@
 #include "securecloud/auth/v1/auth.pb.h"
 
 #include <cstdint>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -45,6 +46,17 @@ class AuthenticatedContext {
 
     /// Checks if the context is valid and active at a given epoch timestamp in milliseconds
     [[nodiscard]] bool is_valid_at(int64_t current_epoch_ms) const noexcept;
+
+    /**
+     * @brief Produces a safe structured audit dictionary containing only opaque identifiers and claims.
+     *
+     * Secret Isolation Invariant:
+     * AuthenticatedContext strictly contains opaque identifiers and authorization metadata.
+     * It is prohibited from holding raw access tokens, refresh tokens, client secrets,
+     * end-to-end encryption private keys (identity keys, signed prekeys, one-time prekeys),
+     * or application plaintext payloads.
+     */
+    [[nodiscard]] nlohmann::json to_audit_info() const;
 
   private:
     std::string user_id_;

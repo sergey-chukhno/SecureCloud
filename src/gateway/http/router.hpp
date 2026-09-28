@@ -21,6 +21,7 @@ namespace securecloud::gateway::http {
 
 class HttpServer;
 class HttpsServer;
+class RequestContext;
 
 using RouteHandler = std::function<void(const httplib::Request&, httplib::Response&)>;
 using AuthenticatedRouteHandler =
@@ -44,6 +45,12 @@ class Router {
     void del_authenticated(std::string path, AuthenticatedRouteHandler handler);
 
     [[nodiscard]] static std::optional<AuthenticatedContext> get_authenticated_context(const httplib::Request& req);
+
+    /// Retrieves the active RequestContext bound to the current executing request thread, or nullptr if none
+    [[nodiscard]] static const RequestContext* current_request_context() noexcept;
+
+    /// Retrieves the active AuthenticatedContext bound to the current executing request thread
+    [[nodiscard]] static std::optional<AuthenticatedContext> current_authenticated_context() noexcept;
 
     void use(std::shared_ptr<Middleware> middleware);
 
