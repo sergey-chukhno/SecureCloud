@@ -118,7 +118,7 @@ HttpRedirectServer::HttpRedirectServer(const GatewayConfig& config)
 HttpRedirectServer::HttpRedirectServer(std::string host, uint16_t http_port, uint16_t https_port, uint32_t threads,
                                        std::chrono::milliseconds timeout)
     : impl_(std::make_unique<Impl>(std::move(host), http_port, https_port, threads, timeout)) {
-    impl_->server->set_pre_routing_handler([this](const httplib::Request& req, httplib::Response& res) {
+    auto redirect_handler = [this](const httplib::Request& req, httplib::Response& res) {
         std::string host_header = req.get_header_value("Host");
         std::string target = req.target.empty() ? "/" : req.target;
         std::string location = build_redirect_url(host_header, target);
@@ -128,9 +128,23 @@ HttpRedirectServer::HttpRedirectServer(std::string host, uint16_t http_port, uin
         res.set_header("Strict-Transport-Security", k_hsts_header_value);
         res.set_header("Connection", "close");
         res.set_content("Redirecting to HTTPS...\n", "text/plain");
+    };
 
-        return httplib::Server::HandlerResponse::Handled;
+    // Fast-path for body-less requests
+    impl_->server->set_pre_routing_handler([redirect_handler](const httplib::Request& req, httplib::Response& res) {
+        if (req.method == "GET" || req.method == "HEAD") {
+            redirect_handler(req, res);
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
     });
+
+    // Regular handlers consume any framed request body before closing, preventing Windows TCP RST
+    impl_->server->Post(".*", redirect_handler);
+    impl_->server->Put(".*", redirect_handler);
+    impl_->server->Patch(".*", redirect_handler);
+    impl_->server->Delete(".*", redirect_handler);
+    impl_->server->Options(".*", redirect_handler);
 }
 
 HttpRedirectServer::~HttpRedirectServer() {
