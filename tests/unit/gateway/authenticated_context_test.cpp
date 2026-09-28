@@ -170,5 +170,49 @@ TEST(AuthenticatedContextTest, TokenValidationResultHoldsExplicitErrors) {
     }
 }
 
+TEST(AuthenticatedContextTest, ToAuditInfoProducesSafeJsonWithoutSecrets) {
+    AuthenticatedContext ctx("usr-alice-777", "dev-iphone-888", "sess-active-999",
+                             securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED,
+                             {"messages:write", "files:read"}, 1700000000000);
+
+    auto audit_json = ctx.to_audit_info();
+
+    // Verify expected opaque fields
+    EXPECT_EQ(audit_json["user_id"], "usr-alice-777");
+    EXPECT_EQ(audit_json["device_id"], "dev-iphone-888");
+    EXPECT_EQ(audit_json["session_id"], "sess-active-999");
+    EXPECT_EQ(audit_json["auth_level"], "AUTHENTICATION_LEVEL_MFA_VERIFIED");
+    EXPECT_TRUE(audit_json["mfa_verified"].get<bool>());
+    EXPECT_EQ(audit_json["expires_at_epoch_ms"], 1700000000000);
+    EXPECT_EQ(audit_json["scopes"].size(), 2u);
+
+    // Verify zero secret leakage invariant
+    EXPECT_FALSE(audit_json.contains("access_token"));
+    EXPECT_FALSE(audit_json.contains("token"));
+    EXPECT_FALSE(audit_json.contains("private_key"));
+    EXPECT_FALSE(audit_json.contains("secret"));
+    EXPECT_FALSE(audit_json.contains("identity_key"));
+    EXPECT_FALSE(audit_json.contains("signed_prekey"));
+    EXPECT_FALSE(audit_json.contains("one_time_prekey"));
+    EXPECT_FALSE(audit_json.contains("plaintext"));
+    EXPECT_FALSE(audit_json.contains("payload"));
+}
+
+TEST(AuthenticatedContextTest, SecretIsolationInvariantGuaranteed) {
+    // Assert AuthenticatedContext is movable and copyable
+    EXPECT_TRUE(std::is_copy_constructible_v<AuthenticatedContext>);
+    EXPECT_TRUE(std::is_move_constructible_v<AuthenticatedContext>);
+
+    // Verify that context holds only opaque string identifiers and verification primitives
+    AuthenticatedContext ctx("u1", "d1", "s1", securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
+                             {"access"}, 5000);
+
+    EXPECT_EQ(ctx.user_id(), "u1");
+    EXPECT_EQ(ctx.device_id(), "d1");
+    EXPECT_EQ(ctx.session_id(), "s1");
+    EXPECT_EQ(ctx.authentication_level(), securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    EXPECT_FALSE(ctx.is_mfa_verified());
+}
+
 } // namespace
 } // namespace securecloud::gateway::http

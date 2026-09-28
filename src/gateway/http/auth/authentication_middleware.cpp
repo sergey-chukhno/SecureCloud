@@ -2,8 +2,10 @@
 
 #include "http/auth/bearer_token_extractor.hpp"
 #include "http/auth/header_sanitizer.hpp"
+#include "http/auth/request_context.hpp"
 #include "http/error_mapper.hpp"
 
+#include <chrono>
 #include <httplib.h>
 #include <stdexcept>
 #include <utility>
@@ -53,11 +55,18 @@ void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Res
         request_id = res.get_header_value("x-request-id");
     }
 
+    int64_t now_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    std::string client_ip = req.remote_addr;
+
     // 2. Evaluate route access rule
     const auto rule = security_policy_->evaluate(req.method, req.path);
 
     // 3. Public bypass
     if (rule.is_public()) {
+        RequestContext req_ctx(request_id, client_ip, now_ms, std::nullopt);
+        ScopedRequestContext scoped_req_ctx(req_ctx);
         next(req, res);
         return;
     }
@@ -141,6 +150,8 @@ void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Res
     }
 
     // 7. Bind verified context to execution scope and proceed downstream
+    RequestContext req_ctx(request_id, client_ip, now_ms, ctx);
+    ScopedRequestContext scoped_req_ctx(req_ctx);
     ScopedContextBinding binding(&ctx);
     next(req, res);
 }
