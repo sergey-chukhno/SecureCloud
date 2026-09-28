@@ -190,11 +190,11 @@ endif()
 if(NOT TARGET httplib::httplib AND NOT TARGET httplib)
     # Automatic fallback via FetchContent when system package is unavailable (e.g. MSYS2/MinGW)
     include(FetchContent)
-    message(STATUS "[SecureCloud] cpp-httplib not found in system paths; fetching via FetchContent (v0.18.6)...")
+    message(STATUS "[SecureCloud] cpp-httplib not found in system paths; fetching via FetchContent (v0.58.0)...")
     FetchContent_Declare(
         httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG v0.18.6
+        GIT_TAG v0.58.0
         GIT_SHALLOW TRUE
     )
     set(HTTPLIB_COMPILE OFF CACHE INTERNAL "")
