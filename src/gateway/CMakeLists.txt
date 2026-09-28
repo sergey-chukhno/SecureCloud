@@ -68,6 +68,7 @@ add_library(securecloud_gateway_http STATIC
     http/auth/header_sanitizer.cpp
     http/auth/request_context.cpp
     http/auth/authentication_middleware.cpp
+    http/proxy/auth_proxy_handler.cpp
 )
 
 add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
@@ -77,6 +78,7 @@ target_include_directories(securecloud_gateway_http PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/http
     ${CMAKE_CURRENT_SOURCE_DIR}/http/middleware
     ${CMAKE_CURRENT_SOURCE_DIR}/http/auth
+    ${CMAKE_CURRENT_SOURCE_DIR}/http/proxy
 )
 
 target_link_libraries(securecloud_gateway_http PUBLIC
