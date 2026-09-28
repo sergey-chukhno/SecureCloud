@@ -44,8 +44,9 @@ void GatewayRouteRegistrar::register_all_routes(Router& router) {
 }
 
 void GatewayRouteRegistrar::register_health_routes(Router& router) {
-    router.get("/health/live", [this](const httplib::Request&, httplib::Response& res) {
-        if (health_manager_->is_live()) {
+    auto* hm = health_manager_;
+    router.get("/health/live", [hm](const httplib::Request&, httplib::Response& res) {
+        if (hm && hm->is_live()) {
             res.status = k_http_status_ok;
             res.set_content(R"({"status":"SERVING"})", "application/json");
         } else {
@@ -54,8 +55,8 @@ void GatewayRouteRegistrar::register_health_routes(Router& router) {
         }
     });
 
-    router.get("/health/ready", [this](const httplib::Request&, httplib::Response& res) {
-        if (health_manager_->is_ready() && health_manager_->evaluate_readiness()) {
+    router.get("/health/ready", [hm](const httplib::Request&, httplib::Response& res) {
+        if (hm && hm->is_ready() && hm->evaluate_readiness()) {
             res.status = k_http_status_ok;
             res.set_content(R"({"status":"SERVING"})", "application/json");
         } else {
@@ -69,19 +70,20 @@ void GatewayRouteRegistrar::register_auth_routes(Router& router) {
     auth_proxy_->register_routes(router);
 
     // Route aliases for backward compatibility and canonical REST endpoints
+    auto proxy = auth_proxy_;
     router.get_authenticated("/api/v1/auth/me",
-                             [this](const httplib::Request& req, httplib::Response& res,
-                                    const AuthenticatedContext& ctx) { auth_proxy_->handle_get_me(req, res, ctx); });
+                             [proxy](const httplib::Request& req, httplib::Response& res,
+                                     const AuthenticatedContext& ctx) { proxy->handle_get_me(req, res, ctx); });
 
     router.post_authenticated(
         "/api/v1/auth/device/register",
-        [this](const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx) {
-            auth_proxy_->handle_register_device(req, res, ctx);
+        [proxy](const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx) {
+            proxy->handle_register_device(req, res, ctx);
         });
 
     router.post_authenticated("/api/v1/auth/logout",
-                              [this](const httplib::Request& req, httplib::Response& res,
-                                     const AuthenticatedContext& ctx) { auth_proxy_->handle_revoke(req, res, ctx); });
+                              [proxy](const httplib::Request& req, httplib::Response& res,
+                                      const AuthenticatedContext& ctx) { proxy->handle_revoke(req, res, ctx); });
 }
 
 void GatewayRouteRegistrar::register_stub_routes(Router& router) {

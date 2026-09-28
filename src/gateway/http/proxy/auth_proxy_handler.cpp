@@ -195,6 +195,10 @@ void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Respo
         }
     }
 
+    if (session_id.empty() && req.has_header("x-session-id")) {
+        session_id = req.get_header_value("x-session-id");
+    }
+
     if (session_id.empty()) {
         ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing session_id to revoke", request_id);
         return;
