@@ -1,6 +1,7 @@
 #include "http/router.hpp"
 
 #include "http/auth/authentication_middleware.hpp"
+#include "http/auth/request_context.hpp"
 #include "http/http_server.hpp"
 #include "http/https_server.hpp"
 #include "http/middleware/request_id_middleware.hpp"
@@ -83,7 +84,22 @@ void Router::del_authenticated(std::string path, AuthenticatedRouteHandler handl
 }
 
 std::optional<AuthenticatedContext> Router::get_authenticated_context(const httplib::Request& req) {
+    if (const auto* req_ctx = RequestContext::current(); req_ctx != nullptr && req_ctx->is_authenticated()) {
+        return req_ctx->authenticated_context();
+    }
     return AuthenticationMiddleware::get_context(req);
+}
+
+const RequestContext* Router::current_request_context() noexcept {
+    return RequestContext::current();
+}
+
+std::optional<AuthenticatedContext> Router::current_authenticated_context() noexcept {
+    if (const auto* req_ctx = RequestContext::current(); req_ctx != nullptr && req_ctx->is_authenticated()) {
+        return req_ctx->authenticated_context();
+    }
+    httplib::Request dummy_req;
+    return AuthenticationMiddleware::get_context(dummy_req);
 }
 
 void Router::use(std::shared_ptr<Middleware> middleware) {
