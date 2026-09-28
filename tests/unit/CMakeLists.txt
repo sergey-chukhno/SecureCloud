@@ -353,6 +353,39 @@ target_link_libraries(securecloud_authenticated_context_lifecycle_test PRIVATE
 
 gtest_discover_tests(securecloud_authenticated_context_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Auth Microservice HTTP Proxy Handler Test (GW-006-T01)
+add_executable(securecloud_auth_proxy_handler_test
+    gateway/auth_proxy_handler_test.cpp
+)
+
+target_link_libraries(securecloud_auth_proxy_handler_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_proxy_handler_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Route Registrar & Main Pipeline Assembly Test (GW-006-T02)
+add_executable(securecloud_gateway_route_registrar_test
+    gateway/gateway_route_registrar_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_route_registrar_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_route_registrar_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Downstream gRPC Channel Manager Test (GW-001-T05)
 add_executable(securecloud_channel_manager_test
     gateway/channel_manager_test.cpp

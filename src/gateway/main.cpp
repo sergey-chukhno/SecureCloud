@@ -1,10 +1,17 @@
-#include "gateway_config.hpp"
+#include "grpc/auth_service_client.hpp"
 #include "grpc/channel_manager.hpp"
 #include "health/gateway_health_evaluator.hpp"
+#include "http/auth/auth_service_token_validator.hpp"
+#include "http/auth/authentication_middleware.hpp"
+#include "http/auth/gateway_security_policy.hpp"
+#include "http/gateway_route_registrar.hpp"
 #include "http/http_redirect_server.hpp"
 #include "http/http_server.hpp"
 #include "http/https_server.hpp"
+#include "http/middleware/logging_middleware.hpp"
+#include "http/middleware/request_id_middleware.hpp"
 #include "http/middleware/resource_limiter_middleware.hpp"
+#include "http/proxy/auth_proxy_handler.hpp"
 #include "http/router.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
@@ -35,32 +42,6 @@ void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
         g_shutdown_requested.store(true);
     }
-}
-
-constexpr int k_http_status_ok = 200;
-constexpr int k_http_status_service_unavailable = 503;
-
-void register_health_routes(securecloud::gateway::http::Router& router,
-                            securecloud::common::health::HealthStatusManager& health_manager) {
-    router.get("/health/live", [&health_manager](const httplib::Request&, httplib::Response& res) {
-        if (health_manager.is_live()) {
-            res.status = k_http_status_ok;
-            res.set_content(R"({"status":"SERVING"})", "application/json");
-        } else {
-            res.status = k_http_status_service_unavailable;
-            res.set_content(R"({"status":"NOT_SERVING"})", "application/json");
-        }
-    });
-
-    router.get("/health/ready", [&health_manager](const httplib::Request&, httplib::Response& res) {
-        if (health_manager.is_ready() && health_manager.evaluate_readiness()) {
-            res.status = k_http_status_ok;
-            res.set_content(R"({"status":"SERVING"})", "application/json");
-        } else {
-            res.status = k_http_status_service_unavailable;
-            res.set_content(R"({"status":"NOT_SERVING"})", "application/json");
-        }
-    });
 }
 
 void execute_peer_probe(const securecloud::gateway::GatewayConfig& config) {
@@ -153,9 +134,29 @@ int run_service() {
     std::cout << "[SecureCloud] [" << config.common.service_name << "] mTLS server listening strictly on "
               << server_address << " with service identity 'DNS:" << config.common.service_name << "'\n";
 
+    // Configure downstream Auth gRPC client & perimeter validation
+    auto auth_channel = channel_manager.get_auth_channel();
+    auto auth_client = std::make_shared<securecloud::gateway::grpc::AuthServiceClient>(auth_channel);
+    auto token_validator = std::make_shared<securecloud::gateway::http::AuthServiceTokenValidator>(auth_client);
+    auto security_policy = std::make_shared<securecloud::gateway::http::GatewaySecurityPolicy>(
+        securecloud::gateway::http::GatewaySecurityPolicy::create_default());
+
+    // Assemble deterministic perimeter middleware pipeline:
+    // 1. RequestIdMiddleware: assigns/propagates standard correlation ID
+    // 2. LoggingMiddleware: measures request duration & logs all responses
+    // 3. ResourceLimiterMiddleware: enforces transport header/body limits & concurrency boundary (GW-002)
+    // 4. AuthenticationMiddleware: verifies Bearer token/MFA, establishes AuthenticatedContext
     securecloud::gateway::http::Router router;
+    router.use(std::make_shared<securecloud::gateway::http::RequestIdMiddleware>());
+    router.use(std::make_shared<securecloud::gateway::http::LoggingMiddleware>());
     router.use(std::make_shared<securecloud::gateway::http::ResourceLimiterMiddleware>(config));
-    register_health_routes(router, health_manager);
+    router.use(
+        std::make_shared<securecloud::gateway::http::AuthenticationMiddleware>(security_policy, token_validator));
+
+    // Register all perimeter routes (Health, Auth proxy, and Phase 2 service stubs)
+    auto auth_proxy = std::make_shared<securecloud::gateway::http::AuthProxyHandler>(auth_client);
+    securecloud::gateway::http::GatewayRouteRegistrar route_registrar(auth_proxy, health_manager);
+    route_registrar.register_all_routes(router);
 
     std::unique_ptr<securecloud::gateway::http::HttpServer> http_server;
     std::unique_ptr<securecloud::gateway::http::HttpRedirectServer> redirect_server;

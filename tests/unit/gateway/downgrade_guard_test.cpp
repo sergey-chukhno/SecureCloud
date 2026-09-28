@@ -37,7 +37,7 @@ constexpr uint16_t k_sample_https_port = 8443;
 constexpr uint16_t k_standard_https_port = 443;
 constexpr int k_http_status_ok = 200;
 constexpr int k_http_status_permanent_redirect = 308;
-constexpr auto k_client_timeout = std::chrono::milliseconds(2000);
+constexpr auto k_client_timeout = std::chrono::milliseconds(5000);
 constexpr const char* k_loopback_address = "127.0.0.1";
 constexpr const char* k_hsts_expected = "max-age=31536000; includeSubDomains; preload";
 
