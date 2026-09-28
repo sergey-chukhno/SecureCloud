@@ -182,7 +182,6 @@ target_link_libraries(securecloud_gateway_routing_integration_test PRIVATE
     OpenSSL::Crypto
     securecloud::compiler_flags
     GTest::gtest
-    GTest::gtest_main
 )
 
 target_compile_definitions(securecloud_gateway_routing_integration_test PRIVATE

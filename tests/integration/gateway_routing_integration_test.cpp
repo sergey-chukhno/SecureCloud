@@ -581,3 +581,14 @@ TEST_F(GatewayRoutingIntegrationTest, LiveUpstreamAuthOutageReturns503) {
 
 } // namespace
 } // namespace securecloud::gateway
+
+int main(int argc, char** argv) {
+    ::testing::InitGoogleTest(&argc, argv);
+    int result = RUN_ALL_TESTS();
+#ifdef _WIN32
+    std::fflush(nullptr);
+    ::TerminateProcess(::GetCurrentProcess(), static_cast<UINT>(result));
+#else
+    return result;
+#endif
+}
