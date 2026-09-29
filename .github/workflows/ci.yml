@@ -104,6 +104,11 @@ jobs:
           restore-keys: |
             vcpkg-msvc-
 
+      - name: Ensure vcpkg cache directory exists
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg_archives"
+
       - name: Set up MSVC Developer Command Prompt
         uses: ilammy/msvc-dev-cmd@v1
 
@@ -124,7 +129,7 @@ jobs:
       - name: Configure CMake with MSVC & vcpkg
         shell: pwsh
         run: |
-          cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_MAKE_PROGRAM="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe"
 
       - name: Build All Targets
         shell: pwsh
