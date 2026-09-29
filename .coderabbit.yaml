@@ -8,7 +8,7 @@
 # This configuration file alone does not enforce merge protection.
 # ==============================================================================
 
-version: "2"
+version: 2
 language: "en-US"
 
 reviews:
