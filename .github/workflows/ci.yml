@@ -91,17 +91,23 @@ jobs:
     name: Windows (MSVC 2022 / vcpkg)
     runs-on: windows-2022
     env:
-      VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg_archives
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Enable GitHub Actions Cache for vcpkg
-        uses: actions/github-script@v7
+      - name: Cache vcpkg binary archives
+        uses: actions/cache@v4
         with:
-          script: |
-            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
-            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+          path: ${{ github.workspace }}/.vcpkg_archives
+          key: vcpkg-msvc-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-msvc-
+
+      - name: Ensure vcpkg cache directory exists
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg_archives"
 
       - name: Set up MSVC Developer Command Prompt
         uses: ilammy/msvc-dev-cmd@v1
@@ -123,7 +129,7 @@ jobs:
       - name: Configure CMake with MSVC & vcpkg
         shell: pwsh
         run: |
-          cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_MAKE_PROGRAM="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe"
 
       - name: Build All Targets
         shell: pwsh

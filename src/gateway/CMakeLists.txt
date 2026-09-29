@@ -64,10 +64,12 @@ add_library(securecloud_gateway_http STATIC
     http/auth/bearer_token_extractor.cpp
     http/auth/authenticated_context.cpp
     http/auth/auth_service_token_validator.cpp
+    http/auth/scope_matcher.cpp
     http/auth/gateway_security_policy.cpp
     http/auth/header_sanitizer.cpp
     http/auth/request_context.cpp
     http/auth/authentication_middleware.cpp
+    http/auth/authorization_middleware.cpp
     http/proxy/auth_proxy_handler.cpp
     http/gateway_route_registrar.cpp
 )

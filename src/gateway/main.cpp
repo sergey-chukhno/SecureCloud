@@ -3,6 +3,7 @@
 #include "health/gateway_health_evaluator.hpp"
 #include "http/auth/auth_service_token_validator.hpp"
 #include "http/auth/authentication_middleware.hpp"
+#include "http/auth/authorization_middleware.hpp"
 #include "http/auth/gateway_security_policy.hpp"
 #include "http/gateway_route_registrar.hpp"
 #include "http/http_redirect_server.hpp"
@@ -146,12 +147,14 @@ int run_service() {
     // 2. LoggingMiddleware: measures request duration & logs all responses
     // 3. ResourceLimiterMiddleware: enforces transport header/body limits & concurrency boundary (GW-002)
     // 4. AuthenticationMiddleware: verifies Bearer token/MFA, establishes AuthenticatedContext
+    // 5. AuthorizationMiddleware: evaluates Enterprise Route Matrix, scopes, and device binding (GW-007)
     securecloud::gateway::http::Router router;
     router.use(std::make_shared<securecloud::gateway::http::RequestIdMiddleware>());
     router.use(std::make_shared<securecloud::gateway::http::LoggingMiddleware>());
     router.use(std::make_shared<securecloud::gateway::http::ResourceLimiterMiddleware>(config));
     router.use(
         std::make_shared<securecloud::gateway::http::AuthenticationMiddleware>(security_policy, token_validator));
+    router.use(std::make_shared<securecloud::gateway::http::AuthorizationMiddleware>(security_policy));
 
     // Register all perimeter routes (Health, Auth proxy, and Phase 2 service stubs)
     auto auth_proxy = std::make_shared<securecloud::gateway::http::AuthProxyHandler>(auth_client);

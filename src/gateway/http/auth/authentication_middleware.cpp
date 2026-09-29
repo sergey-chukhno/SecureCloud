@@ -3,10 +3,12 @@
 #include "http/auth/bearer_token_extractor.hpp"
 #include "http/auth/header_sanitizer.hpp"
 #include "http/auth/request_context.hpp"
+#include "http/auth/scope_matcher.hpp"
 #include "http/error_mapper.hpp"
 
 #include <chrono>
 #include <httplib.h>
+#include <nlohmann/json.hpp>
 #include <stdexcept>
 #include <utility>
 
@@ -133,20 +135,118 @@ void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Res
 
     const auto& ctx = val_res.value();
 
-    // 5. Enforce route assurance level (MFA)
+    // 5. Evaluate Multi-Factor Authentication (MFA) requirement
     if (rule.requires_mfa() && !ctx.is_mfa_verified()) {
-        ErrorMapper::write_error(res, 403, "MFA_REQUIRED",
-                                 "Endpoint requires verified multi-factor authentication (MFA)", request_id);
+        res.status = 403;
+        nlohmann::json j;
+        j["type"] = "https://securecloud.internal/errors/mfa-required";
+        j["title"] = "MFA Required";
+        j["status"] = 403;
+        j["detail"] = "Endpoint requires verified multi-factor authentication (MFA)";
+        if (!request_id.empty()) {
+            j["request_id"] = request_id;
+        }
+        nlohmann::json err_obj = nlohmann::json::object();
+        err_obj["code"] = "MFA_REQUIRED";
+        err_obj["message"] = "Endpoint requires verified multi-factor authentication (MFA)";
+        if (!request_id.empty()) {
+            err_obj["request_id"] = request_id;
+        }
+        j["error"] = std::move(err_obj);
+        res.set_content(j.dump(), "application/json");
         return;
     }
 
-    // 6. Enforce mandatory route scopes
-    for (const auto& scope : rule.required_scopes) {
-        if (!ctx.has_scope(scope)) {
-            ErrorMapper::write_error(res, 403, "INSUFFICIENT_SCOPE",
-                                     "Token lacks required authorization scope: " + scope, request_id);
-            return;
+    // 6. Evaluate minimum authentication assurance level
+    if (static_cast<int>(ctx.authentication_level()) < static_cast<int>(rule.min_auth_level)) {
+        res.status = 403;
+        nlohmann::json j;
+        j["type"] = "https://securecloud.internal/errors/insufficient-assurance";
+        j["title"] = "Forbidden";
+        j["status"] = 403;
+        j["detail"] = "Authentication assurance level is insufficient";
+        if (!request_id.empty()) {
+            j["request_id"] = request_id;
         }
+        nlohmann::json err_obj = nlohmann::json::object();
+        err_obj["code"] = "INSUFFICIENT_ASSURANCE";
+        err_obj["message"] = "Authentication assurance level is insufficient";
+        if (!request_id.empty()) {
+            err_obj["request_id"] = request_id;
+        }
+        j["error"] = std::move(err_obj);
+        res.set_content(j.dump(), "application/json");
+        return;
+    }
+
+    // 7. Evaluate attested device binding requirement
+    if (rule.requires_device_bound() && ctx.device_id().empty()) {
+        res.status = 403;
+        nlohmann::json j;
+        j["type"] = "https://securecloud.internal/errors/device-binding-required";
+        j["title"] = "Device Binding Required";
+        j["status"] = 403;
+        j["detail"] = "Endpoint requires an attested device binding";
+        if (!request_id.empty()) {
+            j["request_id"] = request_id;
+        }
+        nlohmann::json err_obj = nlohmann::json::object();
+        err_obj["code"] = "DEVICE_BINDING_REQUIRED";
+        err_obj["message"] = "Endpoint requires an attested device binding";
+        if (!request_id.empty()) {
+            err_obj["request_id"] = request_id;
+        }
+        j["error"] = std::move(err_obj);
+        res.set_content(j.dump(), "application/json");
+        return;
+    }
+
+    // 8. Evaluate required and alternative permission scopes via ScopeMatcher
+    bool scopes_satisfied = true;
+    std::vector<std::string> missing_scopes;
+
+    if (!rule.required_scopes.empty()) {
+        scopes_satisfied = ScopeMatcher::has_all_scopes(ctx.scopes(), rule.required_scopes);
+        if (!scopes_satisfied) {
+            missing_scopes = ScopeMatcher::find_missing_scopes(ctx.scopes(), rule.required_scopes);
+        }
+    } else if (!rule.alternative_scopes.empty()) {
+        scopes_satisfied = false;
+    }
+
+    if (!scopes_satisfied && !rule.alternative_scopes.empty()) {
+        if (ScopeMatcher::has_any_scope(ctx.scopes(), rule.alternative_scopes)) {
+            scopes_satisfied = true;
+            missing_scopes.clear();
+        }
+    }
+
+    if (!scopes_satisfied) {
+        res.status = 403;
+        std::string detail = "Token lacks required authorization scope";
+        if (!missing_scopes.empty()) {
+            detail += ": " + missing_scopes[0];
+        }
+        nlohmann::json j;
+        j["type"] = "https://securecloud.internal/errors/insufficient-scope";
+        j["title"] = "Forbidden";
+        j["status"] = 403;
+        j["detail"] = detail;
+        if (!request_id.empty()) {
+            j["request_id"] = request_id;
+        }
+        if (!missing_scopes.empty()) {
+            j["missing_scopes"] = missing_scopes;
+        }
+        nlohmann::json err_obj = nlohmann::json::object();
+        err_obj["code"] = "INSUFFICIENT_SCOPE";
+        err_obj["message"] = detail;
+        if (!request_id.empty()) {
+            err_obj["request_id"] = request_id;
+        }
+        j["error"] = std::move(err_obj);
+        res.set_content(j.dump(), "application/json");
+        return;
     }
 
     // 7. Bind verified context to execution scope and proceed downstream
