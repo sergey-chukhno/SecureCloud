@@ -187,6 +187,8 @@ RouteSecurityRule GatewaySecurityPolicy::evaluate(std::string_view method, std::
         .access = RouteAccess::Protected,
         .min_auth_level = securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
         .required_scopes = {},
+        .alternative_scopes = {},
+        .require_device_bound = false,
     };
 }
 
