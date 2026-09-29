@@ -386,6 +386,21 @@ target_link_libraries(securecloud_gateway_route_registrar_test PRIVATE
 
 gtest_discover_tests(securecloud_gateway_route_registrar_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Scope Matcher Test (GW-007-T01)
+add_executable(securecloud_scope_matcher_test
+    gateway/scope_matcher_test.cpp
+)
+
+target_link_libraries(securecloud_scope_matcher_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scope_matcher_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Downstream gRPC Channel Manager Test (GW-001-T05)
 add_executable(securecloud_channel_manager_test
     gateway/channel_manager_test.cpp

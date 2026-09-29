@@ -1,5 +1,7 @@
 #include "http/auth/authenticated_context.hpp"
 
+#include "http/auth/scope_matcher.hpp"
+
 #include <algorithm>
 #include <utility>
 
@@ -16,8 +18,7 @@ bool AuthenticatedContext::is_mfa_verified() const noexcept {
 }
 
 bool AuthenticatedContext::has_scope(std::string_view required_scope) const noexcept {
-    return std::any_of(scopes_.begin(), scopes_.end(),
-                       [required_scope](const std::string& scope) { return scope == required_scope; });
+    return ScopeMatcher::has_scope(scopes_, required_scope);
 }
 
 bool AuthenticatedContext::is_expired(int64_t current_epoch_ms) const noexcept {
