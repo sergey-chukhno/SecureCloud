@@ -28,15 +28,19 @@ struct RouteSecurityRule {
     securecloud::auth::v1::AuthenticationLevel min_auth_level{
         securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY};
     std::vector<std::string> required_scopes;
+    std::vector<std::string> alternative_scopes;
+    bool require_device_bound{false};
 
     [[nodiscard]] bool is_public() const noexcept { return access == RouteAccess::Public; }
     [[nodiscard]] bool requires_mfa() const noexcept {
         return access == RouteAccess::Sensitive ||
                min_auth_level == securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED;
     }
+    [[nodiscard]] bool requires_device_bound() const noexcept { return require_device_bound; }
 
     /**
      * @brief Verifies whether an authenticated caller context satisfies this security rule.
+     * Evaluates MFA requirement, assurance level, device binding, and scopes via ScopeMatcher.
      */
     [[nodiscard]] bool satisfies(const AuthenticatedContext& ctx) const;
 };
@@ -71,11 +75,19 @@ class GatewaySecurityPolicy {
      * @param access Access category (Public, Protected, Sensitive).
      * @param required_scopes Optional list of required scopes (e.g. {"messages:write"}).
      * @param min_auth_level Minimum authentication assurance level.
+     * @param alternative_scopes Optional list of alternative scopes (caller needs at least one).
+     * @param require_device_bound Whether the route requires an attested device binding in context.
      */
     void add_rule(std::string method, std::string path_pattern, RouteAccess access,
                   std::vector<std::string> required_scopes = {},
                   securecloud::auth::v1::AuthenticationLevel min_auth_level =
-                      securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_UNSPECIFIED);
+                      securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_UNSPECIFIED,
+                  std::vector<std::string> alternative_scopes = {}, bool require_device_bound = false);
+
+    /**
+     * @brief Declaratively registers a pre-constructed RouteSecurityRule.
+     */
+    void add_rule(std::string method, std::string path_pattern, RouteSecurityRule rule);
 
     /**
      * @brief Evaluates the security rule governing the given HTTP method and path.

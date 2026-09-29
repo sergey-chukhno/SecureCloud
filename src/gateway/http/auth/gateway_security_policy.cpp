@@ -1,5 +1,7 @@
 #include "http/auth/gateway_security_policy.hpp"
 
+#include "http/auth/scope_matcher.hpp"
+
 #include <algorithm>
 #include <mutex>
 #include <string>
@@ -19,10 +21,23 @@ bool RouteSecurityRule::satisfies(const AuthenticatedContext& ctx) const {
         return false;
     }
 
-    for (const auto& scope : required_scopes) {
-        if (!ctx.has_scope(scope)) {
-            return false;
-        }
+    if (require_device_bound && ctx.device_id().empty()) {
+        return false;
+    }
+
+    bool scopes_satisfied = true;
+    if (!required_scopes.empty()) {
+        scopes_satisfied = ScopeMatcher::has_all_scopes(ctx.scopes(), required_scopes);
+    } else if (!alternative_scopes.empty()) {
+        scopes_satisfied = false;
+    }
+
+    if (!scopes_satisfied && !alternative_scopes.empty()) {
+        scopes_satisfied = ScopeMatcher::has_any_scope(ctx.scopes(), alternative_scopes);
+    }
+
+    if (!scopes_satisfied) {
+        return false;
     }
 
     return true;
@@ -43,30 +58,48 @@ GatewaySecurityPolicy GatewaySecurityPolicy::create_default() {
     policy.add_rule("POST", "/api/v1/auth/login", RouteAccess::Public);
     policy.add_rule("POST", "/api/v1/auth/refresh", RouteAccess::Public);
 
-    // Sensitive perimeter routes: MFA Verification Required
-    policy.add_rule("POST", "/api/v1/auth/device/register", RouteAccess::Sensitive, {"auth:device:register"},
-                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    // Sensitive perimeter routes: MFA Verification Required & Device Binding
+    policy.add_rule("POST", "/api/v1/auth/device/register", RouteAccess::Sensitive, {"device:manage"},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED,
+                    {"auth:device:register"}, /*require_device_bound=*/true);
     policy.add_rule("*", "/api/v1/auth/security/*", RouteAccess::Sensitive, {"auth:keys:rotate"},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
 
-    // Standard protected microservice proxies: Requires valid AuthenticatedContext
-    policy.add_rule("POST", "/api/v1/messages/send", RouteAccess::Protected, {"messages:write"});
+    // Auth microservice protected routes
+    policy.add_rule("POST", "/api/v1/auth/revoke", RouteAccess::Protected, {"auth:revoke"},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {"access"});
+    policy.add_rule("GET", "/api/v1/auth/me", RouteAccess::Protected, {"user:profile"},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {"auth:profile"});
+
+    // Messaging microservice protected routes
+    policy.add_rule("POST", "/api/v1/messages/send", RouteAccess::Protected, {"messages:send"},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {"messages:write"});
+    policy.add_rule("GET", "/api/v1/messages/inbox", RouteAccess::Protected, {"messages:read"});
+    policy.add_rule("GET", "/api/v1/messages/history", RouteAccess::Protected, {"messages:read"});
     policy.add_rule("GET", "/api/v1/messages/*", RouteAccess::Protected, {"messages:read"});
     policy.add_rule("*", "/api/v1/messages/*", RouteAccess::Protected, {"messages:read"});
-    policy.add_rule("POST", "/api/v1/files/upload", RouteAccess::Protected, {"files:write"});
+
+    // Files microservice protected routes
+    policy.add_rule("POST", "/api/v1/files/upload", RouteAccess::Protected, {"files:upload"},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {"files:write"});
+    policy.add_rule("GET", "/api/v1/files/download", RouteAccess::Protected, {"files:read"});
+    policy.add_rule("DELETE", "/api/v1/files/delete", RouteAccess::Protected, {"files:delete"});
     policy.add_rule("GET", "/api/v1/files/*", RouteAccess::Protected, {"files:read"});
     policy.add_rule("*", "/api/v1/files/*", RouteAccess::Protected, {"files:read"});
-    policy.add_rule("POST", "/api/v1/auth/revoke", RouteAccess::Protected, {"access"});
-    policy.add_rule("GET", "/api/v1/auth/me", RouteAccess::Protected, {"auth:profile"});
+
+    // Audit microservice sensitive routes
+    policy.add_rule("GET", "/api/v1/audit/logs", RouteAccess::Sensitive, {"audit:read"},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    policy.add_rule("*", "/api/v1/audit/*", RouteAccess::Sensitive, {"audit:read"},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
 
     return policy;
 }
 
 void GatewaySecurityPolicy::add_rule(std::string method, std::string path_pattern, RouteAccess access,
                                      std::vector<std::string> required_scopes,
-                                     securecloud::auth::v1::AuthenticationLevel min_auth_level) {
-    std::unique_lock<std::shared_mutex> lock(*mutex_);
-
+                                     securecloud::auth::v1::AuthenticationLevel min_auth_level,
+                                     std::vector<std::string> alternative_scopes, bool require_device_bound) {
     // Resolve default authentication level if unspecified
     if (min_auth_level == securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_UNSPECIFIED) {
         switch (access) {
@@ -86,7 +119,15 @@ void GatewaySecurityPolicy::add_rule(std::string method, std::string path_patter
         .access = access,
         .min_auth_level = min_auth_level,
         .required_scopes = std::move(required_scopes),
+        .alternative_scopes = std::move(alternative_scopes),
+        .require_device_bound = require_device_bound,
     };
+
+    add_rule(std::move(method), std::move(path_pattern), std::move(rule));
+}
+
+void GatewaySecurityPolicy::add_rule(std::string method, std::string path_pattern, RouteSecurityRule rule) {
+    std::unique_lock<std::shared_mutex> lock(*mutex_);
 
     if (path_pattern.ends_with("/*")) {
         std::string prefix = path_pattern.substr(0, path_pattern.size() - 1); // keep trailing '/'

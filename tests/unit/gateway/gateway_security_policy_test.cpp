@@ -48,6 +48,8 @@ TEST(GatewaySecurityPolicyTest, DefaultPolicyRequiresMfaForSensitiveRoutes) {
         {"POST", "/api/v1/auth/device/register"},
         {"GET", "/api/v1/auth/security/keys"},
         {"POST", "/api/v1/auth/security/rotate-keys"},
+        {"GET", "/api/v1/audit/logs"},
+        {"POST", "/api/v1/audit/query"},
     };
 
     for (const auto& [method, path] : sensitive_endpoints) {
@@ -57,6 +59,9 @@ TEST(GatewaySecurityPolicyTest, DefaultPolicyRequiresMfaForSensitiveRoutes) {
         EXPECT_TRUE(rule.requires_mfa()) << "Failed for " << method << " " << path;
         EXPECT_EQ(rule.min_auth_level, securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
     }
+
+    auto dev_rule = policy.evaluate("POST", "/api/v1/auth/device/register");
+    EXPECT_TRUE(dev_rule.requires_device_bound());
 }
 
 TEST(GatewaySecurityPolicyTest, FailClosedDefaultProtectsUnknownRoutes) {
@@ -181,6 +186,142 @@ TEST(GatewaySecurityPolicyTest, ConcurrentEvaluationsAreThreadSafe) {
     for (auto& f : futures) {
         f.get();
     }
+}
+
+TEST(GatewaySecurityPolicyTest, DefaultPolicyEnterpriseRoutesCoverage) {
+    auto policy = GatewaySecurityPolicy::create_default();
+
+    // 1. Auth service
+    auto auth_revoke = policy.evaluate("POST", "/api/v1/auth/revoke");
+    EXPECT_EQ(auth_revoke.access, RouteAccess::Protected);
+    EXPECT_FALSE(auth_revoke.required_scopes.empty());
+    EXPECT_EQ(auth_revoke.required_scopes[0], "auth:revoke");
+    EXPECT_FALSE(auth_revoke.alternative_scopes.empty());
+    EXPECT_EQ(auth_revoke.alternative_scopes[0], "access");
+
+    auto auth_me = policy.evaluate("GET", "/api/v1/auth/me");
+    EXPECT_EQ(auth_me.access, RouteAccess::Protected);
+    EXPECT_EQ(auth_me.required_scopes[0], "user:profile");
+
+    auto auth_dev = policy.evaluate("POST", "/api/v1/auth/device/register");
+    EXPECT_EQ(auth_dev.access, RouteAccess::Sensitive);
+    EXPECT_TRUE(auth_dev.requires_device_bound());
+    EXPECT_TRUE(auth_dev.requires_mfa());
+
+    // 2. Messaging service
+    auto msg_send = policy.evaluate("POST", "/api/v1/messages/send");
+    EXPECT_EQ(msg_send.access, RouteAccess::Protected);
+    EXPECT_EQ(msg_send.required_scopes[0], "messages:send");
+    EXPECT_FALSE(msg_send.alternative_scopes.empty());
+    EXPECT_EQ(msg_send.alternative_scopes[0], "messages:write");
+
+    auto msg_inbox = policy.evaluate("GET", "/api/v1/messages/inbox");
+    EXPECT_EQ(msg_inbox.access, RouteAccess::Protected);
+    EXPECT_EQ(msg_inbox.required_scopes[0], "messages:read");
+
+    auto msg_history = policy.evaluate("GET", "/api/v1/messages/history");
+    EXPECT_EQ(msg_history.access, RouteAccess::Protected);
+    EXPECT_EQ(msg_history.required_scopes[0], "messages:read");
+
+    // 3. Files service
+    auto file_upload = policy.evaluate("POST", "/api/v1/files/upload");
+    EXPECT_EQ(file_upload.access, RouteAccess::Protected);
+    EXPECT_EQ(file_upload.required_scopes[0], "files:upload");
+
+    auto file_download = policy.evaluate("GET", "/api/v1/files/download");
+    EXPECT_EQ(file_download.access, RouteAccess::Protected);
+    EXPECT_EQ(file_download.required_scopes[0], "files:read");
+
+    auto file_delete = policy.evaluate("DELETE", "/api/v1/files/delete");
+    EXPECT_EQ(file_delete.access, RouteAccess::Protected);
+    EXPECT_EQ(file_delete.required_scopes[0], "files:delete");
+
+    // 4. Audit service
+    auto audit_logs = policy.evaluate("GET", "/api/v1/audit/logs");
+    EXPECT_EQ(audit_logs.access, RouteAccess::Sensitive);
+    EXPECT_TRUE(audit_logs.requires_mfa());
+    EXPECT_EQ(audit_logs.required_scopes[0], "audit:read");
+}
+
+TEST(GatewaySecurityPolicyTest, RouteSecurityRuleSatisfiesWildcardAndAlternativeScopes) {
+    RouteSecurityRule rule{
+        .access = RouteAccess::Protected,
+        .min_auth_level = securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
+        .required_scopes = {"messages:send"},
+        .alternative_scopes = {"messages:write", "admin:all"},
+        .require_device_bound = false,
+    };
+
+    // 1. Exact scope matches
+    AuthenticatedContext exact_ctx("usr-1", "dev-1", "s-1",
+                                   securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
+                                   {"messages:send"}, 100000);
+    EXPECT_TRUE(rule.satisfies(exact_ctx));
+
+    // Alternative scope matches when required scope is not held
+    AuthenticatedContext alt_match_ctx("usr-1", "dev-1", "s-1",
+                                       securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
+                                       {"messages:write"}, 100000);
+    EXPECT_TRUE(rule.satisfies(alt_match_ctx));
+
+    // 2. Domain wildcard satisfies required scope
+    AuthenticatedContext wildcard_ctx("usr-1", "dev-1", "s-1",
+                                      securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
+                                      {"messages:*"}, 100000);
+    EXPECT_TRUE(rule.satisfies(wildcard_ctx));
+
+    // 3. Global wildcard satisfies all required scopes
+    AuthenticatedContext global_wildcard_ctx("usr-1", "dev-1", "s-1",
+                                             securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
+                                             {"*"}, 100000);
+    EXPECT_TRUE(rule.satisfies(global_wildcard_ctx));
+
+    // 4. Missing required scope fails
+    AuthenticatedContext missing_ctx("usr-1", "dev-1", "s-1",
+                                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
+                                     {"files:read"}, 100000);
+    EXPECT_FALSE(rule.satisfies(missing_ctx));
+
+    // 5. Test rule where required_scopes is empty but alternative_scopes is specified
+    RouteSecurityRule alt_only_rule{
+        .access = RouteAccess::Protected,
+        .min_auth_level = securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
+        .required_scopes = {},
+        .alternative_scopes = {"messages:write", "messages:send"},
+        .require_device_bound = false,
+    };
+
+    AuthenticatedContext alt_ctx("usr-1", "dev-1", "s-1",
+                                 securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
+                                 {"messages:write"}, 100000);
+    EXPECT_TRUE(alt_only_rule.satisfies(alt_ctx));
+
+    AuthenticatedContext wrong_alt_ctx("usr-1", "dev-1", "s-1",
+                                       securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
+                                       {"files:upload"}, 100000);
+    EXPECT_FALSE(alt_only_rule.satisfies(wrong_alt_ctx));
+}
+
+TEST(GatewaySecurityPolicyTest, RouteSecurityRuleEnforcesDeviceBinding) {
+    RouteSecurityRule device_bound_rule{
+        .access = RouteAccess::Sensitive,
+        .min_auth_level = securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED,
+        .required_scopes = {"device:manage"},
+        .alternative_scopes = {},
+        .require_device_bound = true,
+    };
+
+    // Caller with valid device_id
+    AuthenticatedContext bound_ctx("usr-1", "dev-12345", "s-1",
+                                   securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED,
+                                   {"device:manage"}, 100000);
+    EXPECT_TRUE(device_bound_rule.satisfies(bound_ctx));
+
+    // Caller with empty device_id
+    AuthenticatedContext unbound_ctx("usr-1", "", "s-1",
+                                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED,
+                                     {"device:manage"}, 100000);
+    EXPECT_FALSE(device_bound_rule.satisfies(unbound_ctx));
 }
 
 } // namespace
