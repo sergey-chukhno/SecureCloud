@@ -136,6 +136,8 @@ TEST(GatewaySecurityPolicyTest, RuleSatisfiesEvaluatesAssuranceAndScopes) {
         .access = RouteAccess::Sensitive,
         .min_auth_level = securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED,
         .required_scopes = {"files:write", "files:audit"},
+        .alternative_scopes = {},
+        .require_device_bound = false,
     };
 
     // Case 1: Primary auth level lacks MFA
