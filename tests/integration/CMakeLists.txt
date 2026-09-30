@@ -271,7 +271,7 @@ target_link_libraries(securecloud_gateway_resource_controls_integration_test PRI
     OpenSSL::SSL
     OpenSSL::Crypto
     securecloud::compiler_flags
-    GTest::gtest_main
+    GTest::gtest
 )
 
 target_compile_definitions(securecloud_gateway_resource_controls_integration_test PRIVATE
