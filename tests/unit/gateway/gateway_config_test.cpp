@@ -243,5 +243,57 @@ TEST(GatewayConfigTest, StrictNoDatabaseArchitecturalInvariant) {
     EXPECT_TRUE(config.audit_endpoint.find("50055") != std::string::npos);
 }
 
+TEST(GatewayConfigTest, DeadlinesConfigDefaults) {
+    GatewayConfig config;
+    EXPECT_EQ(config.deadlines.auth_timeout_ms, 1000u);
+    EXPECT_EQ(config.deadlines.messaging_timeout_ms, 2000u);
+    EXPECT_EQ(config.deadlines.files_metadata_timeout_ms, 2000u);
+    EXPECT_EQ(config.deadlines.audit_timeout_ms, 1000u);
+    EXPECT_EQ(config.deadlines.max_request_deadline_ms, 10000u);
+    EXPECT_EQ(config.deadlines.min_request_deadline_ms, 50u);
+}
+
+TEST(GatewayConfigTest, DeadlinesConfigCustomOverrides) {
+    common::configuration::InMemoryConfigurationSource source({
+        {"SECURECLOUD_GATEWAY_TIMEOUT_MAX_MS", "15000"},
+        {"SECURECLOUD_GATEWAY_TIMEOUT_MIN_MS", "100"},
+        {"SECURECLOUD_GATEWAY_TIMEOUT_AUTH_MS", "3000"},
+        {"SECURECLOUD_GATEWAY_TIMEOUT_MESSAGING_MS", "4000"},
+        {"SECURECLOUD_GATEWAY_TIMEOUT_FILES_MS", "5000"},
+        {"SECURECLOUD_GATEWAY_TIMEOUT_AUDIT_MS", "2500"},
+    });
+    common::configuration::ValidationResult errors;
+    auto config = GatewayConfig::load(source, errors);
+    EXPECT_TRUE(errors.is_valid());
+    EXPECT_EQ(config.deadlines.max_request_deadline_ms, 15000u);
+    EXPECT_EQ(config.deadlines.min_request_deadline_ms, 100u);
+    EXPECT_EQ(config.deadlines.auth_timeout_ms, 3000u);
+    EXPECT_EQ(config.deadlines.messaging_timeout_ms, 4000u);
+    EXPECT_EQ(config.deadlines.files_metadata_timeout_ms, 5000u);
+    EXPECT_EQ(config.deadlines.audit_timeout_ms, 2500u);
+}
+
+TEST(GatewayConfigTest, DeadlinesConfigRejectsOutOfBounds) {
+    // 0 ms is invalid (below min 1)
+    {
+        common::configuration::InMemoryConfigurationSource source({
+            {"SECURECLOUD_GATEWAY_TIMEOUT_MIN_MS", "0"},
+        });
+        common::configuration::ValidationResult errors;
+        auto config = GatewayConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+
+    // Exceeding max allowable upper bound (300000 ms)
+    {
+        common::configuration::InMemoryConfigurationSource source({
+            {"SECURECLOUD_GATEWAY_TIMEOUT_MAX_MS", "400000"},
+        });
+        common::configuration::ValidationResult errors;
+        auto config = GatewayConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+}
+
 } // namespace
 } // namespace securecloud::gateway

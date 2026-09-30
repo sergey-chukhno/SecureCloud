@@ -31,6 +31,16 @@ struct GatewayResourceLimitsConfig {
     size_t max_concurrent_connections{1024};
 };
 
+/// Typed configuration model for Gateway downstream service deadlines (ADR-009, GW-008-T02).
+struct GatewayServiceDeadlinesConfig {
+    uint32_t auth_timeout_ms{1000};           // 1 s default (Auth simple requests)
+    uint32_t messaging_timeout_ms{2000};      // 2 s default (Messaging commands & queries)
+    uint32_t files_metadata_timeout_ms{2000}; // 2 s default (Files metadata operations)
+    uint32_t audit_timeout_ms{1000};          // 1 s default (Audit operations)
+    uint32_t max_request_deadline_ms{10000};  // 10 s default upper clamp
+    uint32_t min_request_deadline_ms{50};     // 50 ms minimum viable deadline floor
+};
+
 /// Typed configuration model for Gateway service (GW-001, GW-002).
 /// Holds HTTP server runtime settings, TLS parameters, resource limits, downstream microservice endpoints,
 /// and common gRPC/mTLS service parameters.
@@ -48,6 +58,9 @@ struct GatewayConfig {
     // TLS & Transport Resource Settings (GW-002-T01)
     GatewayTlsConfig tls;
     GatewayResourceLimitsConfig limits;
+
+    // Service Deadlines & Timeout Budgets (GW-008-T02)
+    GatewayServiceDeadlinesConfig deadlines;
 
     // Downstream Microservice Endpoints
     std::string auth_endpoint{"auth:50052"};

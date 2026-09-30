@@ -5,6 +5,7 @@
 #include "http/auth/authentication_middleware.hpp"
 #include "http/auth/authorization_middleware.hpp"
 #include "http/auth/gateway_security_policy.hpp"
+#include "http/deadline_manager.hpp"
 #include "http/gateway_route_registrar.hpp"
 #include "http/http_redirect_server.hpp"
 #include "http/http_server.hpp"
@@ -157,7 +158,8 @@ int run_service() {
     router.use(std::make_shared<securecloud::gateway::http::AuthorizationMiddleware>(security_policy));
 
     // Register all perimeter routes (Health, Auth proxy, and Phase 2 service stubs)
-    auto auth_proxy = std::make_shared<securecloud::gateway::http::AuthProxyHandler>(auth_client);
+    auto deadline_manager = std::make_shared<securecloud::gateway::http::DeadlineManager>(config.deadlines);
+    auto auth_proxy = std::make_shared<securecloud::gateway::http::AuthProxyHandler>(auth_client, deadline_manager);
     securecloud::gateway::http::GatewayRouteRegistrar route_registrar(auth_proxy, health_manager);
     route_registrar.register_all_routes(router);
 

@@ -17,8 +17,10 @@ constexpr const char* k_content_type_json = "application/json";
 
 } // namespace
 
-AuthProxyHandler::AuthProxyHandler(std::shared_ptr<grpc::IAuthClient> auth_client)
-    : auth_client_(std::move(auth_client)) {
+AuthProxyHandler::AuthProxyHandler(std::shared_ptr<grpc::IAuthClient> auth_client,
+                                   std::shared_ptr<DeadlineManager> deadline_manager)
+    : auth_client_(std::move(auth_client)),
+      deadline_manager_(deadline_manager ? std::move(deadline_manager) : std::make_shared<DeadlineManager>()) {
     if (!auth_client_) {
         throw std::invalid_argument("AuthProxyHandler: auth_client must not be null");
     }
@@ -57,7 +59,16 @@ std::string AuthProxyHandler::extract_request_id(const httplib::Request& req) {
 }
 
 void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Response& res) {
+    const auto start_tp = deadline_manager_->now();
     const std::string request_id = extract_request_id(req);
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
 
     nlohmann::json body;
     try {
@@ -99,7 +110,13 @@ void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Respon
         auth_req.set_device_id(body["device_id"].get<std::string>());
     }
 
-    grpc::ClientCallContext call_ctx(request_id, grpc::ClientCallContext::k_default_timeout);
+    const auto call_budget = deadline_manager_->compute_downstream_budget(start_tp, effective_deadline, service_timeout);
+    if (call_budget.count() <= 0) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    grpc::ClientCallContext call_ctx(request_id, call_budget);
     auto rpc_res = auth_client_->authenticate(auth_req, call_ctx);
     if (!rpc_res) {
         const auto& err = rpc_res.error();
@@ -127,7 +144,16 @@ void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Respon
 }
 
 void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Response& res) {
+    const auto start_tp = deadline_manager_->now();
     const std::string request_id = extract_request_id(req);
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
 
     nlohmann::json body;
     try {
@@ -150,7 +176,13 @@ void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Resp
         refresh_req.set_device_id(body["device_id"].get<std::string>());
     }
 
-    grpc::ClientCallContext call_ctx(request_id, grpc::ClientCallContext::k_default_timeout);
+    const auto call_budget = deadline_manager_->compute_downstream_budget(start_tp, effective_deadline, service_timeout);
+    if (call_budget.count() <= 0) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    grpc::ClientCallContext call_ctx(request_id, call_budget);
     auto rpc_res = auth_client_->refresh_session(refresh_req, call_ctx);
     if (!rpc_res) {
         const auto& err = rpc_res.error();
@@ -172,7 +204,16 @@ void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Resp
 
 void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Response& res,
                                      const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
     const std::string request_id = extract_request_id(req);
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
 
     std::string session_id = ctx.session_id();
     std::string reason = "User logout";
@@ -208,7 +249,13 @@ void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Respo
     revoke_req.set_session_id(session_id);
     revoke_req.set_reason(reason);
 
-    grpc::ClientCallContext call_ctx(request_id, grpc::ClientCallContext::k_default_timeout);
+    const auto call_budget = deadline_manager_->compute_downstream_budget(start_tp, effective_deadline, service_timeout);
+    if (call_budget.count() <= 0) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    grpc::ClientCallContext call_ctx(request_id, call_budget);
     auto rpc_res = auth_client_->revoke_session(revoke_req, call_ctx);
     if (!rpc_res) {
         const auto& err = rpc_res.error();
@@ -225,7 +272,16 @@ void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Respo
 
 void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Response& res,
                                      const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
     const std::string request_id = extract_request_id(req);
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
 
     const std::string& user_id = ctx.user_id();
     if (user_id.empty()) {
@@ -236,7 +292,13 @@ void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Respo
     securecloud::auth::v1::GetUserRequest user_req;
     user_req.set_user_id(user_id);
 
-    grpc::ClientCallContext call_ctx(request_id, grpc::ClientCallContext::k_default_timeout);
+    const auto call_budget = deadline_manager_->compute_downstream_budget(start_tp, effective_deadline, service_timeout);
+    if (call_budget.count() <= 0) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    grpc::ClientCallContext call_ctx(request_id, call_budget);
     auto rpc_res = auth_client_->get_user(user_req, call_ctx);
     if (!rpc_res) {
         const auto& err = rpc_res.error();
@@ -260,7 +322,16 @@ void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Respo
 
 void AuthProxyHandler::handle_register_device(const httplib::Request& req, httplib::Response& res,
                                               const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
     const std::string request_id = extract_request_id(req);
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
 
     if (ctx.user_id().empty()) {
         ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
@@ -300,7 +371,13 @@ void AuthProxyHandler::handle_register_device(const httplib::Request& req, httpl
         }
     }
 
-    grpc::ClientCallContext call_ctx(request_id, grpc::ClientCallContext::k_default_timeout);
+    const auto call_budget = deadline_manager_->compute_downstream_budget(start_tp, effective_deadline, service_timeout);
+    if (call_budget.count() <= 0) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    grpc::ClientCallContext call_ctx(request_id, call_budget);
     auto rpc_res = auth_client_->register_device(dev_req, call_ctx);
     if (!rpc_res) {
         const auto& err = rpc_res.error();

@@ -2,6 +2,7 @@
 
 #include "grpc/auth_client_interface.hpp"
 #include "http/auth/authenticated_context.hpp"
+#include "http/deadline_manager.hpp"
 
 #include <memory>
 #include <string>
@@ -26,7 +27,8 @@ class Router;
  */
 class AuthProxyHandler {
   public:
-    explicit AuthProxyHandler(std::shared_ptr<grpc::IAuthClient> auth_client);
+    explicit AuthProxyHandler(std::shared_ptr<grpc::IAuthClient> auth_client,
+                              std::shared_ptr<DeadlineManager> deadline_manager = nullptr);
     ~AuthProxyHandler() = default;
 
     AuthProxyHandler(const AuthProxyHandler&) = delete;
@@ -44,10 +46,15 @@ class AuthProxyHandler {
     void handle_get_me(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
     void handle_register_device(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
 
+    [[nodiscard]] const std::shared_ptr<DeadlineManager>& deadline_manager() const noexcept {
+        return deadline_manager_;
+    }
+
   private:
     [[nodiscard]] static std::string extract_request_id(const httplib::Request& req);
 
     std::shared_ptr<grpc::IAuthClient> auth_client_;
+    std::shared_ptr<DeadlineManager> deadline_manager_;
 };
 
 } // namespace securecloud::gateway::http
