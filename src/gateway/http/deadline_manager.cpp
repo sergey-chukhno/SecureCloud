@@ -103,7 +103,7 @@ std::optional<std::chrono::milliseconds> DeadlineManager::extract_client_timeout
 
 std::chrono::milliseconds
 DeadlineManager::compute_effective_deadline(const httplib::Request& req,
-                                           std::chrono::milliseconds default_timeout) const noexcept {
+                                            std::chrono::milliseconds default_timeout) const noexcept {
     auto client_timeout = extract_client_timeout(req);
     if (!client_timeout.has_value()) {
         return default_timeout;
@@ -117,8 +117,8 @@ DeadlineManager::compute_effective_deadline(const httplib::Request& req,
 
 std::chrono::milliseconds
 DeadlineManager::compute_downstream_budget(std::chrono::steady_clock::time_point start_tp,
-                                          std::chrono::milliseconds effective_deadline,
-                                          std::chrono::milliseconds service_timeout) const noexcept {
+                                           std::chrono::milliseconds effective_deadline,
+                                           std::chrono::milliseconds service_timeout) const noexcept {
     const auto current_tp = now();
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(current_tp - start_tp);
 
@@ -131,8 +131,8 @@ DeadlineManager::compute_downstream_budget(std::chrono::steady_clock::time_point
 }
 
 bool DeadlineManager::has_sufficient_budget(std::chrono::steady_clock::time_point start_tp,
-                                           std::chrono::milliseconds effective_deadline,
-                                           std::chrono::milliseconds minimum_required) const noexcept {
+                                            std::chrono::milliseconds effective_deadline,
+                                            std::chrono::milliseconds minimum_required) const noexcept {
     const auto current_tp = now();
     const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(current_tp - start_tp);
 

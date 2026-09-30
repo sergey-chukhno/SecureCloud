@@ -35,8 +35,7 @@ class DeadlineManager {
     extract_client_timeout(const httplib::Request& req) noexcept;
 
     /// Parses a duration string (e.g. "500", "500ms", "2s", "1.5s") into milliseconds.
-    [[nodiscard]] static std::optional<std::chrono::milliseconds>
-    parse_duration_string(std::string_view str) noexcept;
+    [[nodiscard]] static std::optional<std::chrono::milliseconds> parse_duration_string(std::string_view str) noexcept;
 
     /// Returns current monotonic timestamp according to clock provider (useful for deterministic tests).
     [[nodiscard]] std::chrono::steady_clock::time_point now() const noexcept;
@@ -47,8 +46,7 @@ class DeadlineManager {
     /// Computes overall effective deadline clamped to [min_request_deadline_ms, max_request_deadline_ms].
     /// If no client timeout is provided, falls back to default_timeout.
     [[nodiscard]] std::chrono::milliseconds
-    compute_effective_deadline(const httplib::Request& req,
-                               std::chrono::milliseconds default_timeout) const noexcept;
+    compute_effective_deadline(const httplib::Request& req, std::chrono::milliseconds default_timeout) const noexcept;
 
     /// Computes downstream gRPC call budget bounded by the remaining request lifetime:
     /// downstream_budget = min(service_timeout, remaining_budget)
@@ -60,8 +58,7 @@ class DeadlineManager {
     /// Checks if sufficient budget remains for downstream invocation.
     /// Returns false if remaining budget is <= 0 or below minimum floor.
     [[nodiscard]] bool
-    has_sufficient_budget(std::chrono::steady_clock::time_point start_tp,
-                          std::chrono::milliseconds effective_deadline,
+    has_sufficient_budget(std::chrono::steady_clock::time_point start_tp, std::chrono::milliseconds effective_deadline,
                           std::chrono::milliseconds minimum_required = std::chrono::milliseconds{1}) const noexcept;
 
     [[nodiscard]] const GatewayServiceDeadlinesConfig& config() const noexcept { return config_; }

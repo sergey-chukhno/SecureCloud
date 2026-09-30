@@ -50,8 +50,8 @@ class ErrorMapper {
     /**
      * @brief Translates a downstream gRPC status code directly into an RFC 7807 HTTP response.
      */
-    static void write_grpc_error(httplib::Response& res, ::grpc::StatusCode status_code,
-                                 const std::string& message, const std::string& request_id = "");
+    static void write_grpc_error(httplib::Response& res, ::grpc::StatusCode status_code, const std::string& message,
+                                 const std::string& request_id = "");
 };
 
 } // namespace securecloud::gateway::http

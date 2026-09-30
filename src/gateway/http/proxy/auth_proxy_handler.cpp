@@ -160,14 +160,13 @@ void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Respon
         auth_req.set_device_id(body["device_id"].get<std::string>());
     }
 
-    auto rpc_res = retry_policy_->execute(
-        *deadline_manager_, start_tp, effective_deadline, service_timeout,
-        OperationIdempotency::NON_IDEMPOTENT,
-        [this, &auth_req, &request_id](std::chrono::milliseconds budget) {
-            grpc::ClientCallContext call_ctx(request_id, budget);
-            ActiveCallGuard guard(*this, request_id, call_ctx);
-            return auth_client_->authenticate(auth_req, call_ctx);
-        });
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::NON_IDEMPOTENT,
+                                          [this, &auth_req, &request_id](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              return auth_client_->authenticate(auth_req, call_ctx);
+                                          });
 
     if (!rpc_res) {
         const auto& err = rpc_res.error();
@@ -227,14 +226,13 @@ void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Resp
         refresh_req.set_device_id(body["device_id"].get<std::string>());
     }
 
-    auto rpc_res = retry_policy_->execute(
-        *deadline_manager_, start_tp, effective_deadline, service_timeout,
-        OperationIdempotency::NON_IDEMPOTENT,
-        [this, &refresh_req, &request_id](std::chrono::milliseconds budget) {
-            grpc::ClientCallContext call_ctx(request_id, budget);
-            ActiveCallGuard guard(*this, request_id, call_ctx);
-            return auth_client_->refresh_session(refresh_req, call_ctx);
-        });
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::NON_IDEMPOTENT,
+                                          [this, &refresh_req, &request_id](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              return auth_client_->refresh_session(refresh_req, call_ctx);
+                                          });
 
     if (!rpc_res) {
         const auto& err = rpc_res.error();
@@ -301,14 +299,13 @@ void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Respo
     revoke_req.set_session_id(session_id);
     revoke_req.set_reason(reason);
 
-    auto rpc_res = retry_policy_->execute(
-        *deadline_manager_, start_tp, effective_deadline, service_timeout,
-        OperationIdempotency::NON_IDEMPOTENT,
-        [this, &revoke_req, &request_id](std::chrono::milliseconds budget) {
-            grpc::ClientCallContext call_ctx(request_id, budget);
-            ActiveCallGuard guard(*this, request_id, call_ctx);
-            return auth_client_->revoke_session(revoke_req, call_ctx);
-        });
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::NON_IDEMPOTENT,
+                                          [this, &revoke_req, &request_id](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              return auth_client_->revoke_session(revoke_req, call_ctx);
+                                          });
 
     if (!rpc_res) {
         const auto& err = rpc_res.error();
@@ -345,14 +342,13 @@ void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Respo
     securecloud::auth::v1::GetUserRequest user_req;
     user_req.set_user_id(user_id);
 
-    auto rpc_res = retry_policy_->execute(
-        *deadline_manager_, start_tp, effective_deadline, service_timeout,
-        OperationIdempotency::SAFE_READONLY,
-        [this, &user_req, &request_id](std::chrono::milliseconds budget) {
-            grpc::ClientCallContext call_ctx(request_id, budget);
-            ActiveCallGuard guard(*this, request_id, call_ctx);
-            return auth_client_->get_user(user_req, call_ctx);
-        });
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::SAFE_READONLY,
+                                          [this, &user_req, &request_id](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              return auth_client_->get_user(user_req, call_ctx);
+                                          });
 
     if (!rpc_res) {
         const auto& err = rpc_res.error();
@@ -425,14 +421,13 @@ void AuthProxyHandler::handle_register_device(const httplib::Request& req, httpl
         }
     }
 
-    auto rpc_res = retry_policy_->execute(
-        *deadline_manager_, start_tp, effective_deadline, service_timeout,
-        OperationIdempotency::NON_IDEMPOTENT,
-        [this, &dev_req, &request_id](std::chrono::milliseconds budget) {
-            grpc::ClientCallContext call_ctx(request_id, budget);
-            ActiveCallGuard guard(*this, request_id, call_ctx);
-            return auth_client_->register_device(dev_req, call_ctx);
-        });
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::NON_IDEMPOTENT,
+                                          [this, &dev_req, &request_id](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              return auth_client_->register_device(dev_req, call_ctx);
+                                          });
 
     if (!rpc_res) {
         const auto& err = rpc_res.error();

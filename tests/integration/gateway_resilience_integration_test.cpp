@@ -140,13 +140,13 @@ class ControllableResilienceAuthService final : public securecloud::auth::v1::Au
         response->set_is_valid(true);
         response->set_user_id("user-resilience-1");
         response->set_device_id("dev-resilience-1");
-        response->set_authentication_level(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+        response->set_authentication_level(
+            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
         response->set_expires_at_epoch_ms(2000000000000LL);
         return ::grpc::Status::OK;
     }
 
-    ::grpc::Status GetUser(::grpc::ServerContext* context,
-                           const securecloud::auth::v1::GetUserRequest* request,
+    ::grpc::Status GetUser(::grpc::ServerContext* context, const securecloud::auth::v1::GetUserRequest* request,
                            securecloud::auth::v1::GetUserResponse* response) override {
         get_user_invocations.fetch_add(1);
 
@@ -340,7 +340,7 @@ class GatewayResilienceIntegrationTest : public ::testing::Test {
         health_manager_->set_ready(true);
 
         deadline_manager_ = std::make_shared<http::DeadlineManager>(cfg.deadlines);
-        
+
         // Fast retry policy for tests (initial 50ms, 2x, zero random jitter)
         http::RetryPolicyConfig retry_cfg;
         retry_cfg.max_attempts = 3;
@@ -469,8 +469,7 @@ TEST_F(GatewayResilienceIntegrationTest, TestCase3_ClientSuppliedDeadlineHeaderE
 
     auto client = create_client(std::chrono::milliseconds(3000));
     httplib::Headers headers = {
-        {"Authorization", "Bearer valid-token"},
-        {"X-Request-Timeout", "150ms"} // Client specifies tight 150ms budget
+        {"Authorization", "Bearer valid-token"}, {"X-Request-Timeout", "150ms"} // Client specifies tight 150ms budget
     };
 
     auto start_time = std::chrono::steady_clock::now();
@@ -585,10 +584,7 @@ TEST_F(GatewayResilienceIntegrationTest, TestCase8_RetryAbortsWhenRemainingDeadl
 
     auto client = create_client();
     // Budget is 120ms total. 80ms elapsed + 50ms backoff + 50ms min floor > 120ms -> aborts retry
-    httplib::Headers headers = {
-        {"Authorization", "Bearer valid-token"},
-        {"X-Request-Timeout", "120ms"}
-    };
+    httplib::Headers headers = {{"Authorization", "Bearer valid-token"}, {"X-Request-Timeout", "120ms"}};
 
     auto res = client->Get("/api/v1/users/me", headers);
     ASSERT_TRUE(res);
@@ -606,10 +602,7 @@ TEST_F(GatewayResilienceIntegrationTest, TestCase9_ClientCancellationAbortsDowns
     mock_auth_service_.wait_for_cancellation.store(true);
 
     const std::string cancel_req_id = "req-cancellation-resilience-999";
-    httplib::Headers headers = {
-        {"Authorization", "Bearer valid-token"},
-        {"X-Request-ID", cancel_req_id}
-    };
+    httplib::Headers headers = {{"Authorization", "Bearer valid-token"}, {"X-Request-ID", cancel_req_id}};
 
     // Run client request asynchronously
     auto future_res = std::async(std::launch::async, [this, headers]() {

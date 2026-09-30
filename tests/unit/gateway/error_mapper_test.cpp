@@ -152,7 +152,8 @@ TEST(ErrorMapperTest, WriteGrpcErrorMapsStatusAndWritesResponse) {
 }
 
 TEST(ErrorMapperTest, UnknownStatusCodeDefaultsTo500InternalError) {
-    const auto invalid_code = static_cast<::grpc::StatusCode>(9999);
+    const auto invalid_code =
+        static_cast<::grpc::StatusCode>(static_cast<int>(::grpc::StatusCode::UNAUTHENTICATED) + 1);
     EXPECT_EQ(ErrorMapper::grpc_to_http_status(invalid_code), 500);
     EXPECT_EQ(ErrorMapper::grpc_to_error_code(invalid_code), "INTERNAL_ERROR");
     EXPECT_EQ(ErrorMapper::grpc_to_problem_type(invalid_code), "https://securecloud.internal/errors/internal-error");

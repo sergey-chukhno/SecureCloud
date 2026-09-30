@@ -265,9 +265,9 @@ std::string_view ErrorMapper::http_status_to_default_title(int http_status) noex
     }
 }
 
-std::string ErrorMapper::format_problem_details(int http_status, std::string_view type_uri,
-                                                std::string_view title, std::string_view detail,
-                                                std::string_view error_code, std::string_view request_id) {
+std::string ErrorMapper::format_problem_details(int http_status, std::string_view type_uri, std::string_view title,
+                                                std::string_view detail, std::string_view error_code,
+                                                std::string_view request_id) {
     nlohmann::json root;
     root["type"] = std::string(type_uri.empty() ? http_status_to_default_type(http_status) : type_uri);
     root["title"] = std::string(title.empty() ? http_status_to_default_title(http_status) : title);
@@ -302,8 +302,8 @@ void ErrorMapper::write_error(httplib::Response& res, int http_status, const std
     res.set_content(format_error_json(code, message, request_id, http_status), k_content_type_json);
 }
 
-void ErrorMapper::write_grpc_error(httplib::Response& res, ::grpc::StatusCode status_code,
-                                   const std::string& message, const std::string& request_id) {
+void ErrorMapper::write_grpc_error(httplib::Response& res, ::grpc::StatusCode status_code, const std::string& message,
+                                   const std::string& request_id) {
     const int http_status = grpc_to_http_status(status_code);
     const auto error_code = grpc_to_error_code(status_code);
     const auto type_uri = grpc_to_problem_type(status_code);

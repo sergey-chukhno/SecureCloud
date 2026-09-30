@@ -54,9 +54,7 @@ class AuthProxyHandler {
         return deadline_manager_;
     }
 
-    [[nodiscard]] const std::shared_ptr<RetryPolicy>& retry_policy() const noexcept {
-        return retry_policy_;
-    }
+    [[nodiscard]] const std::shared_ptr<RetryPolicy>& retry_policy() const noexcept { return retry_policy_; }
 
     /// Cancels an in-flight request by correlation request_id, triggering TryCancel() on downstream gRPC.
     /// Returns true if an active call context was found and cancelled.

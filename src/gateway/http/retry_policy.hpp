@@ -20,19 +20,20 @@ namespace securecloud::gateway::http {
 enum class OperationIdempotency {
     SAFE_READONLY,       ///< Read-only query (e.g. GetUser), 100% safe to retry on transient failure.
     IDEMPOTENT_MUTATION, ///< Mutation with unique idempotency key or inherently idempotent state update.
-    NON_IDEMPOTENT       ///< Non-idempotent mutation (e.g. Authenticate, Refresh, Revoke, RegisterDevice). NEVER retried.
+    NON_IDEMPOTENT ///< Non-idempotent mutation (e.g. Authenticate, Refresh, Revoke, RegisterDevice). NEVER retried.
 };
 
 /**
  * @brief Configuration parameters for exponential backoff and jitter retry policy (ADR-009).
  */
 struct RetryPolicyConfig {
-    uint32_t max_attempts{3};            ///< Total attempts (1 initial + up to 2 retries)
-    uint32_t initial_backoff_ms{100};    ///< Initial backoff delay (100ms)
-    double backoff_multiplier{2.0};      ///< Exponential factor (2.0)
-    uint32_t max_backoff_ms{1000};       ///< Ceiling backoff limit (1000ms)
-    double jitter_ratio{0.25};           ///< Jitter window (+/-25%)
-    bool retry_on_deadline_exceeded{false}; ///< By default, do NOT retry deadline exceeded (prevents cascading overload)
+    uint32_t max_attempts{3};         ///< Total attempts (1 initial + up to 2 retries)
+    uint32_t initial_backoff_ms{100}; ///< Initial backoff delay (100ms)
+    double backoff_multiplier{2.0};   ///< Exponential factor (2.0)
+    uint32_t max_backoff_ms{1000};    ///< Ceiling backoff limit (1000ms)
+    double jitter_ratio{0.25};        ///< Jitter window (+/-25%)
+    bool retry_on_deadline_exceeded{
+        false}; ///< By default, do NOT retry deadline exceeded (prevents cascading overload)
 };
 
 /**
@@ -43,8 +44,7 @@ class RetryPolicy {
     using SleepFn = std::function<void(std::chrono::milliseconds)>;
     using RandomFn = std::function<double()>; // Returns a double in [-1.0, 1.0]
 
-    explicit RetryPolicy(RetryPolicyConfig config = {},
-                         SleepFn sleep_fn = nullptr,
+    explicit RetryPolicy(RetryPolicyConfig config = {}, SleepFn sleep_fn = nullptr,
                          RandomFn random_fn = nullptr) noexcept;
     virtual ~RetryPolicy() = default;
 
@@ -52,8 +52,7 @@ class RetryPolicy {
     [[nodiscard]] bool is_status_retryable(::grpc::StatusCode code) const noexcept;
 
     /// Checks if a retry should be attempted given the operation idempotency, status code, and attempt index.
-    [[nodiscard]] bool should_retry(OperationIdempotency idempotency,
-                                    ::grpc::StatusCode code,
+    [[nodiscard]] bool should_retry(OperationIdempotency idempotency, ::grpc::StatusCode code,
                                     uint32_t current_attempt) const noexcept;
 
     /// Computes exponential backoff with pseudo-random jitter for the given retry attempt (1-based index).
@@ -73,12 +72,10 @@ class RetryPolicy {
      * @tparam InvokerFn Callable with signature: Result<T>(std::chrono::milliseconds call_budget)
      */
     template <typename InvokerFn>
-    auto execute(const DeadlineManager& deadline_mgr,
-                 std::chrono::steady_clock::time_point start_tp,
-                 std::chrono::milliseconds effective_deadline,
-                 std::chrono::milliseconds service_timeout,
-                 OperationIdempotency idempotency,
-                 InvokerFn&& invoker_fn) const -> decltype(invoker_fn(std::chrono::milliseconds{})) {
+    auto execute(const DeadlineManager& deadline_mgr, std::chrono::steady_clock::time_point start_tp,
+                 std::chrono::milliseconds effective_deadline, std::chrono::milliseconds service_timeout,
+                 OperationIdempotency idempotency, InvokerFn&& invoker_fn) const
+        -> decltype(invoker_fn(std::chrono::milliseconds{})) {
         using ResultType = decltype(invoker_fn(std::chrono::milliseconds{}));
 
         uint32_t attempt = 0;

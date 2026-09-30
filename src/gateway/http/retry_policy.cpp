@@ -7,10 +7,7 @@
 namespace securecloud::gateway::http {
 
 RetryPolicy::RetryPolicy(RetryPolicyConfig config, SleepFn sleep_fn, RandomFn random_fn) noexcept
-    : config_(config),
-      sleep_fn_(std::move(sleep_fn)),
-      random_fn_(std::move(random_fn)),
-      rng_(std::random_device{}()) {}
+    : config_(config), sleep_fn_(std::move(sleep_fn)), random_fn_(std::move(random_fn)), rng_(std::random_device{}()) {}
 
 bool RetryPolicy::is_status_retryable(::grpc::StatusCode code) const noexcept {
     if (code == ::grpc::StatusCode::UNAVAILABLE) {
@@ -22,8 +19,7 @@ bool RetryPolicy::is_status_retryable(::grpc::StatusCode code) const noexcept {
     return false;
 }
 
-bool RetryPolicy::should_retry(OperationIdempotency idempotency,
-                               ::grpc::StatusCode code,
+bool RetryPolicy::should_retry(OperationIdempotency idempotency, ::grpc::StatusCode code,
                                uint32_t current_attempt) const noexcept {
     if (idempotency == OperationIdempotency::NON_IDEMPOTENT) {
         return false;

@@ -507,7 +507,7 @@ TEST_F(AuthProxyHandlerTest, GetMeRetriesOnTransientUnavailableAndSucceeds) {
     EXPECT_CALL(*mock_client_, get_user(_, _))
         .Times(2)
         .WillRepeatedly([&call_count](const securecloud::auth::v1::GetUserRequest& /*req*/,
-                                     securecloud::gateway::grpc::ClientCallContext& /*ctx*/) {
+                                      securecloud::gateway::grpc::ClientCallContext& /*ctx*/) {
             ++call_count;
             if (call_count == 1) {
                 return securecloud::gateway::grpc::Result<securecloud::auth::v1::GetUserResponse>(

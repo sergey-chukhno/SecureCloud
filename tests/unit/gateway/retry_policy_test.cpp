@@ -104,14 +104,13 @@ TEST(RetryPolicyTest, ExecuteSucceedsOnFirstAttempt) {
     const auto service_timeout = std::chrono::milliseconds(1000);
 
     int invocations = 0;
-    auto res = policy.execute(
-        deadline_mgr, start_tp, effective_deadline, service_timeout,
-        OperationIdempotency::SAFE_READONLY,
-        [&](std::chrono::milliseconds budget) -> grpc::Result<std::string> {
-            ++invocations;
-            EXPECT_GT(budget.count(), 0);
-            return grpc::Result<std::string>(std::string("hello"));
-        });
+    auto res =
+        policy.execute(deadline_mgr, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
+                       [&](std::chrono::milliseconds budget) -> grpc::Result<std::string> {
+                           ++invocations;
+                           EXPECT_GT(budget.count(), 0);
+                           return grpc::Result<std::string>(std::string("hello"));
+                       });
 
     ASSERT_TRUE(res.has_value());
     EXPECT_EQ(res.value(), "hello");
@@ -130,20 +129,19 @@ TEST(RetryPolicyTest, ExecuteRetriesOnTransientUnavailableAndSucceeds) {
     const auto service_timeout = std::chrono::milliseconds(1000);
 
     int invocations = 0;
-    auto res = policy.execute(
-        deadline_mgr, start_tp, effective_deadline, service_timeout,
-        OperationIdempotency::SAFE_READONLY,
-        [&](std::chrono::milliseconds /*budget*/) -> grpc::Result<std::string> {
-            ++invocations;
-            if (invocations == 1) {
-                return grpc::Result<std::string>(grpc::DependencyError{
-                    .kind = grpc::DependencyErrorKind::ServiceUnavailable,
-                    .message = "Transient connection reset",
-                    .grpc_code = ::grpc::StatusCode::UNAVAILABLE,
-                });
-            }
-            return grpc::Result<std::string>(std::string("success-after-retry"));
-        });
+    auto res =
+        policy.execute(deadline_mgr, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
+                       [&](std::chrono::milliseconds /*budget*/) -> grpc::Result<std::string> {
+                           ++invocations;
+                           if (invocations == 1) {
+                               return grpc::Result<std::string>(grpc::DependencyError{
+                                   .kind = grpc::DependencyErrorKind::ServiceUnavailable,
+                                   .message = "Transient connection reset",
+                                   .grpc_code = ::grpc::StatusCode::UNAVAILABLE,
+                               });
+                           }
+                           return grpc::Result<std::string>(std::string("success-after-retry"));
+                       });
 
     ASSERT_TRUE(res.has_value());
     EXPECT_EQ(res.value(), "success-after-retry");
@@ -164,21 +162,20 @@ TEST(RetryPolicyTest, ExecuteExhaustsMaxAttemptsAndReturnsLastError) {
     const auto service_timeout = std::chrono::milliseconds(1000);
 
     int invocations = 0;
-    auto res = policy.execute(
-        deadline_mgr, start_tp, effective_deadline, service_timeout,
-        OperationIdempotency::SAFE_READONLY,
-        [&](std::chrono::milliseconds /*budget*/) -> grpc::Result<std::string> {
-            ++invocations;
-            return grpc::Result<std::string>(grpc::DependencyError{
-                .kind = grpc::DependencyErrorKind::ServiceUnavailable,
-                .message = "Persistent outage",
-                .grpc_code = ::grpc::StatusCode::UNAVAILABLE,
-            });
-        });
+    auto res =
+        policy.execute(deadline_mgr, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
+                       [&](std::chrono::milliseconds /*budget*/) -> grpc::Result<std::string> {
+                           ++invocations;
+                           return grpc::Result<std::string>(grpc::DependencyError{
+                               .kind = grpc::DependencyErrorKind::ServiceUnavailable,
+                               .message = "Persistent outage",
+                               .grpc_code = ::grpc::StatusCode::UNAVAILABLE,
+                           });
+                       });
 
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error().grpc_code, ::grpc::StatusCode::UNAVAILABLE);
-    EXPECT_EQ(invocations, 3); // Max attempts is 3
+    EXPECT_EQ(invocations, 3);             // Max attempts is 3
     EXPECT_EQ(slept_durations.size(), 2u); // Slept twice (before attempt 2 and attempt 3)
 }
 
@@ -194,17 +191,16 @@ TEST(RetryPolicyTest, ExecuteNonIdempotentFailsFastWithoutRetrying) {
     const auto service_timeout = std::chrono::milliseconds(1000);
 
     int invocations = 0;
-    auto res = policy.execute(
-        deadline_mgr, start_tp, effective_deadline, service_timeout,
-        OperationIdempotency::NON_IDEMPOTENT,
-        [&](std::chrono::milliseconds /*budget*/) -> grpc::Result<std::string> {
-            ++invocations;
-            return grpc::Result<std::string>(grpc::DependencyError{
-                .kind = grpc::DependencyErrorKind::ServiceUnavailable,
-                .message = "Unavailable during mutation",
-                .grpc_code = ::grpc::StatusCode::UNAVAILABLE,
-            });
-        });
+    auto res = policy.execute(deadline_mgr, start_tp, effective_deadline, service_timeout,
+                              OperationIdempotency::NON_IDEMPOTENT,
+                              [&](std::chrono::milliseconds /*budget*/) -> grpc::Result<std::string> {
+                                  ++invocations;
+                                  return grpc::Result<std::string>(grpc::DependencyError{
+                                      .kind = grpc::DependencyErrorKind::ServiceUnavailable,
+                                      .message = "Unavailable during mutation",
+                                      .grpc_code = ::grpc::StatusCode::UNAVAILABLE,
+                                  });
+                              });
 
     ASSERT_TRUE(res.has_error());
     EXPECT_EQ(res.error().grpc_code, ::grpc::StatusCode::UNAVAILABLE);
@@ -235,17 +231,16 @@ TEST(RetryPolicyTest, ExecuteAbortsRetryWhenDeadlineBudgetIsExhausted) {
     const auto service_timeout = std::chrono::milliseconds(500);
 
     int invocations = 0;
-    auto res = policy.execute(
-        deadline_mgr, start_tp, effective_deadline, service_timeout,
-        OperationIdempotency::SAFE_READONLY,
-        [&](std::chrono::milliseconds /*budget*/) -> grpc::Result<std::string> {
-            ++invocations;
-            return grpc::Result<std::string>(grpc::DependencyError{
-                .kind = grpc::DependencyErrorKind::ServiceUnavailable,
-                .message = "Unavailable near deadline expiration",
-                .grpc_code = ::grpc::StatusCode::UNAVAILABLE,
-            });
-        });
+    auto res =
+        policy.execute(deadline_mgr, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
+                       [&](std::chrono::milliseconds /*budget*/) -> grpc::Result<std::string> {
+                           ++invocations;
+                           return grpc::Result<std::string>(grpc::DependencyError{
+                               .kind = grpc::DependencyErrorKind::ServiceUnavailable,
+                               .message = "Unavailable near deadline expiration",
+                               .grpc_code = ::grpc::StatusCode::UNAVAILABLE,
+                           });
+                       });
 
     ASSERT_TRUE(res.has_error());
     // Only 1 attempt because after attempt 1 elapsed time (450ms) + backoff (100ms) + min floor (50ms) > 500ms
