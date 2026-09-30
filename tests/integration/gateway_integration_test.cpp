@@ -81,6 +81,17 @@ int run_health_probe_cli(const std::vector<std::string>& extra_args) {
         }
     }
 
+    // Derive the probe binary's directory so Windows DLL search finds co-located
+    // runtime DLLs (grpc, openssl, etc.) when launched outside the MSYS2 shell.
+    std::string probe_dir = bin_path;
+    auto last_sep = probe_dir.find_last_of('\\');
+    if (last_sep != std::string::npos) {
+        probe_dir = probe_dir.substr(0, last_sep);
+    }
+    int wide_dir_len = MultiByteToWideChar(CP_UTF8, 0, probe_dir.c_str(), -1, nullptr, 0);
+    std::vector<wchar_t> wide_dir(wide_dir_len);
+    MultiByteToWideChar(CP_UTF8, 0, probe_dir.c_str(), -1, wide_dir.data(), wide_dir_len);
+
     std::string cmdline = "\"" + bin_path + "\"";
     for (const auto& arg : extra_args) {
         cmdline += " \"";
@@ -105,7 +116,8 @@ int run_health_probe_cli(const std::vector<std::string>& extra_args) {
     std::vector<wchar_t> wide_cmd(wide_len);
     MultiByteToWideChar(CP_UTF8, 0, cmdline.c_str(), -1, wide_cmd.data(), wide_len);
 
-    BOOL success = CreateProcessW(nullptr, wide_cmd.data(), nullptr, nullptr, TRUE, 0, nullptr, nullptr, &si, &pi);
+    BOOL success =
+        CreateProcessW(nullptr, wide_cmd.data(), nullptr, nullptr, TRUE, 0, nullptr, wide_dir.data(), &si, &pi);
 
     if (!success) {
         if (nul_handle != INVALID_HANDLE_VALUE) {
