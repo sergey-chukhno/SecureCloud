@@ -383,6 +383,61 @@ void load_limits_config(GatewayConfig& config, const common::configuration::Conf
     }
 }
 
+void load_deadlines_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                           common::configuration::ValidationResult& out_errors) {
+    constexpr uint32_t k_min_timeout_val = 1;
+    constexpr uint32_t k_max_upper_bound_timeout_val = 300000;
+
+    auto max_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_MAX_MS");
+    if (max_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_MAX_MS", max_to.value(), config.deadlines.max_request_deadline_ms,
+                     out_errors, k_min_timeout_val, k_max_upper_bound_timeout_val);
+    } else {
+        config.deadlines.max_request_deadline_ms = 10000;
+    }
+
+    auto min_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_MIN_MS");
+    if (min_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_MIN_MS", min_to.value(), config.deadlines.min_request_deadline_ms,
+                     out_errors, k_min_timeout_val, config.deadlines.max_request_deadline_ms);
+    } else {
+        config.deadlines.min_request_deadline_ms = 50;
+    }
+
+    auto auth_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_AUTH_MS");
+    if (auth_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_AUTH_MS", auth_to.value(), config.deadlines.auth_timeout_ms,
+                     out_errors, k_min_timeout_val, config.deadlines.max_request_deadline_ms);
+    } else {
+        config.deadlines.auth_timeout_ms = 1000;
+    }
+
+    auto msg_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_MESSAGING_MS");
+    if (msg_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_MESSAGING_MS", msg_to.value(), config.deadlines.messaging_timeout_ms,
+                     out_errors, k_min_timeout_val, config.deadlines.max_request_deadline_ms);
+    } else {
+        config.deadlines.messaging_timeout_ms = 2000;
+    }
+
+    auto files_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_FILES_MS");
+    if (files_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_FILES_MS", files_to.value(),
+                     config.deadlines.files_metadata_timeout_ms, out_errors, k_min_timeout_val,
+                     config.deadlines.max_request_deadline_ms);
+    } else {
+        config.deadlines.files_metadata_timeout_ms = 2000;
+    }
+
+    auto audit_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_AUDIT_MS");
+    if (audit_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_AUDIT_MS", audit_to.value(), config.deadlines.audit_timeout_ms,
+                     out_errors, k_min_timeout_val, config.deadlines.max_request_deadline_ms);
+    } else {
+        config.deadlines.audit_timeout_ms = 1000;
+    }
+}
+
 void load_downstream_endpoints(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
                                common::configuration::ValidationResult& out_errors) {
     parse_endpoint("SECURECLOUD_GATEWAY_AUTH_ENDPOINT", source.get("SECURECLOUD_GATEWAY_AUTH_ENDPOINT"),
@@ -438,6 +493,7 @@ GatewayConfig GatewayConfig::load(const common::configuration::ConfigurationSour
     load_http_config(config, source, out_errors);
     load_tls_config(config, source, out_errors, validate_file_paths);
     load_limits_config(config, source, out_errors);
+    load_deadlines_config(config, source, out_errors);
     load_downstream_endpoints(config, source, out_errors);
 
     config.peer_probe_target = source.get("SECURECLOUD_GATEWAY_PEER_PROBE_TARGET")

@@ -416,6 +416,52 @@ target_link_libraries(securecloud_authorization_middleware_test PRIVATE
 
 gtest_discover_tests(securecloud_authorization_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Error Mapper & RFC 7807 Problem Details Test (GW-008-T01)
+add_executable(securecloud_gateway_error_mapper_test
+    gateway/error_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_error_mapper_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_error_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Deadline Manager & Strict Budget Propagation Test (GW-008-T02)
+add_executable(securecloud_gateway_deadline_manager_test
+    gateway/deadline_manager_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_deadline_manager_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_config
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_deadline_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Retry Policy Engine & Idempotency Evaluator Test (GW-008-T03)
+add_executable(securecloud_gateway_retry_policy_test
+    gateway/retry_policy_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_retry_policy_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_config
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_retry_policy_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Downstream gRPC Channel Manager Test (GW-001-T05)
 add_executable(securecloud_channel_manager_test
     gateway/channel_manager_test.cpp

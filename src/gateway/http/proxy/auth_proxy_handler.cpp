@@ -15,13 +15,65 @@ namespace {
 
 constexpr const char* k_content_type_json = "application/json";
 
+class ActiveCallGuard {
+  public:
+    ActiveCallGuard(AuthProxyHandler& handler, const std::string& request_id, grpc::ClientCallContext& ctx)
+        : handler_(handler), request_id_(request_id) {
+        if (!request_id_.empty()) {
+            handler_.register_active_call(request_id_, &ctx);
+        }
+    }
+    ~ActiveCallGuard() {
+        if (!request_id_.empty()) {
+            handler_.unregister_active_call(request_id_);
+        }
+    }
+
+  private:
+    AuthProxyHandler& handler_;
+    std::string request_id_;
+};
+
 } // namespace
 
-AuthProxyHandler::AuthProxyHandler(std::shared_ptr<grpc::IAuthClient> auth_client)
-    : auth_client_(std::move(auth_client)) {
+AuthProxyHandler::AuthProxyHandler(std::shared_ptr<grpc::IAuthClient> auth_client,
+                                   std::shared_ptr<DeadlineManager> deadline_manager,
+                                   std::shared_ptr<RetryPolicy> retry_policy)
+    : auth_client_(std::move(auth_client)),
+      deadline_manager_(deadline_manager ? std::move(deadline_manager) : std::make_shared<DeadlineManager>()),
+      retry_policy_(retry_policy ? std::move(retry_policy) : std::make_shared<RetryPolicy>()) {
     if (!auth_client_) {
         throw std::invalid_argument("AuthProxyHandler: auth_client must not be null");
     }
+}
+
+void AuthProxyHandler::register_active_call(const std::string& request_id, grpc::ClientCallContext* ctx) {
+    if (request_id.empty() || !ctx) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(active_calls_mutex_);
+    active_calls_[request_id] = ctx;
+}
+
+void AuthProxyHandler::unregister_active_call(const std::string& request_id) {
+    if (request_id.empty()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(active_calls_mutex_);
+    active_calls_.erase(request_id);
+}
+
+bool AuthProxyHandler::cancel_request(const std::string& request_id) {
+    if (request_id.empty()) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(active_calls_mutex_);
+    auto it = active_calls_.find(request_id);
+    if (it != active_calls_.end() && it->second != nullptr) {
+        it->second->cancel();
+        return true;
+    }
+    return false;
 }
 
 void AuthProxyHandler::register_routes(Router& router) {
@@ -57,7 +109,16 @@ std::string AuthProxyHandler::extract_request_id(const httplib::Request& req) {
 }
 
 void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Response& res) {
+    const auto start_tp = deadline_manager_->now();
     const std::string request_id = extract_request_id(req);
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
 
     nlohmann::json body;
     try {
@@ -99,8 +160,14 @@ void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Respon
         auth_req.set_device_id(body["device_id"].get<std::string>());
     }
 
-    grpc::ClientCallContext call_ctx(request_id, grpc::ClientCallContext::k_default_timeout);
-    auto rpc_res = auth_client_->authenticate(auth_req, call_ctx);
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::NON_IDEMPOTENT,
+                                          [this, &auth_req, &request_id](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              return auth_client_->authenticate(auth_req, call_ctx);
+                                          });
+
     if (!rpc_res) {
         const auto& err = rpc_res.error();
         int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
@@ -127,7 +194,16 @@ void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Respon
 }
 
 void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Response& res) {
+    const auto start_tp = deadline_manager_->now();
     const std::string request_id = extract_request_id(req);
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
 
     nlohmann::json body;
     try {
@@ -150,8 +226,14 @@ void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Resp
         refresh_req.set_device_id(body["device_id"].get<std::string>());
     }
 
-    grpc::ClientCallContext call_ctx(request_id, grpc::ClientCallContext::k_default_timeout);
-    auto rpc_res = auth_client_->refresh_session(refresh_req, call_ctx);
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::NON_IDEMPOTENT,
+                                          [this, &refresh_req, &request_id](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              return auth_client_->refresh_session(refresh_req, call_ctx);
+                                          });
+
     if (!rpc_res) {
         const auto& err = rpc_res.error();
         int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
@@ -172,7 +254,16 @@ void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Resp
 
 void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Response& res,
                                      const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
     const std::string request_id = extract_request_id(req);
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
 
     std::string session_id = ctx.session_id();
     std::string reason = "User logout";
@@ -208,8 +299,14 @@ void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Respo
     revoke_req.set_session_id(session_id);
     revoke_req.set_reason(reason);
 
-    grpc::ClientCallContext call_ctx(request_id, grpc::ClientCallContext::k_default_timeout);
-    auto rpc_res = auth_client_->revoke_session(revoke_req, call_ctx);
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::NON_IDEMPOTENT,
+                                          [this, &revoke_req, &request_id](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              return auth_client_->revoke_session(revoke_req, call_ctx);
+                                          });
+
     if (!rpc_res) {
         const auto& err = rpc_res.error();
         int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
@@ -225,7 +322,16 @@ void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Respo
 
 void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Response& res,
                                      const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
     const std::string request_id = extract_request_id(req);
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
 
     const std::string& user_id = ctx.user_id();
     if (user_id.empty()) {
@@ -236,8 +342,14 @@ void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Respo
     securecloud::auth::v1::GetUserRequest user_req;
     user_req.set_user_id(user_id);
 
-    grpc::ClientCallContext call_ctx(request_id, grpc::ClientCallContext::k_default_timeout);
-    auto rpc_res = auth_client_->get_user(user_req, call_ctx);
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::SAFE_READONLY,
+                                          [this, &user_req, &request_id](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              return auth_client_->get_user(user_req, call_ctx);
+                                          });
+
     if (!rpc_res) {
         const auto& err = rpc_res.error();
         int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
@@ -260,7 +372,16 @@ void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Respo
 
 void AuthProxyHandler::handle_register_device(const httplib::Request& req, httplib::Response& res,
                                               const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
     const std::string request_id = extract_request_id(req);
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
 
     if (ctx.user_id().empty()) {
         ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
@@ -300,8 +421,14 @@ void AuthProxyHandler::handle_register_device(const httplib::Request& req, httpl
         }
     }
 
-    grpc::ClientCallContext call_ctx(request_id, grpc::ClientCallContext::k_default_timeout);
-    auto rpc_res = auth_client_->register_device(dev_req, call_ctx);
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::NON_IDEMPOTENT,
+                                          [this, &dev_req, &request_id](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              return auth_client_->register_device(dev_req, call_ctx);
+                                          });
+
     if (!rpc_res) {
         const auto& err = rpc_res.error();
         int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);

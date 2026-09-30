@@ -78,6 +78,7 @@ class ControllableAuthService final : public securecloud::auth::v1::AuthService:
   public:
     std::atomic<bool> is_valid{true};
     std::atomic<bool> force_auth_error{false};
+    std::atomic<bool> force_unavailable{false};
     std::atomic<securecloud::auth::v1::AuthenticationLevel> auth_level{
         securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED};
 
@@ -93,6 +94,7 @@ class ControllableAuthService final : public securecloud::auth::v1::AuthService:
     void reset_state() {
         is_valid.store(true);
         force_auth_error.store(false);
+        force_unavailable.store(false);
         auth_level.store(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
         authenticate_invocations.store(0);
         validate_invocations.store(0);
@@ -107,6 +109,9 @@ class ControllableAuthService final : public securecloud::auth::v1::AuthService:
                                 const securecloud::auth::v1::AuthenticateRequest* request,
                                 securecloud::auth::v1::AuthenticateResponse* response) override {
         authenticate_invocations.fetch_add(1);
+        if (force_unavailable.load()) {
+            return ::grpc::Status(::grpc::StatusCode::UNAVAILABLE, "Auth service unavailable");
+        }
         if (force_auth_error.load()) {
             return ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED, "Invalid credentials");
         }
@@ -561,8 +566,8 @@ TEST_F(GatewayRoutingIntegrationTest, LiveHealthLiveAndReady) {
 }
 
 TEST_F(GatewayRoutingIntegrationTest, LiveUpstreamAuthOutageReturns503) {
-    // Intentionally shut down backend auth service
-    stop_auth_server();
+    // Simulate backend auth service outage
+    mock_auth_service_.force_unavailable.store(true);
 
     auto client = create_client();
 
