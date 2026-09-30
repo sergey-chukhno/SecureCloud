@@ -224,6 +224,36 @@ endif()
 
 gtest_discover_tests(securecloud_gateway_authorization_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Perimeter Resilience, Deadline & Cancellation Integration Test Suite (GW-008-T04)
+add_executable(securecloud_gateway_resilience_integration_test
+    gateway_resilience_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_resilience_integration_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_tls
+    securecloud::gateway_config
+    securecloud_proto
+    securecloud::common
+    securecloud::httplib
+    securecloud::json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_gateway_resilience_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_gateway_resilience_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_gateway_resilience_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Files Service Integration Test Suite (FILES-001-T06)
 add_executable(securecloud_files_integration_test
     files_integration_test.cpp

@@ -15,6 +15,25 @@ namespace {
 
 constexpr const char* k_content_type_json = "application/json";
 
+class ActiveCallGuard {
+  public:
+    ActiveCallGuard(AuthProxyHandler& handler, const std::string& request_id, grpc::ClientCallContext& ctx)
+        : handler_(handler), request_id_(request_id) {
+        if (!request_id_.empty()) {
+            handler_.register_active_call(request_id_, &ctx);
+        }
+    }
+    ~ActiveCallGuard() {
+        if (!request_id_.empty()) {
+            handler_.unregister_active_call(request_id_);
+        }
+    }
+
+  private:
+    AuthProxyHandler& handler_;
+    std::string request_id_;
+};
+
 } // namespace
 
 AuthProxyHandler::AuthProxyHandler(std::shared_ptr<grpc::IAuthClient> auth_client,
@@ -26,6 +45,35 @@ AuthProxyHandler::AuthProxyHandler(std::shared_ptr<grpc::IAuthClient> auth_clien
     if (!auth_client_) {
         throw std::invalid_argument("AuthProxyHandler: auth_client must not be null");
     }
+}
+
+void AuthProxyHandler::register_active_call(const std::string& request_id, grpc::ClientCallContext* ctx) {
+    if (request_id.empty() || !ctx) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(active_calls_mutex_);
+    active_calls_[request_id] = ctx;
+}
+
+void AuthProxyHandler::unregister_active_call(const std::string& request_id) {
+    if (request_id.empty()) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(active_calls_mutex_);
+    active_calls_.erase(request_id);
+}
+
+bool AuthProxyHandler::cancel_request(const std::string& request_id) {
+    if (request_id.empty()) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(active_calls_mutex_);
+    auto it = active_calls_.find(request_id);
+    if (it != active_calls_.end() && it->second != nullptr) {
+        it->second->cancel();
+        return true;
+    }
+    return false;
 }
 
 void AuthProxyHandler::register_routes(Router& router) {
@@ -117,6 +165,7 @@ void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Respon
         OperationIdempotency::NON_IDEMPOTENT,
         [this, &auth_req, &request_id](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
             return auth_client_->authenticate(auth_req, call_ctx);
         });
 
@@ -183,6 +232,7 @@ void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Resp
         OperationIdempotency::NON_IDEMPOTENT,
         [this, &refresh_req, &request_id](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
             return auth_client_->refresh_session(refresh_req, call_ctx);
         });
 
@@ -256,6 +306,7 @@ void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Respo
         OperationIdempotency::NON_IDEMPOTENT,
         [this, &revoke_req, &request_id](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
             return auth_client_->revoke_session(revoke_req, call_ctx);
         });
 
@@ -299,6 +350,7 @@ void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Respo
         OperationIdempotency::SAFE_READONLY,
         [this, &user_req, &request_id](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
             return auth_client_->get_user(user_req, call_ctx);
         });
 
@@ -378,6 +430,7 @@ void AuthProxyHandler::handle_register_device(const httplib::Request& req, httpl
         OperationIdempotency::NON_IDEMPOTENT,
         [this, &dev_req, &request_id](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
             return auth_client_->register_device(dev_req, call_ctx);
         });
 
