@@ -11,6 +11,7 @@
 #include "http/middleware/resource_limiter_middleware.hpp"
 #include "http/proxy/auth_proxy_handler.hpp"
 #include "http/resilience/bulkhead_manager.hpp"
+#include "http/resilience/circuit_breaker.hpp"
 #include "http/resilience/deadline_manager.hpp"
 #include "http/resilience/retry_policy.hpp"
 #include "http/routing/gateway_route_registrar.hpp"
@@ -166,8 +167,10 @@ int run_service() {
     auto deadline_manager = std::make_shared<securecloud::gateway::http::DeadlineManager>(config.deadlines);
     auto retry_policy = std::make_shared<securecloud::gateway::http::RetryPolicy>();
     auto bulkhead_manager = std::make_shared<securecloud::gateway::http::BulkheadManager>(config.bulkhead);
-    auto auth_proxy = std::make_shared<securecloud::gateway::http::AuthProxyHandler>(auth_client, deadline_manager,
-                                                                                     retry_policy, bulkhead_manager);
+    auto circuit_breaker_registry =
+        std::make_shared<securecloud::gateway::http::CircuitBreakerRegistry>(config.circuit_breaker);
+    auto auth_proxy = std::make_shared<securecloud::gateway::http::AuthProxyHandler>(
+        auth_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("auth"));
     securecloud::gateway::http::GatewayRouteRegistrar route_registrar(auth_proxy, health_manager, bulkhead_manager);
     route_registrar.register_all_routes(router);
 

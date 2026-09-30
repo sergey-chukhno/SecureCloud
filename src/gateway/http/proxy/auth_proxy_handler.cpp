@@ -39,11 +39,13 @@ class ActiveCallGuard {
 AuthProxyHandler::AuthProxyHandler(std::shared_ptr<grpc::IAuthClient> auth_client,
                                    std::shared_ptr<DeadlineManager> deadline_manager,
                                    std::shared_ptr<RetryPolicy> retry_policy,
-                                   std::shared_ptr<BulkheadManager> bulkhead_manager)
+                                   std::shared_ptr<BulkheadManager> bulkhead_manager,
+                                   std::shared_ptr<CircuitBreaker> circuit_breaker)
     : auth_client_(std::move(auth_client)),
       deadline_manager_(deadline_manager ? std::move(deadline_manager) : std::make_shared<DeadlineManager>()),
       retry_policy_(retry_policy ? std::move(retry_policy) : std::make_shared<RetryPolicy>()),
-      bulkhead_manager_(bulkhead_manager ? std::move(bulkhead_manager) : std::make_shared<BulkheadManager>()) {
+      bulkhead_manager_(bulkhead_manager ? std::move(bulkhead_manager) : std::make_shared<BulkheadManager>()),
+      circuit_breaker_(std::move(circuit_breaker)) {
     if (!auth_client_) {
         throw std::invalid_argument("AuthProxyHandler: auth_client must not be null");
     }
@@ -120,6 +122,11 @@ void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Respon
         return;
     }
 
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
+        return;
+    }
+
     const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
     const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
 
@@ -177,11 +184,18 @@ void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Respon
                                           });
 
     if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
         const auto& err = rpc_res.error();
         int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
         std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
         ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
         return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
     }
 
     const auto& val = rpc_res.value();
@@ -208,6 +222,11 @@ void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Resp
     auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
     if (!bulkhead_lease) {
         BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
         return;
     }
 
@@ -249,11 +268,18 @@ void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Resp
                                           });
 
     if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
         const auto& err = rpc_res.error();
         int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
         std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
         ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
         return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
     }
 
     const auto& val = rpc_res.value();
@@ -274,6 +300,11 @@ void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Respo
     auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
     if (!bulkhead_lease) {
         BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
         return;
     }
 
@@ -328,11 +359,18 @@ void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Respo
                                           });
 
     if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
         const auto& err = rpc_res.error();
         int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
         std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
         ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
         return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
     }
 
     nlohmann::json res_json = {{"revoked", rpc_res.value().revoked()}};
@@ -348,6 +386,11 @@ void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Respo
     auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
     if (!bulkhead_lease) {
         BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
         return;
     }
 
@@ -377,11 +420,18 @@ void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Respo
                                           });
 
     if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
         const auto& err = rpc_res.error();
         int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
         std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
         ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
         return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
     }
 
     const auto& user = rpc_res.value().user();
@@ -404,6 +454,11 @@ void AuthProxyHandler::handle_register_device(const httplib::Request& req, httpl
     auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
     if (!bulkhead_lease) {
         BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
         return;
     }
 
@@ -462,11 +517,18 @@ void AuthProxyHandler::handle_register_device(const httplib::Request& req, httpl
                                           });
 
     if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
         const auto& err = rpc_res.error();
         int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
         std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
         ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
         return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
     }
 
     const auto& val = rpc_res.value();

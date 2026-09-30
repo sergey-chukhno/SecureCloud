@@ -59,6 +59,7 @@ add_library(securecloud_gateway_http STATIC
     http/resilience/deadline_manager.cpp
     http/resilience/retry_policy.cpp
     http/resilience/bulkhead_manager.cpp
+    http/resilience/circuit_breaker.cpp
     http/routing/router.cpp
     http/routing/gateway_route_registrar.cpp
     http/middleware/middleware.cpp

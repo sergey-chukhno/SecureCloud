@@ -546,6 +546,47 @@ void load_rate_limiting_config(GatewayConfig& config, const common::configuratio
     }
 }
 
+void load_circuit_breaker_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                                 common::configuration::ValidationResult& out_errors) {
+    auto enabled_str = source.get("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_ENABLED");
+    if (enabled_str.has_value()) {
+        if (enabled_str.value() == "true" || enabled_str.value() == "1") {
+            config.circuit_breaker.enabled = true;
+        } else if (enabled_str.value() == "false" || enabled_str.value() == "0") {
+            config.circuit_breaker.enabled = false;
+        } else {
+            out_errors.add_error("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_ENABLED",
+                                 "Invalid boolean value: " + enabled_str.value());
+        }
+    } else {
+        config.circuit_breaker.enabled = true;
+    }
+
+    auto threshold_str = source.get("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_FAILURE_THRESHOLD");
+    if (threshold_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", threshold_str.value(),
+                     config.circuit_breaker.failure_threshold, out_errors, 1, 100);
+    } else {
+        config.circuit_breaker.failure_threshold = 5;
+    }
+
+    auto timeout_str = source.get("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_RECOVERY_TIMEOUT_MS");
+    if (timeout_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_RECOVERY_TIMEOUT_MS", timeout_str.value(),
+                     config.circuit_breaker.recovery_timeout_ms, out_errors, 100, 300000);
+    } else {
+        config.circuit_breaker.recovery_timeout_ms = 5000;
+    }
+
+    auto probes_str = source.get("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_HALF_OPEN_PROBES");
+    if (probes_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_HALF_OPEN_PROBES", probes_str.value(),
+                     config.circuit_breaker.half_open_probe_count, out_errors, 1, 10);
+    } else {
+        config.circuit_breaker.half_open_probe_count = 1;
+    }
+}
+
 void load_downstream_endpoints(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
                                common::configuration::ValidationResult& out_errors) {
     parse_endpoint("SECURECLOUD_GATEWAY_AUTH_ENDPOINT", source.get("SECURECLOUD_GATEWAY_AUTH_ENDPOINT"),
@@ -604,6 +645,7 @@ GatewayConfig GatewayConfig::load(const common::configuration::ConfigurationSour
     load_deadlines_config(config, source, out_errors);
     load_bulkhead_config(config, source, out_errors);
     load_rate_limiting_config(config, source, out_errors);
+    load_circuit_breaker_config(config, source, out_errors);
     load_downstream_endpoints(config, source, out_errors);
 
     config.peer_probe_target = source.get("SECURECLOUD_GATEWAY_PEER_PROBE_TARGET")

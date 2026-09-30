@@ -58,6 +58,14 @@ struct GatewayRateLimitingConfig {
     std::chrono::seconds client_ttl{300};
 };
 
+/// Typed configuration model for Gateway downstream circuit breaking (ADR-009, GW-009-T03).
+struct GatewayCircuitBreakerConfig {
+    bool enabled{true};
+    uint32_t failure_threshold{5};      // 5 consecutive failures trips breaker
+    uint32_t recovery_timeout_ms{5000}; // 5s recovery window before HALF_OPEN
+    uint32_t half_open_probe_count{1};  // 1 probe request in HALF_OPEN
+};
+
 /// Typed configuration model for Gateway service (GW-001, GW-002).
 /// Holds HTTP server runtime settings, TLS parameters, resource limits, downstream microservice endpoints,
 /// and common gRPC/mTLS service parameters.
@@ -84,6 +92,9 @@ struct GatewayConfig {
 
     // Token-Bucket Rate Limiting (GW-009-T02)
     GatewayRateLimitingConfig rate_limiting;
+
+    // Downstream Circuit Breaker Engine (GW-009-T03)
+    GatewayCircuitBreakerConfig circuit_breaker;
 
     // Downstream Microservice Endpoints
     std::string auth_endpoint{"auth:50052"};

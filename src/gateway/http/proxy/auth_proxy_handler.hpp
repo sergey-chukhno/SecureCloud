@@ -3,6 +3,7 @@
 #include "grpc/auth_client_interface.hpp"
 #include "http/auth/authenticated_context.hpp"
 #include "http/resilience/bulkhead_manager.hpp"
+#include "http/resilience/circuit_breaker.hpp"
 #include "http/resilience/deadline_manager.hpp"
 #include "http/resilience/retry_policy.hpp"
 
@@ -34,7 +35,8 @@ class AuthProxyHandler {
     explicit AuthProxyHandler(std::shared_ptr<grpc::IAuthClient> auth_client,
                               std::shared_ptr<DeadlineManager> deadline_manager = nullptr,
                               std::shared_ptr<RetryPolicy> retry_policy = nullptr,
-                              std::shared_ptr<BulkheadManager> bulkhead_manager = nullptr);
+                              std::shared_ptr<BulkheadManager> bulkhead_manager = nullptr,
+                              std::shared_ptr<CircuitBreaker> circuit_breaker = nullptr);
     ~AuthProxyHandler() = default;
 
     AuthProxyHandler(const AuthProxyHandler&) = delete;
@@ -62,6 +64,8 @@ class AuthProxyHandler {
         return bulkhead_manager_;
     }
 
+    [[nodiscard]] const std::shared_ptr<CircuitBreaker>& circuit_breaker() const noexcept { return circuit_breaker_; }
+
     /// Cancels an in-flight request by correlation request_id, triggering TryCancel() on downstream gRPC.
     /// Returns true if an active call context was found and cancelled.
     bool cancel_request(const std::string& request_id);
@@ -76,6 +80,7 @@ class AuthProxyHandler {
     std::shared_ptr<DeadlineManager> deadline_manager_;
     std::shared_ptr<RetryPolicy> retry_policy_;
     std::shared_ptr<BulkheadManager> bulkhead_manager_;
+    std::shared_ptr<CircuitBreaker> circuit_breaker_;
 
     mutable std::mutex active_calls_mutex_;
     std::unordered_map<std::string, grpc::ClientCallContext*> active_calls_;
