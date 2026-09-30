@@ -27,10 +27,6 @@ std::string RateLimiterMiddleware::resolve_client_key(const httplib::Request& re
         }
     }
 
-    if (!req.remote_addr.empty()) {
-        return "ip:" + req.remote_addr;
-    }
-
     if (req.has_header("X-Forwarded-For")) {
         auto xff = req.get_header_value("X-Forwarded-For");
         auto comma_pos = xff.find(',');
@@ -40,6 +36,10 @@ std::string RateLimiterMiddleware::resolve_client_key(const httplib::Request& re
         if (start != std::string::npos && end != std::string::npos) {
             return "ip:" + first_ip.substr(start, end - start + 1);
         }
+    }
+
+    if (!req.remote_addr.empty()) {
+        return "ip:" + req.remote_addr;
     }
 
     return "ip:anonymous";
