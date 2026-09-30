@@ -57,6 +57,7 @@ add_library(securecloud_gateway_http STATIC
     http/http_redirect_server.cpp
     http/error_mapper.cpp
     http/deadline_manager.cpp
+    http/retry_policy.cpp
     http/router.cpp
     http/middleware/middleware.cpp
     http/middleware/request_id_middleware.cpp

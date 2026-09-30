@@ -494,6 +494,74 @@ TEST_F(AuthProxyHandlerTest, FastFailOnExpiredBudgetReturns504WithoutRpcCall) {
     EXPECT_EQ(body["request_id"], "req-expired-1");
 }
 
+TEST_F(AuthProxyHandlerTest, GetMeRetriesOnTransientUnavailableAndSucceeds) {
+    auto retry_policy = std::make_shared<RetryPolicy>(
+        RetryPolicyConfig{}, [](std::chrono::milliseconds /*delay*/) {}, [] { return 0.0; });
+    AuthProxyHandler handler(mock_client_, nullptr, retry_policy);
+
+    AuthenticatedContext ctx("user-uuid-1", "dev-1", "sess-1",
+                             securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {},
+                             2000000000000LL);
+
+    int call_count = 0;
+    EXPECT_CALL(*mock_client_, get_user(_, _))
+        .Times(2)
+        .WillRepeatedly([&call_count](const securecloud::auth::v1::GetUserRequest& /*req*/,
+                                     securecloud::gateway::grpc::ClientCallContext& /*ctx*/) {
+            ++call_count;
+            if (call_count == 1) {
+                return securecloud::gateway::grpc::Result<securecloud::auth::v1::GetUserResponse>(
+                    securecloud::gateway::grpc::DependencyError{
+                        .kind = securecloud::gateway::grpc::DependencyErrorKind::ServiceUnavailable,
+                        .message = "Transient down",
+                        .grpc_code = ::grpc::StatusCode::UNAVAILABLE,
+                    });
+            }
+            securecloud::auth::v1::GetUserResponse resp;
+            auto* user = resp.mutable_user();
+            user->set_user_id("user-uuid-1");
+            user->set_credential_identifier("alice@securecloud.org");
+            user->set_account_status(securecloud::auth::v1::AccountStatus::ACCOUNT_STATUS_ACTIVE);
+            return securecloud::gateway::grpc::Result<securecloud::auth::v1::GetUserResponse>(resp);
+        });
+
+    httplib::Request req;
+    httplib::Response res;
+    handler.handle_get_me(req, res, ctx);
+
+    EXPECT_EQ(res.status, 200);
+    auto body = nlohmann::json::parse(res.body);
+    EXPECT_EQ(body["user"]["user_id"], "user-uuid-1");
+    EXPECT_EQ(call_count, 2);
+}
+
+TEST_F(AuthProxyHandlerTest, LoginDoesNotRetryOnUnavailableDueToNonIdempotency) {
+    auto retry_policy = std::make_shared<RetryPolicy>(
+        RetryPolicyConfig{}, [](std::chrono::milliseconds /*delay*/) {}, [] { return 0.0; });
+    AuthProxyHandler handler(mock_client_, nullptr, retry_policy);
+
+    httplib::Request req;
+    req.body = nlohmann::json{{"identifier", "alice@securecloud.org"}, {"credential", "pw"}}.dump();
+
+    // Invariant: Non-idempotent operation MUST be invoked exactly once even on UNAVAILABLE!
+    EXPECT_CALL(*mock_client_, authenticate(_, _))
+        .Times(1)
+        .WillOnce([](const securecloud::auth::v1::AuthenticateRequest& /*req*/,
+                     securecloud::gateway::grpc::ClientCallContext& /*ctx*/) {
+            return securecloud::gateway::grpc::Result<securecloud::auth::v1::AuthenticateResponse>(
+                securecloud::gateway::grpc::DependencyError{
+                    .kind = securecloud::gateway::grpc::DependencyErrorKind::ServiceUnavailable,
+                    .message = "Service unavailable",
+                    .grpc_code = ::grpc::StatusCode::UNAVAILABLE,
+                });
+        });
+
+    httplib::Response res;
+    handler.handle_login(req, res);
+
+    EXPECT_EQ(res.status, 503);
+}
+
 TEST_F(AuthProxyHandlerTest, RegisterRoutesRegistersAllAuthRoutes) {
     Router router;
     EXPECT_EQ(router.route_count(), 0);

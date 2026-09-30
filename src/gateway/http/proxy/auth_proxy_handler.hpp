@@ -3,6 +3,7 @@
 #include "grpc/auth_client_interface.hpp"
 #include "http/auth/authenticated_context.hpp"
 #include "http/deadline_manager.hpp"
+#include "http/retry_policy.hpp"
 
 #include <memory>
 #include <string>
@@ -28,7 +29,8 @@ class Router;
 class AuthProxyHandler {
   public:
     explicit AuthProxyHandler(std::shared_ptr<grpc::IAuthClient> auth_client,
-                              std::shared_ptr<DeadlineManager> deadline_manager = nullptr);
+                              std::shared_ptr<DeadlineManager> deadline_manager = nullptr,
+                              std::shared_ptr<RetryPolicy> retry_policy = nullptr);
     ~AuthProxyHandler() = default;
 
     AuthProxyHandler(const AuthProxyHandler&) = delete;
@@ -50,11 +52,16 @@ class AuthProxyHandler {
         return deadline_manager_;
     }
 
+    [[nodiscard]] const std::shared_ptr<RetryPolicy>& retry_policy() const noexcept {
+        return retry_policy_;
+    }
+
   private:
     [[nodiscard]] static std::string extract_request_id(const httplib::Request& req);
 
     std::shared_ptr<grpc::IAuthClient> auth_client_;
     std::shared_ptr<DeadlineManager> deadline_manager_;
+    std::shared_ptr<RetryPolicy> retry_policy_;
 };
 
 } // namespace securecloud::gateway::http
