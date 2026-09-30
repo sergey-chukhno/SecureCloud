@@ -71,11 +71,13 @@ class RetryPolicy {
      *
      * @tparam InvokerFn Callable with signature: Result<T>(std::chrono::milliseconds call_budget)
      */
+    // clang-format off
     template <typename InvokerFn>
     auto execute(const DeadlineManager& deadline_mgr, std::chrono::steady_clock::time_point start_tp,
                  std::chrono::milliseconds effective_deadline, std::chrono::milliseconds service_timeout,
                  OperationIdempotency idempotency, InvokerFn&& invoker_fn) const
         -> decltype(invoker_fn(std::chrono::milliseconds{})) {
+        // clang-format on
         using ResultType = decltype(invoker_fn(std::chrono::milliseconds{}));
 
         uint32_t attempt = 0;

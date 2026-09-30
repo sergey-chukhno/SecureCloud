@@ -114,10 +114,10 @@ int run_health_probe_cli(const std::vector<std::string>& extra_args) {
         return -1;
     }
 
-    DWORD wait_res = WaitForSingleObject(pi.hProcess, 3000);
+    DWORD wait_res = WaitForSingleObject(pi.hProcess, 10000);
     if (wait_res == WAIT_TIMEOUT) {
         TerminateProcess(pi.hProcess, 1);
-        WaitForSingleObject(pi.hProcess, 1000);
+        WaitForSingleObject(pi.hProcess, 2000);
     }
 
     DWORD exit_code = 0;

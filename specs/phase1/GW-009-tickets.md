@@ -44,7 +44,7 @@ While the Gateway currently protects transport limits (header/body sizes) and ma
      - `Auth` pool (e.g., max 100 concurrent requests).
      - `Messaging` pool (e.g., max 200 concurrent requests).
      - `Files` pool (e.g., max 50 concurrent requests).
-     - `Emergency` pool (reserved, prioritized capacity).
+     - `Emergency` tier (reserved perimeter capacity for health/operator probes; not a microservice).
    - When a specific pool is saturated, the Gateway must reject only requests targeting that workload with HTTP 503 `SERVICE_UNAVAILABLE` or HTTP 429 (RFC 7807 `BULKHEAD_LIMIT_EXCEEDED` and `Retry-After`), leaving other workloads entirely unaffected.
 
 2. **Per-Client / Per-IP Token-Bucket Rate Limiter (ADR-009, ADR-010)**:
@@ -113,7 +113,7 @@ While the Gateway currently protects transport limits (header/body sizes) and ma
          uint32_t auth_max_concurrent{100};
          uint32_t messaging_max_concurrent{200};
          uint32_t files_max_concurrent{50};
-         uint32_t emergency_reserved_slots{10};
+         uint32_t emergency_reserved_slots{10}; // Reserved perimeter capacity for health/ops probes (not a microservice)
      };
      ```
    - Create `src/gateway/http/bulkhead_manager.hpp` and `bulkhead_manager.cpp`:
