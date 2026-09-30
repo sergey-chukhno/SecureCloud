@@ -1,9 +1,9 @@
 #include "gateway_config.hpp"
-#include "http/https_server.hpp"
 #include "http/middleware/logging_middleware.hpp"
 #include "http/middleware/request_id_middleware.hpp"
 #include "http/middleware/resource_limiter_middleware.hpp"
-#include "http/router.hpp"
+#include "http/routing/router.hpp"
+#include "http/server/https_server.hpp"
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN

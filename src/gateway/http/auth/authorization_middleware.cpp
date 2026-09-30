@@ -3,8 +3,8 @@
 #include "http/auth/authentication_middleware.hpp"
 #include "http/auth/request_context.hpp"
 #include "http/auth/scope_matcher.hpp"
-#include "http/error_mapper.hpp"
-#include "http/router.hpp"
+#include "http/errors/error_mapper.hpp"
+#include "http/routing/router.hpp"
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>

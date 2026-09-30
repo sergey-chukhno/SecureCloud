@@ -1,10 +1,10 @@
-#include "http/router.hpp"
+#include "http/routing/router.hpp"
 
 #include "http/auth/authentication_middleware.hpp"
 #include "http/auth/request_context.hpp"
-#include "http/http_server.hpp"
-#include "http/https_server.hpp"
 #include "http/middleware/request_id_middleware.hpp"
+#include "http/server/http_server.hpp"
+#include "http/server/https_server.hpp"
 
 #include <exception>
 #include <httplib.h>

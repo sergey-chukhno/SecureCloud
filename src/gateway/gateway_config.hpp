@@ -41,6 +41,14 @@ struct GatewayServiceDeadlinesConfig {
     uint32_t min_request_deadline_ms{50};     // 50 ms minimum viable deadline floor
 };
 
+/// Typed configuration model for Gateway workload bulkhead concurrency partitioning (ADR-009 Section 9, GW-009-T01).
+struct GatewayBulkheadConfig {
+    uint32_t auth_max_concurrent{100};
+    uint32_t messaging_max_concurrent{200};
+    uint32_t files_max_concurrent{50};
+    uint32_t emergency_reserved_slots{10}; // Reserved perimeter capacity for health/ops probes
+};
+
 /// Typed configuration model for Gateway service (GW-001, GW-002).
 /// Holds HTTP server runtime settings, TLS parameters, resource limits, downstream microservice endpoints,
 /// and common gRPC/mTLS service parameters.
@@ -61,6 +69,9 @@ struct GatewayConfig {
 
     // Service Deadlines & Timeout Budgets (GW-008-T02)
     GatewayServiceDeadlinesConfig deadlines;
+
+    // Workload Bulkheads (GW-009-T01)
+    GatewayBulkheadConfig bulkhead;
 
     // Downstream Microservice Endpoints
     std::string auth_endpoint{"auth:50052"};

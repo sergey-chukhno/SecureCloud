@@ -52,13 +52,15 @@ target_link_libraries(securecloud_gateway_grpc PUBLIC
 )
 
 add_library(securecloud_gateway_http STATIC
-    http/http_server.cpp
-    http/https_server.cpp
-    http/http_redirect_server.cpp
-    http/error_mapper.cpp
-    http/deadline_manager.cpp
-    http/retry_policy.cpp
-    http/router.cpp
+    http/server/http_server.cpp
+    http/server/https_server.cpp
+    http/server/http_redirect_server.cpp
+    http/errors/error_mapper.cpp
+    http/resilience/deadline_manager.cpp
+    http/resilience/retry_policy.cpp
+    http/resilience/bulkhead_manager.cpp
+    http/routing/router.cpp
+    http/routing/gateway_route_registrar.cpp
     http/middleware/middleware.cpp
     http/middleware/request_id_middleware.cpp
     http/middleware/logging_middleware.cpp
@@ -73,7 +75,6 @@ add_library(securecloud_gateway_http STATIC
     http/auth/authentication_middleware.cpp
     http/auth/authorization_middleware.cpp
     http/proxy/auth_proxy_handler.cpp
-    http/gateway_route_registrar.cpp
 )
 
 add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
@@ -84,6 +85,10 @@ target_include_directories(securecloud_gateway_http PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/http/middleware
     ${CMAKE_CURRENT_SOURCE_DIR}/http/auth
     ${CMAKE_CURRENT_SOURCE_DIR}/http/proxy
+    ${CMAKE_CURRENT_SOURCE_DIR}/http/resilience
+    ${CMAKE_CURRENT_SOURCE_DIR}/http/server
+    ${CMAKE_CURRENT_SOURCE_DIR}/http/routing
+    ${CMAKE_CURRENT_SOURCE_DIR}/http/errors
 )
 
 target_link_libraries(securecloud_gateway_http PUBLIC

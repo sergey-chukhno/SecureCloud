@@ -438,6 +438,47 @@ void load_deadlines_config(GatewayConfig& config, const common::configuration::C
     }
 }
 
+void load_bulkhead_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                          common::configuration::ValidationResult& out_errors) {
+    constexpr uint32_t k_min_bulkhead_val = 1;
+    constexpr uint32_t k_max_bulkhead_val = 100000;
+
+    auto auth_max = source.get("SECURECLOUD_GATEWAY_BULKHEAD_AUTH_MAX");
+    if (auth_max.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_BULKHEAD_AUTH_MAX", auth_max.value(), config.bulkhead.auth_max_concurrent,
+                     out_errors, k_min_bulkhead_val, k_max_bulkhead_val);
+    } else {
+        config.bulkhead.auth_max_concurrent = 100;
+    }
+
+    auto msg_max = source.get("SECURECLOUD_GATEWAY_BULKHEAD_MESSAGING_MAX");
+    if (msg_max.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_BULKHEAD_MESSAGING_MAX", msg_max.value(),
+                     config.bulkhead.messaging_max_concurrent, out_errors, k_min_bulkhead_val, k_max_bulkhead_val);
+    } else {
+        config.bulkhead.messaging_max_concurrent = 200;
+    }
+
+    auto files_max = source.get("SECURECLOUD_GATEWAY_BULKHEAD_FILES_MAX");
+    if (files_max.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_BULKHEAD_FILES_MAX", files_max.value(), config.bulkhead.files_max_concurrent,
+                     out_errors, k_min_bulkhead_val, k_max_bulkhead_val);
+    } else {
+        config.bulkhead.files_max_concurrent = 50;
+    }
+
+    auto emg_slots = source.get("SECURECLOUD_GATEWAY_BULKHEAD_EMERGENCY_RESERVED");
+    if (!emg_slots.has_value()) {
+        emg_slots = source.get("SECURECLOUD_GATEWAY_BULKHEAD_EMERGENCY_MAX");
+    }
+    if (emg_slots.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_BULKHEAD_EMERGENCY_RESERVED", emg_slots.value(),
+                     config.bulkhead.emergency_reserved_slots, out_errors, k_min_bulkhead_val, k_max_bulkhead_val);
+    } else {
+        config.bulkhead.emergency_reserved_slots = 10;
+    }
+}
+
 void load_downstream_endpoints(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
                                common::configuration::ValidationResult& out_errors) {
     parse_endpoint("SECURECLOUD_GATEWAY_AUTH_ENDPOINT", source.get("SECURECLOUD_GATEWAY_AUTH_ENDPOINT"),
@@ -494,6 +535,7 @@ GatewayConfig GatewayConfig::load(const common::configuration::ConfigurationSour
     load_tls_config(config, source, out_errors, validate_file_paths);
     load_limits_config(config, source, out_errors);
     load_deadlines_config(config, source, out_errors);
+    load_bulkhead_config(config, source, out_errors);
     load_downstream_endpoints(config, source, out_errors);
 
     config.peer_probe_target = source.get("SECURECLOUD_GATEWAY_PEER_PROBE_TARGET")

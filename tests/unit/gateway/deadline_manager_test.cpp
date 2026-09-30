@@ -1,5 +1,5 @@
 #include "gateway_config.hpp"
-#include "http/deadline_manager.hpp"
+#include "http/resilience/deadline_manager.hpp"
 
 #include <chrono>
 #include <gtest/gtest.h>

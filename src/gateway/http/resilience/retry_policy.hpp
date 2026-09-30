@@ -1,7 +1,7 @@
 #pragma once
 
 #include "grpc/dependency_error.hpp"
-#include "http/deadline_manager.hpp"
+#include "http/resilience/deadline_manager.hpp"
 
 #include <chrono>
 #include <cmath>

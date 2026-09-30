@@ -295,5 +295,51 @@ TEST(GatewayConfigTest, DeadlinesConfigRejectsOutOfBounds) {
     }
 }
 
+TEST(GatewayConfigTest, BulkheadConfigDefaults) {
+    GatewayConfig config;
+    EXPECT_EQ(config.bulkhead.auth_max_concurrent, 100u);
+    EXPECT_EQ(config.bulkhead.messaging_max_concurrent, 200u);
+    EXPECT_EQ(config.bulkhead.files_max_concurrent, 50u);
+    EXPECT_EQ(config.bulkhead.emergency_reserved_slots, 10u);
+}
+
+TEST(GatewayConfigTest, BulkheadConfigCustomOverrides) {
+    common::configuration::InMemoryConfigurationSource source({
+        {"SECURECLOUD_GATEWAY_BULKHEAD_AUTH_MAX", "50"},
+        {"SECURECLOUD_GATEWAY_BULKHEAD_MESSAGING_MAX", "150"},
+        {"SECURECLOUD_GATEWAY_BULKHEAD_FILES_MAX", "25"},
+        {"SECURECLOUD_GATEWAY_BULKHEAD_EMERGENCY_RESERVED", "5"},
+    });
+    common::configuration::ValidationResult errors;
+    auto config = GatewayConfig::load(source, errors);
+    EXPECT_TRUE(errors.is_valid());
+    EXPECT_EQ(config.bulkhead.auth_max_concurrent, 50u);
+    EXPECT_EQ(config.bulkhead.messaging_max_concurrent, 150u);
+    EXPECT_EQ(config.bulkhead.files_max_concurrent, 25u);
+    EXPECT_EQ(config.bulkhead.emergency_reserved_slots, 5u);
+}
+
+TEST(GatewayConfigTest, BulkheadConfigRejectsOutOfBounds) {
+    // 0 is invalid
+    {
+        common::configuration::InMemoryConfigurationSource source({
+            {"SECURECLOUD_GATEWAY_BULKHEAD_AUTH_MAX", "0"},
+        });
+        common::configuration::ValidationResult errors;
+        auto config = GatewayConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+
+    // Exceeding max allowable upper bound (100000)
+    {
+        common::configuration::InMemoryConfigurationSource source({
+            {"SECURECLOUD_GATEWAY_BULKHEAD_FILES_MAX", "200000"},
+        });
+        common::configuration::ValidationResult errors;
+        auto config = GatewayConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+}
+
 } // namespace
 } // namespace securecloud::gateway

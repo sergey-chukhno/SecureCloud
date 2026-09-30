@@ -4,8 +4,8 @@
 #include "http/auth/auth_service_token_validator.hpp"
 #include "http/auth/authentication_middleware.hpp"
 #include "http/auth/gateway_security_policy.hpp"
-#include "http/https_server.hpp"
-#include "http/router.hpp"
+#include "http/routing/router.hpp"
+#include "http/server/https_server.hpp"
 #include "securecloud/auth/v1/auth.grpc.pb.h"
 #include "securecloud/security/mtls_config.hpp"
 

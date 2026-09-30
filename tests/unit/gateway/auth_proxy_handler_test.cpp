@@ -2,7 +2,7 @@
 #include "http/auth/authenticated_context.hpp"
 #include "http/auth/request_context.hpp"
 #include "http/proxy/auth_proxy_handler.hpp"
-#include "http/router.hpp"
+#include "http/routing/router.hpp"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
