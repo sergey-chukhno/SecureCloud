@@ -65,6 +65,7 @@ add_library(securecloud_gateway_http STATIC
     http/middleware/request_id_middleware.cpp
     http/middleware/logging_middleware.cpp
     http/middleware/resource_limiter_middleware.cpp
+    http/middleware/rate_limiter_middleware.cpp
     http/auth/bearer_token_extractor.cpp
     http/auth/authenticated_context.cpp
     http/auth/auth_service_token_validator.cpp

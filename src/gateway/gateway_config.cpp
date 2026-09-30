@@ -479,6 +479,73 @@ void load_bulkhead_config(GatewayConfig& config, const common::configuration::Co
     }
 }
 
+void load_rate_limiting_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                               common::configuration::ValidationResult& out_errors) {
+    auto enabled_str = source.get("SECURECLOUD_GATEWAY_RATE_LIMIT_ENABLED");
+    if (enabled_str.has_value()) {
+        std::string val = enabled_str.value();
+        for (auto& c : val) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (val == "true" || val == "1" || val == "yes" || val == "on") {
+            config.rate_limiting.enabled = true;
+        } else if (val == "false" || val == "0" || val == "no" || val == "off") {
+            config.rate_limiting.enabled = false;
+        } else {
+            out_errors.add_error("SECURECLOUD_GATEWAY_RATE_LIMIT_ENABLED",
+                                 "Invalid boolean value: " + enabled_str.value());
+        }
+    } else {
+        config.rate_limiting.enabled = true;
+    }
+
+    auto refill_str = source.get("SECURECLOUD_GATEWAY_RATE_LIMIT_REFILL_RATE");
+    if (refill_str.has_value()) {
+        try {
+            size_t pos = 0;
+            double v = std::stod(refill_str.value(), &pos);
+            if (pos != refill_str.value().size() || std::isnan(v) || std::isinf(v) || v < 0.1 || v > 100000.0) {
+                out_errors.add_error("SECURECLOUD_GATEWAY_RATE_LIMIT_REFILL_RATE",
+                                     "Value out of bounds [0.1, 100000.0]: " + refill_str.value());
+            } else {
+                config.rate_limiting.refill_rate_per_sec = v;
+            }
+        } catch (...) {
+            out_errors.add_error("SECURECLOUD_GATEWAY_RATE_LIMIT_REFILL_RATE",
+                                 "Invalid double value: " + refill_str.value());
+        }
+    } else {
+        config.rate_limiting.refill_rate_per_sec = 50.0;
+    }
+
+    auto burst_str = source.get("SECURECLOUD_GATEWAY_RATE_LIMIT_BURST");
+    if (burst_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_RATE_LIMIT_BURST", burst_str.value(), config.rate_limiting.burst_capacity,
+                     out_errors, 1, 100000);
+    } else {
+        config.rate_limiting.burst_capacity = 100;
+    }
+
+    auto max_clients_str = source.get("SECURECLOUD_GATEWAY_RATE_LIMIT_MAX_CLIENTS");
+    if (max_clients_str.has_value()) {
+        uint32_t val = 10000;
+        parse_uint32("SECURECLOUD_GATEWAY_RATE_LIMIT_MAX_CLIENTS", max_clients_str.value(), val, out_errors, 10,
+                     500000);
+        config.rate_limiting.max_tracked_clients = val;
+    } else {
+        config.rate_limiting.max_tracked_clients = 10000;
+    }
+
+    auto ttl_str = source.get("SECURECLOUD_GATEWAY_RATE_LIMIT_CLIENT_TTL_SEC");
+    if (ttl_str.has_value()) {
+        uint32_t val = 300;
+        parse_uint32("SECURECLOUD_GATEWAY_RATE_LIMIT_CLIENT_TTL_SEC", ttl_str.value(), val, out_errors, 1, 86400);
+        config.rate_limiting.client_ttl = std::chrono::seconds(val);
+    } else {
+        config.rate_limiting.client_ttl = std::chrono::seconds(300);
+    }
+}
+
 void load_downstream_endpoints(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
                                common::configuration::ValidationResult& out_errors) {
     parse_endpoint("SECURECLOUD_GATEWAY_AUTH_ENDPOINT", source.get("SECURECLOUD_GATEWAY_AUTH_ENDPOINT"),
@@ -536,6 +603,7 @@ GatewayConfig GatewayConfig::load(const common::configuration::ConfigurationSour
     load_limits_config(config, source, out_errors);
     load_deadlines_config(config, source, out_errors);
     load_bulkhead_config(config, source, out_errors);
+    load_rate_limiting_config(config, source, out_errors);
     load_downstream_endpoints(config, source, out_errors);
 
     config.peer_probe_target = source.get("SECURECLOUD_GATEWAY_PEER_PROBE_TARGET")

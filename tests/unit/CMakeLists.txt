@@ -481,6 +481,24 @@ target_link_libraries(securecloud_gateway_bulkhead_manager_test PRIVATE
 
 gtest_discover_tests(securecloud_gateway_bulkhead_manager_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Token-Bucket Rate Limiter Middleware Test (GW-009-T02)
+add_executable(securecloud_gateway_rate_limiter_middleware_test
+    gateway/rate_limiter_middleware_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_rate_limiter_middleware_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_config
+    securecloud::httplib
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_rate_limiter_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Downstream gRPC Channel Manager Test (GW-001-T05)
 add_executable(securecloud_channel_manager_test
     gateway/channel_manager_test.cpp

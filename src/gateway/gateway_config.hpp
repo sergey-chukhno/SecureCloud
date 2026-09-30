@@ -49,6 +49,15 @@ struct GatewayBulkheadConfig {
     uint32_t emergency_reserved_slots{10}; // Reserved perimeter capacity for health/ops probes
 };
 
+/// Typed configuration model for Gateway token-bucket rate limiting (ADR-009, ADR-010, GW-009-T02).
+struct GatewayRateLimitingConfig {
+    bool enabled{true};
+    double refill_rate_per_sec{50.0};
+    uint32_t burst_capacity{100};
+    size_t max_tracked_clients{10000};
+    std::chrono::seconds client_ttl{300};
+};
+
 /// Typed configuration model for Gateway service (GW-001, GW-002).
 /// Holds HTTP server runtime settings, TLS parameters, resource limits, downstream microservice endpoints,
 /// and common gRPC/mTLS service parameters.
@@ -72,6 +81,9 @@ struct GatewayConfig {
 
     // Workload Bulkheads (GW-009-T01)
     GatewayBulkheadConfig bulkhead;
+
+    // Token-Bucket Rate Limiting (GW-009-T02)
+    GatewayRateLimitingConfig rate_limiting;
 
     // Downstream Microservice Endpoints
     std::string auth_endpoint{"auth:50052"};
