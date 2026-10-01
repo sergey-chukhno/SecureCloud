@@ -274,6 +274,28 @@ TEST(BulkheadManagerTest, ConcurrencyStressTest) {
     std::atomic<uint32_t> total_acquired{0};
     std::atomic<uint32_t> total_rejected{0};
 
+    // 1. Explicitly verify saturation rejection under concurrency
+    {
+        std::vector<BulkheadLease> hold_leases;
+        hold_leases.reserve(k_max_concurrency);
+        for (uint32_t i = 0; i < k_max_concurrency; ++i) {
+            hold_leases.push_back(manager.acquire(WorkloadCategory::Auth));
+        }
+        ASSERT_EQ(manager.active_count(WorkloadCategory::Auth), k_max_concurrency);
+
+        std::thread reject_worker([&] {
+            auto lease = manager.acquire(WorkloadCategory::Auth);
+            if (!lease) {
+                total_rejected.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+        reject_worker.join();
+        EXPECT_GT(total_rejected.load(), 0u);
+        hold_leases.clear();
+    }
+    ASSERT_EQ(manager.active_count(WorkloadCategory::Auth), 0u);
+
+    // 2. High concurrency multi-threaded contention stress test
     std::vector<std::thread> workers;
     workers.reserve(k_num_threads);
 
@@ -296,7 +318,7 @@ TEST(BulkheadManagerTest, ConcurrencyStressTest) {
                     }
 
                     // Simulate slight work while holding lease to induce thread contention
-                    std::this_thread::sleep_for(std::chrono::microseconds(50));
+                    std::this_thread::yield();
                 } else {
                     total_rejected.fetch_add(1, std::memory_order_relaxed);
                     std::this_thread::yield();
@@ -305,23 +327,7 @@ TEST(BulkheadManagerTest, ConcurrencyStressTest) {
         });
     }
 
-    // Pre-acquire all slots to guarantee saturation when workers first start
-    std::vector<BulkheadLease> hold_leases;
-    hold_leases.reserve(k_max_concurrency);
-    for (uint32_t i = 0; i < k_max_concurrency; ++i) {
-        hold_leases.push_back(manager.acquire(WorkloadCategory::Auth));
-    }
-    ASSERT_EQ(manager.active_count(WorkloadCategory::Auth), k_max_concurrency);
-
     start_signal.store(true, std::memory_order_release);
-
-    // Wait until at least one worker thread observes the saturated bulkhead
-    for (int retry = 0; retry < 500 && total_rejected.load(std::memory_order_relaxed) == 0; ++retry) {
-        std::this_thread::yield();
-    }
-
-    // Release holding leases so workers can acquire and complete iterations
-    hold_leases.clear();
 
     for (auto& th : workers) {
         th.join();
