@@ -80,6 +80,7 @@ add_library(securecloud_gateway_http STATIC
     http/auth/authentication_middleware.cpp
     http/auth/authorization_middleware.cpp
     http/proxy/auth_proxy_handler.cpp
+    http/proxy/files_proxy_handler.cpp
     http/streaming/streaming_buffer.cpp
 )
 

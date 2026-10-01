@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <regex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -52,6 +53,9 @@ class Router {
     /// Retrieves the active AuthenticatedContext bound to the current executing request thread
     [[nodiscard]] static std::optional<AuthenticatedContext> current_authenticated_context() noexcept;
 
+    /// Retrieves path parameter value populated during parameterized route matching.
+    [[nodiscard]] static std::string get_path_param(const httplib::Request& req, const std::string& name);
+
     void use(std::shared_ptr<Middleware> middleware);
 
     void handle(const httplib::Request& req, httplib::Response& res);
@@ -59,14 +63,23 @@ class Router {
     void register_into(HttpServer& server);
     void register_into(HttpsServer& server);
 
-    [[nodiscard]] size_t route_count() const noexcept { return routes_.size(); }
+    [[nodiscard]] size_t route_count() const noexcept { return routes_.size() + parameterized_routes_.size(); }
 
   private:
+    struct ParameterizedRoute {
+        std::string method;
+        std::string raw_path;
+        std::vector<std::string> param_names;
+        std::regex regex;
+        RouteHandler handler;
+    };
+
     void dispatch_route(const httplib::Request& req, httplib::Response& res);
 
     MiddlewarePipeline pipeline_;
     std::map<std::pair<std::string, std::string>, RouteHandler> routes_;
     std::map<std::string, std::vector<std::string>> path_methods_;
+    std::vector<ParameterizedRoute> parameterized_routes_;
 };
 
 } // namespace securecloud::gateway::http
