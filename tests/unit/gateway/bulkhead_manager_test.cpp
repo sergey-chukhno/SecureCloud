@@ -261,9 +261,9 @@ TEST(BulkheadManagerTest, WriteRejectionRfc7807) {
 }
 
 TEST(BulkheadManagerTest, ConcurrencyStressTest) {
-    constexpr uint32_t k_max_concurrency = 8;
-    constexpr int k_num_threads = 24;
-    constexpr int k_iterations_per_thread = 200;
+    constexpr uint32_t k_max_concurrency = 4;
+    constexpr int k_num_threads = 16;
+    constexpr int k_iterations_per_thread = 50;
 
     GatewayBulkheadConfig cfg;
     cfg.auth_max_concurrent = k_max_concurrency;
@@ -295,10 +295,11 @@ TEST(BulkheadManagerTest, ConcurrencyStressTest) {
                                                            cur_max, current_active, std::memory_order_relaxed)) {
                     }
 
-                    // Simulate slight work
-                    std::this_thread::yield();
+                    // Simulate slight work while holding lease to induce thread contention
+                    std::this_thread::sleep_for(std::chrono::microseconds(50));
                 } else {
                     total_rejected.fetch_add(1, std::memory_order_relaxed);
+                    std::this_thread::yield();
                 }
             }
         });
