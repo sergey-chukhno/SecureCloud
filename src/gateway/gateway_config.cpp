@@ -587,6 +587,47 @@ void load_circuit_breaker_config(GatewayConfig& config, const common::configurat
     }
 }
 
+void load_streaming_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                           common::configuration::ValidationResult& out_errors) {
+    auto chunk_str = source.get("SECURECLOUD_GATEWAY_STREAM_MAX_CHUNK_BYTES");
+    if (!chunk_str.has_value()) {
+        chunk_str = source.get("SECURECLOUD_GW_STREAM_MAX_CHUNK_BYTES");
+    }
+    if (chunk_str.has_value()) {
+        parse_size_t("SECURECLOUD_GATEWAY_STREAM_MAX_CHUNK_BYTES", chunk_str.value(),
+                     config.streaming.max_chunk_size_bytes, out_errors, 65536, 67108864);
+    } else {
+        config.streaming.max_chunk_size_bytes = 4194304;
+    }
+
+    auto buf_str = source.get("SECURECLOUD_GATEWAY_STREAM_MAX_BUFFER_BYTES");
+    if (!buf_str.has_value()) {
+        buf_str = source.get("SECURECLOUD_GW_STREAM_MAX_BUFFER_BYTES");
+    }
+    if (buf_str.has_value()) {
+        parse_size_t("SECURECLOUD_GATEWAY_STREAM_MAX_BUFFER_BYTES", buf_str.value(),
+                     config.streaming.max_stream_buffer_bytes, out_errors, 65536, 268435456);
+    } else {
+        config.streaming.max_stream_buffer_bytes = 8388608;
+    }
+
+    auto idle_str = source.get("SECURECLOUD_GATEWAY_STREAM_IDLE_TIMEOUT_MS");
+    if (!idle_str.has_value()) {
+        idle_str = source.get("SECURECLOUD_GW_STREAM_IDLE_TIMEOUT_MS");
+    }
+    if (idle_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_STREAM_IDLE_TIMEOUT_MS", idle_str.value(), config.streaming.idle_timeout_ms,
+                     out_errors, 1000, 300000);
+    } else {
+        config.streaming.idle_timeout_ms = 30000;
+    }
+
+    if (config.streaming.max_stream_buffer_bytes < config.streaming.max_chunk_size_bytes) {
+        out_errors.add_error("SECURECLOUD_GATEWAY_STREAM_MAX_BUFFER_BYTES",
+                             "max_stream_buffer_bytes must be greater than or equal to max_chunk_size_bytes");
+    }
+}
+
 void load_downstream_endpoints(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
                                common::configuration::ValidationResult& out_errors) {
     parse_endpoint("SECURECLOUD_GATEWAY_AUTH_ENDPOINT", source.get("SECURECLOUD_GATEWAY_AUTH_ENDPOINT"),
@@ -646,6 +687,7 @@ GatewayConfig GatewayConfig::load(const common::configuration::ConfigurationSour
     load_bulkhead_config(config, source, out_errors);
     load_rate_limiting_config(config, source, out_errors);
     load_circuit_breaker_config(config, source, out_errors);
+    load_streaming_config(config, source, out_errors);
     load_downstream_endpoints(config, source, out_errors);
 
     config.peer_probe_target = source.get("SECURECLOUD_GATEWAY_PEER_PROBE_TARGET")

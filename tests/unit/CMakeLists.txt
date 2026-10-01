@@ -600,6 +600,22 @@ target_link_libraries(securecloud_files_service_client_test PRIVATE
 
 gtest_discover_tests(securecloud_files_service_client_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Bounded Streaming Buffer & Backpressure Test (GW-010-T02)
+add_executable(securecloud_streaming_buffer_test
+    gateway/streaming_buffer_test.cpp
+)
+
+target_link_libraries(securecloud_streaming_buffer_test PRIVATE
+    securecloud::gateway_http
+    securecloud::common
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+gtest_discover_tests(securecloud_streaming_buffer_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 
 # Gateway TLS & Transport Resource Configuration Model Test (GW-002-T01)
 

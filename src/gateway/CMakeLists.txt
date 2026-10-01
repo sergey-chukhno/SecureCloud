@@ -80,6 +80,7 @@ add_library(securecloud_gateway_http STATIC
     http/auth/authentication_middleware.cpp
     http/auth/authorization_middleware.cpp
     http/proxy/auth_proxy_handler.cpp
+    http/streaming/streaming_buffer.cpp
 )
 
 add_library(securecloud::gateway_http ALIAS securecloud_gateway_http)
@@ -94,6 +95,7 @@ target_include_directories(securecloud_gateway_http PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/http/server
     ${CMAKE_CURRENT_SOURCE_DIR}/http/routing
     ${CMAKE_CURRENT_SOURCE_DIR}/http/errors
+    ${CMAKE_CURRENT_SOURCE_DIR}/http/streaming
 )
 
 target_link_libraries(securecloud_gateway_http PUBLIC
@@ -104,6 +106,7 @@ target_link_libraries(securecloud_gateway_http PUBLIC
     securecloud::json
     securecloud::common
     securecloud::compiler_flags
+    OpenSSL::Crypto
 )
 
 add_library(securecloud_gateway_health STATIC
