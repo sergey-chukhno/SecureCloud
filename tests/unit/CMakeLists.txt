@@ -585,6 +585,22 @@ target_link_libraries(securecloud_auth_service_client_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_service_client_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Typed FilesServiceClient Test (GW-010-T01)
+add_executable(securecloud_files_service_client_test
+    gateway/files_service_client_test.cpp
+)
+
+target_link_libraries(securecloud_files_service_client_test PRIVATE
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+gtest_discover_tests(securecloud_files_service_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 # Gateway TLS & Transport Resource Configuration Model Test (GW-002-T01)
 
 add_executable(securecloud_gateway_tls_config_test
