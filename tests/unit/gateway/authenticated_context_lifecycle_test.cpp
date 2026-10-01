@@ -3,7 +3,7 @@
 #include "http/auth/gateway_security_policy.hpp"
 #include "http/auth/request_context.hpp"
 #include "http/auth/token_validator_interface.hpp"
-#include "http/router.hpp"
+#include "http/routing/router.hpp"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>

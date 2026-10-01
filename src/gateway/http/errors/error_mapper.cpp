@@ -1,4 +1,4 @@
-#include "http/error_mapper.hpp"
+#include "http/errors/error_mapper.hpp"
 
 #include <httplib.h>
 #include <nlohmann/json.hpp>

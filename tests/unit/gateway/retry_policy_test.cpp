@@ -1,6 +1,6 @@
 #include "grpc/dependency_error.hpp"
-#include "http/deadline_manager.hpp"
-#include "http/retry_policy.hpp"
+#include "http/resilience/deadline_manager.hpp"
+#include "http/resilience/retry_policy.hpp"
 
 #include <chrono>
 #include <gtest/gtest.h>

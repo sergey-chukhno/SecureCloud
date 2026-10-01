@@ -1,4 +1,4 @@
-#include "http/retry_policy.hpp"
+#include "http/resilience/retry_policy.hpp"
 
 #include <algorithm>
 #include <cmath>

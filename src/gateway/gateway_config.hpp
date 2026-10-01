@@ -41,6 +41,31 @@ struct GatewayServiceDeadlinesConfig {
     uint32_t min_request_deadline_ms{50};     // 50 ms minimum viable deadline floor
 };
 
+/// Typed configuration model for Gateway workload bulkhead concurrency partitioning (ADR-009 Section 9, GW-009-T01).
+struct GatewayBulkheadConfig {
+    uint32_t auth_max_concurrent{100};
+    uint32_t messaging_max_concurrent{200};
+    uint32_t files_max_concurrent{50};
+    uint32_t emergency_reserved_slots{10}; // Reserved perimeter capacity for health/ops probes
+};
+
+/// Typed configuration model for Gateway token-bucket rate limiting (ADR-009, ADR-010, GW-009-T02).
+struct GatewayRateLimitingConfig {
+    bool enabled{true};
+    double refill_rate_per_sec{50.0};
+    uint32_t burst_capacity{100};
+    size_t max_tracked_clients{10000};
+    std::chrono::seconds client_ttl{300};
+};
+
+/// Typed configuration model for Gateway downstream circuit breaking (ADR-009, GW-009-T03).
+struct GatewayCircuitBreakerConfig {
+    bool enabled{true};
+    uint32_t failure_threshold{5};      // 5 consecutive failures trips breaker
+    uint32_t recovery_timeout_ms{5000}; // 5s recovery window before HALF_OPEN
+    uint32_t half_open_probe_count{1};  // 1 probe request in HALF_OPEN
+};
+
 /// Typed configuration model for Gateway service (GW-001, GW-002).
 /// Holds HTTP server runtime settings, TLS parameters, resource limits, downstream microservice endpoints,
 /// and common gRPC/mTLS service parameters.
@@ -61,6 +86,15 @@ struct GatewayConfig {
 
     // Service Deadlines & Timeout Budgets (GW-008-T02)
     GatewayServiceDeadlinesConfig deadlines;
+
+    // Workload Bulkheads (GW-009-T01)
+    GatewayBulkheadConfig bulkhead;
+
+    // Token-Bucket Rate Limiting (GW-009-T02)
+    GatewayRateLimitingConfig rate_limiting;
+
+    // Downstream Circuit Breaker Engine (GW-009-T03)
+    GatewayCircuitBreakerConfig circuit_breaker;
 
     // Downstream Microservice Endpoints
     std::string auth_endpoint{"auth:50052"};

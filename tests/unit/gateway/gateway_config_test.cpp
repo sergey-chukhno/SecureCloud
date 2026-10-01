@@ -295,5 +295,123 @@ TEST(GatewayConfigTest, DeadlinesConfigRejectsOutOfBounds) {
     }
 }
 
+TEST(GatewayConfigTest, BulkheadConfigDefaults) {
+    GatewayConfig config;
+    EXPECT_EQ(config.bulkhead.auth_max_concurrent, 100u);
+    EXPECT_EQ(config.bulkhead.messaging_max_concurrent, 200u);
+    EXPECT_EQ(config.bulkhead.files_max_concurrent, 50u);
+    EXPECT_EQ(config.bulkhead.emergency_reserved_slots, 10u);
+}
+
+TEST(GatewayConfigTest, BulkheadConfigCustomOverrides) {
+    common::configuration::InMemoryConfigurationSource source({
+        {"SECURECLOUD_GATEWAY_BULKHEAD_AUTH_MAX", "50"},
+        {"SECURECLOUD_GATEWAY_BULKHEAD_MESSAGING_MAX", "150"},
+        {"SECURECLOUD_GATEWAY_BULKHEAD_FILES_MAX", "25"},
+        {"SECURECLOUD_GATEWAY_BULKHEAD_EMERGENCY_RESERVED", "5"},
+    });
+    common::configuration::ValidationResult errors;
+    auto config = GatewayConfig::load(source, errors);
+    EXPECT_TRUE(errors.is_valid());
+    EXPECT_EQ(config.bulkhead.auth_max_concurrent, 50u);
+    EXPECT_EQ(config.bulkhead.messaging_max_concurrent, 150u);
+    EXPECT_EQ(config.bulkhead.files_max_concurrent, 25u);
+    EXPECT_EQ(config.bulkhead.emergency_reserved_slots, 5u);
+}
+
+TEST(GatewayConfigTest, BulkheadConfigRejectsOutOfBounds) {
+    // 0 is invalid
+    {
+        common::configuration::InMemoryConfigurationSource source({
+            {"SECURECLOUD_GATEWAY_BULKHEAD_AUTH_MAX", "0"},
+        });
+        common::configuration::ValidationResult errors;
+        auto config = GatewayConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+
+    // Exceeding max allowable upper bound (100000)
+    {
+        common::configuration::InMemoryConfigurationSource source({
+            {"SECURECLOUD_GATEWAY_BULKHEAD_FILES_MAX", "200000"},
+        });
+        common::configuration::ValidationResult errors;
+        auto config = GatewayConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+}
+
+TEST(GatewayConfigTest, RateLimitingConfigDefaultsSound) {
+    common::configuration::InMemoryConfigurationSource source(std::unordered_map<std::string, std::string>{});
+    common::configuration::ValidationResult errors;
+    auto config = GatewayConfig::load(source, errors);
+    EXPECT_TRUE(errors.is_valid());
+    EXPECT_TRUE(config.rate_limiting.enabled);
+    EXPECT_DOUBLE_EQ(config.rate_limiting.refill_rate_per_sec, 50.0);
+    EXPECT_EQ(config.rate_limiting.burst_capacity, 100u);
+    EXPECT_EQ(config.rate_limiting.max_tracked_clients, 10000u);
+    EXPECT_EQ(config.rate_limiting.client_ttl.count(), 300);
+}
+
+TEST(GatewayConfigTest, RateLimitingConfigCustomOverrides) {
+    common::configuration::InMemoryConfigurationSource source({
+        {"SECURECLOUD_GATEWAY_RATE_LIMIT_ENABLED", "false"},
+        {"SECURECLOUD_GATEWAY_RATE_LIMIT_REFILL_RATE", "25.5"},
+        {"SECURECLOUD_GATEWAY_RATE_LIMIT_BURST", "50"},
+        {"SECURECLOUD_GATEWAY_RATE_LIMIT_MAX_CLIENTS", "2000"},
+        {"SECURECLOUD_GATEWAY_RATE_LIMIT_CLIENT_TTL_SEC", "120"},
+    });
+    common::configuration::ValidationResult errors;
+    auto config = GatewayConfig::load(source, errors);
+    EXPECT_TRUE(errors.is_valid());
+    EXPECT_FALSE(config.rate_limiting.enabled);
+    EXPECT_DOUBLE_EQ(config.rate_limiting.refill_rate_per_sec, 25.5);
+    EXPECT_EQ(config.rate_limiting.burst_capacity, 50u);
+    EXPECT_EQ(config.rate_limiting.max_tracked_clients, 2000u);
+    EXPECT_EQ(config.rate_limiting.client_ttl.count(), 120);
+}
+
+TEST(GatewayConfigTest, RateLimitingConfigRejectsOutOfBounds) {
+    // Invalid boolean
+    {
+        common::configuration::InMemoryConfigurationSource source({
+            {"SECURECLOUD_GATEWAY_RATE_LIMIT_ENABLED", "not_a_bool"},
+        });
+        common::configuration::ValidationResult errors;
+        auto config = GatewayConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+
+    // Refill rate < 0.1
+    {
+        common::configuration::InMemoryConfigurationSource source({
+            {"SECURECLOUD_GATEWAY_RATE_LIMIT_REFILL_RATE", "0.01"},
+        });
+        common::configuration::ValidationResult errors;
+        auto config = GatewayConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+
+    // Burst capacity == 0
+    {
+        common::configuration::InMemoryConfigurationSource source({
+            {"SECURECLOUD_GATEWAY_RATE_LIMIT_BURST", "0"},
+        });
+        common::configuration::ValidationResult errors;
+        auto config = GatewayConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+
+    // Max clients < 10
+    {
+        common::configuration::InMemoryConfigurationSource source({
+            {"SECURECLOUD_GATEWAY_RATE_LIMIT_MAX_CLIENTS", "5"},
+        });
+        common::configuration::ValidationResult errors;
+        auto config = GatewayConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+}
+
 } // namespace
 } // namespace securecloud::gateway

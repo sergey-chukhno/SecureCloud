@@ -4,7 +4,7 @@
 #include "http/auth/header_sanitizer.hpp"
 #include "http/auth/request_context.hpp"
 #include "http/auth/scope_matcher.hpp"
-#include "http/error_mapper.hpp"
+#include "http/errors/error_mapper.hpp"
 
 #include <chrono>
 #include <httplib.h>

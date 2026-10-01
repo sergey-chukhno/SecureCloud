@@ -1,6 +1,6 @@
 #include "gateway_config.hpp"
-#include "http/http_redirect_server.hpp"
-#include "http/https_server.hpp"
+#include "http/server/http_redirect_server.hpp"
+#include "http/server/https_server.hpp"
 #include "tls/tls_handler.hpp"
 
 #ifdef _WIN32

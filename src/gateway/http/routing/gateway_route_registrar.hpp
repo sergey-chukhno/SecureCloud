@@ -1,7 +1,7 @@
 #pragma once
 
 #include "http/proxy/auth_proxy_handler.hpp"
-#include "http/router.hpp"
+#include "http/routing/router.hpp"
 
 #include <memory>
 
@@ -21,13 +21,17 @@ namespace securecloud::gateway::http {
  *
  * Invariant: Never performs backend authentication or database access directly (ADR-005).
  */
+class BulkheadManager;
+
 class GatewayRouteRegistrar {
   public:
     GatewayRouteRegistrar(std::shared_ptr<AuthProxyHandler> auth_proxy,
-                          common::health::HealthStatusManager& health_manager);
+                          common::health::HealthStatusManager& health_manager,
+                          std::shared_ptr<BulkheadManager> bulkhead_manager = nullptr);
 
     GatewayRouteRegistrar(std::shared_ptr<AuthProxyHandler> auth_proxy,
-                          std::shared_ptr<common::health::HealthStatusManager> health_manager);
+                          std::shared_ptr<common::health::HealthStatusManager> health_manager,
+                          std::shared_ptr<BulkheadManager> bulkhead_manager = nullptr);
 
     ~GatewayRouteRegistrar() = default;
 
@@ -52,6 +56,7 @@ class GatewayRouteRegistrar {
     std::shared_ptr<AuthProxyHandler> auth_proxy_;
     std::shared_ptr<common::health::HealthStatusManager> health_manager_ptr_;
     common::health::HealthStatusManager* health_manager_{nullptr};
+    std::shared_ptr<BulkheadManager> bulkhead_manager_;
 };
 
 } // namespace securecloud::gateway::http

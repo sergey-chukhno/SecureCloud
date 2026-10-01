@@ -2,7 +2,7 @@
 #include "http/middleware/middleware.hpp"
 #include "http/middleware/request_id_middleware.hpp"
 #include "http/middleware/resource_limiter_middleware.hpp"
-#include "http/router.hpp"
+#include "http/routing/router.hpp"
 
 #include <chrono>
 #include <cstdint>

@@ -150,10 +150,19 @@ std::string_view to_string(securecloud::common::v1::HealthCheckResponse::Serving
     }
 }
 
-int run_probe(int argc, char* const* argv) {
+[[noreturn]] void exit_probe(int code) noexcept {
+    std::fflush(stdout);
+    std::fflush(stderr);
+#ifdef _WIN32
+    ::TerminateProcess(::GetCurrentProcess(), static_cast<UINT>(code));
+#endif
+    std::_Exit(code);
+}
+
+void run_probe(int argc, char* const* argv) {
     ProbeOptions options;
     if (!parse_args(argc, argv, options)) {
-        return k_exit_invalid_args;
+        exit_probe(k_exit_invalid_args);
     }
 
     securecloud::common::security::SecurityCredentialsConfig creds_config{
@@ -177,7 +186,7 @@ int run_probe(int argc, char* const* argv) {
 
     if (!status.ok()) {
         std::cerr << "ERROR: RPC failed with code " << status.error_code() << ": " << status.error_message() << "\n";
-        return k_exit_rpc_error;
+        exit_probe(k_exit_rpc_error);
     }
 
     std::string_view status_str = to_string(response.status());
@@ -186,13 +195,15 @@ int run_probe(int argc, char* const* argv) {
     if (!options.expected_status.empty()) {
         if (status_str != options.expected_status) {
             std::cerr << "STATUS MISMATCH: expected " << options.expected_status << ", got " << status_str << "\n";
-            return k_exit_status_mismatch;
+            exit_probe(k_exit_status_mismatch);
         }
-        return k_exit_ok;
+        exit_probe(k_exit_ok);
     }
 
-    return (response.status() == securecloud::common::v1::HealthCheckResponse::SERVING) ? k_exit_ok
-                                                                                        : k_exit_status_mismatch;
+    int exit_code = (response.status() == securecloud::common::v1::HealthCheckResponse::SERVING)
+                        ? k_exit_ok
+                        : k_exit_status_mismatch;
+    exit_probe(exit_code);
 }
 
 } // namespace
@@ -203,13 +214,13 @@ int main(int argc, char* argv[]) noexcept {
     (void)::WSAStartup(MAKEWORD(2, 2), &wsa);
 #endif
     try {
-        int ret = run_probe(argc, argv);
-        std::_Exit(ret);
+        run_probe(argc, argv);
+        exit_probe(k_exit_ok);
     } catch (const std::exception& ex) {
         std::cerr << "FATAL: " << ex.what() << "\n";
-        std::_Exit(k_exit_rpc_error);
+        exit_probe(k_exit_rpc_error);
     } catch (...) {
         std::cerr << "FATAL: unknown exception\n";
-        std::_Exit(k_exit_rpc_error);
+        exit_probe(k_exit_rpc_error);
     }
 }

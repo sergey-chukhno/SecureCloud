@@ -1,9 +1,9 @@
 #include "grpc/auth_client_interface.hpp"
 #include "http/auth/authenticated_context.hpp"
 #include "http/auth/request_context.hpp"
-#include "http/gateway_route_registrar.hpp"
 #include "http/proxy/auth_proxy_handler.hpp"
-#include "http/router.hpp"
+#include "http/routing/gateway_route_registrar.hpp"
+#include "http/routing/router.hpp"
 #include "securecloud/health/health_status_manager.hpp"
 
 #include <gmock/gmock.h>

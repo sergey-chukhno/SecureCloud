@@ -1,4 +1,4 @@
-#include "http/error_mapper.hpp"
+#include "http/errors/error_mapper.hpp"
 
 #include <grpcpp/support/status_code_enum.h>
 #include <gtest/gtest.h>

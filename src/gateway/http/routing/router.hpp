@@ -1,7 +1,7 @@
 #pragma once
 
 #include "http/auth/authenticated_context.hpp"
-#include "http/error_mapper.hpp"
+#include "http/errors/error_mapper.hpp"
 #include "http/middleware/middleware.hpp"
 
 #include <functional>

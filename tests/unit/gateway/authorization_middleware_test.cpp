@@ -1,7 +1,7 @@
 #include "http/auth/authorization_middleware.hpp"
 #include "http/auth/gateway_security_policy.hpp"
 #include "http/auth/request_context.hpp"
-#include "http/router.hpp"
+#include "http/routing/router.hpp"
 
 #include <gtest/gtest.h>
 #include <httplib.h>

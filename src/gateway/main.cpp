@@ -5,17 +5,22 @@
 #include "http/auth/authentication_middleware.hpp"
 #include "http/auth/authorization_middleware.hpp"
 #include "http/auth/gateway_security_policy.hpp"
-#include "http/deadline_manager.hpp"
-#include "http/gateway_route_registrar.hpp"
-#include "http/http_redirect_server.hpp"
-#include "http/http_server.hpp"
-#include "http/https_server.hpp"
+#include "http/middleware/drain_middleware.hpp"
 #include "http/middleware/logging_middleware.hpp"
+#include "http/middleware/rate_limiter_middleware.hpp"
 #include "http/middleware/request_id_middleware.hpp"
 #include "http/middleware/resource_limiter_middleware.hpp"
 #include "http/proxy/auth_proxy_handler.hpp"
-#include "http/retry_policy.hpp"
-#include "http/router.hpp"
+#include "http/resilience/bulkhead_manager.hpp"
+#include "http/resilience/circuit_breaker.hpp"
+#include "http/resilience/deadline_manager.hpp"
+#include "http/resilience/drain_manager.hpp"
+#include "http/resilience/retry_policy.hpp"
+#include "http/routing/gateway_route_registrar.hpp"
+#include "http/routing/router.hpp"
+#include "http/server/http_redirect_server.hpp"
+#include "http/server/http_server.hpp"
+#include "http/server/https_server.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
 #include "securecloud/configuration/configuration_source.hpp"
@@ -144,26 +149,35 @@ int run_service() {
     auto security_policy = std::make_shared<securecloud::gateway::http::GatewaySecurityPolicy>(
         securecloud::gateway::http::GatewaySecurityPolicy::create_default());
 
+    auto drain_manager = std::make_shared<securecloud::gateway::http::DrainManager>(&health_manager);
+
     // Assemble deterministic perimeter middleware pipeline:
     // 1. RequestIdMiddleware: assigns/propagates standard correlation ID
     // 2. LoggingMiddleware: measures request duration & logs all responses
-    // 3. ResourceLimiterMiddleware: enforces transport header/body limits & concurrency boundary (GW-002)
-    // 4. AuthenticationMiddleware: verifies Bearer token/MFA, establishes AuthenticatedContext
-    // 5. AuthorizationMiddleware: evaluates Enterprise Route Matrix, scopes, and device binding (GW-007)
+    // 3. DrainMiddleware: rejects new requests with 503 SERVER_SHUTTING_DOWN during graceful drain (GW-009-T04)
+    // 4. ResourceLimiterMiddleware: enforces transport header/body limits & concurrency boundary (GW-002)
+    // 5. AuthenticationMiddleware: verifies Bearer token/MFA, establishes AuthenticatedContext
+    // 6. RateLimiterMiddleware: token-bucket per-client/IP rate limiting & memory bounds (GW-009-T02)
+    // 7. AuthorizationMiddleware: evaluates Enterprise Route Matrix, scopes, and device binding (GW-007)
     securecloud::gateway::http::Router router;
     router.use(std::make_shared<securecloud::gateway::http::RequestIdMiddleware>());
     router.use(std::make_shared<securecloud::gateway::http::LoggingMiddleware>());
+    router.use(std::make_shared<securecloud::gateway::http::DrainMiddleware>(drain_manager));
     router.use(std::make_shared<securecloud::gateway::http::ResourceLimiterMiddleware>(config));
     router.use(
         std::make_shared<securecloud::gateway::http::AuthenticationMiddleware>(security_policy, token_validator));
+    router.use(std::make_shared<securecloud::gateway::http::RateLimiterMiddleware>(config));
     router.use(std::make_shared<securecloud::gateway::http::AuthorizationMiddleware>(security_policy));
 
     // Register all perimeter routes (Health, Auth proxy, and Phase 2 service stubs)
     auto deadline_manager = std::make_shared<securecloud::gateway::http::DeadlineManager>(config.deadlines);
     auto retry_policy = std::make_shared<securecloud::gateway::http::RetryPolicy>();
-    auto auth_proxy =
-        std::make_shared<securecloud::gateway::http::AuthProxyHandler>(auth_client, deadline_manager, retry_policy);
-    securecloud::gateway::http::GatewayRouteRegistrar route_registrar(auth_proxy, health_manager);
+    auto bulkhead_manager = std::make_shared<securecloud::gateway::http::BulkheadManager>(config.bulkhead);
+    auto circuit_breaker_registry =
+        std::make_shared<securecloud::gateway::http::CircuitBreakerRegistry>(config.circuit_breaker);
+    auto auth_proxy = std::make_shared<securecloud::gateway::http::AuthProxyHandler>(
+        auth_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("auth"));
+    securecloud::gateway::http::GatewayRouteRegistrar route_registrar(auth_proxy, health_manager, bulkhead_manager);
     route_registrar.register_all_routes(router);
 
     std::unique_ptr<securecloud::gateway::http::HttpServer> http_server;
@@ -214,7 +228,11 @@ int run_service() {
         std::this_thread::sleep_for(k_poll_interval);
     }
 
+    std::cout << "[SecureCloud] [" << config.common.service_name
+              << "] Shutdown signal received: starting coordinated graceful drain...\n";
+    drain_manager->start_drain(std::chrono::milliseconds(5000));
     health_manager.set_shutting_down(true);
+
     if (https_server) {
         std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down HTTPS server...\n";
         https_server->stop();
