@@ -305,7 +305,24 @@ TEST(BulkheadManagerTest, ConcurrencyStressTest) {
         });
     }
 
+    // Pre-acquire all slots to guarantee saturation when workers first start
+    std::vector<BulkheadLease> hold_leases;
+    hold_leases.reserve(k_max_concurrency);
+    for (uint32_t i = 0; i < k_max_concurrency; ++i) {
+        hold_leases.push_back(manager.acquire(WorkloadCategory::Auth));
+    }
+    ASSERT_EQ(manager.active_count(WorkloadCategory::Auth), k_max_concurrency);
+
     start_signal.store(true, std::memory_order_release);
+
+    // Wait until at least one worker thread observes the saturated bulkhead
+    for (int retry = 0; retry < 500 && total_rejected.load(std::memory_order_relaxed) == 0; ++retry) {
+        std::this_thread::yield();
+    }
+
+    // Release holding leases so workers can acquire and complete iterations
+    hold_leases.clear();
+
     for (auto& th : workers) {
         th.join();
     }
