@@ -369,6 +369,24 @@ target_link_libraries(securecloud_auth_proxy_handler_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_proxy_handler_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Files Microservice HTTP Streaming Proxy Handler Test (GW-010-T03)
+add_executable(securecloud_files_proxy_handler_test
+    gateway/files_proxy_handler_test.cpp
+)
+
+target_link_libraries(securecloud_files_proxy_handler_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest
+)
+
+gtest_discover_tests(securecloud_files_proxy_handler_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 # Gateway Route Registrar & Main Pipeline Assembly Test (GW-006-T02)
 add_executable(securecloud_gateway_route_registrar_test
     gateway/gateway_route_registrar_test.cpp
@@ -584,6 +602,38 @@ target_link_libraries(securecloud_auth_service_client_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_auth_service_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Typed FilesServiceClient Test (GW-010-T01)
+add_executable(securecloud_files_service_client_test
+    gateway/files_service_client_test.cpp
+)
+
+target_link_libraries(securecloud_files_service_client_test PRIVATE
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+gtest_discover_tests(securecloud_files_service_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Bounded Streaming Buffer & Backpressure Test (GW-010-T02)
+add_executable(securecloud_streaming_buffer_test
+    gateway/streaming_buffer_test.cpp
+)
+
+target_link_libraries(securecloud_streaming_buffer_test PRIVATE
+    securecloud::gateway_http
+    securecloud::common
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+gtest_discover_tests(securecloud_streaming_buffer_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 
 # Gateway TLS & Transport Resource Configuration Model Test (GW-002-T01)
 

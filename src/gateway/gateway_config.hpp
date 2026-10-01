@@ -66,7 +66,15 @@ struct GatewayCircuitBreakerConfig {
     uint32_t half_open_probe_count{1};  // 1 probe request in HALF_OPEN
 };
 
+/// Typed configuration model for Gateway bounded streaming & backpressure (ADR-010, GW-010-T02).
+struct GatewayStreamingConfig {
+    size_t max_chunk_size_bytes{4194304};    // 4 MiB default
+    size_t max_stream_buffer_bytes{8388608}; // 8 MiB default (2 chunks)
+    uint32_t idle_timeout_ms{30000};         // 30 s default
+};
+
 /// Typed configuration model for Gateway service (GW-001, GW-002).
+
 /// Holds HTTP server runtime settings, TLS parameters, resource limits, downstream microservice endpoints,
 /// and common gRPC/mTLS service parameters.
 /// Strictly excludes database or object storage configuration (ADR-005, Gateway Design 3.1).
@@ -95,6 +103,9 @@ struct GatewayConfig {
 
     // Downstream Circuit Breaker Engine (GW-009-T03)
     GatewayCircuitBreakerConfig circuit_breaker;
+
+    // Streaming & Backpressure Engine (GW-010-T02)
+    GatewayStreamingConfig streaming;
 
     // Downstream Microservice Endpoints
     std::string auth_endpoint{"auth:50052"};

@@ -1,5 +1,6 @@
 #include "grpc/auth_service_client.hpp"
 #include "grpc/channel_manager.hpp"
+#include "grpc/files_service_client.hpp"
 #include "health/gateway_health_evaluator.hpp"
 #include "http/auth/auth_service_token_validator.hpp"
 #include "http/auth/authentication_middleware.hpp"
@@ -11,6 +12,7 @@
 #include "http/middleware/request_id_middleware.hpp"
 #include "http/middleware/resource_limiter_middleware.hpp"
 #include "http/proxy/auth_proxy_handler.hpp"
+#include "http/proxy/files_proxy_handler.hpp"
 #include "http/resilience/bulkhead_manager.hpp"
 #include "http/resilience/circuit_breaker.hpp"
 #include "http/resilience/deadline_manager.hpp"
@@ -177,7 +179,15 @@ int run_service() {
         std::make_shared<securecloud::gateway::http::CircuitBreakerRegistry>(config.circuit_breaker);
     auto auth_proxy = std::make_shared<securecloud::gateway::http::AuthProxyHandler>(
         auth_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("auth"));
-    securecloud::gateway::http::GatewayRouteRegistrar route_registrar(auth_proxy, health_manager, bulkhead_manager);
+
+    auto files_channel = channel_manager.get_files_channel();
+    auto files_client = std::make_shared<securecloud::gateway::grpc::FilesServiceClient>(files_channel);
+    auto files_proxy = std::make_shared<securecloud::gateway::http::FilesProxyHandler>(
+        files_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("files"),
+        config.streaming);
+
+    securecloud::gateway::http::GatewayRouteRegistrar route_registrar(auth_proxy, health_manager, bulkhead_manager,
+                                                                      files_proxy);
     route_registrar.register_all_routes(router);
 
     std::unique_ptr<securecloud::gateway::http::HttpServer> http_server;

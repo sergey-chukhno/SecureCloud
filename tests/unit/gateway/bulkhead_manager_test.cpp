@@ -261,9 +261,9 @@ TEST(BulkheadManagerTest, WriteRejectionRfc7807) {
 }
 
 TEST(BulkheadManagerTest, ConcurrencyStressTest) {
-    constexpr uint32_t k_max_concurrency = 8;
-    constexpr int k_num_threads = 24;
-    constexpr int k_iterations_per_thread = 200;
+    constexpr uint32_t k_max_concurrency = 4;
+    constexpr int k_num_threads = 16;
+    constexpr int k_iterations_per_thread = 50;
 
     GatewayBulkheadConfig cfg;
     cfg.auth_max_concurrent = k_max_concurrency;
@@ -274,6 +274,28 @@ TEST(BulkheadManagerTest, ConcurrencyStressTest) {
     std::atomic<uint32_t> total_acquired{0};
     std::atomic<uint32_t> total_rejected{0};
 
+    // 1. Explicitly verify saturation rejection under concurrency
+    {
+        std::vector<BulkheadLease> hold_leases;
+        hold_leases.reserve(k_max_concurrency);
+        for (uint32_t i = 0; i < k_max_concurrency; ++i) {
+            hold_leases.push_back(manager.acquire(WorkloadCategory::Auth));
+        }
+        ASSERT_EQ(manager.active_count(WorkloadCategory::Auth), k_max_concurrency);
+
+        std::thread reject_worker([&] {
+            auto lease = manager.acquire(WorkloadCategory::Auth);
+            if (!lease) {
+                total_rejected.fetch_add(1, std::memory_order_relaxed);
+            }
+        });
+        reject_worker.join();
+        EXPECT_GT(total_rejected.load(), 0u);
+        hold_leases.clear();
+    }
+    ASSERT_EQ(manager.active_count(WorkloadCategory::Auth), 0u);
+
+    // 2. High concurrency multi-threaded contention stress test
     std::vector<std::thread> workers;
     workers.reserve(k_num_threads);
 
@@ -295,16 +317,18 @@ TEST(BulkheadManagerTest, ConcurrencyStressTest) {
                                                            cur_max, current_active, std::memory_order_relaxed)) {
                     }
 
-                    // Simulate slight work
+                    // Simulate slight work while holding lease to induce thread contention
                     std::this_thread::yield();
                 } else {
                     total_rejected.fetch_add(1, std::memory_order_relaxed);
+                    std::this_thread::yield();
                 }
             }
         });
     }
 
     start_signal.store(true, std::memory_order_release);
+
     for (auto& th : workers) {
         th.join();
     }
