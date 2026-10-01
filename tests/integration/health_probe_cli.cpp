@@ -155,9 +155,8 @@ std::string_view to_string(securecloud::common::v1::HealthCheckResponse::Serving
     std::fflush(stderr);
 #ifdef _WIN32
     ::TerminateProcess(::GetCurrentProcess(), static_cast<UINT>(code));
-#else
-    std::_Exit(code);
 #endif
+    std::_Exit(code);
 }
 
 void run_probe(int argc, char* const* argv) {
