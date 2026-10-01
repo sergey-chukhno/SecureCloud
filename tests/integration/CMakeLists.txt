@@ -310,3 +310,33 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_files_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Streaming TLS 1.3 / mTLS Integration Test Suite (GW-010-T04)
+add_executable(securecloud_gateway_streaming_integration_test
+    gateway_streaming_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_streaming_integration_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_tls
+    securecloud::gateway_config
+    securecloud_proto
+    securecloud::common
+    securecloud::httplib
+    securecloud::json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_gateway_streaming_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_gateway_streaming_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_gateway_streaming_integration_test ${SECURECLOUD_TEST_PROPERTIES})

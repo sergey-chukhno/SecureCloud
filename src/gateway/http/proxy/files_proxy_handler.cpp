@@ -343,7 +343,7 @@ void FilesProxyHandler::handle_upload_chunk(const httplib::Request& req, httplib
         StreamingSha256Validator validator;
         validator.update(req.body);
         if (!validator.verify(expected_sha256)) {
-            ErrorMapper::write_error(res, 400, "CHECKSUM_MISMATCH",
+            ErrorMapper::write_error(res, 400, "CHUNK_INTEGRITY_MISMATCH",
                                      "Chunk SHA-256 verification failed against expected header", request_id);
             return;
         }
@@ -699,16 +699,19 @@ void FilesProxyHandler::handle_streaming_download(const httplib::Request& req, h
     meta_req.set_file_id(file_id);
 
     const auto timeout = compute_timeout(req);
-    grpc::ClientCallContext call_ctx(timeout);
-    ActiveCallGuard call_guard(*this, request_id, call_ctx);
+    securecloud::files::v1::GetFileMetadataResponse meta;
+    {
+        grpc::ClientCallContext meta_ctx(timeout);
+        ActiveCallGuard meta_guard(*this, request_id, meta_ctx);
 
-    auto meta_result = files_client_->get_file_metadata(meta_req, call_ctx);
-    if (meta_result.has_error()) {
-        write_grpc_error(res, meta_result.error(), request_id);
-        return;
+        auto meta_result = files_client_->get_file_metadata(meta_req, meta_ctx);
+        if (meta_result.has_error()) {
+            write_grpc_error(res, meta_result.error(), request_id);
+            return;
+        }
+        meta = meta_result.value();
     }
 
-    const auto& meta = meta_result.value();
     const uint32_t chunk_count = meta.chunk_count();
 
     // Step 2: Stream/aggregate chunks
@@ -720,7 +723,10 @@ void FilesProxyHandler::handle_streaming_download(const httplib::Request& req, h
         chunk_req.set_file_id(file_id);
         chunk_req.set_chunk_index(i);
 
-        auto chunk_res = files_client_->download_chunk(chunk_req, call_ctx);
+        grpc::ClientCallContext chunk_ctx(timeout);
+        ActiveCallGuard chunk_guard(*this, request_id, chunk_ctx);
+
+        auto chunk_res = files_client_->download_chunk(chunk_req, chunk_ctx);
         if (chunk_res.has_error()) {
             write_grpc_error(res, chunk_res.error(), request_id);
             return;
