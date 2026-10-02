@@ -267,7 +267,7 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Returns `grpc::Status(grpc::StatusCode::UNIMPLEMENTED, ...)`.
 19. **Testing Requirements**: Verified via integration test client in T06.
 20. **Validation Commands**:
-- Windows (MSYS2 / MinGW64 toolchains only) :
+  - Windows (MSYS2 / MinGW64 toolchains only) :
   ```shell
   $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
   ```
@@ -317,11 +317,16 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Forced cancellation if shutdown deadline expires; no hangs.
 19. **Testing Requirements**: Verified in unit/integration tests.
 20. **Validation Commands**:
-    ```bash
-    cmake --preset dev-debug
-    cmake --build --preset dev-debug --target securecloud-auth
-    python3 scripts/verify-local.py
-    ```
+  - Windows (MSYS2 / MinGW64 toolchains only) :
+  ```shell
+  $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+  ```
+    - Build & Test Execution (All platforms & toolchains):
+  ```bash
+  cmake --preset dev-debug
+  cmake --build --preset dev-debug --target securecloud-auth
+  python3 scripts/verify-local.py
+  ```
 21. **Expected Validation Evidence**: Service degrades readiness when database is down; terminates cleanly on `SIGTERM` within bounded time.
 22. **Acceptance Criteria**: Signal-safe handler, bounded ping in evaluator, deterministic graceful shutdown.
 23. **M1 Regression Requirements**: Preserves all SC-013 health probe semantics.
