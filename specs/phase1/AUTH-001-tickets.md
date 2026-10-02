@@ -321,7 +321,7 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
   ```shell
   $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
   ```
-    - Build & Test Execution (All platforms & toolchains):
+  - Build & Test Execution (All platforms & toolchains):
   ```bash
   cmake --preset dev-debug
   cmake --build --preset dev-debug --target securecloud-auth
@@ -376,12 +376,18 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Clear assertion diagnostics on failure.
 19. **Testing Requirements**: Registered via `gtest_discover_tests`.
 20. **Validation Commands**:
-    ```bash
+  - Windows (MSYS2 / MinGW64 toolchains only) :
+  ```shell
+  $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+  ```
+  - Build & Test Execution (All platforms & toolchains):
+  ```bash
     cmake --preset dev-debug
+    cmake --build --preset dev-debug --target securecloud_auth_service_test
     cmake --build --preset dev-debug --target securecloud_auth_integration_test
     ctest --preset dev-debug -R "auth_" --output-on-failure
     python3 scripts/verify-local.py
-    ```
+  ```
 21. **Expected Validation Evidence**: 100% test pass; full `verify-local.py` run passes.
 22. **Acceptance Criteria**: All 12 RPC tests pass, 4 mTLS cases pass, DB readiness degradation/recovery verified without touching port 5432.
 23. **M1 Regression Requirements**: All existing M1 tests continue to pass; new test targets execute cleanly without regression.

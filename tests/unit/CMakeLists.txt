@@ -190,3 +190,18 @@ target_link_libraries(securecloud_connection_pool_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_connection_pool_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Service Implementation Unit Test Suite (AUTH-001-T06)
+add_executable(securecloud_auth_service_test
+        auth/auth_service_test.cpp
+)
+
+target_link_libraries(securecloud_auth_service_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_service_test ${SECURECLOUD_TEST_PROPERTIES})
