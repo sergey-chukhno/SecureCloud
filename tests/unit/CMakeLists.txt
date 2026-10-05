@@ -1,40 +1,40 @@
 add_executable(securecloud_unit_smoke_test
-    smoke_test.cpp
+        smoke_test.cpp
 )
 
 target_link_libraries(securecloud_unit_smoke_test PRIVATE
-    securecloud::common
-    securecloud::compiler_flags
+        securecloud::common
+        securecloud::compiler_flags
 )
 
 add_test(
-    NAME unit_smoke_test
-    COMMAND securecloud_unit_smoke_test
+        NAME unit_smoke_test
+        COMMAND securecloud_unit_smoke_test
 )
 
 # Dependency Discovery Pipeline Smoke Test (SC002-T03)
 add_executable(securecloud_dependency_smoke_test
-    dependency_smoke_test.cpp
+        dependency_smoke_test.cpp
 )
 
 target_link_libraries(securecloud_dependency_smoke_test PRIVATE
-    securecloud::common
-    securecloud::compiler_flags
+        securecloud::common
+        securecloud::compiler_flags
 )
 
 add_test(
-    NAME dependency_smoke_test
-    COMMAND securecloud_dependency_smoke_test
+        NAME dependency_smoke_test
+        COMMAND securecloud_dependency_smoke_test
 )
 
 # GoogleTest Framework Integration Target (SC-003)
 add_executable(securecloud_gtest_smoke_test
-    gtest_smoke_test.cpp
+        gtest_smoke_test.cpp
 )
 
 target_link_libraries(securecloud_gtest_smoke_test PRIVATE
-    GTest::gtest_main
-    securecloud::compiler_flags
+        GTest::gtest_main
+        securecloud::compiler_flags
 )
 
 # Automatic CTest discovery for GoogleTest test cases
@@ -42,14 +42,14 @@ gtest_discover_tests(securecloud_gtest_smoke_test ${SECURECLOUD_TEST_PROPERTIES}
 
 # Protobuf & gRPC Code Generation Pipeline Smoke Test
 add_executable(securecloud_proto_smoke_test
-    proto_smoke_test.cpp
+        proto_smoke_test.cpp
 )
 
 target_link_libraries(securecloud_proto_smoke_test PRIVATE
-    securecloud::common
-    securecloud_proto
-    securecloud::compiler_flags
-    GTest::gtest_main
+        securecloud::common
+        securecloud_proto
+        securecloud::compiler_flags
+        GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_proto_smoke_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -99,87 +99,199 @@ endif()
 
 # gRPC mTLS Configuration & Security Unit Test Suite
 add_executable(securecloud_mtls_config_test
-    security/mtls_config_test.cpp
+        security/mtls_config_test.cpp
 )
 
 target_link_libraries(securecloud_mtls_config_test PRIVATE
-    securecloud::common
-    securecloud::compiler_flags
-    GTest::gtest_main
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_mtls_config_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Configuration Primitives & Parser Unit Test Suite (SC12-T01)
 add_executable(securecloud_config_parser_test
-    configuration/config_parser_test.cpp
+        configuration/config_parser_test.cpp
 )
 
 target_link_libraries(securecloud_config_parser_test PRIVATE
-    securecloud::common
-    securecloud::compiler_flags
-    GTest::gtest_main
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_config_parser_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Common Service Configuration Model Unit Test Suite (SC12-T02)
 add_executable(securecloud_common_service_config_test
-    configuration/common_service_config_test.cpp
+        configuration/common_service_config_test.cpp
 )
 
 target_link_libraries(securecloud_common_service_config_test PRIVATE
-    securecloud::common
-    securecloud::compiler_flags
-    GTest::gtest_main
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_common_service_config_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Service Configuration Boundaries Unit Test Suite (SC12-T03)
 add_executable(securecloud_service_config_boundaries_test
-    configuration/service_config_boundaries_test.cpp
+        configuration/service_config_boundaries_test.cpp
 )
 
 target_link_libraries(securecloud_service_config_boundaries_test PRIVATE
-    securecloud::gateway_config
-    securecloud::auth_config
-    securecloud::messaging_config
-    securecloud::files_config
-    securecloud::audit_config
-    securecloud::common
-    securecloud::compiler_flags
-    GTest::gtest_main
+        securecloud::gateway_config
+        securecloud::auth_config
+        securecloud::messaging_config
+        securecloud::files_config
+        securecloud::audit_config
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_service_config_boundaries_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Health Status Manager & Service Unit Test Suite (SC13-T03)
 add_executable(securecloud_health_status_manager_test
-    health/health_status_manager_test.cpp
+        health/health_status_manager_test.cpp
 )
 
 target_link_libraries(securecloud_health_status_manager_test PRIVATE
-    securecloud::common
-    securecloud_proto
-    securecloud::compiler_flags
-    GTest::gtest_main
+        securecloud::common
+        securecloud_proto
+        securecloud::compiler_flags
+        GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_health_status_manager_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Transport Probe Unit Test Suite (SC13-T03)
 add_executable(securecloud_transport_probe_test
-    health/transport_probe_test.cpp
+        health/transport_probe_test.cpp
 )
 
 target_link_libraries(securecloud_transport_probe_test PRIVATE
-    securecloud::common
-    securecloud::compiler_flags
-    GTest::gtest_main
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_transport_probe_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# PostgreSQL C++ Driver (libpqxx) Integration Smoke Test (AUTH-001-T02)
+add_executable(securecloud_pqxx_smoke_test
+        pqxx_smoke_test.cpp
+)
+
+target_link_libraries(securecloud_pqxx_smoke_test PRIVATE
+        securecloud::libpqxx
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_pqxx_smoke_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth PostgreSQL Connection Pool Unit Test Suite (AUTH-001-T03)
+add_executable(securecloud_connection_pool_test
+        auth/connection_pool_test.cpp
+)
+
+target_link_libraries(securecloud_connection_pool_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_connection_pool_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Service Implementation Unit Test Suite (AUTH-001-T06)
+add_executable(securecloud_auth_service_test
+        auth/auth_service_test.cpp
+)
+
+target_link_libraries(securecloud_auth_service_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Database Migration Runner Unit Test Suite (AUTH-002-T01)
+add_executable(securecloud_auth_migration_runner_test
+        auth/migration_runner_test.cpp
+)
+
+target_link_libraries(securecloud_auth_migration_runner_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_migration_runner_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Persistence Domain Entities & Value Types Test Suite (AUTH-002-T02)
+add_executable(securecloud_auth_domain_entities_test
+        auth/domain_entities_test.cpp
+)
+
+target_link_libraries(securecloud_auth_domain_entities_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_domain_entities_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth User & Device Repositories Test Suite (AUTH-002-T03)
+add_executable(securecloud_auth_user_device_repository_test
+        auth/user_device_repository_test.cpp
+)
+
+target_link_libraries(securecloud_auth_user_device_repository_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_user_device_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Session & Refresh Token Repositories Test Suite (AUTH-002-T04)
+add_executable(securecloud_auth_session_token_repository_test
+        auth/session_token_repository_test.cpp
+)
+
+target_link_libraries(securecloud_auth_session_token_repository_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_session_token_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Device Public Key & MFA Repositories Test Suite (AUTH-002-T05)
+add_executable(securecloud_auth_crypto_key_mfa_repository_test
+        auth/crypto_key_mfa_repository_test.cpp
+)
+
+target_link_libraries(securecloud_auth_crypto_key_mfa_repository_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_crypto_key_mfa_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test

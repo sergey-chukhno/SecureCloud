@@ -42,6 +42,27 @@ if(WIN32)
     endif()
 endif()
 
+# Proactive discovery of Homebrew prefixes on macOS
+if(APPLE)
+    if(EXISTS "/opt/homebrew" AND NOT "/opt/homebrew" IN_LIST CMAKE_PREFIX_PATH)
+        list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew")
+        message(STATUS "[SecureCloud] Added Homebrew prefix to CMAKE_PREFIX_PATH: /opt/homebrew")
+    endif()
+    if(EXISTS "/opt/homebrew/opt/libpq")
+        list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew/opt/libpq")
+        set(PostgreSQL_ROOT "/opt/homebrew/opt/libpq")
+        message(STATUS "[SecureCloud] Set PostgreSQL_ROOT for keg-only libpq: /opt/homebrew/opt/libpq")
+    elseif(EXISTS "/usr/local/opt/libpq")
+        list(APPEND CMAKE_PREFIX_PATH "/usr/local/opt/libpq")
+        set(PostgreSQL_ROOT "/usr/local/opt/libpq")
+        message(STATUS "[SecureCloud] Set PostgreSQL_ROOT for keg-only libpq: /usr/local/opt/libpq")
+    endif()
+    if(EXISTS "/usr/local" AND NOT "/usr/local" IN_LIST CMAKE_PREFIX_PATH)
+        list(APPEND CMAKE_PREFIX_PATH "/usr/local")
+        message(STATUS "[SecureCloud] Added Homebrew prefix to CMAKE_PREFIX_PATH: /usr/local")
+    endif()
+endif()
+
 # 1. Discover gRPC dependency (finds gRPC and its Protobuf dependency via CONFIG mode)
 message(STATUS "[SecureCloud] Discovering gRPC framework...")
 find_package(gRPC CONFIG QUIET)
@@ -133,7 +154,42 @@ else()
     endif()
 endif()
 
-# 3. Discover testing dependencies when BUILD_TESTING is enabled
+# 3. Discover libpqxx dependency
+message(STATUS "[SecureCloud] Discovering libpqxx framework...")
+find_package(libpqxx CONFIG QUIET)
+if(NOT libpqxx_FOUND AND NOT pqxx_FOUND)
+    find_package(libpqxx QUIET)
+endif()
+if(NOT libpqxx_FOUND AND NOT pqxx_FOUND)
+    find_package(pqxx QUIET)
+endif()
+
+if(NOT libpqxx_FOUND AND NOT pqxx_FOUND)
+    message(FATAL_ERROR
+            "[SecureCloud] libpqxx package was not found.\n"
+            "  Active CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}\n"
+            "  Remediation:\n"
+            "    - On macOS (Homebrew): Run 'brew install libpqxx'\n"
+            "    - On MSYS2 MinGW64: Run 'pacman -S --needed mingw-w64-x86_64-libpqxx'\n"
+            "    - On MSYS2 UCRT64:  Run 'pacman -S --needed mingw-w64-ucrt-x86_64-libpqxx'\n"
+            "    - On MSVC / vcpkg:  Ensure VCPKG_ROOT is set and pass -DCMAKE_TOOLCHAIN_FILE=\"$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake\""
+    )
+endif()
+
+if(NOT TARGET securecloud::libpqxx)
+    add_library(securecloud::libpqxx INTERFACE IMPORTED)
+    if(TARGET libpqxx::pqxx)
+        target_link_libraries(securecloud::libpqxx INTERFACE libpqxx::pqxx)
+        message(STATUS "[SecureCloud] Exported target: securecloud::libpqxx (linked to libpqxx::pqxx)")
+    elseif(TARGET pqxx)
+        target_link_libraries(securecloud::libpqxx INTERFACE pqxx)
+        message(STATUS "[SecureCloud] Exported target: securecloud::libpqxx (linked to pqxx)")
+    else()
+        message(FATAL_ERROR "[SecureCloud] libpqxx package found but neither libpqxx::pqxx nor pqxx target is available")
+    endif()
+endif()
+
+# 4. Discover testing dependencies when BUILD_TESTING is enabled
 if(BUILD_TESTING)
     message(STATUS "[SecureCloud] Discovering GoogleTest testing framework...")
     find_package(GTest REQUIRED)
