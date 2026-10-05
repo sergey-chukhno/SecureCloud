@@ -6,7 +6,12 @@
 #include "securecloud/configuration/validation_error.hpp"
 
 #include <cstdint>
+#include <memory>
 #include <string>
+
+namespace securecloud::auth::db {
+class PostgresConnectionPool;
+}
 
 namespace securecloud::auth {
 
@@ -25,6 +30,9 @@ struct AuthConfig {
     /// Loads and validates Auth configuration. Fails closed if db_password is missing or empty.
     static AuthConfig load(const common::configuration::ConfigurationSource& source,
                            common::configuration::ValidationResult& out_errors);
+
+    /// Creates and configures a shared PostgreSQL connection pool from current settings.
+    [[nodiscard]] std::shared_ptr<db::PostgresConnectionPool> create_database_pool() const;
 };
 
 } // namespace securecloud::auth

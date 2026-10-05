@@ -114,9 +114,14 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Use standard gRPC status codes (`INVALID_ARGUMENT`, `NOT_FOUND`, `UNAUTHENTICATED`, `PERMISSION_DENIED`, `UNIMPLEMENTED`).
 19. **Testing Requirements**: `tests/unit/proto_smoke_test.cpp` instantiates generated request types and service stubs.
 20. **Validation Commands**:
+    - Windows (MSYS2 / MinGW64 toolchains only) :
+    ```shell
+    $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+    ```
+    - Build & Test Execution (All platforms & toolchains):
     ```bash
     cmake --preset dev-debug
-    cmake --build --preset dev-debug --target securecloud_proto
+    cmake --build --preset dev-debug --target securecloud_proto_smoke_test
     ctest --preset dev-debug -R proto_smoke_test --output-on-failure
     ```
 21. **Expected Validation Evidence**: Generated headers (`auth.pb.h`, `auth.grpc.pb.h`) compile without warnings; `verify-contracts` target passes.
@@ -152,6 +157,11 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Clear fatal diagnostic if `libpqxx` is missing with platform remediation steps.
 19. **Testing Requirements**: `securecloud_pqxx_smoke_test` compiles and passes in CTest.
 20. **Validation Commands**:
+    - Windows (MSYS2 / MinGW64 toolchains only) :
+    ```shell
+    $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+    ```
+    - Build & Test Execution (All platforms & toolchains):
     ```bash
     cmake --preset dev-debug
     cmake --build --preset dev-debug --target securecloud_pqxx_smoke_test
@@ -206,6 +216,11 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Custom exceptions (`ConnectionAcquisitionTimeoutException`, `PoolShuttingDownException`). `ping()` never throws unhandled exceptions.
 19. **Testing Requirements**: `tests/unit/auth/connection_pool_test.cpp` validates queue bounding, timeout expiry, thread contention, RAII release, and state transitions.
 20. **Validation Commands**:
+    - Windows (MSYS2 / MinGW64 toolchains only) :
+    ```shell
+    $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+    ```
+    - Build & Test Execution (All platforms & toolchains):
     ```bash
     cmake --preset dev-debug
     cmake --build --preset dev-debug --target securecloud_connection_pool_test
@@ -252,11 +267,16 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Returns `grpc::Status(grpc::StatusCode::UNIMPLEMENTED, ...)`.
 19. **Testing Requirements**: Verified via integration test client in T06.
 20. **Validation Commands**:
-    ```bash
-    cmake --preset dev-debug
-    cmake --build --preset dev-debug --target securecloud-auth
-    python3 scripts/verify-local.py
-    ```
+  - Windows (MSYS2 / MinGW64 toolchains only) :
+  ```shell
+  $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+  ```
+  - Build & Test Execution (All platforms & toolchains):
+  ```bash
+  cmake --preset dev-debug
+  cmake --build --preset dev-debug --target securecloud-auth
+  python3 scripts/verify-local.py
+  ```
 21. **Expected Validation Evidence**: `securecloud-auth` compiles and links cleanly.
 22. **Acceptance Criteria**: All 12 RPCs registered, mTLS enforced, zero secrets logged.
 23. **M1 Regression Requirements**: `HealthServiceImpl` continues to serve alongside `AuthServiceImpl`.
@@ -297,11 +317,16 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Forced cancellation if shutdown deadline expires; no hangs.
 19. **Testing Requirements**: Verified in unit/integration tests.
 20. **Validation Commands**:
-    ```bash
-    cmake --preset dev-debug
-    cmake --build --preset dev-debug --target securecloud-auth
-    python3 scripts/verify-local.py
-    ```
+  - Windows (MSYS2 / MinGW64 toolchains only) :
+  ```shell
+  $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+  ```
+  - Build & Test Execution (All platforms & toolchains):
+  ```bash
+  cmake --preset dev-debug
+  cmake --build --preset dev-debug --target securecloud-auth
+  python3 scripts/verify-local.py
+  ```
 21. **Expected Validation Evidence**: Service degrades readiness when database is down; terminates cleanly on `SIGTERM` within bounded time.
 22. **Acceptance Criteria**: Signal-safe handler, bounded ping in evaluator, deterministic graceful shutdown.
 23. **M1 Regression Requirements**: Preserves all SC-013 health probe semantics.
@@ -351,12 +376,18 @@ Card **AUTH-001** establishes the foundational architecture, IPC contracts, data
 18. **Error-Handling Requirements**: Clear assertion diagnostics on failure.
 19. **Testing Requirements**: Registered via `gtest_discover_tests`.
 20. **Validation Commands**:
-    ```bash
+  - Windows (MSYS2 / MinGW64 toolchains only) :
+  ```shell
+  $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
+  ```
+  - Build & Test Execution (All platforms & toolchains):
+  ```bash
     cmake --preset dev-debug
+    cmake --build --preset dev-debug --target securecloud_auth_service_test
     cmake --build --preset dev-debug --target securecloud_auth_integration_test
     ctest --preset dev-debug -R "auth_" --output-on-failure
     python3 scripts/verify-local.py
-    ```
+  ```
 21. **Expected Validation Evidence**: 100% test pass; full `verify-local.py` run passes.
 22. **Acceptance Criteria**: All 12 RPC tests pass, 4 mTLS cases pass, DB readiness degradation/recovery verified without touching port 5432.
 23. **M1 Regression Requirements**: All existing M1 tests continue to pass; new test targets execute cleanly without regression.
