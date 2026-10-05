@@ -42,6 +42,17 @@ if(WIN32)
     endif()
 endif()
 
+# Proactive discovery of Homebrew prefixes on macOS
+if(APPLE)
+    if(EXISTS "/opt/homebrew" AND NOT "/opt/homebrew" IN_LIST CMAKE_PREFIX_PATH)
+        list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew")
+        message(STATUS "[SecureCloud] Added Homebrew prefix to CMAKE_PREFIX_PATH: /opt/homebrew")
+    elseif(EXISTS "/usr/local" AND NOT "/usr/local" IN_LIST CMAKE_PREFIX_PATH)
+        list(APPEND CMAKE_PREFIX_PATH "/usr/local")
+        message(STATUS "[SecureCloud] Added Homebrew prefix to CMAKE_PREFIX_PATH: /usr/local")
+    endif()
+endif()
+
 # 1. Discover gRPC dependency (finds gRPC and its Protobuf dependency via CONFIG mode)
 message(STATUS "[SecureCloud] Discovering gRPC framework...")
 find_package(gRPC CONFIG QUIET)
@@ -148,6 +159,7 @@ if(NOT libpqxx_FOUND AND NOT pqxx_FOUND)
             "[SecureCloud] libpqxx package was not found.\n"
             "  Active CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}\n"
             "  Remediation:\n"
+            "    - On macOS (Homebrew): Run 'brew install libpqxx'\n"
             "    - On MSYS2 MinGW64: Run 'pacman -S --needed mingw-w64-x86_64-libpqxx'\n"
             "    - On MSYS2 UCRT64:  Run 'pacman -S --needed mingw-w64-ucrt-x86_64-libpqxx'\n"
             "    - On MSVC / vcpkg:  Ensure VCPKG_ROOT is set and pass -DCMAKE_TOOLCHAIN_FILE=\"$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake\""
