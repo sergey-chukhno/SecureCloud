@@ -79,7 +79,7 @@ void PostgresMfaRepository::store_mfa_configuration(const domain::MfaConfigurati
                                   domain::to_string(config.factor_type), sec_bytes, domain::to_string(config.status),
                                   domain::to_iso8601(config.created_at), enabled_at_str, disabled_at_str,
                                   initial_version});
-    } catch (const pqxx::unique_violation& ex) {
+    } catch (const pqxx::unique_violation&) {
         throw DuplicateEntityException("MFA configuration already exists: " + config.mfa_configuration_id.to_string());
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to store MFA configuration: " + std::string(ex.what()));
@@ -185,7 +185,7 @@ void PostgresMfaRepository::create_challenge(const domain::MfaChallengeEntity& c
                                   domain::to_string(challenge.challenge_status),
                                   domain::to_iso8601(challenge.created_at), domain::to_iso8601(challenge.expires_at),
                                   completed_at_str});
-    } catch (const pqxx::unique_violation& ex) {
+    } catch (const pqxx::unique_violation&) {
         throw DuplicateEntityException("MFA challenge already exists: " + challenge.mfa_challenge_id.to_string());
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to create MFA challenge: " + std::string(ex.what()));

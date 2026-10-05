@@ -75,7 +75,7 @@ void PostgresRefreshTokenRepository::create_token(const domain::RefreshTokenEnti
                                   domain::to_string(token.token_status), domain::to_iso8601(token.issued_at),
                                   domain::to_iso8601(token.expires_at), revoked_at_str, rotated_at_str,
                                   replaced_by_str});
-    } catch (const pqxx::unique_violation& ex) {
+    } catch (const pqxx::unique_violation&) {
         throw DuplicateEntityException("Refresh token already exists: " + token.refresh_token_id.to_string());
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to insert refresh token: " + std::string(ex.what()));

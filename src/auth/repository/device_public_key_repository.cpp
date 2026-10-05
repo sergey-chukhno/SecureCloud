@@ -64,7 +64,7 @@ void PostgresDevicePublicKeyRepository::store_public_key(const domain::DevicePub
                      pqxx::params{key.key_id.to_string(), key.device_id.to_string(), domain::to_string(key.key_type),
                                   pk_bytes, domain::to_string(key.key_status), domain::to_iso8601(key.created_at),
                                   revoked_at_str, replaced_by_str});
-    } catch (const pqxx::unique_violation& ex) {
+    } catch (const pqxx::unique_violation&) {
         throw DuplicateEntityException("Device public key already exists: " + key.key_id.to_string());
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to insert device public key: " + std::string(ex.what()));

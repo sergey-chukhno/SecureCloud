@@ -70,7 +70,7 @@ void PostgresDeviceRepository::register_device(const domain::DeviceEntity& devic
                                   revoked_at_str, device.revocation_reason,
                                   domain::to_iso8601(device.last_authenticated_at),
                                   domain::to_iso8601(device.created_at), domain::to_iso8601(device.updated_at)});
-    } catch (const pqxx::unique_violation& ex) {
+    } catch (const pqxx::unique_violation&) {
         throw DuplicateEntityException("Device already registered: " + device.device_id.to_string());
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to register device: " + std::string(ex.what()));

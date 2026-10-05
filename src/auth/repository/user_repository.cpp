@@ -55,7 +55,7 @@ void PostgresUserRepository::create_user(const domain::UserEntity& user, pqxx::t
                                   user.password_algorithm, domain::to_iso8601(user.password_updated_at),
                                   domain::to_string(user.account_status), domain::to_iso8601(user.created_at),
                                   domain::to_iso8601(user.updated_at), initial_version});
-    } catch (const pqxx::unique_violation& ex) {
+    } catch (const pqxx::unique_violation&) {
         throw DuplicateEntityException("Credential identifier already registered: " + user.credential_identifier);
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to insert user: " + std::string(ex.what()));
@@ -130,7 +130,7 @@ void PostgresUserRepository::update_user(const domain::UserEntity& user, pqxx::t
         }
     } catch (const RepositoryException&) {
         throw;
-    } catch (const pqxx::unique_violation& ex) {
+    } catch (const pqxx::unique_violation&) {
         throw DuplicateEntityException("Credential identifier already registered: " + user.credential_identifier);
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to update user: " + std::string(ex.what()));

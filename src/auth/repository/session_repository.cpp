@@ -75,7 +75,7 @@ void PostgresSessionRepository::create_session(const domain::SessionEntity& sess
                                   domain::to_string(session.authentication_level),
                                   domain::to_iso8601(session.created_at), domain::to_iso8601(session.expires_at),
                                   revoked_at_str, domain::to_iso8601(session.last_used_at)});
-    } catch (const pqxx::unique_violation& ex) {
+    } catch (const pqxx::unique_violation&) {
         throw DuplicateEntityException("Session already exists: " + session.session_id.to_string());
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to insert session: " + std::string(ex.what()));
