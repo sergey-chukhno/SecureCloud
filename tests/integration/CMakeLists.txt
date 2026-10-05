@@ -79,3 +79,283 @@ target_compile_definitions(securecloud_auth_integration_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_auth_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Dual-Stack Integration Test Suite (GW-001-T06)
+add_executable(securecloud_gateway_integration_test
+    gateway_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_integration_test PRIVATE
+    securecloud::gateway_config
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_health
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_gateway_integration_test PRIVATE
+    SECURECLOUD_HEALTH_PROBE_BIN="$<TARGET_FILE:securecloud_health_probe>"
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+add_dependencies(securecloud_gateway_integration_test securecloud_health_probe)
+
+gtest_discover_tests(securecloud_gateway_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway HTTPS Security & Handshake Integration Test Suite (GW-002-T06)
+add_executable(securecloud_gateway_https_integration_test
+    gateway_https_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_https_integration_test PRIVATE
+    securecloud::gateway_config
+    securecloud::gateway_http
+    securecloud::gateway_tls
+    securecloud::common
+    securecloud::httplib
+    securecloud::json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_gateway_https_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_gateway_https_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway-to-Auth mTLS gRPC Integration Test Suite (GW-003-T05)
+add_executable(securecloud_gateway_auth_grpc_integration_test
+    gateway_auth_grpc_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_auth_grpc_integration_test PRIVATE
+    securecloud::gateway_grpc
+    securecloud::gateway_config
+    securecloud_proto
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_gateway_auth_grpc_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_gateway_auth_grpc_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_gateway_auth_grpc_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway HTTPS Authentication Middleware Integration Test Suite (GW-004-T06)
+add_executable(securecloud_gateway_auth_middleware_integration_test
+    gateway_auth_middleware_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_auth_middleware_integration_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_tls
+    securecloud::gateway_config
+    securecloud_proto
+    securecloud::common
+    securecloud::httplib
+    securecloud::json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_gateway_auth_middleware_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_gateway_auth_middleware_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_gateway_auth_middleware_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Routing End-to-End Integration Test Suite (GW-006-T03)
+add_executable(securecloud_gateway_routing_integration_test
+    gateway_routing_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_routing_integration_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_tls
+    securecloud::gateway_config
+    securecloud_proto
+    securecloud::common
+    securecloud::httplib
+    securecloud::json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_gateway_routing_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_gateway_routing_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_gateway_routing_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Route & Scope Authorization Integration Test Suite (GW-007-T04)
+add_executable(securecloud_gateway_authorization_integration_test
+    gateway_authorization_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_authorization_integration_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_tls
+    securecloud::gateway_config
+    securecloud_proto
+    securecloud::common
+    securecloud::httplib
+    securecloud::json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_gateway_authorization_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_gateway_authorization_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_gateway_authorization_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Perimeter Resilience, Deadline & Cancellation Integration Test Suite (GW-008-T04)
+add_executable(securecloud_gateway_resilience_integration_test
+    gateway_resilience_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_resilience_integration_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_tls
+    securecloud::gateway_config
+    securecloud_proto
+    securecloud::common
+    securecloud::httplib
+    securecloud::json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_gateway_resilience_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_gateway_resilience_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_gateway_resilience_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Resource Controls & Fault Tolerance Integration Test Suite (GW-009-T05)
+add_executable(securecloud_gateway_resource_controls_integration_test
+    gateway_resource_controls_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_resource_controls_integration_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_tls
+    securecloud::gateway_config
+    securecloud_proto
+    securecloud::common
+    securecloud::httplib
+    securecloud::json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_gateway_resource_controls_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_gateway_resource_controls_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_gateway_resource_controls_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Service Integration Test Suite (FILES-001-T06)
+add_executable(securecloud_files_integration_test
+    files_integration_test.cpp
+)
+
+target_link_libraries(securecloud_files_integration_test PRIVATE
+    securecloud::files_service
+    securecloud::files_health
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_files_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_files_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_files_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Streaming TLS 1.3 / mTLS Integration Test Suite (GW-010-T04)
+add_executable(securecloud_gateway_streaming_integration_test
+    gateway_streaming_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_streaming_integration_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_tls
+    securecloud::gateway_config
+    securecloud_proto
+    securecloud::common
+    securecloud::httplib
+    securecloud::json
+    OpenSSL::SSL
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_gateway_streaming_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_gateway_streaming_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_gateway_streaming_integration_test ${SECURECLOUD_TEST_PROPERTIES})

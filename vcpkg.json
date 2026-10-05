@@ -8,6 +8,8 @@
     "grpc",
     "gtest",
     "libpqxx",
-    "protobuf"
+    "protobuf",
+    "nlohmann-json",
+    "cpp-httplib"
   ]
 }

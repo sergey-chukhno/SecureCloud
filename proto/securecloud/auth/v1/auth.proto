@@ -4,205 +4,261 @@ package securecloud.auth.v1;
 
 option cc_generic_services = false;
 
-import "google/protobuf/timestamp.proto";
+// ============================================================================
+// Enums
+// ============================================================================
 
-// Authentification status enum
 enum DeviceStatus {
-  DEVICE_STATUS_UNSPECIFIED = 0;
-  DEVICE_STATUS_ACTIVE = 1;
-  DEVICE_STATUS_REVOKED = 2;
+    DEVICE_STATUS_UNSPECIFIED = 0;
+    DEVICE_STATUS_ACTIVE = 1;
+    DEVICE_STATUS_REVOKED = 2;
 }
 
 enum AuthenticationLevel {
-  AUTHENTICATION_LEVEL_UNSPECIFIED = 0;
-  AUTHENTICATION_LEVEL_PRIMARY_ONLY = 1;
-  AUTHENTICATION_LEVEL_MFA_VERIFIED = 2;
+    AUTHENTICATION_LEVEL_UNSPECIFIED = 0;
+    AUTHENTICATION_LEVEL_PRIMARY = 1;
+    AUTHENTICATION_LEVEL_MFA_VERIFIED = 2;
 }
 
 enum KeyType {
-  KEY_TYPE_UNSPECIFIED = 0;
-  KEY_TYPE_IDENTITY_SIGNING = 1;
-  KEY_TYPE_IDENTITY_AGREEMENT = 2;
-  KEY_TYPE_PREKEY = 3;
+    KEY_TYPE_UNSPECIFIED = 0;
+    KEY_TYPE_IDENTITY_SIGNING = 1;
+    KEY_TYPE_IDENTITY_AGREEMENT = 2;
+    KEY_TYPE_SIGNED_PREKEY = 3;
+    KEY_TYPE_ONE_TIME_PREKEY = 4;
 }
 
-// Authoritative RPC methods
+enum AccountStatus {
+    ACCOUNT_STATUS_UNSPECIFIED = 0;
+    ACCOUNT_STATUS_ACTIVE = 1;
+    ACCOUNT_STATUS_DISABLED = 2;
+}
 
-// --- Authenticate ---
+enum SessionStatus {
+    SESSION_STATUS_UNSPECIFIED = 0;
+    SESSION_STATUS_ACTIVE = 1;
+    SESSION_STATUS_REVOKED = 2;
+    SESSION_STATUS_EXPIRED = 3;
+}
+
+// ============================================================================
+// Domain Entity Messages
+// ============================================================================
+
+// User represents the public account identity and lifecycle state.
+// user_id is a canonical lowercase RFC 4122 UUIDv4/UUIDv7 string.
+message User {
+    string user_id = 1;
+    string credential_identifier = 2;
+    AccountStatus account_status = 3;
+    int64 created_at_epoch_ms = 4;
+    int64 updated_at_epoch_ms = 5;
+}
+
+// Device represents an enrolled user device endpoint.
+message Device {
+    string device_id = 1;
+    string user_id = 2;
+    DeviceStatus device_status = 3;
+    int64 registered_at_epoch_ms = 4;
+    int64 revoked_at_epoch_ms = 5;
+    string revocation_reason = 6;
+    int64 last_authenticated_at_epoch_ms = 7;
+}
+
+// Session represents an active or historical authenticated session.
+message Session {
+    string session_id = 1;
+    string user_id = 2;
+    string device_id = 3;
+    SessionStatus session_status = 4;
+    AuthenticationLevel authentication_level = 5;
+    int64 created_at_epoch_ms = 6;
+    int64 expires_at_epoch_ms = 7;
+    int64 revoked_at_epoch_ms = 8;
+    int64 last_used_at_epoch_ms = 9;
+}
+
+// DeviceCryptoRecord represents public cryptographic material for end-to-end encryption.
+// Private keys are NEVER present in this record.
+message DeviceCryptoRecord {
+    string device_id = 1;
+    bytes identity_key = 2;
+    bytes signed_prekey = 3;
+    bytes signed_prekey_signature = 4;
+    bytes one_time_prekey = 5;
+    string one_time_prekey_id = 6;
+}
+
+// ============================================================================
+// RPC Request & Response Messages
+// ============================================================================
+
+// Authenticate verifies client credentials and produces session tokens.
 message AuthenticateRequest {
-  string credential_identifier = 1;
-  string password = 2;
-  string device_id = 3;
+    string credential_identifier = 1;
+    string password = 2; // Sensitive authentication credential. Never echoed or logged.
+    string device_id = 3;
 }
 
 message AuthenticateResponse {
-  string user_id = 1;
-  string device_id = 2;
-  string session_id = 3;
-  string access_token = 4;
-  string refresh_token = 5;
-  AuthenticationLevel authentication_level = 6;
-  bool mfa_required = 7;
-  string mfa_challenge_id = 8;
+    string session_id = 1;
+    string access_token = 2;
+    string refresh_token = 3;
+    AuthenticationLevel authentication_level = 4;
+    int64 expires_at_epoch_ms = 5;
+    string user_id = 6;
+    bool mfa_required = 7;
+    string mfa_challenge_id = 8;
 }
 
-// --- RefreshSession ---
+// RefreshSession renews an expired or expiring access token using a valid refresh token.
 message RefreshSessionRequest {
-  string refresh_token = 1;
-}
-message RefreshSessionResponse {
-  string refresh_token = 1;
-  string access_token = 2;
-  string user_id = 3;
-  string device_id = 4;
-  string session_id = 5;
-  AuthenticationLevel authentication_level = 6;
+    string refresh_token = 1;
+    string device_id = 2;
 }
 
-// --- ValidateSession ---
+message RefreshSessionResponse {
+    string session_id = 1;
+    string access_token = 2;
+    string new_refresh_token = 3;
+    int64 expires_at_epoch_ms = 4;
+}
+
+// ValidateSession verifies session authenticity and active status for incoming requests.
 message ValidateSessionRequest {
-  string session_id = 1;
+    string session_id = 1;
+    string access_token = 2;
 }
 
 message ValidateSessionResponse {
-  bool is_valid = 1;
-  string user_id = 2;
-  string device_id = 3;
-  string session_id = 4;
-  AuthenticationLevel authentication_level = 5;
-  google.protobuf.Timestamp expires_at = 6;
+    bool is_valid = 1;
+    string user_id = 2;
+    string device_id = 3;
+    AuthenticationLevel authentication_level = 4;
+    int64 expires_at_epoch_ms = 5;
 }
 
-// --- RevokeSession ---
+// RevokeSession terminates an active session and invalidates its refresh token.
 message RevokeSessionRequest {
-  string session_id = 1;
-  string revocation_reason = 2;
+    string session_id = 1;
+    string reason = 2;
 }
 
 message RevokeSessionResponse {
-  bool success = 1;
+    bool revoked = 1;
 }
 
-// --- GetUser ---
+// GetUser retrieves account details for a given user ID.
 message GetUserRequest {
-  string user_id = 1;
+    string user_id = 1;
 }
 
 message GetUserResponse {
-  string user_id = 1;
-  string credential_identifier = 2;
-  string account_status = 3;
-  google.protobuf.Timestamp created_at = 4;
-  google.protobuf.Timestamp updated_at = 5;
+    User user = 1;
 }
 
-// --- GetDevice ---
+// GetDevice retrieves details for a registered device.
 message GetDeviceRequest {
-  string device_id =1;
+    string device_id = 1;
 }
 
 message GetDeviceResponse {
-  string device_id = 1;
-  string user_id = 2;
-  DeviceStatus device_status = 3;
-  google.protobuf.Timestamp registered_at = 4;
-  google.protobuf.Timestamp revoked_at = 5;
-  string revocation_reason = 6;
-  google.protobuf.Timestamp last_authenticated_at = 7;
+    Device device = 1;
 }
 
-// --- ListUserDevices ---
+// ListUserDevices returns all registered devices for an account.
 message ListUserDevicesRequest {
-  string user_id = 1;
+    string user_id = 1;
+    bool include_revoked = 2;
 }
 
 message ListUserDevicesResponse {
-  repeated GetDeviceResponse devices = 1;
+    repeated Device devices = 1;
 }
 
-// --- RegisterDevice ---
+// RegisterDevice enrolls a new device and stores its public cryptographic material.
 message RegisterDeviceRequest {
-  string user_id = 1;
-  bytes public_identity_key = 2;
+    string user_id = 1;
+    bytes identity_key = 2;
+    bytes signed_prekey = 3;
+    bytes signed_prekey_signature = 4;
+    repeated bytes one_time_prekeys = 5;
 }
 
 message RegisterDeviceResponse {
-  string device_id = 1;
-  DeviceStatus device_status = 2;
-  google.protobuf.Timestamp registered_at = 3;
+    string device_id = 1;
+    DeviceStatus status = 2;
+    int64 registered_at_epoch_ms = 3;
 }
 
-// --- RevokeDevice ---
+// RevokeDevice revokes a device, invalidating all associated sessions.
 message RevokeDeviceRequest {
-  string device_id = 1;
-  string revocation_reason = 2;
+    string device_id = 1;
+    string user_id = 2;
+    string reason = 3;
 }
 
 message RevokeDeviceResponse {
-  bool success = 1;
-  google.protobuf.Timestamp revoked_at = 2;
+    bool revoked = 1;
+    int64 revoked_at_epoch_ms = 2;
 }
 
-// --- GetDeviceCryptoDirectory ---
+// GetDeviceCryptoDirectory discovers public keys for one or all devices of a user.
 message GetDeviceCryptoDirectoryRequest {
-  string user_id = 1;
+    string user_id = 1;
+    repeated string device_ids = 2;
 }
 
 message GetDeviceCryptoDirectoryResponse {
-  message OneTimePrekey {
-    string key_id = 1;
-    bytes public_key = 2;
-  }
-
-  message DeviceCryptoBundle {
-    string device_id = 1;
-    bytes identity_public_key = 2;
-    bytes signed_prekey = 3;
-    bytes signed_prekey_signature = 4;
-    OneTimePrekey one_time_prekey = 5;
-  }
-
-  string user_id = 1;
-  repeated DeviceCryptoBundle device_bundles = 2;
+    repeated DeviceCryptoRecord devices = 1;
 }
 
-// --- GetCryptoIdentity ---
+// GetCryptoIdentity retrieves public identity keys for a specific device.
 message GetCryptoIdentityRequest {
-  string device_id = 1;
+    string device_id = 1;
 }
 
 message GetCryptoIdentityResponse {
-  string device_id = 1;
-  bytes identity_public_key = 2;
-  KeyType key_type = 3;
+    string device_id = 1;
+    string user_id = 2;
+    bytes identity_key = 3;
+    bytes signed_prekey = 4;
+    bytes signed_prekey_signature = 5;
 }
 
-// --- UpdateCryptoPrekeys ---
+// UpdateCryptoPrekeys uploads new one-time prekeys and/or rotates the signed prekey.
 message UpdateCryptoPrekeysRequest {
-  string device_id = 1;
-  bytes signed_prekey = 2;
-  bytes signed_prekey_signature = 3;
-  repeated bytes one_time_prekeys = 4;
+    string device_id = 1;
+    bytes signed_prekey = 2;
+    bytes signed_prekey_signature = 3;
+    repeated bytes one_time_prekeys = 4;
 }
 
 message UpdateCryptoPrekeysResponse {
-  bool success = 1;
-  uint32 remaining_one_time_prekeys = 2;
-  google.protobuf.Timestamp updated_at = 3;
+    int32 active_one_time_prekey_count = 1;
+    int64 updated_at_epoch_ms = 2;
 }
 
-// Authentification service interface
+// ============================================================================
+// Service Interface
+// ============================================================================
+
+// AuthService defines the authoritative 12 internal gRPC operations of the Authentication Service.
 service AuthService {
-  rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
-  rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse);
-  rpc ValidateSession(ValidateSessionRequest) returns (ValidateSessionResponse);
-  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
-  rpc GetUser(GetUserRequest) returns (GetUserResponse);
-  rpc GetDevice(GetDeviceRequest) returns (GetDeviceResponse);
-  rpc ListUserDevices(ListUserDevicesRequest) returns (ListUserDevicesResponse);
-  rpc RegisterDevice(RegisterDeviceRequest) returns (RegisterDeviceResponse);
-  rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
-  rpc GetDeviceCryptoDirectory(GetDeviceCryptoDirectoryRequest) returns (GetDeviceCryptoDirectoryResponse);
-  rpc GetCryptoIdentity(GetCryptoIdentityRequest) returns (GetCryptoIdentityResponse);
-  rpc UpdateCryptoPrekeys(UpdateCryptoPrekeysRequest) returns (UpdateCryptoPrekeysResponse);
+    rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
+    rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse);
+    rpc ValidateSession(ValidateSessionRequest) returns (ValidateSessionResponse);
+    rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
+
+    rpc GetUser(GetUserRequest) returns (GetUserResponse);
+    rpc GetDevice(GetDeviceRequest) returns (GetDeviceResponse);
+    rpc ListUserDevices(ListUserDevicesRequest) returns (ListUserDevicesResponse);
+
+    rpc RegisterDevice(RegisterDeviceRequest) returns (RegisterDeviceResponse);
+    rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
+
+    rpc GetDeviceCryptoDirectory(GetDeviceCryptoDirectoryRequest) returns (GetDeviceCryptoDirectoryResponse);
+    rpc GetCryptoIdentity(GetCryptoIdentityRequest) returns (GetCryptoIdentityResponse);
+    rpc UpdateCryptoPrekeys(UpdateCryptoPrekeysRequest) returns (UpdateCryptoPrekeysResponse);
 }

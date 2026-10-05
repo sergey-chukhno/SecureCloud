@@ -12,6 +12,7 @@ vcpkg_installed/
 .cache/
 .vscode/
 .idea/
+.vcpkg_archives/
 *.user
 
 # Development PKI, credentials, environment files, and TLS material
