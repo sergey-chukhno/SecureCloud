@@ -1,6 +1,7 @@
 #pragma once
 
 #include "auth/auth_config.hpp"
+#include "auth/db/db_exec.hpp"
 #include "auth/db/pooled_connection.hpp"
 
 #include <chrono>

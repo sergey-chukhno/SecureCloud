@@ -50,11 +50,11 @@ void PostgresUserRepository::create_user(const domain::UserEntity& user) {
 void PostgresUserRepository::create_user(const domain::UserEntity& user, pqxx::transaction_base& tx) {
     try {
         const uint64_t initial_version = (user.version == 0) ? 1 : user.version;
-        tx.exec(kInsertUserSql,
-                pqxx::params{user.user_id.to_string(), user.credential_identifier, user.password_verifier,
-                             user.password_algorithm, domain::to_iso8601(user.password_updated_at),
-                             domain::to_string(user.account_status), domain::to_iso8601(user.created_at),
-                             domain::to_iso8601(user.updated_at), initial_version});
+        db::exec_sql(tx, kInsertUserSql,
+                     pqxx::params{user.user_id.to_string(), user.credential_identifier, user.password_verifier,
+                                  user.password_algorithm, domain::to_iso8601(user.password_updated_at),
+                                  domain::to_string(user.account_status), domain::to_iso8601(user.created_at),
+                                  domain::to_iso8601(user.updated_at), initial_version});
     } catch (const pqxx::unique_violation& ex) {
         throw DuplicateEntityException("Credential identifier already registered: " + user.credential_identifier);
     } catch (const pqxx::sql_error& ex) {
@@ -73,7 +73,7 @@ std::optional<domain::UserEntity> PostgresUserRepository::find_by_id(const domai
 std::optional<domain::UserEntity> PostgresUserRepository::find_by_id(const domain::Uuid& user_id,
                                                                      pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindUserByIdSql, pqxx::params{user_id.to_string()});
+        auto res = db::exec_sql(tx, kFindUserByIdSql, pqxx::params{user_id.to_string()});
         if (res.empty()) {
             return std::nullopt;
         }
@@ -96,7 +96,7 @@ std::optional<domain::UserEntity>
 PostgresUserRepository::find_by_credential_identifier(std::string_view credential_identifier,
                                                       pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindUserByCredentialSql, pqxx::params{credential_identifier});
+        auto res = db::exec_sql(tx, kFindUserByCredentialSql, pqxx::params{credential_identifier});
         if (res.empty()) {
             return std::nullopt;
         }
@@ -115,14 +115,14 @@ void PostgresUserRepository::update_user(const domain::UserEntity& user) {
 
 void PostgresUserRepository::update_user(const domain::UserEntity& user, pqxx::transaction_base& tx) {
     try {
-        auto res =
-            tx.exec(kUpdateUserSql,
-                    pqxx::params{user.credential_identifier, user.password_verifier, user.password_algorithm,
-                                 domain::to_iso8601(user.password_updated_at), domain::to_string(user.account_status),
-                                 domain::to_iso8601(user.updated_at), user.user_id.to_string(), user.version});
+        auto res = db::exec_sql(
+            tx, kUpdateUserSql,
+            pqxx::params{user.credential_identifier, user.password_verifier, user.password_algorithm,
+                         domain::to_iso8601(user.password_updated_at), domain::to_string(user.account_status),
+                         domain::to_iso8601(user.updated_at), user.user_id.to_string(), user.version});
 
         if (res.affected_rows() == 0) {
-            auto check = tx.exec(kCheckUserExistsSql, pqxx::params{user.user_id.to_string()});
+            auto check = db::exec_sql(tx, kCheckUserExistsSql, pqxx::params{user.user_id.to_string()});
             if (!check.empty()) {
                 throw OptimisticLockException("Concurrent modification detected for user " + user.user_id.to_string());
             }
@@ -149,11 +149,12 @@ void PostgresUserRepository::set_account_status(const domain::Uuid& user_id, dom
                                                 uint64_t expected_version, pqxx::transaction_base& tx) {
     try {
         const auto now = std::chrono::system_clock::now();
-        auto res = tx.exec(kSetAccountStatusSql, pqxx::params{domain::to_string(status), domain::to_iso8601(now),
-                                                              user_id.to_string(), expected_version});
+        auto res = db::exec_sql(
+            tx, kSetAccountStatusSql,
+            pqxx::params{domain::to_string(status), domain::to_iso8601(now), user_id.to_string(), expected_version});
 
         if (res.affected_rows() == 0) {
-            auto check = tx.exec(kCheckUserExistsSql, pqxx::params{user_id.to_string()});
+            auto check = db::exec_sql(tx, kCheckUserExistsSql, pqxx::params{user_id.to_string()});
             if (!check.empty()) {
                 throw OptimisticLockException("Concurrent modification detected for user " + user_id.to_string());
             }

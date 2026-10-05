@@ -69,11 +69,12 @@ void PostgresSessionRepository::create_session(const domain::SessionEntity& sess
             session.revoked_at.has_value() ? std::optional<std::string>{domain::to_iso8601(*session.revoked_at)}
                                            : std::nullopt;
 
-        tx.exec(kInsertSessionSql,
-                pqxx::params{session.session_id.to_string(), session.user_id.to_string(), session.device_id.to_string(),
-                             domain::to_string(session.session_status), domain::to_string(session.authentication_level),
-                             domain::to_iso8601(session.created_at), domain::to_iso8601(session.expires_at),
-                             revoked_at_str, domain::to_iso8601(session.last_used_at)});
+        db::exec_sql(tx, kInsertSessionSql,
+                     pqxx::params{session.session_id.to_string(), session.user_id.to_string(),
+                                  session.device_id.to_string(), domain::to_string(session.session_status),
+                                  domain::to_string(session.authentication_level),
+                                  domain::to_iso8601(session.created_at), domain::to_iso8601(session.expires_at),
+                                  revoked_at_str, domain::to_iso8601(session.last_used_at)});
     } catch (const pqxx::unique_violation& ex) {
         throw DuplicateEntityException("Session already exists: " + session.session_id.to_string());
     } catch (const pqxx::sql_error& ex) {
@@ -92,7 +93,7 @@ std::optional<domain::SessionEntity> PostgresSessionRepository::find_by_id(const
 std::optional<domain::SessionEntity> PostgresSessionRepository::find_by_id(const domain::Uuid& session_id,
                                                                            pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindSessionByIdSql, pqxx::params{session_id.to_string()});
+        auto res = db::exec_sql(tx, kFindSessionByIdSql, pqxx::params{session_id.to_string()});
         if (res.empty()) {
             return std::nullopt;
         }
@@ -113,7 +114,7 @@ std::vector<domain::SessionEntity> PostgresSessionRepository::list_active_by_use
 std::vector<domain::SessionEntity> PostgresSessionRepository::list_active_by_user_id(const domain::Uuid& user_id,
                                                                                      pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kListActiveSessionsByUserSql, pqxx::params{user_id.to_string()});
+        auto res = db::exec_sql(tx, kListActiveSessionsByUserSql, pqxx::params{user_id.to_string()});
         std::vector<domain::SessionEntity> sessions;
         sessions.reserve(static_cast<std::size_t>(res.size()));
         for (const auto& row : res) {
@@ -136,7 +137,7 @@ std::vector<domain::SessionEntity> PostgresSessionRepository::list_active_by_dev
 std::vector<domain::SessionEntity> PostgresSessionRepository::list_active_by_device_id(const domain::Uuid& device_id,
                                                                                        pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kListActiveSessionsByDeviceSql, pqxx::params{device_id.to_string()});
+        auto res = db::exec_sql(tx, kListActiveSessionsByDeviceSql, pqxx::params{device_id.to_string()});
         std::vector<domain::SessionEntity> sessions;
         sessions.reserve(static_cast<std::size_t>(res.size()));
         for (const auto& row : res) {
@@ -160,10 +161,11 @@ void PostgresSessionRepository::update_authentication_level(const domain::Uuid& 
                                                             domain::AuthenticationLevel level,
                                                             pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kUpdateAuthLevelSql, pqxx::params{domain::to_string(level), session_id.to_string()});
+        auto res =
+            db::exec_sql(tx, kUpdateAuthLevelSql, pqxx::params{domain::to_string(level), session_id.to_string()});
 
         if (res.affected_rows() == 0) {
-            auto check = tx.exec(kGetSessionStatusSql, pqxx::params{session_id.to_string()});
+            auto check = db::exec_sql(tx, kGetSessionStatusSql, pqxx::params{session_id.to_string()});
             if (check.empty()) {
                 throw EntityNotFoundException("Session not found: " + session_id.to_string());
             }
@@ -187,10 +189,11 @@ void PostgresSessionRepository::revoke_session(const domain::Uuid& session_id, d
 void PostgresSessionRepository::revoke_session(const domain::Uuid& session_id, domain::time_point revoked_at,
                                                pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kRevokeSessionSql, pqxx::params{domain::to_iso8601(revoked_at), session_id.to_string()});
+        auto res =
+            db::exec_sql(tx, kRevokeSessionSql, pqxx::params{domain::to_iso8601(revoked_at), session_id.to_string()});
 
         if (res.affected_rows() == 0) {
-            auto check = tx.exec(kGetSessionStatusSql, pqxx::params{session_id.to_string()});
+            auto check = db::exec_sql(tx, kGetSessionStatusSql, pqxx::params{session_id.to_string()});
             if (check.empty()) {
                 throw EntityNotFoundException("Session not found: " + session_id.to_string());
             }
@@ -213,7 +216,7 @@ void PostgresSessionRepository::revoke_all_user_sessions(const domain::Uuid& use
 void PostgresSessionRepository::revoke_all_user_sessions(const domain::Uuid& user_id, domain::time_point revoked_at,
                                                          pqxx::transaction_base& tx) {
     try {
-        tx.exec(kRevokeAllUserSessionsSql, pqxx::params{domain::to_iso8601(revoked_at), user_id.to_string()});
+        db::exec_sql(tx, kRevokeAllUserSessionsSql, pqxx::params{domain::to_iso8601(revoked_at), user_id.to_string()});
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to revoke user sessions: " + std::string(ex.what()));
     }
@@ -230,7 +233,8 @@ void PostgresSessionRepository::revoke_all_device_sessions(const domain::Uuid& d
 void PostgresSessionRepository::revoke_all_device_sessions(const domain::Uuid& device_id, domain::time_point revoked_at,
                                                            pqxx::transaction_base& tx) {
     try {
-        tx.exec(kRevokeAllDeviceSessionsSql, pqxx::params{domain::to_iso8601(revoked_at), device_id.to_string()});
+        db::exec_sql(tx, kRevokeAllDeviceSessionsSql,
+                     pqxx::params{domain::to_iso8601(revoked_at), device_id.to_string()});
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to revoke device sessions: " + std::string(ex.what()));
     }

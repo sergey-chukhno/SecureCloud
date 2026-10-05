@@ -64,11 +64,12 @@ void PostgresDeviceRepository::register_device(const domain::DeviceEntity& devic
             device.revoked_at.has_value() ? std::optional<std::string>{domain::to_iso8601(*device.revoked_at)}
                                           : std::nullopt;
 
-        tx.exec(kInsertDeviceSql,
-                pqxx::params{device.device_id.to_string(), device.user_id.to_string(),
-                             domain::to_string(device.device_status), domain::to_iso8601(device.registered_at),
-                             revoked_at_str, device.revocation_reason, domain::to_iso8601(device.last_authenticated_at),
-                             domain::to_iso8601(device.created_at), domain::to_iso8601(device.updated_at)});
+        db::exec_sql(tx, kInsertDeviceSql,
+                     pqxx::params{device.device_id.to_string(), device.user_id.to_string(),
+                                  domain::to_string(device.device_status), domain::to_iso8601(device.registered_at),
+                                  revoked_at_str, device.revocation_reason,
+                                  domain::to_iso8601(device.last_authenticated_at),
+                                  domain::to_iso8601(device.created_at), domain::to_iso8601(device.updated_at)});
     } catch (const pqxx::unique_violation& ex) {
         throw DuplicateEntityException("Device already registered: " + device.device_id.to_string());
     } catch (const pqxx::sql_error& ex) {
@@ -87,7 +88,7 @@ std::optional<domain::DeviceEntity> PostgresDeviceRepository::find_by_id(const d
 std::optional<domain::DeviceEntity> PostgresDeviceRepository::find_by_id(const domain::Uuid& device_id,
                                                                          pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindDeviceByIdSql, pqxx::params{device_id.to_string()});
+        auto res = db::exec_sql(tx, kFindDeviceByIdSql, pqxx::params{device_id.to_string()});
         if (res.empty()) {
             return std::nullopt;
         }
@@ -108,7 +109,7 @@ std::vector<domain::DeviceEntity> PostgresDeviceRepository::list_active_by_user_
 std::vector<domain::DeviceEntity> PostgresDeviceRepository::list_active_by_user_id(const domain::Uuid& user_id,
                                                                                    pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kListActiveDevicesByUserSql, pqxx::params{user_id.to_string()});
+        auto res = db::exec_sql(tx, kListActiveDevicesByUserSql, pqxx::params{user_id.to_string()});
         std::vector<domain::DeviceEntity> devices;
         devices.reserve(static_cast<std::size_t>(res.size()));
         for (const auto& row : res) {
@@ -132,8 +133,9 @@ void PostgresDeviceRepository::revoke_device(const domain::Uuid& device_id, std:
                                              domain::time_point revoked_at, pqxx::transaction_base& tx) {
     try {
         const auto now = std::chrono::system_clock::now();
-        auto res = tx.exec(kRevokeDeviceSql, pqxx::params{std::string(reason), domain::to_iso8601(revoked_at),
-                                                          domain::to_iso8601(now), device_id.to_string()});
+        auto res = db::exec_sql(tx, kRevokeDeviceSql,
+                                pqxx::params{std::string(reason), domain::to_iso8601(revoked_at),
+                                             domain::to_iso8601(now), device_id.to_string()});
 
         if (res.affected_rows() == 0) {
             throw EntityNotFoundException("Device not found: " + device_id.to_string());
@@ -156,11 +158,12 @@ void PostgresDeviceRepository::update_last_authenticated(const domain::Uuid& dev
                                                          pqxx::transaction_base& tx) {
     try {
         const auto now = std::chrono::system_clock::now();
-        auto res = tx.exec(kUpdateLastAuthSql,
-                           pqxx::params{domain::to_iso8601(auth_time), domain::to_iso8601(now), device_id.to_string()});
+        auto res =
+            db::exec_sql(tx, kUpdateLastAuthSql,
+                         pqxx::params{domain::to_iso8601(auth_time), domain::to_iso8601(now), device_id.to_string()});
 
         if (res.affected_rows() == 0) {
-            auto check = tx.exec(kGetDeviceStatusSql, pqxx::params{device_id.to_string()});
+            auto check = db::exec_sql(tx, kGetDeviceStatusSql, pqxx::params{device_id.to_string()});
             if (check.empty()) {
                 throw EntityNotFoundException("Device not found: " + device_id.to_string());
             }

@@ -69,11 +69,12 @@ void PostgresRefreshTokenRepository::create_token(const domain::RefreshTokenEnti
             token.replaced_by_token_id.has_value() ? std::optional<std::string>{token.replaced_by_token_id->to_string()}
                                                    : std::nullopt;
 
-        tx.exec(kInsertTokenSql,
-                pqxx::params{token.refresh_token_id.to_string(), token.session_id.to_string(),
-                             token.device_id.to_string(), token.token_verifier, domain::to_string(token.token_status),
-                             domain::to_iso8601(token.issued_at), domain::to_iso8601(token.expires_at), revoked_at_str,
-                             rotated_at_str, replaced_by_str});
+        db::exec_sql(tx, kInsertTokenSql,
+                     pqxx::params{token.refresh_token_id.to_string(), token.session_id.to_string(),
+                                  token.device_id.to_string(), token.token_verifier,
+                                  domain::to_string(token.token_status), domain::to_iso8601(token.issued_at),
+                                  domain::to_iso8601(token.expires_at), revoked_at_str, rotated_at_str,
+                                  replaced_by_str});
     } catch (const pqxx::unique_violation& ex) {
         throw DuplicateEntityException("Refresh token already exists: " + token.refresh_token_id.to_string());
     } catch (const pqxx::sql_error& ex) {
@@ -93,7 +94,7 @@ PostgresRefreshTokenRepository::find_by_id(const domain::Uuid& refresh_token_id)
 std::optional<domain::RefreshTokenEntity>
 PostgresRefreshTokenRepository::find_by_id(const domain::Uuid& refresh_token_id, pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindTokenByIdSql, pqxx::params{refresh_token_id.to_string()});
+        auto res = db::exec_sql(tx, kFindTokenByIdSql, pqxx::params{refresh_token_id.to_string()});
         if (res.empty()) {
             return std::nullopt;
         }
@@ -115,7 +116,7 @@ PostgresRefreshTokenRepository::find_by_verifier(std::string_view verifier_hash)
 std::optional<domain::RefreshTokenEntity>
 PostgresRefreshTokenRepository::find_by_verifier(std::string_view verifier_hash, pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindTokenByVerifierSql, pqxx::params{verifier_hash});
+        auto res = db::exec_sql(tx, kFindTokenByVerifierSql, pqxx::params{verifier_hash});
         if (res.empty()) {
             return std::nullopt;
         }
@@ -138,7 +139,7 @@ TokenRotationResult PostgresRefreshTokenRepository::rotate_token_atomic(const do
                                                                         const domain::RefreshTokenEntity& new_token,
                                                                         pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindTokenByIdForUpdateSql, pqxx::params{old_token_id.to_string()});
+        auto res = db::exec_sql(tx, kFindTokenByIdForUpdateSql, pqxx::params{old_token_id.to_string()});
         if (res.empty()) {
             throw EntityNotFoundException("Refresh token not found: " + old_token_id.to_string());
         }
@@ -160,8 +161,8 @@ TokenRotationResult PostgresRefreshTokenRepository::rotate_token_atomic(const do
         create_token(new_token, tx);
 
         // 2. Mark old token as rotated
-        auto update_res = tx.exec(
-            kUpdateTokenRotatedSql,
+        auto update_res = db::exec_sql(
+            tx, kUpdateTokenRotatedSql,
             pqxx::params{domain::to_iso8601(now), new_token.refresh_token_id.to_string(), old_token_id.to_string()});
 
         if (update_res.affected_rows() == 0) {
@@ -195,7 +196,7 @@ TokenReuseDetectedResult PostgresRefreshTokenRepository::handle_token_reuse(std:
 TokenReuseDetectedResult PostgresRefreshTokenRepository::handle_token_reuse(std::string_view verifier_hash,
                                                                             pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindTokenByVerifierSql, pqxx::params{verifier_hash});
+        auto res = db::exec_sql(tx, kFindTokenByVerifierSql, pqxx::params{verifier_hash});
         if (res.empty()) {
             throw EntityNotFoundException("Token verifier not found for reuse handling");
         }
@@ -210,10 +211,10 @@ TokenReuseDetectedResult PostgresRefreshTokenRepository::handle_token_reuse(std:
         const std::string now_str = domain::to_iso8601(now);
 
         // 1. Revoke the entire compromised session
-        tx.exec(kRevokeSessionByReuseSql, pqxx::params{now_str, token.session_id.to_string()});
+        db::exec_sql(tx, kRevokeSessionByReuseSql, pqxx::params{now_str, token.session_id.to_string()});
 
         // 2. Revoke all active sibling tokens in that session family
-        tx.exec(kRevokeSiblingTokensSql, pqxx::params{now_str, token.session_id.to_string()});
+        db::exec_sql(tx, kRevokeSiblingTokensSql, pqxx::params{now_str, token.session_id.to_string()});
 
         return TokenReuseDetectedResult{
             .session_id = token.session_id,

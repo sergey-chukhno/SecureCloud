@@ -60,10 +60,10 @@ void PostgresDevicePublicKeyRepository::store_public_key(const domain::DevicePub
 
         pqxx::bytes_view pk_bytes(reinterpret_cast<const std::byte*>(key.public_key.data()), key.public_key.size());
 
-        tx.exec(kInsertPublicKeySql,
-                pqxx::params{key.key_id.to_string(), key.device_id.to_string(), domain::to_string(key.key_type),
-                             pk_bytes, domain::to_string(key.key_status), domain::to_iso8601(key.created_at),
-                             revoked_at_str, replaced_by_str});
+        db::exec_sql(tx, kInsertPublicKeySql,
+                     pqxx::params{key.key_id.to_string(), key.device_id.to_string(), domain::to_string(key.key_type),
+                                  pk_bytes, domain::to_string(key.key_status), domain::to_iso8601(key.created_at),
+                                  revoked_at_str, replaced_by_str});
     } catch (const pqxx::unique_violation& ex) {
         throw DuplicateEntityException("Device public key already exists: " + key.key_id.to_string());
     } catch (const pqxx::sql_error& ex) {
@@ -82,7 +82,7 @@ std::optional<domain::DevicePublicKeyEntity> PostgresDevicePublicKeyRepository::
 std::optional<domain::DevicePublicKeyEntity> PostgresDevicePublicKeyRepository::find_by_id(const domain::Uuid& key_id,
                                                                                            pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindPublicKeyByIdSql, pqxx::params{key_id.to_string()});
+        auto res = db::exec_sql(tx, kFindPublicKeyByIdSql, pqxx::params{key_id.to_string()});
         if (res.empty()) {
             return std::nullopt;
         }
@@ -105,7 +105,7 @@ std::vector<domain::DevicePublicKeyEntity>
 PostgresDevicePublicKeyRepository::list_active_keys_by_device_id(const domain::Uuid& device_id,
                                                                  pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kListActiveKeysByDeviceSql, pqxx::params{device_id.to_string()});
+        auto res = db::exec_sql(tx, kListActiveKeysByDeviceSql, pqxx::params{device_id.to_string()});
         std::vector<domain::DevicePublicKeyEntity> keys;
         keys.reserve(static_cast<std::size_t>(res.size()));
         for (const auto& row : res) {
@@ -129,7 +129,7 @@ void PostgresDevicePublicKeyRepository::replace_key(const domain::Uuid& old_key_
                                                     const domain::DevicePublicKeyEntity& new_key,
                                                     pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindPublicKeyByIdForUpdateSql, pqxx::params{old_key_id.to_string()});
+        auto res = db::exec_sql(tx, kFindPublicKeyByIdForUpdateSql, pqxx::params{old_key_id.to_string()});
         if (res.empty()) {
             throw EntityNotFoundException("Device public key not found: " + old_key_id.to_string());
         }
@@ -146,7 +146,7 @@ void PostgresDevicePublicKeyRepository::replace_key(const domain::Uuid& old_key_
 
         // 2. Mark old key as replaced
         auto update_res =
-            tx.exec(kUpdateKeyReplacedSql, pqxx::params{new_key.key_id.to_string(), old_key_id.to_string()});
+            db::exec_sql(tx, kUpdateKeyReplacedSql, pqxx::params{new_key.key_id.to_string(), old_key_id.to_string()});
 
         if (update_res.affected_rows() == 0) {
             throw OptimisticLockException("Concurrent key replacement conflict detected for key: " +
@@ -171,7 +171,7 @@ void PostgresDevicePublicKeyRepository::revoke_all_device_keys(const domain::Uui
                                                                domain::time_point revoked_at,
                                                                pqxx::transaction_base& tx) {
     try {
-        tx.exec(kRevokeAllDeviceKeysSql, pqxx::params{domain::to_iso8601(revoked_at), device_id.to_string()});
+        db::exec_sql(tx, kRevokeAllDeviceKeysSql, pqxx::params{domain::to_iso8601(revoked_at), device_id.to_string()});
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to revoke all device keys: " + std::string(ex.what()));
     }

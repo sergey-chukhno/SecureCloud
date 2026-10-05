@@ -31,8 +31,9 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew install openssl@3 protobuf grpc googletest llvm@18 ninja nlohmann-json cpp-httplib libpqxx
+          brew install openssl@3 protobuf grpc googletest llvm@18 ninja nlohmann-json cpp-httplib libpqxx libpq
           echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/libpq/bin" >> $GITHUB_PATH
 
       - name: Configure CMake with Static Analysis
         run: |
@@ -65,8 +66,9 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew install openssl@3 protobuf grpc googletest ninja nlohmann-json cpp-httplib libpqxx
+          brew install openssl@3 protobuf grpc googletest ninja nlohmann-json cpp-httplib libpqxx libpq
           echo "/opt/homebrew/opt/openssl@3/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/opt/libpq/bin" >> "$GITHUB_PATH"
 
       - name: Generate Development PKI Certificates
         run: |
@@ -129,7 +131,17 @@ jobs:
       - name: Configure CMake with MSVC & vcpkg
         shell: pwsh
         run: |
-          cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_MAKE_PROGRAM="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe"
+          $maxAttempts = 3
+          $attempt = 1
+          while ($attempt -le $maxAttempts) {
+            Write-Host "Configuring CMake with vcpkg (attempt $attempt of $maxAttempts)..."
+            cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_MAKE_PROGRAM="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe"
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq $maxAttempts) { exit $LASTEXITCODE }
+            Write-Host "CMake configuration failed, retrying in 10s..."
+            Start-Sleep -Seconds 10
+            $attempt++
+          }
 
       - name: Build All Targets
         shell: pwsh

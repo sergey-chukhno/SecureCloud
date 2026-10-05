@@ -74,10 +74,11 @@ void PostgresMfaRepository::store_mfa_configuration(const domain::MfaConfigurati
         pqxx::bytes_view sec_bytes(reinterpret_cast<const std::byte*>(config.encrypted_secret.data()),
                                    config.encrypted_secret.size());
 
-        tx.exec(kInsertMfaConfigSql,
-                pqxx::params{config.mfa_configuration_id.to_string(), config.user_id.to_string(),
-                             domain::to_string(config.factor_type), sec_bytes, domain::to_string(config.status),
-                             domain::to_iso8601(config.created_at), enabled_at_str, disabled_at_str, initial_version});
+        db::exec_sql(tx, kInsertMfaConfigSql,
+                     pqxx::params{config.mfa_configuration_id.to_string(), config.user_id.to_string(),
+                                  domain::to_string(config.factor_type), sec_bytes, domain::to_string(config.status),
+                                  domain::to_iso8601(config.created_at), enabled_at_str, disabled_at_str,
+                                  initial_version});
     } catch (const pqxx::unique_violation& ex) {
         throw DuplicateEntityException("MFA configuration already exists: " + config.mfa_configuration_id.to_string());
     } catch (const pqxx::sql_error& ex) {
@@ -97,7 +98,7 @@ PostgresMfaRepository::find_mfa_config_by_user_id(const domain::Uuid& user_id) {
 std::optional<domain::MfaConfigurationEntity>
 PostgresMfaRepository::find_mfa_config_by_user_id(const domain::Uuid& user_id, pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindMfaConfigByUserSql, pqxx::params{user_id.to_string()});
+        auto res = db::exec_sql(tx, kFindMfaConfigByUserSql, pqxx::params{user_id.to_string()});
         if (res.empty()) {
             return std::nullopt;
         }
@@ -118,11 +119,11 @@ void PostgresMfaRepository::enable_mfa(const domain::Uuid& config_id, domain::ti
 void PostgresMfaRepository::enable_mfa(const domain::Uuid& config_id, domain::time_point enabled_at,
                                        uint64_t expected_version, pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kEnableMfaSql,
-                           pqxx::params{domain::to_iso8601(enabled_at), config_id.to_string(), expected_version});
+        auto res = db::exec_sql(tx, kEnableMfaSql,
+                                pqxx::params{domain::to_iso8601(enabled_at), config_id.to_string(), expected_version});
 
         if (res.affected_rows() == 0) {
-            auto check = tx.exec(kCheckMfaConfigExistsSql, pqxx::params{config_id.to_string()});
+            auto check = db::exec_sql(tx, kCheckMfaConfigExistsSql, pqxx::params{config_id.to_string()});
             if (!check.empty()) {
                 throw OptimisticLockException("Concurrent modification detected for MFA configuration: " +
                                               config_id.to_string());
@@ -147,11 +148,11 @@ void PostgresMfaRepository::disable_mfa(const domain::Uuid& config_id, domain::t
 void PostgresMfaRepository::disable_mfa(const domain::Uuid& config_id, domain::time_point disabled_at,
                                         uint64_t expected_version, pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kDisableMfaSql,
-                           pqxx::params{domain::to_iso8601(disabled_at), config_id.to_string(), expected_version});
+        auto res = db::exec_sql(tx, kDisableMfaSql,
+                                pqxx::params{domain::to_iso8601(disabled_at), config_id.to_string(), expected_version});
 
         if (res.affected_rows() == 0) {
-            auto check = tx.exec(kCheckMfaConfigExistsSql, pqxx::params{config_id.to_string()});
+            auto check = db::exec_sql(tx, kCheckMfaConfigExistsSql, pqxx::params{config_id.to_string()});
             if (!check.empty()) {
                 throw OptimisticLockException("Concurrent modification detected for MFA configuration: " +
                                               config_id.to_string());
@@ -178,11 +179,12 @@ void PostgresMfaRepository::create_challenge(const domain::MfaChallengeEntity& c
             challenge.completed_at.has_value() ? std::optional<std::string>{domain::to_iso8601(*challenge.completed_at)}
                                                : std::nullopt;
 
-        tx.exec(kInsertChallengeSql,
-                pqxx::params{challenge.mfa_challenge_id.to_string(), challenge.user_id.to_string(),
-                             challenge.session_id.to_string(), domain::to_string(challenge.challenge_purpose),
-                             domain::to_string(challenge.challenge_status), domain::to_iso8601(challenge.created_at),
-                             domain::to_iso8601(challenge.expires_at), completed_at_str});
+        db::exec_sql(tx, kInsertChallengeSql,
+                     pqxx::params{challenge.mfa_challenge_id.to_string(), challenge.user_id.to_string(),
+                                  challenge.session_id.to_string(), domain::to_string(challenge.challenge_purpose),
+                                  domain::to_string(challenge.challenge_status),
+                                  domain::to_iso8601(challenge.created_at), domain::to_iso8601(challenge.expires_at),
+                                  completed_at_str});
     } catch (const pqxx::unique_violation& ex) {
         throw DuplicateEntityException("MFA challenge already exists: " + challenge.mfa_challenge_id.to_string());
     } catch (const pqxx::sql_error& ex) {
@@ -202,7 +204,7 @@ PostgresMfaRepository::find_challenge_by_id(const domain::Uuid& challenge_id) {
 std::optional<domain::MfaChallengeEntity> PostgresMfaRepository::find_challenge_by_id(const domain::Uuid& challenge_id,
                                                                                       pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFindChallengeByIdSql, pqxx::params{challenge_id.to_string()});
+        auto res = db::exec_sql(tx, kFindChallengeByIdSql, pqxx::params{challenge_id.to_string()});
         if (res.empty()) {
             return std::nullopt;
         }
@@ -223,8 +225,9 @@ void PostgresMfaRepository::complete_challenge(const domain::Uuid& challenge_id,
                                                pqxx::transaction_base& tx) {
     try {
         const auto now = std::chrono::system_clock::now();
-        auto res = tx.exec(kCompleteChallengeSql, pqxx::params{domain::to_iso8601(completed_at),
-                                                               challenge_id.to_string(), domain::to_iso8601(now)});
+        auto res = db::exec_sql(
+            tx, kCompleteChallengeSql,
+            pqxx::params{domain::to_iso8601(completed_at), challenge_id.to_string(), domain::to_iso8601(now)});
 
         if (res.affected_rows() == 0) {
             auto challenge_opt = find_challenge_by_id(challenge_id, tx);
@@ -250,7 +253,7 @@ void PostgresMfaRepository::fail_challenge(const domain::Uuid& challenge_id) {
 
 void PostgresMfaRepository::fail_challenge(const domain::Uuid& challenge_id, pqxx::transaction_base& tx) {
     try {
-        auto res = tx.exec(kFailChallengeSql, pqxx::params{challenge_id.to_string()});
+        auto res = db::exec_sql(tx, kFailChallengeSql, pqxx::params{challenge_id.to_string()});
         if (res.affected_rows() == 0) {
             auto challenge_opt = find_challenge_by_id(challenge_id, tx);
             if (!challenge_opt.has_value()) {

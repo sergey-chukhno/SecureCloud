@@ -276,9 +276,11 @@ MigrationResult MigrationRunner::run_migrations(const std::vector<MigrationScrip
         try {
             pqxx::work tx(conn);
             tx.exec(script.sql_content);
-            tx.exec("INSERT INTO schema_migrations (version, description, checksum, installed_at) VALUES ($1, $2, $3, "
-                    "NOW());",
-                    pqxx::params{script.version, script.description, checksum});
+            db::exec_sql(
+                tx,
+                "INSERT INTO schema_migrations (version, description, checksum, installed_at) VALUES ($1, $2, $3, "
+                "NOW());",
+                pqxx::params{script.version, script.description, checksum});
             tx.commit();
 
             ++result.migrations_applied;
