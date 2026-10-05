@@ -2,6 +2,7 @@ add_library(securecloud_auth_config STATIC
         auth_config.cpp
         db/postgres_connection_pool.cpp
         db/migration_runner.cpp
+        domain/mappers.cpp
         service/auth_service_impl.cpp
 )
 
