@@ -12,7 +12,7 @@ inline pqxx::result exec_sql(pqxx::transaction_base& tx, std::string_view query,
 #if defined(PQXX_VERSION_MAJOR) && PQXX_VERSION_MAJOR >= 8
     return tx.exec(query, params);
 #else
-    return tx.exec_params(query, params);
+    return tx.exec_params(pqxx::zview{query}, params);
 #endif
 }
 
