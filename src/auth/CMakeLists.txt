@@ -7,6 +7,8 @@ add_library(securecloud_auth_config STATIC
         repository/device_repository.cpp
         repository/session_repository.cpp
         repository/refresh_token_repository.cpp
+        repository/device_public_key_repository.cpp
+        repository/mfa_repository.cpp
         service/auth_service_impl.cpp
 )
 

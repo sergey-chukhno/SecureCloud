@@ -279,6 +279,20 @@ target_link_libraries(securecloud_auth_session_token_repository_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_session_token_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Device Public Key & MFA Repositories Test Suite (AUTH-002-T05)
+add_executable(securecloud_auth_crypto_key_mfa_repository_test
+        auth/crypto_key_mfa_repository_test.cpp
+)
+
+target_link_libraries(securecloud_auth_crypto_key_mfa_repository_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_crypto_key_mfa_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp
