@@ -97,4 +97,13 @@ using time_point = std::chrono::system_clock::time_point;
     return time_point(std::chrono::seconds(tt) + std::chrono::microseconds(micros));
 }
 
+/// Convenience aliases for ISO-8601 UTC string conversions
+[[nodiscard]] inline std::string to_iso8601(time_point tp) {
+    return to_iso8601_utc(tp);
+}
+
+[[nodiscard]] inline std::optional<time_point> from_iso8601(std::string_view str) {
+    return from_iso8601_utc(str);
+}
+
 } // namespace securecloud::auth::domain
