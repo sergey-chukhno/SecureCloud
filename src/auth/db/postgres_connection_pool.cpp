@@ -24,15 +24,39 @@ PooledConnection& PooledConnection::operator=(PooledConnection&& other) noexcept
     return *this;
 }
 
+void PostgresConnectionPool::validate_config() const {
+    if (pool_config_.max_connections == 0) {
+        throw std::invalid_argument("ConnectionPoolConfig: max_connections must be at least 1");
+    }
+    if (pool_config_.min_connections > pool_config_.max_connections) {
+        throw std::invalid_argument("ConnectionPoolConfig: min_connections cannot exceed max_connections");
+    }
+
+    const bool is_loopback = (auth_config_.db_host == "localhost" || auth_config_.db_host == "127.0.0.1" ||
+                              auth_config_.db_host == "::1" || auth_config_.db_host == "host.docker.internal");
+    if (is_loopback && auth_config_.db_port == 5432) {
+        throw PortForbiddenException("[SecureCloud] Port 5432 Invariant Violation: Connecting to " +
+                                     auth_config_.db_host +
+                                     ":5432 is strictly forbidden. Host PostgreSQL 14 must remain untouched. "
+                                     "SecureCloud PostgreSQL 17 binds to port 5433.");
+    }
+}
+
 PostgresConnectionPool::PostgresConnectionPool(const AuthConfig& auth_config, const ConnectionPoolConfig& pool_config)
     : auth_config_(auth_config), pool_config_(pool_config) {
+
+    validate_config();
 
     for (std::size_t i = 0; i < pool_config_.min_connections; ++i) {
         available_connections_.push(create_raw_connection());
         ++total_connections_;
     }
 
-    health_connection_ = create_raw_connection();
+    try {
+        health_connection_ = create_raw_connection();
+    } catch (...) {
+        // If DB is offline at construction, health_connection_ will be lazily created on subsequent ping()
+    }
 }
 
 PostgresConnectionPool::~PostgresConnectionPool() {
@@ -107,24 +131,30 @@ void PostgresConnectionPool::release(std::unique_ptr<pqxx::connection> conn) {
 }
 
 void PostgresConnectionPool::shutdown(std::chrono::milliseconds drain_timeout) {
-    std::unique_lock<std::mutex> lock(mutex_);
+    {
+        std::unique_lock<std::mutex> lock(mutex_);
 
-    if (state_ == PoolState::CLOSED) {
-        return;
+        if (state_ == PoolState::CLOSED) {
+            return;
+        }
+
+        state_ = PoolState::DRAINING;
+        cv_.notify_all();
+
+        cv_.wait_for(lock, drain_timeout, [this]() { return leased_connections_ == 0; });
+
+        while (!available_connections_.empty()) {
+            available_connections_.pop();
+        }
+
+        total_connections_ = 0;
+        state_ = PoolState::CLOSED;
     }
 
-    state_ = PoolState::DRAINING;
-    cv_.notify_all();
-
-    cv_.wait_for(lock, drain_timeout, [this]() { return leased_connections_ == 0; });
-
-    while (!available_connections_.empty()) {
-        available_connections_.pop();
+    {
+        std::lock_guard<std::mutex> h_lock(health_mutex_);
+        health_connection_.reset();
     }
-
-    health_connection_.reset();
-    total_connections_ = 0;
-    state_ = PoolState::CLOSED;
 }
 
 std::size_t PostgresConnectionPool::available_count() const noexcept {
@@ -143,17 +173,31 @@ std::size_t PostgresConnectionPool::total_count() const noexcept {
 }
 
 bool PostgresConnectionPool::ping(std::chrono::milliseconds timeout) noexcept {
-    (void)timeout;
+    std::lock_guard<std::mutex> h_lock(health_mutex_);
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (state_ == PoolState::CLOSED) {
+            return false;
+        }
+    }
+
     try {
         if (!health_connection_ || !health_connection_->is_open()) {
+            health_connection_ = create_raw_connection();
+        }
+        if (!health_connection_) {
             return false;
         }
 
         pqxx::nontransaction tx(*health_connection_);
+        if (timeout > std::chrono::milliseconds::zero()) {
+            tx.exec("SET LOCAL statement_timeout = " + std::to_string(timeout.count()) + ";").no_rows();
+        }
         const auto result = tx.exec("SELECT 1;");
 
         return !result.empty();
     } catch (...) {
+        health_connection_.reset();
         return false;
     }
 }

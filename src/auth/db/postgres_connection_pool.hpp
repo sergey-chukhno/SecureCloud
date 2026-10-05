@@ -36,6 +36,12 @@ class PoolShuttingDownException : public std::runtime_error {
     explicit PoolShuttingDownException(const std::string& message) : std::runtime_error(message) {}
 };
 
+/// Exception thrown when attempting to connect to forbidden host port (e.g. localhost:5432).
+class PortForbiddenException : public std::runtime_error {
+  public:
+    explicit PortForbiddenException(const std::string& message) : std::runtime_error(message) {}
+};
+
 class PostgresConnectionPool {
   public:
     explicit PostgresConnectionPool(const AuthConfig& auth_config,
@@ -74,7 +80,9 @@ class PostgresConnectionPool {
     std::size_t leased_connections_{0};
 
     std::unique_ptr<pqxx::connection> health_connection_;
+    mutable std::mutex health_mutex_;
 
+    void validate_config() const;
     void release(std::unique_ptr<pqxx::connection> conn);
     std::unique_ptr<pqxx::connection> create_raw_connection();
 };

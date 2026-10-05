@@ -77,13 +77,9 @@ TEST_F(ConnectionPoolTest, PingIsNoexceptAndHandlesUnreachableDatabase) {
     // In an offline test environment without PostgreSQL running on port 5433,
     // ensure ping() safely returns false without throwing unhandled exceptions.
     EXPECT_NO_THROW({
-        try {
-            PostgresConnectionPool pool(auth_cfg, pool_cfg);
-            bool is_healthy = pool.ping();
-            EXPECT_FALSE(is_healthy);
-        } catch (const std::exception&) {
-            // Constructor connection attempt failure is expected when DB is offline
-        }
+        PostgresConnectionPool pool(auth_cfg, pool_cfg);
+        bool is_healthy = pool.ping();
+        EXPECT_FALSE(is_healthy);
     });
 }
 
@@ -97,20 +93,53 @@ TEST_F(ConnectionPoolTest, IntegratesWithHealthStatusManager) {
     AuthConfig auth_cfg = make_dummy_auth_config();
     ConnectionPoolConfig pool_cfg = make_fast_config();
 
-    try {
-        PostgresConnectionPool pool(auth_cfg, pool_cfg);
+    PostgresConnectionPool pool(auth_cfg, pool_cfg);
 
-        // Register pool.ping() as the service readiness evaluator
-        health_mgr.set_readiness_evaluator([&pool]() noexcept { return pool.ping(); });
+    // Register pool.ping() as the service readiness evaluator
+    health_mgr.set_readiness_evaluator([&pool]() noexcept { return pool.ping(); });
 
-        // Test non-blocking readiness evaluation
-        bool ready = health_mgr.evaluate_readiness();
-        EXPECT_EQ(ready, pool.ping());
-    } catch (const std::exception&) {
-        // Fallback for offline execution environment
-        health_mgr.set_readiness_evaluator([]() noexcept { return false; });
-        EXPECT_FALSE(health_mgr.evaluate_readiness());
-    }
+    // Test non-blocking readiness evaluation
+    bool ready = health_mgr.evaluate_readiness();
+    EXPECT_EQ(ready, pool.ping());
+    EXPECT_FALSE(ready);
+}
+
+// 5. Validate Port 5432 Host Isolation Guard
+TEST_F(ConnectionPoolTest, EnforcesPort5432SecurityInvariant) {
+    AuthConfig forbidden_cfg = make_dummy_auth_config();
+    forbidden_cfg.db_host = "localhost";
+    forbidden_cfg.db_port = 5432;
+
+    ConnectionPoolConfig pool_cfg = make_fast_config();
+    EXPECT_THROW((PostgresConnectionPool(forbidden_cfg, pool_cfg)), PortForbiddenException);
+
+    forbidden_cfg.db_host = "127.0.0.1";
+    EXPECT_THROW((PostgresConnectionPool(forbidden_cfg, pool_cfg)), PortForbiddenException);
+}
+
+// 6. Validate configuration bounds validation
+TEST_F(ConnectionPoolTest, InvalidPoolConfigThrows) {
+    AuthConfig auth_cfg = make_dummy_auth_config();
+    ConnectionPoolConfig pool_cfg = make_fast_config();
+    pool_cfg.max_connections = 0;
+    EXPECT_THROW((PostgresConnectionPool(auth_cfg, pool_cfg)), std::invalid_argument);
+
+    pool_cfg.max_connections = 2;
+    pool_cfg.min_connections = 5;
+    EXPECT_THROW((PostgresConnectionPool(auth_cfg, pool_cfg)), std::invalid_argument);
+}
+
+// 7. Validate shutdown state and acquire rejection
+TEST_F(ConnectionPoolTest, ShutdownTransitionsStateAndRejectsAcquires) {
+    AuthConfig auth_cfg = make_dummy_auth_config();
+    ConnectionPoolConfig pool_cfg = make_fast_config();
+
+    PostgresConnectionPool pool(auth_cfg, pool_cfg);
+    EXPECT_FALSE(pool.ping());
+
+    pool.shutdown(std::chrono::milliseconds{50});
+    EXPECT_THROW((void)pool.acquire(), PoolShuttingDownException);
+    EXPECT_FALSE(pool.ping());
 }
 
 } // namespace securecloud::auth::db::test
