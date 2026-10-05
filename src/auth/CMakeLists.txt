@@ -5,6 +5,8 @@ add_library(securecloud_auth_config STATIC
         domain/mappers.cpp
         repository/user_repository.cpp
         repository/device_repository.cpp
+        repository/session_repository.cpp
+        repository/refresh_token_repository.cpp
         service/auth_service_impl.cpp
 )
 
