@@ -1,6 +1,7 @@
 add_library(securecloud_auth_config STATIC
         auth_config.cpp
         db/postgres_connection_pool.cpp
+        db/migration_runner.cpp
         service/auth_service_impl.cpp
 )
 
@@ -15,6 +16,7 @@ target_include_directories(securecloud_auth_config PUBLIC
 target_link_libraries(securecloud_auth_config PUBLIC
         securecloud::common
         securecloud::libpqxx
+        OpenSSL::Crypto
         securecloud_proto
         securecloud::compiler_flags
 )
