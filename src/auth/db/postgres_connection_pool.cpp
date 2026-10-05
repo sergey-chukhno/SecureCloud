@@ -191,7 +191,7 @@ bool PostgresConnectionPool::ping(std::chrono::milliseconds timeout) noexcept {
 
         pqxx::nontransaction tx(*health_connection_);
         if (timeout > std::chrono::milliseconds::zero()) {
-            tx.exec("SET LOCAL statement_timeout = " + std::to_string(timeout.count()) + ";").no_rows();
+            tx.exec("SET LOCAL statement_timeout = " + std::to_string(timeout.count()) + ";");
         }
         const auto result = tx.exec("SELECT 1;");
 
