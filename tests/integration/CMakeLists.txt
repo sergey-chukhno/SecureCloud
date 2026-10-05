@@ -359,3 +359,21 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_gateway_streaming_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Persistence Integration Test Suite (AUTH-002-T06)
+add_executable(securecloud_auth_persistence_integration_test
+    auth_persistence_integration_test.cpp
+)
+
+target_link_libraries(securecloud_auth_persistence_integration_test PRIVATE
+    securecloud::auth
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_auth_persistence_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_auth_persistence_integration_test ${SECURECLOUD_TEST_PROPERTIES})

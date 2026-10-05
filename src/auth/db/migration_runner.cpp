@@ -220,17 +220,18 @@ MigrationResult MigrationRunner::run_migrations(const std::vector<MigrationScrip
     AdvisoryLockGuard lock(conn, k_auth_migration_advisory_lock);
 
     // 1. Ensure schema_migrations table exists
+    bool schema_migrations_exists = false;
     {
         pqxx::nontransaction check_tx(conn);
         const auto exists_res = check_tx.exec(
             "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'public' AND table_name = "
             "'schema_migrations');");
-        bool exists = exists_res[0][0].as<bool>();
-        if (!exists) {
-            pqxx::work init_tx(conn);
-            init_tx.exec(kV001Sql);
-            init_tx.commit();
-        }
+        schema_migrations_exists = exists_res[0][0].as<bool>();
+    }
+    if (!schema_migrations_exists) {
+        pqxx::work init_tx(conn);
+        init_tx.exec(kV001Sql);
+        init_tx.commit();
     }
 
     // 2. Query applied migrations and their recorded checksums
