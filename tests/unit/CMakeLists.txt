@@ -308,6 +308,21 @@ target_link_libraries(securecloud_auth_argon2id_hasher_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_argon2id_hasher_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Credentials Domain Types Test Suite (AUTH-003-T02)
+add_executable(securecloud_auth_credentials_test
+        auth/credentials_test.cpp
+)
+
+target_link_libraries(securecloud_auth_credentials_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_credentials_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp
