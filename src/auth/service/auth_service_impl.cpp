@@ -185,6 +185,91 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
     return status;
 }
 
+::grpc::Status AuthServiceImpl::ValidateSession(::grpc::ServerContext* context,
+                                                const ::securecloud::auth::v1::ValidateSessionRequest* request,
+                                                ::securecloud::auth::v1::ValidateSessionResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Null request or response");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ValidateSession", context, status, duration);
+        return status;
+    }
+
+    if (!session_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "SessionManager dependency is unconfigured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ValidateSession", context, status, duration);
+        return status;
+    }
+
+    auto session_id_res = domain::Uuid::from_string(request->session_id());
+    if (!session_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid session_id UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ValidateSession", context, status, duration);
+        return status;
+    }
+
+    auto result = session_manager_->validate_session(*session_id_res);
+    if (result.is_valid() && result.session.has_value()) {
+        const auto& session = *result.session;
+        response->set_is_valid(true);
+        response->set_user_id(session.user_id.to_string());
+        response->set_device_id(session.device_id.to_string());
+        response->set_authentication_level(session.authentication_level == domain::AuthenticationLevel::MfaVerified
+                                               ? securecloud::auth::v1::AUTHENTICATION_LEVEL_MFA_VERIFIED
+                                               : securecloud::auth::v1::AUTHENTICATION_LEVEL_PRIMARY);
+        auto expires_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(session.expires_at.time_since_epoch()).count();
+        response->set_expires_at_epoch_ms(expires_ms);
+    } else {
+        response->set_is_valid(false);
+    }
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("ValidateSession", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::RevokeSession(::grpc::ServerContext* context,
+                                              const ::securecloud::auth::v1::RevokeSessionRequest* request,
+                                              ::securecloud::auth::v1::RevokeSessionResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Null request or response");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeSession", context, status, duration);
+        return status;
+    }
+
+    if (!session_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "SessionManager dependency is unconfigured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeSession", context, status, duration);
+        return status;
+    }
+
+    auto session_id_res = domain::Uuid::from_string(request->session_id());
+    if (!session_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid session_id UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeSession", context, status, duration);
+        return status;
+    }
+
+    auto result = session_manager_->revoke_session(*session_id_res, request->reason());
+    response->set_revoked(result.is_success());
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("RevokeSession", context, status, duration);
+    return status;
+}
+
 #define IMPLEMENT_UNIMPLEMENTED_RPC(MethodName, RequestType, ResponseType)                                      \
     ::grpc::Status AuthServiceImpl::MethodName(::grpc::ServerContext* context,                                  \
                                                const ::securecloud::auth::v1::RequestType*,                     \
@@ -197,10 +282,8 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
         return status;                                                                                          \
     }
 
-// 11 Remaining Unimplemented Proto RPCs
+// 9 Remaining Unimplemented Proto RPCs
 IMPLEMENT_UNIMPLEMENTED_RPC(RefreshSession, RefreshSessionRequest, RefreshSessionResponse)
-IMPLEMENT_UNIMPLEMENTED_RPC(ValidateSession, ValidateSessionRequest, ValidateSessionResponse)
-IMPLEMENT_UNIMPLEMENTED_RPC(RevokeSession, RevokeSessionRequest, RevokeSessionResponse)
 IMPLEMENT_UNIMPLEMENTED_RPC(GetUser, GetUserRequest, GetUserResponse)
 IMPLEMENT_UNIMPLEMENTED_RPC(GetDevice, GetDeviceRequest, GetDeviceResponse)
 IMPLEMENT_UNIMPLEMENTED_RPC(ListUserDevices, ListUserDevicesRequest, ListUserDevicesResponse)
