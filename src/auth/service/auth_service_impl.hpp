@@ -1,6 +1,9 @@
 #pragma once
 
 #include "securecloud/auth/v1/auth.grpc.pb.h"
+#include "service/audit_event_publisher.hpp"
+#include "service/credential_verifier.hpp"
+#include "service/session_manager.hpp"
 
 #include <chrono>
 #include <grpcpp/grpcpp.h>
@@ -10,16 +13,17 @@
 
 namespace securecloud::auth::service {
 
-// Forward declarations of modular sub-components
+// Forward declarations of modular sub-components for future tickets
 class AuthenticationController;
-class SessionManager;
 class DeviceManager;
 class CryptoDirectoryManager;
 
 /// Implementation of the securecloud.auth.v1.AuthService gRPC interface.
 class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service {
   public:
-    AuthServiceImpl();
+    explicit AuthServiceImpl(std::shared_ptr<ICredentialVerifier> credential_verifier = nullptr,
+                             std::shared_ptr<ISessionManager> session_manager = nullptr,
+                             std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr);
     ~AuthServiceImpl() override;
 
     AuthServiceImpl(const AuthServiceImpl&) = delete;
@@ -82,9 +86,13 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
     void log_rpc_execution(std::string_view rpc_name, const ::grpc::ServerContext* context,
                            const ::grpc::Status& status, std::chrono::microseconds duration) const;
 
+    // Injected domain services
+    std::shared_ptr<ICredentialVerifier> credential_verifier_;
+    std::shared_ptr<ISessionManager> session_manager_;
+    std::shared_ptr<IAuditEventPublisher> audit_publisher_;
+
     // Sub-component instances
     std::unique_ptr<AuthenticationController> auth_controller_;
-    std::unique_ptr<SessionManager> session_manager_;
     std::unique_ptr<DeviceManager> device_manager_;
     std::unique_ptr<CryptoDirectoryManager> crypto_directory_manager_;
 };

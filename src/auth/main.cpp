@@ -1,5 +1,12 @@
+#include "auth/crypto/argon2id_hasher.hpp"
 #include "auth/db/postgres_connection_pool.hpp"
+#include "auth/repository/device_repository.hpp"
+#include "auth/repository/session_repository.hpp"
+#include "auth/repository/user_repository.hpp"
+#include "auth/service/audit_event_publisher.hpp"
 #include "auth/service/auth_service_impl.hpp"
+#include "auth/service/credential_verifier.hpp"
+#include "auth/service/session_manager.hpp"
 #include "auth_config.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
@@ -85,8 +92,23 @@ int run_service() {
 
     securecloud::common::health::HealthServiceImpl health_service(config.common.service_name, health_manager);
 
-    // Instantiate AuthServiceImpl
-    securecloud::auth::service::AuthServiceImpl auth_service;
+    // Instantiate wired domain components
+    std::shared_ptr<securecloud::auth::service::CredentialVerifier> verifier;
+    std::shared_ptr<securecloud::auth::service::SessionManager> session_mgr;
+    auto audit_publisher = std::make_shared<securecloud::auth::service::AuditEventPublisher>();
+
+    if (pool) {
+        auto user_repo = std::make_shared<securecloud::auth::repository::PostgresUserRepository>(*pool);
+        auto device_repo = std::make_shared<securecloud::auth::repository::PostgresDeviceRepository>(*pool);
+        auto session_repo = std::make_shared<securecloud::auth::repository::PostgresSessionRepository>(*pool);
+        auto hasher = std::make_shared<securecloud::auth::crypto::OpenSslArgon2idHasher>();
+
+        verifier = std::make_shared<securecloud::auth::service::CredentialVerifier>(user_repo, hasher);
+        session_mgr = std::make_shared<securecloud::auth::service::SessionManager>(session_repo, device_repo);
+    }
+
+    // Instantiate AuthServiceImpl wired with domain verifier, session manager, and audit publisher
+    securecloud::auth::service::AuthServiceImpl auth_service(verifier, session_mgr, audit_publisher);
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);

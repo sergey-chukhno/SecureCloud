@@ -377,3 +377,23 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_auth_persistence_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Authentication End-to-End Integration Test Suite (AUTH-003-T06)
+add_executable(securecloud_auth_authentication_integration_test
+    auth_authentication_integration_test.cpp
+)
+
+target_link_libraries(securecloud_auth_authentication_integration_test PRIVATE
+    securecloud::auth
+    securecloud::common
+    securecloud_proto
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_auth_authentication_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_auth_authentication_integration_test ${SECURECLOUD_TEST_PROPERTIES})

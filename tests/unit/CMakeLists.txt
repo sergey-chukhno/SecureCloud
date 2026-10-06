@@ -293,6 +293,102 @@ target_link_libraries(securecloud_auth_crypto_key_mfa_repository_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_crypto_key_mfa_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Argon2id Hasher Engine Test Suite (AUTH-003-T01)
+add_executable(securecloud_auth_argon2id_hasher_test
+        auth/argon2id_hasher_test.cpp
+)
+
+target_link_libraries(securecloud_auth_argon2id_hasher_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_argon2id_hasher_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Credentials Domain Types Test Suite (AUTH-003-T02)
+add_executable(securecloud_auth_credentials_test
+        auth/credentials_test.cpp
+)
+
+target_link_libraries(securecloud_auth_credentials_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_credentials_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Credential Verifier Domain Service Test Suite (AUTH-003-T03)
+add_executable(securecloud_auth_credential_verifier_test
+        auth/credential_verifier_test.cpp
+)
+
+target_link_libraries(securecloud_auth_credential_verifier_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_credential_verifier_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Session Manager Service Test Suite (AUTH-003-T04)
+add_executable(securecloud_auth_session_manager_test
+        auth/session_manager_test.cpp
+)
+
+target_link_libraries(securecloud_auth_session_manager_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_session_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Audit Event Publisher Service Test Suite (AUTH-003-T05)
+add_executable(securecloud_auth_audit_event_publisher_test
+        auth/audit_event_publisher_test.cpp
+)
+
+target_link_libraries(securecloud_auth_audit_event_publisher_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_audit_event_publisher_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Service Authenticate RPC Test Suite (AUTH-003-T06)
+add_executable(securecloud_auth_service_authenticate_test
+        auth/auth_service_authenticate_test.cpp
+)
+
+target_link_libraries(securecloud_auth_service_authenticate_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud_proto
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_service_authenticate_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp
