@@ -1,5 +1,8 @@
 #include "service/session_manager.hpp"
 
+#include "domain/audit_event.hpp"
+#include "service/audit_event_publisher.hpp"
+
 #include <chrono>
 #include <stdexcept>
 
@@ -7,9 +10,9 @@ namespace securecloud::auth::service {
 
 SessionManager::SessionManager(std::shared_ptr<repository::ISessionRepository> session_repository,
                                std::shared_ptr<repository::IDeviceRepository> device_repository,
-                               std::chrono::seconds session_ttl)
+                               std::chrono::seconds session_ttl, std::shared_ptr<IAuditEventPublisher> audit_publisher)
     : session_repo_(std::move(session_repository)), device_repo_(std::move(device_repository)),
-      session_ttl_(session_ttl) {
+      session_ttl_(session_ttl), audit_publisher_(std::move(audit_publisher)) {
     if (!session_repo_) {
         throw std::invalid_argument("SessionManager: session_repository cannot be null");
     }
@@ -108,12 +111,18 @@ domain::SessionValidationResult SessionManager::validate_session(const domain::U
 
     // Lifecycle check: Revoked sessions are immediately and irreversibly rejected
     if (session.session_status == domain::SessionStatus::Revoked) {
+        if (audit_publisher_) {
+            audit_publisher_->publish(domain::AuditEvent::session_revoked_attempt(session_id));
+        }
         return domain::SessionValidationResult::revoked("Session has been revoked: " + session_id.to_string());
     }
 
     // Lifecycle check: Expired status or wall-clock expiration exceeded
     auto now = std::chrono::system_clock::now();
     if (session.session_status == domain::SessionStatus::Expired || now >= session.expires_at) {
+        if (audit_publisher_) {
+            audit_publisher_->publish(domain::AuditEvent::session_expired_attempt(session_id));
+        }
         return domain::SessionValidationResult::expired("Session has expired: " + session_id.to_string());
     }
 
@@ -168,7 +177,7 @@ std::vector<domain::SessionEntity> SessionManager::list_active_sessions_for_devi
 }
 
 domain::SessionRevocationResult SessionManager::revoke_session(const domain::Uuid& session_id,
-                                                               std::string_view /*reason*/) {
+                                                               std::string_view reason) {
     std::optional<domain::SessionEntity> session_opt;
     try {
         session_opt = session_repo_->find_by_id(session_id);
@@ -207,6 +216,11 @@ domain::SessionRevocationResult SessionManager::revoke_session(const domain::Uui
     if (!revoked) {
         return domain::SessionRevocationResult::already_revoked("Session already revoked by concurrent operation: " +
                                                                 session_id.to_string());
+    }
+
+    if (audit_publisher_) {
+        audit_publisher_->publish(
+            domain::AuditEvent::session_revoked(session_id, session_opt->user_id, session_opt->device_id, reason));
     }
 
     return domain::SessionRevocationResult::success(1);

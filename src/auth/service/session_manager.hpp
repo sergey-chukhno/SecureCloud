@@ -123,11 +123,21 @@ class ISessionManager {
 /// 2. Active status: verifies device.device_status == DeviceStatus::Active.
 /// 3. Assurance level: session stamped with AuthenticationLevel::PrimaryOnly.
 /// 4. Durability: session persisted via ISessionRepository and device activity timestamp updated.
+class IAuditEventPublisher;
+
+/// Production implementation of ISessionManager.
+///
+/// Invariants & Rules:
+/// 1. Ownership: verifies device_id exists and device.user_id == user.user_id.
+/// 2. Active status: verifies device.device_status == DeviceStatus::Active.
+/// 3. Assurance level: session stamped with AuthenticationLevel::PrimaryOnly.
+/// 4. Durability: session persisted via ISessionRepository and device activity timestamp updated.
 class SessionManager final : public ISessionManager {
   public:
     SessionManager(std::shared_ptr<repository::ISessionRepository> session_repository,
                    std::shared_ptr<repository::IDeviceRepository> device_repository,
-                   std::chrono::seconds session_ttl = std::chrono::hours(24));
+                   std::chrono::seconds session_ttl = std::chrono::hours(24),
+                   std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr);
     ~SessionManager() override = default;
 
     SessionManager(const SessionManager&) = delete;
@@ -161,6 +171,7 @@ class SessionManager final : public ISessionManager {
     std::shared_ptr<repository::ISessionRepository> session_repo_;
     std::shared_ptr<repository::IDeviceRepository> device_repo_;
     std::chrono::seconds session_ttl_;
+    std::shared_ptr<IAuditEventPublisher> audit_publisher_;
 };
 
 } // namespace securecloud::auth::service
