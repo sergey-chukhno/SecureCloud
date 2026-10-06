@@ -102,6 +102,18 @@ class ISessionManager {
 
     /// Lists all active sessions bound to a specific device.
     virtual std::vector<domain::SessionEntity> list_active_sessions_for_device(const domain::Uuid& device_id) = 0;
+
+    /// Revokes an individual session atomically and idempotently.
+    virtual domain::SessionRevocationResult revoke_session(const domain::Uuid& session_id,
+                                                           std::string_view reason = "") = 0;
+
+    /// Revokes all active sessions bound to a specific device atomically.
+    virtual domain::SessionRevocationResult revoke_all_device_sessions(const domain::Uuid& device_id,
+                                                                       std::string_view reason = "") = 0;
+
+    /// Revokes all active sessions belonging to a specific user across all devices atomically.
+    virtual domain::SessionRevocationResult revoke_all_user_sessions(const domain::Uuid& user_id,
+                                                                     std::string_view reason = "") = 0;
 };
 
 /// Production implementation of ISessionManager.
@@ -133,6 +145,15 @@ class SessionManager final : public ISessionManager {
     std::vector<domain::SessionEntity> list_active_sessions_for_user(const domain::Uuid& user_id) override;
 
     std::vector<domain::SessionEntity> list_active_sessions_for_device(const domain::Uuid& device_id) override;
+
+    domain::SessionRevocationResult revoke_session(const domain::Uuid& session_id,
+                                                   std::string_view reason = "") override;
+
+    domain::SessionRevocationResult revoke_all_device_sessions(const domain::Uuid& device_id,
+                                                               std::string_view reason = "") override;
+
+    domain::SessionRevocationResult revoke_all_user_sessions(const domain::Uuid& user_id,
+                                                             std::string_view reason = "") override;
 
     [[nodiscard]] std::chrono::seconds session_ttl() const noexcept { return session_ttl_; }
 

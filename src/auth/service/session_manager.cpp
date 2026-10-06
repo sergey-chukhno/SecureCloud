@@ -167,4 +167,81 @@ std::vector<domain::SessionEntity> SessionManager::list_active_sessions_for_devi
     return session_repo_->list_active_by_device_id(device_id);
 }
 
+domain::SessionRevocationResult SessionManager::revoke_session(const domain::Uuid& session_id,
+                                                               std::string_view /*reason*/) {
+    std::optional<domain::SessionEntity> session_opt;
+    try {
+        session_opt = session_repo_->find_by_id(session_id);
+    } catch (const std::exception& ex) {
+        return domain::SessionRevocationResult::internal_error(std::string("Database error during session lookup: ") +
+                                                               ex.what());
+    } catch (...) {
+        return domain::SessionRevocationResult::internal_error("Unknown database error during session lookup");
+    }
+
+    if (!session_opt.has_value()) {
+        return domain::SessionRevocationResult::not_found("Session not found: " + session_id.to_string());
+    }
+
+    if (session_opt->session_status == domain::SessionStatus::Revoked) {
+        return domain::SessionRevocationResult::already_revoked("Session was already revoked: " +
+                                                                session_id.to_string());
+    }
+
+    if (session_opt->session_status == domain::SessionStatus::Expired) {
+        return domain::SessionRevocationResult::already_revoked("Session is expired and cannot be revoked: " +
+                                                                session_id.to_string());
+    }
+
+    auto now = std::chrono::system_clock::now();
+    bool revoked = false;
+    try {
+        revoked = session_repo_->revoke_session_atomic(session_id, now);
+    } catch (const std::exception& ex) {
+        return domain::SessionRevocationResult::internal_error(std::string("Database error revoking session: ") +
+                                                               ex.what());
+    } catch (...) {
+        return domain::SessionRevocationResult::internal_error("Unknown database error revoking session");
+    }
+
+    if (!revoked) {
+        return domain::SessionRevocationResult::already_revoked("Session already revoked by concurrent operation: " +
+                                                                session_id.to_string());
+    }
+
+    return domain::SessionRevocationResult::success(1);
+}
+
+domain::SessionRevocationResult SessionManager::revoke_all_device_sessions(const domain::Uuid& device_id,
+                                                                           std::string_view /*reason*/) {
+    auto now = std::chrono::system_clock::now();
+    uint64_t count = 0;
+    try {
+        count = session_repo_->revoke_all_device_sessions_atomic(device_id, now);
+    } catch (const std::exception& ex) {
+        return domain::SessionRevocationResult::internal_error(
+            std::string("Database error revoking device sessions: ") + ex.what());
+    } catch (...) {
+        return domain::SessionRevocationResult::internal_error("Unknown database error revoking device sessions");
+    }
+
+    return domain::SessionRevocationResult::success(count);
+}
+
+domain::SessionRevocationResult SessionManager::revoke_all_user_sessions(const domain::Uuid& user_id,
+                                                                         std::string_view /*reason*/) {
+    auto now = std::chrono::system_clock::now();
+    uint64_t count = 0;
+    try {
+        count = session_repo_->revoke_all_user_sessions_atomic(user_id, now);
+    } catch (const std::exception& ex) {
+        return domain::SessionRevocationResult::internal_error(std::string("Database error revoking user sessions: ") +
+                                                               ex.what());
+    } catch (...) {
+        return domain::SessionRevocationResult::internal_error("Unknown database error revoking user sessions");
+    }
+
+    return domain::SessionRevocationResult::success(count);
+}
+
 } // namespace securecloud::auth::service

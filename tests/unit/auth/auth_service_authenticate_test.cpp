@@ -41,6 +41,11 @@ class MockSessionManager : public ISessionManager {
                 (override));
     MOCK_METHOD(std::vector<domain::SessionEntity>, list_active_sessions_for_user, (const domain::Uuid&), (override));
     MOCK_METHOD(std::vector<domain::SessionEntity>, list_active_sessions_for_device, (const domain::Uuid&), (override));
+    MOCK_METHOD(domain::SessionRevocationResult, revoke_session, (const domain::Uuid&, std::string_view), (override));
+    MOCK_METHOD(domain::SessionRevocationResult, revoke_all_device_sessions, (const domain::Uuid&, std::string_view),
+                (override));
+    MOCK_METHOD(domain::SessionRevocationResult, revoke_all_user_sessions, (const domain::Uuid&, std::string_view),
+                (override));
 };
 
 class MockAuditEventPublisher : public IAuditEventPublisher {
