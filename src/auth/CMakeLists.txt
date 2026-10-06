@@ -11,6 +11,7 @@ add_library(securecloud_auth_config STATIC
         repository/mfa_repository.cpp
         crypto/argon2id_hasher.cpp
         service/credential_verifier.cpp
+        service/session_manager.cpp
         service/auth_service_impl.cpp
 )
 
