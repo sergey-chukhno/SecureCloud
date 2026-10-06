@@ -372,6 +372,23 @@ target_link_libraries(securecloud_auth_audit_event_publisher_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_audit_event_publisher_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Service Authenticate RPC Test Suite (AUTH-003-T06)
+add_executable(securecloud_auth_service_authenticate_test
+        auth/auth_service_authenticate_test.cpp
+)
+
+target_link_libraries(securecloud_auth_service_authenticate_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud_proto
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_service_authenticate_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp

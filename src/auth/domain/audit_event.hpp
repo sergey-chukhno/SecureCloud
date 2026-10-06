@@ -109,7 +109,7 @@ struct AuditEvent {
         return ev;
     }
 
-    static AuditEvent account_disabled_attempt(const Uuid& user_id, std::string_view credential_identifier,
+    static AuditEvent account_disabled_attempt(std::optional<Uuid> user_id, std::string_view credential_identifier,
                                                std::string_view failure_reason,
                                                std::optional<Uuid> device_id = std::nullopt,
                                                std::string_view client_ip = "unknown") {
