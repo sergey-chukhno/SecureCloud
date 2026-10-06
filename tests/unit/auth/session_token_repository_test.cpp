@@ -155,6 +155,90 @@ class InMemorySessionRepository : public ISessionRepository {
         revoke_all_device_sessions(device_id, revoked_at);
     }
 
+    bool touch_session_activity(const domain::Uuid& session_id, domain::time_point now) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = sessions_.find(session_id);
+        if (it != sessions_.end() && it->second.session_status == SessionStatus::Active &&
+            it->second.expires_at > now) {
+            it->second.last_used_at = now;
+            return true;
+        }
+        return false;
+    }
+
+    bool touch_session_activity(const domain::Uuid& session_id, domain::time_point now,
+                                pqxx::transaction_base& /*tx*/) override {
+        return touch_session_activity(session_id, now);
+    }
+
+    uint64_t expire_stale_sessions(domain::time_point now) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        uint64_t count = 0;
+        for (auto& [id, s] : sessions_) {
+            if (s.session_status == SessionStatus::Active && s.expires_at <= now) {
+                s.session_status = SessionStatus::Expired;
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    uint64_t expire_stale_sessions(domain::time_point now, pqxx::transaction_base& /*tx*/) override {
+        return expire_stale_sessions(now);
+    }
+
+    bool revoke_session_atomic(const domain::Uuid& session_id, domain::time_point revoked_at) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = sessions_.find(session_id);
+        if (it != sessions_.end() && it->second.session_status == SessionStatus::Active) {
+            it->second.session_status = SessionStatus::Revoked;
+            it->second.revoked_at = revoked_at;
+            return true;
+        }
+        return false;
+    }
+
+    bool revoke_session_atomic(const domain::Uuid& session_id, domain::time_point revoked_at,
+                               pqxx::transaction_base& /*tx*/) override {
+        return revoke_session_atomic(session_id, revoked_at);
+    }
+
+    uint64_t revoke_all_device_sessions_atomic(const domain::Uuid& device_id, domain::time_point revoked_at) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        uint64_t count = 0;
+        for (auto& [id, s] : sessions_) {
+            if (s.device_id == device_id && s.session_status == SessionStatus::Active) {
+                s.session_status = SessionStatus::Revoked;
+                s.revoked_at = revoked_at;
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    uint64_t revoke_all_device_sessions_atomic(const domain::Uuid& device_id, domain::time_point revoked_at,
+                                               pqxx::transaction_base& /*tx*/) override {
+        return revoke_all_device_sessions_atomic(device_id, revoked_at);
+    }
+
+    uint64_t revoke_all_user_sessions_atomic(const domain::Uuid& user_id, domain::time_point revoked_at) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        uint64_t count = 0;
+        for (auto& [id, s] : sessions_) {
+            if (s.user_id == user_id && s.session_status == SessionStatus::Active) {
+                s.session_status = SessionStatus::Revoked;
+                s.revoked_at = revoked_at;
+                ++count;
+            }
+        }
+        return count;
+    }
+
+    uint64_t revoke_all_user_sessions_atomic(const domain::Uuid& user_id, domain::time_point revoked_at,
+                                             pqxx::transaction_base& /*tx*/) override {
+        return revoke_all_user_sessions_atomic(user_id, revoked_at);
+    }
+
   private:
     std::mutex mutex_;
     std::map<Uuid, SessionEntity> sessions_;

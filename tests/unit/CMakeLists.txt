@@ -403,6 +403,20 @@ target_link_libraries(securecloud_auth_session_lifecycle_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_session_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Enhanced Session Repository Test Suite (AUTH-004-T02)
+add_executable(securecloud_auth_session_repository_test
+        auth/session_repository_test.cpp
+)
+
+target_link_libraries(securecloud_auth_session_repository_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_session_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp

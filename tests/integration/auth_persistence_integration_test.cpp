@@ -418,6 +418,104 @@ TEST_F(AuthPersistenceIntegrationTest, SessionRepositoryBulkRevocation) {
 }
 
 // ============================================================================
+// 6b. SessionRepository Atomic Touch, Sweeper & Revocations (AUTH-004-T02)
+// ============================================================================
+
+TEST_F(AuthPersistenceIntegrationTest, SessionRepositoryAtomicOperationsAndSweeper) {
+    repository::PostgresUserRepository user_repo(*pool_);
+    repository::PostgresDeviceRepository device_repo(*pool_);
+    repository::PostgresSessionRepository session_repo(*pool_);
+
+    const auto user_id = Uuid::generate_v7();
+    const auto dev_id = Uuid::generate_v7();
+    const auto now = std::chrono::system_clock::now();
+
+    UserEntity user{
+        .user_id = user_id,
+        .credential_identifier = "atomic_session_user_" + user_id.to_string() + "@securecloud.local",
+        .password_verifier = "hash",
+        .password_algorithm = "argon2id",
+        .password_updated_at = now,
+        .account_status = AccountStatus::Active,
+        .created_at = now,
+        .updated_at = now,
+        .version = 1,
+    };
+    user_repo.create_user(user);
+
+    DeviceEntity dev{
+        .device_id = dev_id,
+        .user_id = user_id,
+        .device_status = DeviceStatus::Active,
+        .registered_at = now,
+        .revoked_at = std::nullopt,
+        .revocation_reason = std::nullopt,
+        .last_authenticated_at = now,
+        .created_at = now,
+        .updated_at = now,
+    };
+    device_repo.register_device(dev);
+
+    // 1. Test Atomic Touch
+    const auto active_session_id = Uuid::generate_v7();
+    SessionEntity s_active{
+        .session_id = active_session_id,
+        .user_id = user_id,
+        .device_id = dev_id,
+        .session_status = SessionStatus::Active,
+        .authentication_level = AuthenticationLevel::PrimaryOnly,
+        .created_at = now,
+        .expires_at = now + std::chrono::hours(24),
+        .revoked_at = std::nullopt,
+        .last_used_at = now,
+    };
+    session_repo.create_session(s_active);
+
+    const auto touch_time = now + std::chrono::minutes(15);
+    EXPECT_TRUE(session_repo.touch_session_activity(active_session_id, touch_time));
+    auto found = session_repo.find_by_id(active_session_id);
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(domain::to_iso8601(found->last_used_at), domain::to_iso8601(touch_time));
+
+    // 2. Test Atomic Expiration Sweep
+    const auto stale_session_id = Uuid::generate_v7();
+    SessionEntity s_stale{
+        .session_id = stale_session_id,
+        .user_id = user_id,
+        .device_id = dev_id,
+        .session_status = SessionStatus::Active,
+        .authentication_level = AuthenticationLevel::PrimaryOnly,
+        .created_at = now - std::chrono::hours(2),
+        .expires_at = now - std::chrono::minutes(10), // expired in past
+        .revoked_at = std::nullopt,
+        .last_used_at = now - std::chrono::hours(2),
+    };
+    session_repo.create_session(s_stale);
+
+    uint64_t swept = session_repo.expire_stale_sessions(now);
+    EXPECT_GE(swept, 1);
+    auto found_stale = session_repo.find_by_id(stale_session_id);
+    ASSERT_TRUE(found_stale.has_value());
+    EXPECT_EQ(found_stale->session_status, SessionStatus::Expired);
+
+    // Touching expired session must fail
+    EXPECT_FALSE(session_repo.touch_session_activity(stale_session_id, now));
+
+    // 3. Test Atomic Revocation & Idempotency
+    EXPECT_TRUE(session_repo.revoke_session_atomic(active_session_id, now + std::chrono::minutes(20)));
+    // Second revocation must return false
+    EXPECT_FALSE(session_repo.revoke_session_atomic(active_session_id, now + std::chrono::minutes(21)));
+
+    auto found_revoked = session_repo.find_by_id(active_session_id);
+    ASSERT_TRUE(found_revoked.has_value());
+    EXPECT_EQ(found_revoked->session_status, SessionStatus::Revoked);
+    EXPECT_TRUE(found_revoked->revoked_at.has_value());
+
+    // Touching revoked session must fail
+    EXPECT_FALSE(session_repo.touch_session_activity(active_session_id, now));
+}
+
+// ============================================================================
 // 7. RefreshTokenRepository Atomic Rotation
 // ============================================================================
 
