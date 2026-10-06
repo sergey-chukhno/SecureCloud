@@ -12,6 +12,7 @@ add_library(securecloud_auth_config STATIC
         crypto/argon2id_hasher.cpp
         service/credential_verifier.cpp
         service/session_manager.cpp
+        service/audit_event_publisher.cpp
         service/auth_service_impl.cpp
 )
 
@@ -25,6 +26,7 @@ target_include_directories(securecloud_auth_config PUBLIC
 
 target_link_libraries(securecloud_auth_config PUBLIC
         securecloud::common
+        securecloud::json
         securecloud::libpqxx
         OpenSSL::Crypto
         securecloud_proto
