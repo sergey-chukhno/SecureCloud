@@ -121,7 +121,10 @@ class MockAuditEventPublisher : public IAuditEventPublisher {
 
 class MockAuditSink : public IAuditEventSink {
   public:
-    MOCK_METHOD(void, emit, (const domain::AuditEvent& event, std::string_view json_payload), (override));
+    void emit(const domain::AuditEvent& event, std::string_view json_payload) override {
+        emit_str(event, std::string(json_payload));
+    }
+    MOCK_METHOD(void, emit_str, (const domain::AuditEvent& event, const std::string& json_payload));
 };
 
 domain::SessionEntity create_test_session(const domain::Uuid& user_id, const domain::Uuid& device_id,
@@ -299,7 +302,7 @@ TEST(SessionAuditTest, SessionManager_NullAuditPublisher_OperatesWithoutCrash) {
 // Test 9: Downstream sink exception is absorbed by AuditEventPublisher without bubbling
 TEST(SessionAuditTest, AuditEventPublisher_SinkException_NonBlockingNoexcept) {
     auto mock_sink = std::make_shared<MockAuditSink>();
-    EXPECT_CALL(*mock_sink, emit(_, _)).WillOnce([](const domain::AuditEvent&, std::string_view) {
+    EXPECT_CALL(*mock_sink, emit_str(_, _)).WillOnce([](const domain::AuditEvent&, const std::string&) {
         throw std::runtime_error("Disk I/O error writing audit log");
     });
 
