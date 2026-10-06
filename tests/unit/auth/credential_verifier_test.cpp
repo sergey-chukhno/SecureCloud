@@ -32,10 +32,18 @@ class MockUserRepository : public repository::IUserRepository {
     MOCK_METHOD(std::optional<domain::UserEntity>, find_by_id,
                 (const domain::Uuid& user_id, pqxx::transaction_base& tx), (override));
 
-    MOCK_METHOD(std::optional<domain::UserEntity>, find_by_credential_identifier,
-                (std::string_view credential_identifier), (override));
-    MOCK_METHOD(std::optional<domain::UserEntity>, find_by_credential_identifier,
-                (std::string_view credential_identifier, pqxx::transaction_base& tx), (override));
+    std::optional<domain::UserEntity> find_by_credential_identifier(std::string_view credential_identifier) override {
+        return find_by_credential_identifier_str(std::string(credential_identifier));
+    }
+    std::optional<domain::UserEntity> find_by_credential_identifier(std::string_view credential_identifier,
+                                                                    pqxx::transaction_base& tx) override {
+        return find_by_credential_identifier_tx_str(std::string(credential_identifier), tx);
+    }
+
+    MOCK_METHOD(std::optional<domain::UserEntity>, find_by_credential_identifier_str,
+                (const std::string& credential_identifier));
+    MOCK_METHOD(std::optional<domain::UserEntity>, find_by_credential_identifier_tx_str,
+                (const std::string& credential_identifier, pqxx::transaction_base& tx));
 
     MOCK_METHOD(void, update_user, (const domain::UserEntity& user), (override));
     MOCK_METHOD(void, update_user, (const domain::UserEntity& user, pqxx::transaction_base& tx), (override));
@@ -51,8 +59,14 @@ class MockUserRepository : public repository::IUserRepository {
 class MockPasswordHasher : public crypto::IPasswordHasher {
   public:
     MOCK_METHOD(std::string, hash_password, (const common::configuration::SecretString& password), (override));
-    MOCK_METHOD(bool, verify_password,
-                (const common::configuration::SecretString& password, std::string_view stored_verifier), (override));
+
+    bool verify_password(const common::configuration::SecretString& password,
+                         std::string_view stored_verifier) override {
+        return verify_password_str(password, std::string(stored_verifier));
+    }
+
+    MOCK_METHOD(bool, verify_password_str,
+                (const common::configuration::SecretString& password, const std::string& stored_verifier));
     MOCK_METHOD(void, execute_dummy_verification, (const common::configuration::SecretString& password), (override));
 };
 
@@ -80,8 +94,8 @@ TEST(CredentialVerifierTest, Verify_ValidCredentials_ReturnsSuccess) {
     domain::PasswordCredential pwd("ValidP@ssword123");
     auto user = create_sample_user(domain::AccountStatus::Active);
 
-    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier("alice@example.com")).WillOnce(Return(user));
-    EXPECT_CALL(*mock_hasher, verify_password(_, user.password_verifier)).WillOnce(Return(true));
+    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier_str("alice@example.com")).WillOnce(Return(user));
+    EXPECT_CALL(*mock_hasher, verify_password_str(_, user.password_verifier)).WillOnce(Return(true));
     EXPECT_CALL(*mock_hasher, execute_dummy_verification(_)).Times(0);
 
     auto result = verifier.verify(id, pwd);
@@ -103,8 +117,8 @@ TEST(CredentialVerifierTest, Verify_WrongPassword_ReturnsInvalidCredentials) {
     domain::PasswordCredential pwd("WrongPassword!");
     auto user = create_sample_user(domain::AccountStatus::Active);
 
-    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier("alice@example.com")).WillOnce(Return(user));
-    EXPECT_CALL(*mock_hasher, verify_password(_, user.password_verifier)).WillOnce(Return(false));
+    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier_str("alice@example.com")).WillOnce(Return(user));
+    EXPECT_CALL(*mock_hasher, verify_password_str(_, user.password_verifier)).WillOnce(Return(false));
 
     auto result = verifier.verify(id, pwd);
 
@@ -122,10 +136,11 @@ TEST(CredentialVerifierTest, Verify_NonExistentUser_ExecutesDummyVerificationAnd
     domain::CredentialIdentifier id("unknown@example.com");
     domain::PasswordCredential pwd("SomePassword123");
 
-    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier("unknown@example.com")).WillOnce(Return(std::nullopt));
+    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier_str("unknown@example.com"))
+        .WillOnce(Return(std::nullopt));
     // Must call execute_dummy_verification exactly once to prevent user enumeration
     EXPECT_CALL(*mock_hasher, execute_dummy_verification(_)).Times(1);
-    EXPECT_CALL(*mock_hasher, verify_password(_, _)).Times(0);
+    EXPECT_CALL(*mock_hasher, verify_password_str(_, _)).Times(0);
 
     auto result = verifier.verify(id, pwd);
 
@@ -145,11 +160,12 @@ TEST(CredentialVerifierTest, Verify_MissingUserAndWrongPassword_ReturnIdenticalS
     domain::PasswordCredential pwd("Password!");
     auto user = create_sample_user(domain::AccountStatus::Active);
 
-    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier("missing@example.com")).WillOnce(Return(std::nullopt));
+    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier_str("missing@example.com"))
+        .WillOnce(Return(std::nullopt));
     EXPECT_CALL(*mock_hasher, execute_dummy_verification(_)).Times(1);
 
-    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier("alice@example.com")).WillOnce(Return(user));
-    EXPECT_CALL(*mock_hasher, verify_password(_, _)).WillOnce(Return(false));
+    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier_str("alice@example.com")).WillOnce(Return(user));
+    EXPECT_CALL(*mock_hasher, verify_password_str(_, _)).WillOnce(Return(false));
 
     auto result1 = verifier.verify(id1, pwd);
     auto result2 = verifier.verify(id2, pwd);
@@ -169,8 +185,8 @@ TEST(CredentialVerifierTest, Verify_DisabledAccount_ReturnsAccountDisabled) {
     domain::PasswordCredential pwd("Password123");
     auto user = create_sample_user(domain::AccountStatus::Disabled);
 
-    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier("alice@example.com")).WillOnce(Return(user));
-    EXPECT_CALL(*mock_hasher, verify_password(_, _)).Times(0);
+    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier_str("alice@example.com")).WillOnce(Return(user));
+    EXPECT_CALL(*mock_hasher, verify_password_str(_, _)).Times(0);
 
     auto result = verifier.verify(id, pwd);
 
@@ -188,7 +204,7 @@ TEST(CredentialVerifierTest, Verify_DatabaseException_FailsClosedWithInternalErr
     domain::CredentialIdentifier id("alice@example.com");
     domain::PasswordCredential pwd("Password123");
 
-    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier("alice@example.com"))
+    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier_str("alice@example.com"))
         .WillOnce(Throw(repository::DatabaseExecutionException("Connection refused")));
 
     auto result = verifier.verify(id, pwd);
@@ -208,8 +224,8 @@ TEST(CredentialVerifierTest, Verify_PasswordHasherException_FailsClosedWithInter
     domain::PasswordCredential pwd("Password123");
     auto user = create_sample_user(domain::AccountStatus::Active);
 
-    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier("alice@example.com")).WillOnce(Return(user));
-    EXPECT_CALL(*mock_hasher, verify_password(_, _))
+    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier_str("alice@example.com")).WillOnce(Return(user));
+    EXPECT_CALL(*mock_hasher, verify_password_str(_, _))
         .WillOnce(Throw(std::runtime_error("OpenSSL KDF internal failure")));
 
     auto result = verifier.verify(id, pwd);
@@ -229,8 +245,8 @@ TEST(CredentialVerifierTest, Verify_CorruptedPasswordVerifierInDb_FailsClosedWit
     auto user = create_sample_user(domain::AccountStatus::Active);
     user.password_verifier = "corrupted_garbage_hash";
 
-    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier("alice@example.com")).WillOnce(Return(user));
-    EXPECT_CALL(*mock_hasher, verify_password(_, "corrupted_garbage_hash"))
+    EXPECT_CALL(*mock_user_repo, find_by_credential_identifier_str("alice@example.com")).WillOnce(Return(user));
+    EXPECT_CALL(*mock_hasher, verify_password_str(_, "corrupted_garbage_hash"))
         .WillOnce(Return(false)); // Hasher fails closed
 
     auto result = verifier.verify(id, pwd);

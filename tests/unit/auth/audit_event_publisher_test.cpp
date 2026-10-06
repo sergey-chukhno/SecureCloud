@@ -18,7 +18,11 @@ using ::testing::Throw;
 
 class MockAuditEventSink : public IAuditEventSink {
   public:
-    MOCK_METHOD(void, emit, (const domain::AuditEvent& event, std::string_view json_payload), (override));
+    void emit(const domain::AuditEvent& event, std::string_view json_payload) override {
+        emit_str(event, std::string(json_payload));
+    }
+
+    MOCK_METHOD(void, emit_str, (const domain::AuditEvent& event, const std::string& json_payload));
 };
 
 // Test 1: LoginSucceeded emits structured JSON with user, device, and session IDs
@@ -34,10 +38,11 @@ TEST(AuditEventPublisherTest, Publish_LoginSucceeded_EmitsStructuredPayloadWithA
         domain::AuditEvent::login_succeeded(user_id, "alice@securecloud.io", device_id, session_id, "192.168.1.50");
 
     std::string captured_json;
-    EXPECT_CALL(*mock_sink, emit(_, _)).WillOnce([&captured_json](const domain::AuditEvent& ev, std::string_view json) {
-        EXPECT_EQ(ev.event_type, domain::AuditEventType::LoginSucceeded);
-        captured_json = std::string(json);
-    });
+    EXPECT_CALL(*mock_sink, emit_str(_, _))
+        .WillOnce([&captured_json](const domain::AuditEvent& ev, const std::string& json) {
+            EXPECT_EQ(ev.event_type, domain::AuditEventType::LoginSucceeded);
+            captured_json = json;
+        });
 
     publisher.publish(event);
 
@@ -60,10 +65,11 @@ TEST(AuditEventPublisherTest, Publish_LoginFailed_EmitsStructuredPayloadWithoutP
                                                   "10.0.0.1");
 
     std::string captured_json;
-    EXPECT_CALL(*mock_sink, emit(_, _)).WillOnce([&captured_json](const domain::AuditEvent& ev, std::string_view json) {
-        EXPECT_EQ(ev.event_type, domain::AuditEventType::LoginFailed);
-        captured_json = std::string(json);
-    });
+    EXPECT_CALL(*mock_sink, emit_str(_, _))
+        .WillOnce([&captured_json](const domain::AuditEvent& ev, const std::string& json) {
+            EXPECT_EQ(ev.event_type, domain::AuditEventType::LoginFailed);
+            captured_json = json;
+        });
 
     publisher.publish(event);
 
@@ -86,10 +92,9 @@ TEST(AuditEventPublisherTest, Publish_AccountDisabledAccessAttempt_EmitsCorrectE
                                                               "Account is locked or disabled");
 
     std::string captured_json;
-    EXPECT_CALL(*mock_sink, emit(_, _))
-        .WillOnce([&captured_json](const domain::AuditEvent& /*ev*/, std::string_view json) {
-            captured_json = std::string(json);
-        });
+    EXPECT_CALL(*mock_sink, emit_str(_, _))
+        .WillOnce(
+            [&captured_json](const domain::AuditEvent& /*ev*/, const std::string& json) { captured_json = json; });
 
     publisher.publish(event);
 
@@ -108,10 +113,9 @@ TEST(AuditEventPublisherTest, Publish_ZeroSensitiveDataLeakage_GuaranteesNoSecre
     auto event = domain::AuditEvent::login_failed("charlie@securecloud.io", "Invalid credentials");
 
     std::string captured_json;
-    EXPECT_CALL(*mock_sink, emit(_, _))
-        .WillOnce([&captured_json](const domain::AuditEvent& /*ev*/, std::string_view json) {
-            captured_json = std::string(json);
-        });
+    EXPECT_CALL(*mock_sink, emit_str(_, _))
+        .WillOnce(
+            [&captured_json](const domain::AuditEvent& /*ev*/, const std::string& json) { captured_json = json; });
 
     publisher.publish(event);
 
@@ -168,7 +172,7 @@ TEST(AuditEventPublisherTest, Publish_SinkException_CatchesAndFailsSafeWithoutTh
 
     auto event = domain::AuditEvent::login_failed("attacker", "Bad password");
 
-    EXPECT_CALL(*mock_sink, emit(_, _)).WillOnce(Throw(std::runtime_error("Audit collector connection dropped")));
+    EXPECT_CALL(*mock_sink, emit_str(_, _)).WillOnce(Throw(std::runtime_error("Audit collector connection dropped")));
 
     // Fail-safe guarantee: publish must never throw
     EXPECT_NO_THROW(publisher.publish(event));

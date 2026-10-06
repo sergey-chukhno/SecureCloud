@@ -96,15 +96,15 @@ TEST(Argon2idHasherTest, VerifyPassword_TamperedSaltOrHash_ReturnsFalse) {
     std::string verifier = hasher.hash_password(password);
     ASSERT_TRUE(hasher.verify_password(password, verifier));
 
-    // Tamper with the last character of the hash
+    // Tamper with the hash
     std::string tampered_hash = verifier;
-    tampered_hash.back() = (tampered_hash.back() == 'A') ? 'B' : 'A';
+    auto last_dollar = tampered_hash.rfind('$');
+    ASSERT_NE(last_dollar, std::string::npos);
+    tampered_hash[last_dollar + 1] = (tampered_hash[last_dollar + 1] == 'A') ? 'B' : 'A';
     EXPECT_FALSE(hasher.verify_password(password, tampered_hash));
 
     // Tamper with salt
     std::string tampered_salt = verifier;
-    auto last_dollar = tampered_salt.rfind('$');
-    ASSERT_NE(last_dollar, std::string::npos);
     auto second_last_dollar = tampered_salt.rfind('$', last_dollar - 1);
     ASSERT_NE(second_last_dollar, std::string::npos);
 
