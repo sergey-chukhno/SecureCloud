@@ -87,4 +87,84 @@ SessionEstablishmentResult SessionManager::establish_session(const domain::UserE
     return SessionEstablishmentResult::success(std::move(session), std::move(*device_opt));
 }
 
+domain::SessionValidationResult SessionManager::validate_session(const domain::Uuid& session_id,
+                                                                 std::optional<domain::Uuid> claimed_device_id) {
+
+    std::optional<domain::SessionEntity> session_opt;
+    try {
+        session_opt = session_repo_->find_by_id(session_id);
+    } catch (const std::exception& ex) {
+        return domain::SessionValidationResult::internal_error(std::string("Database error during session lookup: ") +
+                                                               ex.what());
+    } catch (...) {
+        return domain::SessionValidationResult::internal_error("Unknown database error during session lookup");
+    }
+
+    if (!session_opt.has_value()) {
+        return domain::SessionValidationResult::not_found("Session not found: " + session_id.to_string());
+    }
+
+    const auto& session = *session_opt;
+
+    // Lifecycle check: Revoked sessions are immediately and irreversibly rejected
+    if (session.session_status == domain::SessionStatus::Revoked) {
+        return domain::SessionValidationResult::revoked("Session has been revoked: " + session_id.to_string());
+    }
+
+    // Lifecycle check: Expired status or wall-clock expiration exceeded
+    auto now = std::chrono::system_clock::now();
+    if (session.session_status == domain::SessionStatus::Expired || now >= session.expires_at) {
+        return domain::SessionValidationResult::expired("Session has expired: " + session_id.to_string());
+    }
+
+    // Device association check: if caller claimed a device ID, verify exact match
+    if (claimed_device_id.has_value() && *claimed_device_id != session.device_id) {
+        return domain::SessionValidationResult::device_mismatch("Session is not associated with claimed device: " +
+                                                                claimed_device_id->to_string());
+    }
+
+    // Device status check: verify the bound physical device is still registered and active
+    std::optional<domain::DeviceEntity> device_opt;
+    try {
+        device_opt = device_repo_->find_by_id(session.device_id);
+    } catch (const std::exception& ex) {
+        return domain::SessionValidationResult::internal_error(std::string("Database error during device lookup: ") +
+                                                               ex.what());
+    } catch (...) {
+        return domain::SessionValidationResult::internal_error("Unknown database error during device lookup");
+    }
+
+    if (!device_opt.has_value()) {
+        return domain::SessionValidationResult::device_mismatch("Bound device not found: " +
+                                                                session.device_id.to_string());
+    }
+
+    if (device_opt->device_status != domain::DeviceStatus::Active) {
+        return domain::SessionValidationResult::device_revoked("Associated device is revoked or disabled: " +
+                                                               session.device_id.to_string());
+    }
+
+    // Sliding activity touch: refresh last_used_at on valid active session
+    try {
+        session_repo_->touch_session_activity(session_id, now);
+    } catch (const std::exception& ex) {
+        return domain::SessionValidationResult::internal_error(
+            std::string("Database error updating session activity: ") + ex.what());
+    } catch (...) {
+        return domain::SessionValidationResult::internal_error("Unknown database error updating session activity");
+    }
+
+    auto valid_session = session;
+    valid_session.last_used_at = now;
+    return domain::SessionValidationResult::valid(std::move(valid_session));
+}
+
+std::vector<domain::SessionEntity> SessionManager::list_active_sessions_for_user(const domain::Uuid& user_id) {
+    return session_repo_->list_active_by_user_id(user_id);
+}
+
+std::vector<domain::SessionEntity> SessionManager::list_active_sessions_for_device(const domain::Uuid& device_id) {
+    return session_repo_->list_active_by_device_id(device_id);
+}
+
 } // namespace securecloud::auth::service

@@ -2,6 +2,7 @@
 
 #include "domain/entities.hpp"
 #include "domain/enums.hpp"
+#include "domain/session_result.hpp"
 #include "domain/uuid.hpp"
 #include "repository/device_repository.hpp"
 #include "repository/session_repository.hpp"
@@ -11,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace securecloud::auth::service {
 
@@ -89,6 +91,17 @@ class ISessionManager {
     /// @return SessionEstablishmentResult containing active session and updated device record.
     virtual SessionEstablishmentResult establish_session(const domain::UserEntity& user,
                                                          const domain::Uuid& device_id) = 0;
+
+    /// Validates the authenticity, lifecycle status, expiration, and device association of a session.
+    /// On success, automatically refreshes the session's activity timestamp (sliding window touch).
+    virtual domain::SessionValidationResult
+    validate_session(const domain::Uuid& session_id, std::optional<domain::Uuid> claimed_device_id = std::nullopt) = 0;
+
+    /// Lists all active sessions for a specific user identity.
+    virtual std::vector<domain::SessionEntity> list_active_sessions_for_user(const domain::Uuid& user_id) = 0;
+
+    /// Lists all active sessions bound to a specific device.
+    virtual std::vector<domain::SessionEntity> list_active_sessions_for_device(const domain::Uuid& device_id) = 0;
 };
 
 /// Production implementation of ISessionManager.
@@ -112,6 +125,14 @@ class SessionManager final : public ISessionManager {
 
     SessionEstablishmentResult establish_session(const domain::UserEntity& user,
                                                  const domain::Uuid& device_id) override;
+
+    domain::SessionValidationResult
+    validate_session(const domain::Uuid& session_id,
+                     std::optional<domain::Uuid> claimed_device_id = std::nullopt) override;
+
+    std::vector<domain::SessionEntity> list_active_sessions_for_user(const domain::Uuid& user_id) override;
+
+    std::vector<domain::SessionEntity> list_active_sessions_for_device(const domain::Uuid& device_id) override;
 
     [[nodiscard]] std::chrono::seconds session_ttl() const noexcept { return session_ttl_; }
 
