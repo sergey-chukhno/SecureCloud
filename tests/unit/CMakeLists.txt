@@ -323,6 +323,22 @@ target_link_libraries(securecloud_auth_credentials_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_credentials_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Credential Verifier Domain Service Test Suite (AUTH-003-T03)
+add_executable(securecloud_auth_credential_verifier_test
+        auth/credential_verifier_test.cpp
+)
+
+target_link_libraries(securecloud_auth_credential_verifier_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_credential_verifier_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp
