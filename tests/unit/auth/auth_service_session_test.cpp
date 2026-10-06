@@ -37,11 +37,19 @@ class MockSessionManager : public ISessionManager {
                 (override));
     MOCK_METHOD(std::vector<domain::SessionEntity>, list_active_sessions_for_user, (const domain::Uuid&), (override));
     MOCK_METHOD(std::vector<domain::SessionEntity>, list_active_sessions_for_device, (const domain::Uuid&), (override));
-    MOCK_METHOD(domain::SessionRevocationResult, revoke_session, (const domain::Uuid&, std::string_view), (override));
-    MOCK_METHOD(domain::SessionRevocationResult, revoke_all_device_sessions, (const domain::Uuid&, std::string_view),
-                (override));
-    MOCK_METHOD(domain::SessionRevocationResult, revoke_all_user_sessions, (const domain::Uuid&, std::string_view),
-                (override));
+    domain::SessionRevocationResult revoke_session(const domain::Uuid& session_id, std::string_view reason) override {
+        return revoke_session_str(session_id, std::string(reason));
+    }
+    MOCK_METHOD(domain::SessionRevocationResult, revoke_session_str, (const domain::Uuid&, const std::string&));
+
+    domain::SessionRevocationResult revoke_all_device_sessions(const domain::Uuid& /*device_id*/,
+                                                               std::string_view /*reason*/) override {
+        return domain::SessionRevocationResult::success(0);
+    }
+    domain::SessionRevocationResult revoke_all_user_sessions(const domain::Uuid& /*user_id*/,
+                                                             std::string_view /*reason*/) override {
+        return domain::SessionRevocationResult::success(0);
+    }
 };
 
 class MockAuditEventPublisher : public IAuditEventPublisher {
@@ -223,7 +231,7 @@ TEST_F(AuthServiceSessionTest, RevokeSession_InvalidSessionIdUuid_ReturnsInvalid
 TEST_F(AuthServiceSessionTest, RevokeSession_ActiveSession_ReturnsOkAndRevokedTrue) {
     auto session_id = domain::Uuid::generate_v7();
 
-    EXPECT_CALL(*mock_session_mgr_, revoke_session(session_id, "User logout"))
+    EXPECT_CALL(*mock_session_mgr_, revoke_session_str(session_id, "User logout"))
         .WillOnce(Return(domain::SessionRevocationResult::success(1)));
 
     securecloud::auth::v1::RevokeSessionRequest req;
