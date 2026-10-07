@@ -3,6 +3,7 @@
 #include "securecloud/auth/v1/auth.grpc.pb.h"
 #include "service/audit_event_publisher.hpp"
 #include "service/credential_verifier.hpp"
+#include "service/mfa_manager.hpp"
 #include "service/session_manager.hpp"
 #include "service/token_manager.hpp"
 
@@ -25,7 +26,8 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
     explicit AuthServiceImpl(std::shared_ptr<ICredentialVerifier> credential_verifier = nullptr,
                              std::shared_ptr<ISessionManager> session_manager = nullptr,
                              std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr,
-                             std::shared_ptr<ITokenManager> token_manager = nullptr);
+                             std::shared_ptr<ITokenManager> token_manager = nullptr,
+                             std::shared_ptr<IMfaManager> mfa_manager = nullptr);
     ~AuthServiceImpl() override;
 
     AuthServiceImpl(const AuthServiceImpl&) = delete;
@@ -82,6 +84,24 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
                                        const ::securecloud::auth::v1::UpdateCryptoPrekeysRequest* request,
                                        ::securecloud::auth::v1::UpdateCryptoPrekeysResponse* response) override;
 
+    // --- MFA RPC Implementations ---
+
+    ::grpc::Status VerifyMfaChallenge(::grpc::ServerContext* context,
+                                      const ::securecloud::auth::v1::VerifyMfaChallengeRequest* request,
+                                      ::securecloud::auth::v1::VerifyMfaChallengeResponse* response) override;
+
+    ::grpc::Status InitiateMfaEnrollment(::grpc::ServerContext* context,
+                                         const ::securecloud::auth::v1::InitiateMfaEnrollmentRequest* request,
+                                         ::securecloud::auth::v1::InitiateMfaEnrollmentResponse* response) override;
+
+    ::grpc::Status ConfirmMfaEnrollment(::grpc::ServerContext* context,
+                                        const ::securecloud::auth::v1::ConfirmMfaEnrollmentRequest* request,
+                                        ::securecloud::auth::v1::ConfirmMfaEnrollmentResponse* response) override;
+
+    ::grpc::Status DisableMfa(::grpc::ServerContext* context,
+                              const ::securecloud::auth::v1::DisableMfaRequest* request,
+                              ::securecloud::auth::v1::DisableMfaResponse* response) override;
+
   private:
     [[nodiscard]] std::string extract_client_identity(const ::grpc::ServerContext* context) const;
 
@@ -93,6 +113,7 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
     std::shared_ptr<ISessionManager> session_manager_;
     std::shared_ptr<IAuditEventPublisher> audit_publisher_;
     std::shared_ptr<ITokenManager> token_manager_;
+    std::shared_ptr<IMfaManager> mfa_manager_;
 
     // Sub-component instances
     std::unique_ptr<AuthenticationController> auth_controller_;

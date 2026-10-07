@@ -337,7 +337,7 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
         challenge_attempts_.erase(challenge_id.to_string());
     }
 
-    return domain::MfaChallengeVerificationResult::success(matched_step);
+    return domain::MfaChallengeVerificationResult::success(matched_step, challenge.session_id, challenge.user_id);
 }
 
 } // namespace securecloud::auth::service

@@ -5,6 +5,7 @@
 #include "auth/domain/uuid.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -68,17 +69,21 @@ struct MfaChallengeVerificationResult {
     MfaChallengeVerificationStatus status{MfaChallengeVerificationStatus::InvalidCode};
     uint64_t matched_time_step = 0; ///< For TOTP anti-replay tracking
     std::string error_message;
+    std::optional<Uuid> session_id{std::nullopt};
+    std::optional<Uuid> user_id{std::nullopt};
 
     [[nodiscard]] bool is_success() const noexcept {
         return status == MfaChallengeVerificationStatus::Success;
     }
 
-    static MfaChallengeVerificationResult success(uint64_t time_step = 0) {
-        return {MfaChallengeVerificationStatus::Success, time_step, {}};
+    static MfaChallengeVerificationResult success(uint64_t time_step = 0,
+                                                  std::optional<Uuid> session_id = std::nullopt,
+                                                  std::optional<Uuid> user_id = std::nullopt) {
+        return {MfaChallengeVerificationStatus::Success, time_step, {}, std::move(session_id), std::move(user_id)};
     }
 
     static MfaChallengeVerificationResult failure(MfaChallengeVerificationStatus status, std::string message) {
-        return {status, 0, std::move(message)};
+        return {status, 0, std::move(message), std::nullopt, std::nullopt};
     }
 };
 

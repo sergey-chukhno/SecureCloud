@@ -240,11 +240,56 @@ message UpdateCryptoPrekeysResponse {
     int64 updated_at_epoch_ms = 2;
 }
 
+// MFA Operations
+message VerifyMfaChallengeRequest {
+    string challenge_id = 1;
+    string code = 2;
+}
+
+message VerifyMfaChallengeResponse {
+    string session_id = 1;
+    string access_token = 2;
+    string refresh_token = 3;
+    AuthenticationLevel authentication_level = 4;
+    int64 expires_at_epoch_ms = 5;
+}
+
+message InitiateMfaEnrollmentRequest {
+    string user_id = 1;
+    string issuer = 2;
+    string account_name = 3;
+}
+
+message InitiateMfaEnrollmentResponse {
+    string mfa_configuration_id = 1;
+    string secret = 2;
+    string otpauth_uri = 3;
+}
+
+message ConfirmMfaEnrollmentRequest {
+    string user_id = 1;
+    string code = 2;
+}
+
+message ConfirmMfaEnrollmentResponse {
+    bool success = 1;
+    repeated string recovery_codes = 2;
+}
+
+message DisableMfaRequest {
+    string user_id = 1;
+    string code = 2;
+}
+
+message DisableMfaResponse {
+    bool success = 1;
+}
+
 // ============================================================================
 // Service Interface
 // ============================================================================
 
-// AuthService defines the authoritative 12 internal gRPC operations of the Authentication Service.
+// AuthService defines the authoritative internal gRPC operations of the Authentication Service.
 service AuthService {
     rpc Authenticate(AuthenticateRequest) returns (AuthenticateResponse);
     rpc RefreshSession(RefreshSessionRequest) returns (RefreshSessionResponse);
@@ -261,4 +306,10 @@ service AuthService {
     rpc GetDeviceCryptoDirectory(GetDeviceCryptoDirectoryRequest) returns (GetDeviceCryptoDirectoryResponse);
     rpc GetCryptoIdentity(GetCryptoIdentityRequest) returns (GetCryptoIdentityResponse);
     rpc UpdateCryptoPrekeys(UpdateCryptoPrekeysRequest) returns (UpdateCryptoPrekeysResponse);
+
+    rpc VerifyMfaChallenge(VerifyMfaChallengeRequest) returns (VerifyMfaChallengeResponse);
+    rpc InitiateMfaEnrollment(InitiateMfaEnrollmentRequest) returns (InitiateMfaEnrollmentResponse);
+    rpc ConfirmMfaEnrollment(ConfirmMfaEnrollmentRequest) returns (ConfirmMfaEnrollmentResponse);
+    rpc DisableMfa(DisableMfaRequest) returns (DisableMfaResponse);
 }
+
