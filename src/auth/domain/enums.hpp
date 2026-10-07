@@ -256,12 +256,15 @@ template <> [[nodiscard]] inline std::optional<TokenStatus> parse_enum<TokenStat
 // --- 8. MfaFactorType ---
 enum class MfaFactorType {
     Totp,
+    WebAuthn,
 };
 
 [[nodiscard]] constexpr std::string_view to_string(MfaFactorType factor) noexcept {
     switch (factor) {
     case MfaFactorType::Totp:
         return "TOTP";
+    case MfaFactorType::WebAuthn:
+        return "WebAuthn";
     }
     return "UNKNOWN";
 }
@@ -269,6 +272,9 @@ enum class MfaFactorType {
 template <> [[nodiscard]] inline std::optional<MfaFactorType> parse_enum<MfaFactorType>(std::string_view str) noexcept {
     if (str == "TOTP" || str == "Totp") {
         return MfaFactorType::Totp;
+    }
+    if (str == "WEBAUTHN" || str == "WebAuthn" || str == "webauthn") {
+        return MfaFactorType::WebAuthn;
     }
     return std::nullopt;
 }

@@ -577,6 +577,21 @@ target_link_libraries(securecloud_auth_totp_engine_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_totp_engine_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth MFA Authenticator Abstraction & Recovery Code Test Suite (AUTH-006-T02)
+add_executable(securecloud_auth_mfa_authenticator_test
+        auth/mfa_authenticator_test.cpp
+)
+
+target_link_libraries(securecloud_auth_mfa_authenticator_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_mfa_authenticator_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp

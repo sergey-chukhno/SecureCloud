@@ -15,9 +15,11 @@ add_library(securecloud_auth_config STATIC
         crypto/base32.cpp
         crypto/totp_engine.cpp
         crypto/mfa_secret_protector.cpp
+        crypto/recovery_code_generator.cpp
         service/credential_verifier.cpp
         service/session_manager.cpp
         service/token_manager.cpp
+        service/totp_authenticator.cpp
         service/audit_event_publisher.cpp
         service/auth_service_impl.cpp
 )
