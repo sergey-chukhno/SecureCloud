@@ -25,6 +25,32 @@ AuthServiceImpl::AuthServiceImpl(std::shared_ptr<ICredentialVerifier> credential
 
 AuthServiceImpl::~AuthServiceImpl() = default;
 
+bool AuthServiceImpl::is_caller_mfa_verified(const ::grpc::ServerContext* context) const {
+    if (auth_level_override_for_testing_.has_value()) {
+        return *auth_level_override_for_testing_ ==
+               securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED;
+    }
+    if (!context) {
+        return false;
+    }
+    const auto& metadata = context->client_metadata();
+    auto it = metadata.find("x-auth-level");
+    if (it != metadata.end()) {
+        std::string_view val(it->second.data(), it->second.size());
+        if (val == "mfa_verified" || val == "AUTHENTICATION_LEVEL_MFA_VERIFIED" || val == "2") {
+            return true;
+        }
+    }
+    it = metadata.find("x-authentication-level");
+    if (it != metadata.end()) {
+        std::string_view val(it->second.data(), it->second.size());
+        if (val == "mfa_verified" || val == "AUTHENTICATION_LEVEL_MFA_VERIFIED" || val == "2") {
+            return true;
+        }
+    }
+    return false;
+}
+
 std::string AuthServiceImpl::extract_client_identity(const ::grpc::ServerContext* context) const {
     if (!context || !context->auth_context()) {
         return "anonymous";
@@ -415,12 +441,59 @@ IMPLEMENT_UNIMPLEMENTED_RPC(GetUser, GetUserRequest, GetUserResponse)
 IMPLEMENT_UNIMPLEMENTED_RPC(GetDevice, GetDeviceRequest, GetDeviceResponse)
 IMPLEMENT_UNIMPLEMENTED_RPC(ListUserDevices, ListUserDevicesRequest, ListUserDevicesResponse)
 IMPLEMENT_UNIMPLEMENTED_RPC(RegisterDevice, RegisterDeviceRequest, RegisterDeviceResponse)
-IMPLEMENT_UNIMPLEMENTED_RPC(RevokeDevice, RevokeDeviceRequest, RevokeDeviceResponse)
 IMPLEMENT_UNIMPLEMENTED_RPC(GetDeviceCryptoDirectory, GetDeviceCryptoDirectoryRequest, GetDeviceCryptoDirectoryResponse)
 IMPLEMENT_UNIMPLEMENTED_RPC(GetCryptoIdentity, GetCryptoIdentityRequest, GetCryptoIdentityResponse)
 IMPLEMENT_UNIMPLEMENTED_RPC(UpdateCryptoPrekeys, UpdateCryptoPrekeysRequest, UpdateCryptoPrekeysResponse)
 
 #undef IMPLEMENT_UNIMPLEMENTED_RPC
+
+::grpc::Status AuthServiceImpl::RevokeDevice(
+    ::grpc::ServerContext* context,
+    const ::securecloud::auth::v1::RevokeDeviceRequest* request,
+    ::securecloud::auth::v1::RevokeDeviceResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!session_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "RPC RevokeDevice is not implemented yet");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeDevice", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeDevice", context, status, duration);
+        return status;
+    }
+
+    if (!is_caller_mfa_verified(context)) {
+        auto status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED,
+                                     "Operation requires multi-factor authentication (MFA_VERIFIED)");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeDevice", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeDevice", context, status, duration);
+        return status;
+    }
+
+    session_manager_->revoke_all_device_sessions(*dev_id_res, request->reason().empty() ? "Device revoked" : request->reason());
+
+    response->set_revoked(true);
+    response->set_revoked_at_epoch_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("RevokeDevice", context, status, duration);
+    return status;
+}
 
 ::grpc::Status AuthServiceImpl::VerifyMfaChallenge(
     ::grpc::ServerContext* context,
@@ -634,6 +707,14 @@ IMPLEMENT_UNIMPLEMENTED_RPC(UpdateCryptoPrekeys, UpdateCryptoPrekeysRequest, Upd
 
     if (!request || !response) {
         auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("DisableMfa", context, status, duration);
+        return status;
+    }
+
+    if (!is_caller_mfa_verified(context)) {
+        auto status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED,
+                                     "Operation requires multi-factor authentication (MFA_VERIFIED)");
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
         log_rpc_execution("DisableMfa", context, status, duration);
         return status;

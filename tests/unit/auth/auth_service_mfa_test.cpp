@@ -47,10 +47,12 @@ class MockSessionManager : public ISessionManager {
                                                    std::string_view /*reason*/) override {
         return domain::SessionRevocationResult::success(1);
     }
-    domain::SessionRevocationResult revoke_all_device_sessions(const domain::Uuid& /*device_id*/,
-                                                               std::string_view /*reason*/) override {
-        return domain::SessionRevocationResult::success(1);
+    domain::SessionRevocationResult revoke_all_device_sessions(const domain::Uuid& device_id,
+                                                               std::string_view reason) override {
+        return revoke_all_device_sessions_impl(device_id, std::string(reason));
     }
+    MOCK_METHOD(domain::SessionRevocationResult, revoke_all_device_sessions_impl,
+                (const domain::Uuid&, const std::string&));
     domain::SessionRevocationResult revoke_all_user_sessions(const domain::Uuid& /*user_id*/,
                                                                std::string_view /*reason*/) override {
         return domain::SessionRevocationResult::success(1);
@@ -457,6 +459,7 @@ TEST_F(AuthServiceMfaTest, ConfirmMfaEnrollment_InvalidCode_ReturnsUnauthenticat
 }
 
 TEST_F(AuthServiceMfaTest, DisableMfa_ValidCode_ReturnsSuccess) {
+    service_->set_caller_auth_level_for_testing(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
     securecloud::auth::v1::DisableMfaRequest req;
     req.set_user_id(user_id_.to_string());
     req.set_code("123456");
@@ -471,6 +474,7 @@ TEST_F(AuthServiceMfaTest, DisableMfa_ValidCode_ReturnsSuccess) {
 }
 
 TEST_F(AuthServiceMfaTest, DisableMfa_InvalidCode_ReturnsUnauthenticated) {
+    service_->set_caller_auth_level_for_testing(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
     securecloud::auth::v1::DisableMfaRequest req;
     req.set_user_id(user_id_.to_string());
     req.set_code("000000");
@@ -482,6 +486,53 @@ TEST_F(AuthServiceMfaTest, DisableMfa_InvalidCode_ReturnsUnauthenticated) {
 
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
     EXPECT_FALSE(resp.success());
+}
+
+TEST_F(AuthServiceMfaTest, DisableMfa_NotMfaVerified_ReturnsPermissionDenied) {
+    service_->set_caller_auth_level_for_testing(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    securecloud::auth::v1::DisableMfaRequest req;
+    req.set_user_id(user_id_.to_string());
+    req.set_code("123456");
+    securecloud::auth::v1::DisableMfaResponse resp;
+
+    EXPECT_CALL(*mock_mfa_mgr_, disable_mfa_impl(_, _, _)).Times(0);
+
+    auto status = service_->DisableMfa(&context_, &req, &resp);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
+    EXPECT_FALSE(resp.success());
+}
+
+TEST_F(AuthServiceMfaTest, RevokeDevice_NotMfaVerified_ReturnsPermissionDenied) {
+    service_->set_caller_auth_level_for_testing(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    securecloud::auth::v1::RevokeDeviceRequest req;
+    req.set_device_id(device_id_.to_string());
+    req.set_user_id(user_id_.to_string());
+    req.set_reason("Lost phone");
+    securecloud::auth::v1::RevokeDeviceResponse resp;
+
+    auto status = service_->RevokeDevice(&context_, &req, &resp);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
+    EXPECT_FALSE(resp.revoked());
+}
+
+TEST_F(AuthServiceMfaTest, RevokeDevice_MfaVerified_RevokesAndReturnsSuccess) {
+    service_->set_caller_auth_level_for_testing(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    securecloud::auth::v1::RevokeDeviceRequest req;
+    req.set_device_id(device_id_.to_string());
+    req.set_user_id(user_id_.to_string());
+    req.set_reason("Lost phone");
+    securecloud::auth::v1::RevokeDeviceResponse resp;
+
+    EXPECT_CALL(*mock_session_mgr_, revoke_all_device_sessions_impl(device_id_, "Lost phone"))
+        .WillOnce(Return(domain::SessionRevocationResult::success(2)));
+
+    auto status = service_->RevokeDevice(&context_, &req, &resp);
+
+    EXPECT_TRUE(status.ok());
+    EXPECT_TRUE(resp.revoked());
+    EXPECT_GT(resp.revoked_at_epoch_ms(), 0);
 }
 
 } // namespace

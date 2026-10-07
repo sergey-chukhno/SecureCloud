@@ -66,7 +66,7 @@ void AuthorizationMiddleware::process(const httplib::Request& req, httplib::Resp
     // 5. Evaluate Multi-Factor Authentication (MFA) requirement
     if (rule.requires_mfa() && !ctx.is_mfa_verified()) {
         write_problem_details(res, 403, "MFA_REQUIRED", "mfa-required", "MFA Required",
-                              "Endpoint requires verified multi-factor authentication (MFA)", request_id);
+                              "Operation requires multi-factor authentication", request_id);
         return;
     }
 
@@ -140,6 +140,10 @@ void AuthorizationMiddleware::write_problem_details(httplib::Response& res, int 
     nlohmann::json err_obj = nlohmann::json::object();
     err_obj["code"] = code;
     err_obj["message"] = detail;
+    if (code == "MFA_REQUIRED") {
+        err_obj["assurance_error"] = "INSUFFICIENT_AUTHENTICATION_ASSURANCE";
+        j["assurance_error"] = "INSUFFICIENT_AUTHENTICATION_ASSURANCE";
+    }
     if (!request_id.empty()) {
         err_obj["request_id"] = request_id;
     }
