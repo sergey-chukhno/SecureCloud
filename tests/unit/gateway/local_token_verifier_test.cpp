@@ -5,6 +5,7 @@
 #include "http/auth/token_validation_result.hpp"
 
 #include <chrono>
+#include <cmath>
 #include <gtest/gtest.h>
 #include <memory>
 #include <string>
@@ -67,7 +68,8 @@ TEST(LocalTokenVerifierTest, ValidationSuccess_ValidToken_ProducesAuthenticatedC
 
     int64_t expected_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(claims.expires_at.time_since_epoch()).count();
-    EXPECT_NEAR(context.expires_at_epoch_ms(), expected_ms, 1000);
+    const int64_t diff_ms = std::abs(context.expires_at_epoch_ms() - expected_ms);
+    EXPECT_LE(diff_ms, 1000);
 }
 
 TEST(LocalTokenVerifierTest, ValidationSuccess_MfaVerifiedLevelMappedCorrectly) {
