@@ -194,16 +194,18 @@ enum class TokenRefreshStatus {
 struct TokenRefreshResult {
     TokenRefreshStatus status{TokenRefreshStatus::InvalidToken};
     std::optional<TokenPair> tokens{std::nullopt};
+    std::optional<Uuid> session_id{std::nullopt};
     std::string error_message{};
 
     [[nodiscard]] bool is_success() const noexcept {
         return status == TokenRefreshStatus::Success && tokens.has_value();
     }
 
-    static TokenRefreshResult success(TokenPair pair) {
+    static TokenRefreshResult success(TokenPair pair, std::optional<Uuid> session_id = std::nullopt) {
         TokenRefreshResult res;
         res.status = TokenRefreshStatus::Success;
         res.tokens = std::move(pair);
+        res.session_id = session_id;
         res.error_message = "Tokens rotated successfully";
         return res;
     }

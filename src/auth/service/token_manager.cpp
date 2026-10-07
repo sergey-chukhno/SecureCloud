@@ -229,7 +229,7 @@ domain::TokenRefreshResult TokenManager::refresh_tokens(std::string_view refresh
         pair.refresh_token = domain::SecretTokenString(std::move(new_raw_secret));
         pair.expires_at = claims.expires_at;
 
-        return domain::TokenRefreshResult::success(std::move(pair));
+        return domain::TokenRefreshResult::success(std::move(pair), session_opt->session_id);
     } catch (const repository::OptimisticLockException& ex) {
         return domain::TokenRefreshResult::concurrency_conflict("Concurrent token rotation race detected: " +
                                                                 std::string(ex.what()));

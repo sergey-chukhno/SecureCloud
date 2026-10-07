@@ -4,6 +4,7 @@
 #include "service/audit_event_publisher.hpp"
 #include "service/credential_verifier.hpp"
 #include "service/session_manager.hpp"
+#include "service/token_manager.hpp"
 
 #include <chrono>
 #include <grpcpp/grpcpp.h>
@@ -23,7 +24,8 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
   public:
     explicit AuthServiceImpl(std::shared_ptr<ICredentialVerifier> credential_verifier = nullptr,
                              std::shared_ptr<ISessionManager> session_manager = nullptr,
-                             std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr);
+                             std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr,
+                             std::shared_ptr<ITokenManager> token_manager = nullptr);
     ~AuthServiceImpl() override;
 
     AuthServiceImpl(const AuthServiceImpl&) = delete;
@@ -90,6 +92,7 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
     std::shared_ptr<ICredentialVerifier> credential_verifier_;
     std::shared_ptr<ISessionManager> session_manager_;
     std::shared_ptr<IAuditEventPublisher> audit_publisher_;
+    std::shared_ptr<ITokenManager> token_manager_;
 
     // Sub-component instances
     std::unique_ptr<AuthenticationController> auth_controller_;

@@ -417,3 +417,25 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_auth_session_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Token End-to-End Integration Test Suite (AUTH-005-T06)
+add_executable(securecloud_auth_token_integration_test
+    auth_token_integration_test.cpp
+)
+
+target_link_libraries(securecloud_auth_token_integration_test PRIVATE
+    securecloud::auth
+    securecloud::gateway_http
+    securecloud::common
+    securecloud_proto
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+    GTest::gmock
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_auth_token_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_auth_token_integration_test ${SECURECLOUD_TEST_PROPERTIES})
