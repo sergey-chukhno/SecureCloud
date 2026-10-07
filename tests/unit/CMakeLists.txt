@@ -644,6 +644,22 @@ target_link_libraries(securecloud_token_validator_test PRIVATE
 
 gtest_discover_tests(securecloud_token_validator_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Local Token Verifier Test (AUTH-005-T05)
+add_executable(securecloud_gateway_local_token_verifier_test
+    gateway/local_token_verifier_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_local_token_verifier_test PRIVATE
+    securecloud::gateway_http
+    securecloud::auth
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_local_token_verifier_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Security Policy Test (GW-004-T04)
 add_executable(securecloud_gateway_security_policy_test
     gateway/gateway_security_policy_test.cpp
