@@ -16,9 +16,10 @@ class CryptoDirectoryManager {};
 
 AuthServiceImpl::AuthServiceImpl(std::shared_ptr<ICredentialVerifier> credential_verifier,
                                  std::shared_ptr<ISessionManager> session_manager,
-                                 std::shared_ptr<IAuditEventPublisher> audit_publisher)
+                                 std::shared_ptr<IAuditEventPublisher> audit_publisher,
+                                 std::shared_ptr<ITokenManager> token_manager)
     : credential_verifier_(std::move(credential_verifier)), session_manager_(std::move(session_manager)),
-      audit_publisher_(std::move(audit_publisher)) {}
+      audit_publisher_(std::move(audit_publisher)), token_manager_(std::move(token_manager)) {}
 
 AuthServiceImpl::~AuthServiceImpl() = default;
 
@@ -176,6 +177,15 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
     response->set_authentication_level(securecloud::auth::v1::AUTHENTICATION_LEVEL_PRIMARY);
     auto expires_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(session.expires_at.time_since_epoch()).count();
+
+    if (token_manager_) {
+        auto tokens = token_manager_->issue_initial_tokens(session);
+        response->set_access_token(tokens.access_token);
+        response->set_refresh_token(tokens.refresh_token.raw_secret());
+        expires_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(tokens.expires_at.time_since_epoch()).count();
+    }
+
     response->set_expires_at_epoch_ms(expires_ms);
     response->set_mfa_required(false);
 
@@ -270,6 +280,97 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
     return status;
 }
 
+::grpc::Status AuthServiceImpl::RefreshSession(::grpc::ServerContext* context,
+                                               const ::securecloud::auth::v1::RefreshSessionRequest* request,
+                                               ::securecloud::auth::v1::RefreshSessionResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Null request or response");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RefreshSession", context, status, duration);
+        return status;
+    }
+
+    if (!token_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "TokenManager dependency is unconfigured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RefreshSession", context, status, duration);
+        return status;
+    }
+
+    if (request->refresh_token().empty()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Refresh token must not be empty");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RefreshSession", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RefreshSession", context, status, duration);
+        return status;
+    }
+
+    std::string client_ip = extract_client_identity(context);
+    auto refresh_result = token_manager_->refresh_tokens(request->refresh_token(), *dev_id_res, client_ip);
+
+    ::grpc::Status status = ::grpc::Status::OK;
+    switch (refresh_result.status) {
+    case domain::TokenRefreshStatus::Success: {
+        if (refresh_result.tokens.has_value() && refresh_result.session_id.has_value()) {
+            const auto& tokens = refresh_result.tokens.value();
+            response->set_session_id(refresh_result.session_id->to_string());
+            response->set_access_token(tokens.access_token);
+            response->set_new_refresh_token(tokens.refresh_token.raw_secret());
+            int64_t expires_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(tokens.expires_at.time_since_epoch()).count();
+            response->set_expires_at_epoch_ms(expires_ms);
+            status = ::grpc::Status::OK;
+        } else {
+            status = ::grpc::Status(::grpc::StatusCode::INTERNAL, "Inconsistent token refresh result state");
+        }
+        break;
+    }
+    case domain::TokenRefreshStatus::InvalidToken:
+    case domain::TokenRefreshStatus::ExpiredToken:
+    case domain::TokenRefreshStatus::SessionRevoked: {
+        status = ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED, refresh_result.error_message.empty()
+                                                                         ? "Invalid or expired refresh token"
+                                                                         : refresh_result.error_message);
+        break;
+    }
+    case domain::TokenRefreshStatus::CompromiseDetected: {
+        status = ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED, "Refresh token reuse detected; session revoked");
+        break;
+    }
+    case domain::TokenRefreshStatus::DeviceMismatch: {
+        status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, refresh_result.error_message.empty()
+                                                                           ? "Device mismatch for refresh token"
+                                                                           : refresh_result.error_message);
+        break;
+    }
+    case domain::TokenRefreshStatus::ConcurrencyConflict: {
+        status =
+            ::grpc::Status(::grpc::StatusCode::ABORTED, "Concurrent refresh detected; please retry with current token");
+        break;
+    }
+    case domain::TokenRefreshStatus::DatabaseError:
+    default: {
+        status = ::grpc::Status(::grpc::StatusCode::INTERNAL, refresh_result.error_message.empty()
+                                                                  ? "Internal token refresh error"
+                                                                  : refresh_result.error_message);
+        break;
+    }
+    }
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("RefreshSession", context, status, duration);
+    return status;
+}
+
 #define IMPLEMENT_UNIMPLEMENTED_RPC(MethodName, RequestType, ResponseType)                                      \
     ::grpc::Status AuthServiceImpl::MethodName(::grpc::ServerContext* context,                                  \
                                                const ::securecloud::auth::v1::RequestType*,                     \
@@ -282,8 +383,7 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
         return status;                                                                                          \
     }
 
-// 9 Remaining Unimplemented Proto RPCs
-IMPLEMENT_UNIMPLEMENTED_RPC(RefreshSession, RefreshSessionRequest, RefreshSessionResponse)
+// 8 Remaining Unimplemented Proto RPCs
 IMPLEMENT_UNIMPLEMENTED_RPC(GetUser, GetUserRequest, GetUserResponse)
 IMPLEMENT_UNIMPLEMENTED_RPC(GetDevice, GetDeviceRequest, GetDeviceResponse)
 IMPLEMENT_UNIMPLEMENTED_RPC(ListUserDevices, ListUserDevicesRequest, ListUserDevicesResponse)

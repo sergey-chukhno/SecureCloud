@@ -18,7 +18,9 @@ enum class AuditEventType {
     AccountDisabledAccessAttempt,
     SessionRevoked,
     SessionExpiredAttempt,
-    SessionRevokedAttempt
+    SessionRevokedAttempt,
+    TokenRefreshed,
+    TokenReuseDetected
 };
 
 [[nodiscard]] inline constexpr std::string_view to_string(AuditEventType type) noexcept {
@@ -35,6 +37,10 @@ enum class AuditEventType {
         return "auth.session.expired_attempt";
     case AuditEventType::SessionRevokedAttempt:
         return "auth.session.revoked_attempt";
+    case AuditEventType::TokenRefreshed:
+        return "auth.token.refreshed";
+    case AuditEventType::TokenReuseDetected:
+        return "auth.token.reuse_detected";
     }
     return "auth.unknown";
 }
@@ -179,6 +185,36 @@ struct AuditEvent {
         ev.session_id = session_id;
         ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
         ev.failure_reason = "Session revoked";
+        return ev;
+    }
+
+    static AuditEvent token_refreshed(const Uuid& session_id, const Uuid& user_id, const Uuid& device_id,
+                                      std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::TokenRefreshed;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.credential_identifier = "";
+        ev.device_id = device_id;
+        ev.session_id = session_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        ev.failure_reason = "";
+        return ev;
+    }
+
+    static AuditEvent token_reuse_detected(const Uuid& session_id, const Uuid& device_id,
+                                           std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::TokenReuseDetected;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = std::nullopt;
+        ev.credential_identifier = "";
+        ev.device_id = device_id;
+        ev.session_id = session_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        ev.failure_reason = "Compromised refresh token reuse detected; session revoked";
         return ev;
     }
 };

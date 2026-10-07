@@ -479,6 +479,89 @@ target_link_libraries(securecloud_auth_service_session_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_service_session_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Cryptographic Token Signer & Secret Generator Test Suite (AUTH-005-T01)
+add_executable(securecloud_auth_token_crypto_test
+        auth/token_crypto_test.cpp
+)
+
+target_link_libraries(securecloud_auth_token_crypto_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_token_crypto_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Access Token Domain Model & Claims Engine Test Suite (AUTH-005-T02)
+add_executable(securecloud_auth_token_claims_test
+        auth/token_claims_test.cpp
+)
+
+target_link_libraries(securecloud_auth_token_claims_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_token_claims_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Stateful Refresh Token Rotation & Token Management Engine Test Suite (AUTH-005-T03)
+add_executable(securecloud_auth_token_manager_test
+        auth/token_manager_test.cpp
+)
+
+target_link_libraries(securecloud_auth_token_manager_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_token_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Token Compromise & Reuse Detection Engine Test Suite (AUTH-005-T04)
+add_executable(securecloud_auth_token_reuse_test
+        auth/token_reuse_test.cpp
+)
+
+target_link_libraries(securecloud_auth_token_reuse_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_token_reuse_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Service Token & RefreshSession Handler Test Suite (AUTH-005-T06)
+add_executable(securecloud_auth_service_token_test
+        auth/auth_service_token_test.cpp
+)
+
+target_link_libraries(securecloud_auth_service_token_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::json
+        securecloud_proto
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_service_token_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp
@@ -578,6 +661,22 @@ target_link_libraries(securecloud_token_validator_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_token_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Local Token Verifier Test (AUTH-005-T05)
+add_executable(securecloud_gateway_local_token_verifier_test
+    gateway/local_token_verifier_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_local_token_verifier_test PRIVATE
+    securecloud::gateway_http
+    securecloud::auth
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_local_token_verifier_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Gateway Security Policy Test (GW-004-T04)
 add_executable(securecloud_gateway_security_policy_test
