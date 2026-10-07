@@ -62,8 +62,14 @@ class MockTokenManager : public ITokenManager {
   public:
     MOCK_METHOD(domain::TokenPair, issue_initial_tokens,
                 (const domain::SessionEntity&, const std::vector<std::string>&), (override));
-    MOCK_METHOD(domain::TokenRefreshResult, refresh_tokens, (std::string_view, const domain::Uuid&, std::string_view),
-                (override));
+    // Forward string_view to std::string for MSVC DLL compatibility
+    domain::TokenRefreshResult refresh_tokens(std::string_view refresh_token_raw,
+                                              const domain::Uuid& presented_device_id,
+                                              std::string_view ip_address) override {
+        return refresh_tokens_impl(std::string(refresh_token_raw), presented_device_id, std::string(ip_address));
+    }
+    MOCK_METHOD(domain::TokenRefreshResult, refresh_tokens_impl,
+                (const std::string&, const domain::Uuid&, const std::string&));
 };
 
 domain::UserEntity create_test_user(const domain::Uuid& user_id) {
@@ -211,7 +217,7 @@ TEST_F(AuthServiceTokenTest, RefreshSession_Success_PopulatesRotatedTokens) {
     rotated_tokens.expires_at = std::chrono::system_clock::now() + std::chrono::minutes(15);
 
     domain::TokenRefreshResult mock_result = domain::TokenRefreshResult::success(rotated_tokens, session_id);
-    EXPECT_CALL(*token_manager_, refresh_tokens("sc_rt_old_token", device_id, _)).WillOnce(Return(mock_result));
+    EXPECT_CALL(*token_manager_, refresh_tokens_impl("sc_rt_old_token", device_id, _)).WillOnce(Return(mock_result));
 
     ::grpc::ServerContext context;
     ::securecloud::auth::v1::RefreshSessionRequest request;
@@ -284,7 +290,7 @@ TEST_F(AuthServiceTokenTest, RefreshSession_InvalidDeviceUuid_ReturnsInvalidArgu
 
 TEST_F(AuthServiceTokenTest, RefreshSession_InvalidToken_ReturnsUnauthenticated) {
     auto device_id = domain::Uuid::generate_v7();
-    EXPECT_CALL(*token_manager_, refresh_tokens("sc_rt_unknown", device_id, _))
+    EXPECT_CALL(*token_manager_, refresh_tokens_impl("sc_rt_unknown", device_id, _))
         .WillOnce(Return(domain::TokenRefreshResult::invalid_token("Refresh token does not exist")));
 
     ::grpc::ServerContext context;
@@ -301,7 +307,7 @@ TEST_F(AuthServiceTokenTest, RefreshSession_InvalidToken_ReturnsUnauthenticated)
 
 TEST_F(AuthServiceTokenTest, RefreshSession_ExpiredToken_ReturnsUnauthenticated) {
     auto device_id = domain::Uuid::generate_v7();
-    EXPECT_CALL(*token_manager_, refresh_tokens("sc_rt_expired", device_id, _))
+    EXPECT_CALL(*token_manager_, refresh_tokens_impl("sc_rt_expired", device_id, _))
         .WillOnce(Return(domain::TokenRefreshResult::expired_token("Refresh token has expired")));
 
     ::grpc::ServerContext context;
@@ -318,7 +324,7 @@ TEST_F(AuthServiceTokenTest, RefreshSession_ExpiredToken_ReturnsUnauthenticated)
 
 TEST_F(AuthServiceTokenTest, RefreshSession_CompromiseDetected_ReturnsUnauthenticatedWithRevocationNotice) {
     auto device_id = domain::Uuid::generate_v7();
-    EXPECT_CALL(*token_manager_, refresh_tokens("sc_rt_replayed", device_id, _))
+    EXPECT_CALL(*token_manager_, refresh_tokens_impl("sc_rt_replayed", device_id, _))
         .WillOnce(Return(domain::TokenRefreshResult::compromise_detected("Compromise detected")));
 
     ::grpc::ServerContext context;
@@ -335,7 +341,7 @@ TEST_F(AuthServiceTokenTest, RefreshSession_CompromiseDetected_ReturnsUnauthenti
 
 TEST_F(AuthServiceTokenTest, RefreshSession_DeviceMismatch_ReturnsPermissionDenied) {
     auto device_id = domain::Uuid::generate_v7();
-    EXPECT_CALL(*token_manager_, refresh_tokens("sc_rt_stolen", device_id, _))
+    EXPECT_CALL(*token_manager_, refresh_tokens_impl("sc_rt_stolen", device_id, _))
         .WillOnce(Return(domain::TokenRefreshResult::device_mismatch("Device ID does not match token binding")));
 
     ::grpc::ServerContext context;
@@ -352,7 +358,7 @@ TEST_F(AuthServiceTokenTest, RefreshSession_DeviceMismatch_ReturnsPermissionDeni
 
 TEST_F(AuthServiceTokenTest, RefreshSession_ConcurrencyConflict_ReturnsAborted) {
     auto device_id = domain::Uuid::generate_v7();
-    EXPECT_CALL(*token_manager_, refresh_tokens("sc_rt_racing", device_id, _))
+    EXPECT_CALL(*token_manager_, refresh_tokens_impl("sc_rt_racing", device_id, _))
         .WillOnce(Return(domain::TokenRefreshResult::concurrency_conflict("Concurrent refresh")));
 
     ::grpc::ServerContext context;
@@ -369,7 +375,7 @@ TEST_F(AuthServiceTokenTest, RefreshSession_ConcurrencyConflict_ReturnsAborted) 
 
 TEST_F(AuthServiceTokenTest, RefreshSession_DatabaseError_ReturnsInternal) {
     auto device_id = domain::Uuid::generate_v7();
-    EXPECT_CALL(*token_manager_, refresh_tokens("sc_rt_token", device_id, _))
+    EXPECT_CALL(*token_manager_, refresh_tokens_impl("sc_rt_token", device_id, _))
         .WillOnce(Return(domain::TokenRefreshResult::database_error("PostgreSQL connection timeout")));
 
     ::grpc::ServerContext context;
