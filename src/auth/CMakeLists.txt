@@ -14,6 +14,7 @@ add_library(securecloud_auth_config STATIC
         crypto/token_crypto.cpp
         service/credential_verifier.cpp
         service/session_manager.cpp
+        service/token_manager.cpp
         service/audit_event_publisher.cpp
         service/auth_service_impl.cpp
 )

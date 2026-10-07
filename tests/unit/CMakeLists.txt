@@ -510,6 +510,23 @@ target_link_libraries(securecloud_auth_token_claims_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_token_claims_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Stateful Refresh Token Rotation & Token Management Engine Test Suite (AUTH-005-T03)
+add_executable(securecloud_auth_token_manager_test
+        auth/token_manager_test.cpp
+)
+
+target_link_libraries(securecloud_auth_token_manager_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_token_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp

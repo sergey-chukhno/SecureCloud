@@ -215,6 +215,8 @@ TEST(AuditEventPublisherTest, AuditEventType_ToString_MatchesExpectedNames) {
     EXPECT_EQ(domain::to_string(domain::AuditEventType::LoginSucceeded), "auth.login.succeeded");
     EXPECT_EQ(domain::to_string(domain::AuditEventType::LoginFailed), "auth.login.failed");
     EXPECT_EQ(domain::to_string(domain::AuditEventType::AccountDisabledAccessAttempt), "auth.account.disabled_attempt");
+    EXPECT_EQ(domain::to_string(domain::AuditEventType::TokenRefreshed), "auth.token.refreshed");
+    EXPECT_EQ(domain::to_string(domain::AuditEventType::TokenReuseDetected), "auth.token.reuse_detected");
 }
 
 } // namespace
