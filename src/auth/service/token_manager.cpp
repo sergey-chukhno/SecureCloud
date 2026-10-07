@@ -33,6 +33,9 @@ TokenManager::TokenManager(std::shared_ptr<crypto::ITokenSigner> token_signer,
     if (config_.refresh_token_ttl <= std::chrono::seconds::zero()) {
         throw std::invalid_argument("TokenManager: refresh_token_ttl must be positive");
     }
+    if (config_.concurrency_grace_window < std::chrono::seconds::zero()) {
+        throw std::invalid_argument("TokenManager: concurrency_grace_window cannot be negative");
+    }
 }
 
 domain::TokenPair TokenManager::issue_initial_tokens(const domain::SessionEntity& session,
@@ -102,8 +105,17 @@ domain::TokenRefreshResult TokenManager::refresh_tokens(std::string_view refresh
             return domain::TokenRefreshResult::invalid_token("Refresh token not found");
         }
 
-        // Protocol for token reuse / replay attack
+        // Protocol for token reuse / replay attack vs concurrency race
         if (token_opt->token_status == domain::TokenStatus::Rotated) {
+            const auto now = std::chrono::system_clock::now();
+            if (token_opt->rotated_at.has_value() &&
+                (now - *token_opt->rotated_at) <= config_.concurrency_grace_window) {
+                // Legitimate concurrent request in flight within grace window
+                return domain::TokenRefreshResult::concurrency_conflict(
+                    "Concurrent token rotation detected within grace window");
+            }
+
+            // Outside grace window: true replay attack / token compromise!
             try {
                 refresh_token_repo_->handle_token_reuse(verifier_hash);
             } catch (...) {
@@ -219,8 +231,8 @@ domain::TokenRefreshResult TokenManager::refresh_tokens(std::string_view refresh
 
         return domain::TokenRefreshResult::success(std::move(pair));
     } catch (const repository::OptimisticLockException& ex) {
-        return domain::TokenRefreshResult::database_error("Concurrent token rotation race detected: " +
-                                                          std::string(ex.what()));
+        return domain::TokenRefreshResult::concurrency_conflict("Concurrent token rotation race detected: " +
+                                                                std::string(ex.what()));
     } catch (const repository::RepositoryException& ex) {
         return domain::TokenRefreshResult::database_error("Repository error during token refresh: " +
                                                           std::string(ex.what()));

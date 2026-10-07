@@ -607,6 +607,7 @@ TEST_F(TokenManagerTest, RefreshTokens_DetectsReuseOfRotatedToken_TriggersRevoca
     rotated_rt.token_verifier = verifier_hash;
     rotated_rt.token_status = domain::TokenStatus::Rotated; // Already rotated!
     rotated_rt.issued_at = std::chrono::system_clock::now() - std::chrono::hours(2);
+    rotated_rt.rotated_at = std::chrono::system_clock::now() - std::chrono::hours(1); // Past grace window!
     rotated_rt.expires_at = std::chrono::system_clock::now() + std::chrono::hours(24);
 
     EXPECT_CALL(*refresh_token_repo_, find_by_verifier_impl(verifier_hash)).WillOnce(Return(rotated_rt));
@@ -625,6 +626,32 @@ TEST_F(TokenManagerTest, RefreshTokens_DetectsReuseOfRotatedToken_TriggersRevoca
 
     EXPECT_FALSE(result.is_success());
     EXPECT_EQ(result.status, domain::TokenRefreshStatus::CompromiseDetected);
+}
+
+TEST_F(TokenManagerTest, RefreshTokens_RotatedTokenWithinGraceWindow_ReturnsConcurrencyConflictWithoutRevocation) {
+    std::string secret = "sc_rt_rotatedtoken_recent";
+    std::string verifier_hash = crypto::TokenHasher::compute_sha256_hex(secret);
+
+    domain::RefreshTokenEntity rotated_rt;
+    rotated_rt.refresh_token_id = domain::Uuid::generate_v7();
+    rotated_rt.session_id = session_id_;
+    rotated_rt.device_id = device_id_;
+    rotated_rt.token_verifier = verifier_hash;
+    rotated_rt.token_status = domain::TokenStatus::Rotated;
+    rotated_rt.issued_at = std::chrono::system_clock::now() - std::chrono::seconds(10);
+    rotated_rt.rotated_at = std::chrono::system_clock::now() - std::chrono::seconds(1); // Within 5-second grace window!
+    rotated_rt.expires_at = std::chrono::system_clock::now() + std::chrono::hours(24);
+
+    EXPECT_CALL(*refresh_token_repo_, find_by_verifier_impl(verifier_hash)).WillOnce(Return(rotated_rt));
+
+    // Must NOT trigger compromise revocation or publish breach event
+    EXPECT_CALL(*refresh_token_repo_, handle_token_reuse_impl(_)).Times(0);
+    EXPECT_CALL(*audit_publisher_, publish(_)).Times(0);
+
+    auto result = token_manager_->refresh_tokens(secret, device_id_, "10.0.0.1");
+
+    EXPECT_FALSE(result.is_success());
+    EXPECT_EQ(result.status, domain::TokenRefreshStatus::ConcurrencyConflict);
 }
 
 TEST_F(TokenManagerTest, RefreshTokens_RejectsRevokedToken) {
@@ -672,7 +699,7 @@ TEST_F(TokenManagerTest, RefreshTokens_HandlesConcurrentRaceOptimisticLockExcept
 
     auto result = token_manager_->refresh_tokens(raw_secret, device_id_);
     EXPECT_FALSE(result.is_success());
-    EXPECT_EQ(result.status, domain::TokenRefreshStatus::DatabaseError);
+    EXPECT_EQ(result.status, domain::TokenRefreshStatus::ConcurrencyConflict);
 }
 
 } // namespace

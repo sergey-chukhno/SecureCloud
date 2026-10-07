@@ -162,6 +162,7 @@ enum class TokenRefreshStatus {
     DeviceMismatch,
     SessionRevoked,
     CompromiseDetected,
+    ConcurrencyConflict,
     DatabaseError,
 };
 
@@ -179,6 +180,8 @@ enum class TokenRefreshStatus {
         return "SessionRevoked";
     case TokenRefreshStatus::CompromiseDetected:
         return "CompromiseDetected";
+    case TokenRefreshStatus::ConcurrencyConflict:
+        return "ConcurrencyConflict";
     case TokenRefreshStatus::DatabaseError:
         return "DatabaseError";
     }
@@ -237,6 +240,14 @@ struct TokenRefreshResult {
     compromise_detected(std::string message = "Refresh token reuse detected; session revoked") {
         TokenRefreshResult res;
         res.status = TokenRefreshStatus::CompromiseDetected;
+        res.error_message = std::move(message);
+        return res;
+    }
+
+    static TokenRefreshResult
+    concurrency_conflict(std::string message = "Concurrent token rotation detected; please retry") {
+        TokenRefreshResult res;
+        res.status = TokenRefreshStatus::ConcurrencyConflict;
         res.error_message = std::move(message);
         return res;
     }

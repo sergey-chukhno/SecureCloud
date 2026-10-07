@@ -26,6 +26,7 @@ struct TokenManagerConfig {
     std::string issuer{"https://auth.securecloud.io"};
     std::string audience{"https://gateway.securecloud.io"};
     std::vector<std::string> default_scopes{"access", "files:read", "files:write"};
+    std::chrono::seconds concurrency_grace_window{std::chrono::seconds(5)};
 };
 
 /**
