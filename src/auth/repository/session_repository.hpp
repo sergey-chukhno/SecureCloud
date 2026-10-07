@@ -46,6 +46,26 @@ class ISessionRepository {
     virtual void revoke_all_device_sessions(const domain::Uuid& device_id, domain::time_point revoked_at) = 0;
     virtual void revoke_all_device_sessions(const domain::Uuid& device_id, domain::time_point revoked_at,
                                             pqxx::transaction_base& tx) = 0;
+
+    virtual bool touch_session_activity(const domain::Uuid& session_id, domain::time_point now) = 0;
+    virtual bool touch_session_activity(const domain::Uuid& session_id, domain::time_point now,
+                                        pqxx::transaction_base& tx) = 0;
+
+    virtual uint64_t expire_stale_sessions(domain::time_point now) = 0;
+    virtual uint64_t expire_stale_sessions(domain::time_point now, pqxx::transaction_base& tx) = 0;
+
+    virtual bool revoke_session_atomic(const domain::Uuid& session_id, domain::time_point revoked_at) = 0;
+    virtual bool revoke_session_atomic(const domain::Uuid& session_id, domain::time_point revoked_at,
+                                       pqxx::transaction_base& tx) = 0;
+
+    virtual uint64_t revoke_all_device_sessions_atomic(const domain::Uuid& device_id,
+                                                       domain::time_point revoked_at) = 0;
+    virtual uint64_t revoke_all_device_sessions_atomic(const domain::Uuid& device_id, domain::time_point revoked_at,
+                                                       pqxx::transaction_base& tx) = 0;
+
+    virtual uint64_t revoke_all_user_sessions_atomic(const domain::Uuid& user_id, domain::time_point revoked_at) = 0;
+    virtual uint64_t revoke_all_user_sessions_atomic(const domain::Uuid& user_id, domain::time_point revoked_at,
+                                                     pqxx::transaction_base& tx) = 0;
 };
 
 /// PostgreSQL-backed implementation of ISessionRepository.
@@ -83,6 +103,25 @@ class PostgresSessionRepository : public ISessionRepository {
     void revoke_all_device_sessions(const domain::Uuid& device_id, domain::time_point revoked_at) override;
     void revoke_all_device_sessions(const domain::Uuid& device_id, domain::time_point revoked_at,
                                     pqxx::transaction_base& tx) override;
+
+    bool touch_session_activity(const domain::Uuid& session_id, domain::time_point now) override;
+    bool touch_session_activity(const domain::Uuid& session_id, domain::time_point now,
+                                pqxx::transaction_base& tx) override;
+
+    uint64_t expire_stale_sessions(domain::time_point now) override;
+    uint64_t expire_stale_sessions(domain::time_point now, pqxx::transaction_base& tx) override;
+
+    bool revoke_session_atomic(const domain::Uuid& session_id, domain::time_point revoked_at) override;
+    bool revoke_session_atomic(const domain::Uuid& session_id, domain::time_point revoked_at,
+                               pqxx::transaction_base& tx) override;
+
+    uint64_t revoke_all_device_sessions_atomic(const domain::Uuid& device_id, domain::time_point revoked_at) override;
+    uint64_t revoke_all_device_sessions_atomic(const domain::Uuid& device_id, domain::time_point revoked_at,
+                                               pqxx::transaction_base& tx) override;
+
+    uint64_t revoke_all_user_sessions_atomic(const domain::Uuid& user_id, domain::time_point revoked_at) override;
+    uint64_t revoke_all_user_sessions_atomic(const domain::Uuid& user_id, domain::time_point revoked_at,
+                                             pqxx::transaction_base& tx) override;
 
   private:
     db::PostgresConnectionPool& pool_;

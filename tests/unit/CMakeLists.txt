@@ -389,6 +389,96 @@ target_link_libraries(securecloud_auth_service_authenticate_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_service_authenticate_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Session Lifecycle Domain Model Test Suite (AUTH-004-T01)
+add_executable(securecloud_auth_session_lifecycle_test
+        auth/session_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_auth_session_lifecycle_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_session_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Enhanced Session Repository Test Suite (AUTH-004-T02)
+add_executable(securecloud_auth_session_repository_test
+        auth/session_repository_test.cpp
+)
+
+target_link_libraries(securecloud_auth_session_repository_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_session_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Session Validation & Device Association Engine Test Suite (AUTH-004-T03)
+add_executable(securecloud_auth_session_validation_test
+        auth/session_validation_test.cpp
+)
+
+target_link_libraries(securecloud_auth_session_validation_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_session_validation_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Session Revocation Engine & Concurrency Control Test Suite (AUTH-004-T04)
+add_executable(securecloud_auth_session_revocation_test
+        auth/session_revocation_test.cpp
+)
+
+target_link_libraries(securecloud_auth_session_revocation_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_session_revocation_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Security Audit Telemetry for Session Lifecycle Test Suite (AUTH-004-T05)
+add_executable(securecloud_auth_session_audit_test
+        auth/session_audit_test.cpp
+)
+
+target_link_libraries(securecloud_auth_session_audit_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud::json
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_session_audit_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Service gRPC ValidateSession & RevokeSession Test Suite (AUTH-004-T06)
+add_executable(securecloud_auth_service_session_test
+        auth/auth_service_session_test.cpp
+)
+
+target_link_libraries(securecloud_auth_service_session_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud_proto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_service_session_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp

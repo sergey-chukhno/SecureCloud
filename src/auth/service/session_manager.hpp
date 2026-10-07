@@ -2,6 +2,7 @@
 
 #include "domain/entities.hpp"
 #include "domain/enums.hpp"
+#include "domain/session_result.hpp"
 #include "domain/uuid.hpp"
 #include "repository/device_repository.hpp"
 #include "repository/session_repository.hpp"
@@ -11,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace securecloud::auth::service {
 
@@ -89,7 +91,39 @@ class ISessionManager {
     /// @return SessionEstablishmentResult containing active session and updated device record.
     virtual SessionEstablishmentResult establish_session(const domain::UserEntity& user,
                                                          const domain::Uuid& device_id) = 0;
+
+    /// Validates the authenticity, lifecycle status, expiration, and device association of a session.
+    /// On success, automatically refreshes the session's activity timestamp (sliding window touch).
+    virtual domain::SessionValidationResult
+    validate_session(const domain::Uuid& session_id, std::optional<domain::Uuid> claimed_device_id = std::nullopt) = 0;
+
+    /// Lists all active sessions for a specific user identity.
+    virtual std::vector<domain::SessionEntity> list_active_sessions_for_user(const domain::Uuid& user_id) = 0;
+
+    /// Lists all active sessions bound to a specific device.
+    virtual std::vector<domain::SessionEntity> list_active_sessions_for_device(const domain::Uuid& device_id) = 0;
+
+    /// Revokes an individual session atomically and idempotently.
+    virtual domain::SessionRevocationResult revoke_session(const domain::Uuid& session_id,
+                                                           std::string_view reason = "") = 0;
+
+    /// Revokes all active sessions bound to a specific device atomically.
+    virtual domain::SessionRevocationResult revoke_all_device_sessions(const domain::Uuid& device_id,
+                                                                       std::string_view reason = "") = 0;
+
+    /// Revokes all active sessions belonging to a specific user across all devices atomically.
+    virtual domain::SessionRevocationResult revoke_all_user_sessions(const domain::Uuid& user_id,
+                                                                     std::string_view reason = "") = 0;
 };
+
+/// Production implementation of ISessionManager.
+///
+/// Invariants & Rules:
+/// 1. Ownership: verifies device_id exists and device.user_id == user.user_id.
+/// 2. Active status: verifies device.device_status == DeviceStatus::Active.
+/// 3. Assurance level: session stamped with AuthenticationLevel::PrimaryOnly.
+/// 4. Durability: session persisted via ISessionRepository and device activity timestamp updated.
+class IAuditEventPublisher;
 
 /// Production implementation of ISessionManager.
 ///
@@ -102,7 +136,8 @@ class SessionManager final : public ISessionManager {
   public:
     SessionManager(std::shared_ptr<repository::ISessionRepository> session_repository,
                    std::shared_ptr<repository::IDeviceRepository> device_repository,
-                   std::chrono::seconds session_ttl = std::chrono::hours(24));
+                   std::chrono::seconds session_ttl = std::chrono::hours(24),
+                   std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr);
     ~SessionManager() override = default;
 
     SessionManager(const SessionManager&) = delete;
@@ -113,12 +148,30 @@ class SessionManager final : public ISessionManager {
     SessionEstablishmentResult establish_session(const domain::UserEntity& user,
                                                  const domain::Uuid& device_id) override;
 
+    domain::SessionValidationResult
+    validate_session(const domain::Uuid& session_id,
+                     std::optional<domain::Uuid> claimed_device_id = std::nullopt) override;
+
+    std::vector<domain::SessionEntity> list_active_sessions_for_user(const domain::Uuid& user_id) override;
+
+    std::vector<domain::SessionEntity> list_active_sessions_for_device(const domain::Uuid& device_id) override;
+
+    domain::SessionRevocationResult revoke_session(const domain::Uuid& session_id,
+                                                   std::string_view reason = "") override;
+
+    domain::SessionRevocationResult revoke_all_device_sessions(const domain::Uuid& device_id,
+                                                               std::string_view reason = "") override;
+
+    domain::SessionRevocationResult revoke_all_user_sessions(const domain::Uuid& user_id,
+                                                             std::string_view reason = "") override;
+
     [[nodiscard]] std::chrono::seconds session_ttl() const noexcept { return session_ttl_; }
 
   private:
     std::shared_ptr<repository::ISessionRepository> session_repo_;
     std::shared_ptr<repository::IDeviceRepository> device_repo_;
     std::chrono::seconds session_ttl_;
+    std::shared_ptr<IAuditEventPublisher> audit_publisher_;
 };
 
 } // namespace securecloud::auth::service

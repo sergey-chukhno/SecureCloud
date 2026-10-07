@@ -129,7 +129,7 @@ class AuthAuthenticationIntegrationTest : public ::testing::Test {
 
 // Test 2: Successful End-to-End Primary Authentication Flow
 TEST_F(AuthAuthenticationIntegrationTest, Authenticate_SuccessfulEndToEndFlow) {
-    std::string email = "user_" + Uuid::generate_v7().to_string().substr(0, 8) + "@securecloud.io";
+    std::string email = "user_" + Uuid::generate_v7().to_string() + "@securecloud.io";
     std::string raw_password = "SecurePassword123!";
 
     // 1. Create User in PostgreSQL
@@ -197,7 +197,7 @@ TEST_F(AuthAuthenticationIntegrationTest, Authenticate_SuccessfulEndToEndFlow) {
 
 // Test 3: Invalid Password Fails Authentication and Persists No Session
 TEST_F(AuthAuthenticationIntegrationTest, Authenticate_InvalidPassword_ReturnsUnauthenticatedAndNoSession) {
-    std::string email = "user_" + Uuid::generate_v7().to_string().substr(0, 8) + "@securecloud.io";
+    std::string email = "user_" + Uuid::generate_v7().to_string() + "@securecloud.io";
     std::string raw_password = "CorrectPassword123!";
     std::string wrong_password = "WrongPassword999!";
 

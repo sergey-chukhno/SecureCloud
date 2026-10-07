@@ -12,7 +12,14 @@
 namespace securecloud::auth::domain {
 
 /// Types of security audit events emitted by primary authentication flows.
-enum class AuditEventType { LoginSucceeded, LoginFailed, AccountDisabledAccessAttempt };
+enum class AuditEventType {
+    LoginSucceeded,
+    LoginFailed,
+    AccountDisabledAccessAttempt,
+    SessionRevoked,
+    SessionExpiredAttempt,
+    SessionRevokedAttempt
+};
 
 [[nodiscard]] inline constexpr std::string_view to_string(AuditEventType type) noexcept {
     switch (type) {
@@ -22,6 +29,12 @@ enum class AuditEventType { LoginSucceeded, LoginFailed, AccountDisabledAccessAt
         return "auth.login.failed";
     case AuditEventType::AccountDisabledAccessAttempt:
         return "auth.account.disabled_attempt";
+    case AuditEventType::SessionRevoked:
+        return "auth.session.revoked";
+    case AuditEventType::SessionExpiredAttempt:
+        return "auth.session.expired_attempt";
+    case AuditEventType::SessionRevokedAttempt:
+        return "auth.session.revoked_attempt";
     }
     return "auth.unknown";
 }
@@ -123,6 +136,49 @@ struct AuditEvent {
         ev.session_id = std::nullopt;
         ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
         ev.failure_reason = std::string(failure_reason);
+        return ev;
+    }
+
+    static AuditEvent session_revoked(const Uuid& session_id, const Uuid& user_id, const Uuid& device_id,
+                                      std::string_view reason, std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::SessionRevoked;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.credential_identifier = "";
+        ev.device_id = device_id;
+        ev.session_id = session_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        ev.failure_reason = std::string(reason);
+        return ev;
+    }
+
+    static AuditEvent session_expired_attempt(const Uuid& session_id, std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::SessionExpiredAttempt;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = std::nullopt;
+        ev.credential_identifier = "";
+        ev.device_id = std::nullopt;
+        ev.session_id = session_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        ev.failure_reason = "Session expired";
+        return ev;
+    }
+
+    static AuditEvent session_revoked_attempt(const Uuid& session_id, std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::SessionRevokedAttempt;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = std::nullopt;
+        ev.credential_identifier = "";
+        ev.device_id = std::nullopt;
+        ev.session_id = session_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        ev.failure_reason = "Session revoked";
         return ev;
     }
 };

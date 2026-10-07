@@ -150,6 +150,31 @@ enum class SessionStatus {
     return "Unknown";
 }
 
+[[nodiscard]] constexpr bool is_terminal(SessionStatus status) noexcept {
+    switch (status) {
+    case SessionStatus::Active:
+        return false;
+    case SessionStatus::Revoked:
+    case SessionStatus::Expired:
+        return true;
+    }
+    return false;
+}
+
+[[nodiscard]] constexpr bool can_transition(SessionStatus from, SessionStatus to) noexcept {
+    if (from == to) {
+        return true;
+    }
+    switch (from) {
+    case SessionStatus::Active:
+        return to == SessionStatus::Revoked || to == SessionStatus::Expired;
+    case SessionStatus::Revoked:
+    case SessionStatus::Expired:
+        return false;
+    }
+    return false;
+}
+
 template <> [[nodiscard]] inline std::optional<SessionStatus> parse_enum<SessionStatus>(std::string_view str) noexcept {
     if (str == "Active" || str == "ACTIVE") {
         return SessionStatus::Active;

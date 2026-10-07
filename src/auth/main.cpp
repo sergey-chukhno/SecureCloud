@@ -104,7 +104,8 @@ int run_service() {
         auto hasher = std::make_shared<securecloud::auth::crypto::OpenSslArgon2idHasher>();
 
         verifier = std::make_shared<securecloud::auth::service::CredentialVerifier>(user_repo, hasher);
-        session_mgr = std::make_shared<securecloud::auth::service::SessionManager>(session_repo, device_repo);
+        session_mgr = std::make_shared<securecloud::auth::service::SessionManager>(
+            session_repo, device_repo, std::chrono::hours(24), audit_publisher);
     }
 
     // Instantiate AuthServiceImpl wired with domain verifier, session manager, and audit publisher
