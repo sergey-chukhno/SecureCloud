@@ -781,39 +781,47 @@ AuthServiceImpl::InitiateDevicePairing(::grpc::ServerContext* context,
     domain::AuthenticationLevel caller_auth_level = extract_caller_auth_level(context);
     std::string client_ip = context ? context->peer() : "unknown";
 
-    auto auth_res = device_manager_->authorize_device(*user_id_res, *dev_id_res, request->pairing_code(),
-                                                      caller_auth_level, client_ip);
+    try {
+        auto auth_res = device_manager_->authorize_device(*user_id_res, *dev_id_res, request->pairing_code(),
+                                                          caller_auth_level, client_ip);
 
-    if (!auth_res.success) {
-        ::grpc::StatusCode code =
-            auth_res.is_locked_out ? ::grpc::StatusCode::PERMISSION_DENIED : ::grpc::StatusCode::UNAUTHENTICATED;
-        auto status = ::grpc::Status(code, auth_res.error_message.empty() ? "Device authorization failed"
-                                                                          : auth_res.error_message);
+        if (!auth_res.success) {
+            ::grpc::StatusCode code =
+                auth_res.is_locked_out ? ::grpc::StatusCode::PERMISSION_DENIED : ::grpc::StatusCode::UNAUTHENTICATED;
+            auto status = ::grpc::Status(code, auth_res.error_message.empty() ? "Device authorization failed"
+                                                                              : auth_res.error_message);
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            log_rpc_execution("AuthorizeDevice", context, status, duration);
+            return status;
+        }
+
+        response->set_authorized(true);
+        switch (auth_res.status) {
+        case domain::DeviceStatus::Active:
+            response->set_status(securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+            break;
+        case domain::DeviceStatus::PendingAuthorization:
+            response->set_status(securecloud::auth::v1::DEVICE_STATUS_PENDING_AUTHORIZATION);
+            break;
+        case domain::DeviceStatus::Revoked:
+            response->set_status(securecloud::auth::v1::DEVICE_STATUS_REVOKED);
+            break;
+        }
+        response->set_authorized_at_epoch_ms(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count());
+
+        auto status = ::grpc::Status::OK;
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("AuthorizeDevice", context, status, duration);
+        return status;
+    } catch (const std::exception& ex) {
+        auto status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, ex.what());
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
         log_rpc_execution("AuthorizeDevice", context, status, duration);
         return status;
     }
-
-    response->set_authorized(true);
-    switch (auth_res.status) {
-    case domain::DeviceStatus::Active:
-        response->set_status(securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
-        break;
-    case domain::DeviceStatus::PendingAuthorization:
-        response->set_status(securecloud::auth::v1::DEVICE_STATUS_PENDING_AUTHORIZATION);
-        break;
-    case domain::DeviceStatus::Revoked:
-        response->set_status(securecloud::auth::v1::DEVICE_STATUS_REVOKED);
-        break;
-    }
-    response->set_authorized_at_epoch_ms(
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
-            .count());
-
-    auto status = ::grpc::Status::OK;
-    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
-    log_rpc_execution("AuthorizeDevice", context, status, duration);
-    return status;
 }
 
 ::grpc::Status AuthServiceImpl::RevokeDevice(::grpc::ServerContext* context,

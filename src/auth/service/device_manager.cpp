@@ -276,7 +276,15 @@ DeviceAuthorizationResult DeviceManager::authorize_device(const domain::Uuid& us
             }
         }
 
-        device_repo_->authorize_device(device_id, now);
+        try {
+            device_repo_->authorize_device(device_id, now);
+        } catch (const repository::RepositoryException& ex) {
+            return DeviceAuthorizationResult{
+                .success = false,
+                .status = domain::DeviceStatus::Revoked,
+                .error_message = ex.what(),
+            };
+        }
 
         if (audit_publisher_) {
             audit_publisher_->publish(domain::AuditEvent::device_authorized(user_id, device_id, client_ip));
@@ -335,7 +343,15 @@ DeviceAuthorizationResult DeviceManager::authorize_device(const domain::Uuid& us
 
     // Code matched!
     challenge.is_consumed = true;
-    device_repo_->authorize_device(device_id, now);
+    try {
+        device_repo_->authorize_device(device_id, now);
+    } catch (const repository::RepositoryException& ex) {
+        return DeviceAuthorizationResult{
+            .success = false,
+            .status = domain::DeviceStatus::Revoked,
+            .error_message = ex.what(),
+        };
+    }
 
     if (audit_publisher_) {
         audit_publisher_->publish(domain::AuditEvent::device_authorized(user_id, device_id, client_ip));

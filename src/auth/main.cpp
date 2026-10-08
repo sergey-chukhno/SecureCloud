@@ -3,6 +3,7 @@
 #include "auth/crypto/token_crypto.hpp"
 #include "auth/crypto/totp_engine.hpp"
 #include "auth/db/postgres_connection_pool.hpp"
+#include "auth/repository/device_public_key_repository.hpp"
 #include "auth/repository/device_repository.hpp"
 #include "auth/repository/mfa_repository.hpp"
 #include "auth/repository/refresh_token_repository.hpp"
@@ -11,6 +12,7 @@
 #include "auth/service/audit_event_publisher.hpp"
 #include "auth/service/auth_service_impl.hpp"
 #include "auth/service/credential_verifier.hpp"
+#include "auth/service/device_manager.hpp"
 #include "auth/service/mfa_authenticator_interface.hpp"
 #include "auth/service/mfa_manager.hpp"
 #include "auth/service/session_manager.hpp"
@@ -105,11 +107,14 @@ int run_service() {
     std::shared_ptr<securecloud::auth::service::SessionManager> session_mgr;
     std::shared_ptr<securecloud::auth::service::TokenManager> token_mgr;
     std::shared_ptr<securecloud::auth::service::MfaManager> mfa_mgr;
+    std::shared_ptr<securecloud::auth::service::DeviceManager> device_mgr;
     auto audit_publisher = std::make_shared<securecloud::auth::service::AuditEventPublisher>();
 
     if (pool) {
         auto user_repo = std::make_shared<securecloud::auth::repository::PostgresUserRepository>(*pool);
         auto device_repo = std::make_shared<securecloud::auth::repository::PostgresDeviceRepository>(*pool);
+        auto public_key_repo =
+            std::make_shared<securecloud::auth::repository::PostgresDevicePublicKeyRepository>(*pool);
         auto session_repo = std::make_shared<securecloud::auth::repository::PostgresSessionRepository>(*pool);
         auto refresh_token_repo =
             std::make_shared<securecloud::auth::repository::PostgresRefreshTokenRepository>(*pool);
@@ -134,12 +139,14 @@ int run_service() {
             token_signer, refresh_token_repo, session_repo, device_repo, audit_publisher);
         mfa_mgr = std::make_shared<securecloud::auth::service::MfaManager>(
             mfa_repo, session_repo, user_repo, authenticator, totp_engine, secret_protector, audit_publisher);
+        device_mgr = std::make_shared<securecloud::auth::service::DeviceManager>(device_repo, public_key_repo,
+                                                                                 session_mgr, audit_publisher);
     }
 
-    // Instantiate AuthServiceImpl wired with domain verifier, session manager, audit publisher, token manager, and MFA
-    // manager
-    securecloud::auth::service::AuthServiceImpl auth_service(verifier, session_mgr, audit_publisher, token_mgr,
-                                                             mfa_mgr);
+    // Instantiate AuthServiceImpl wired with domain verifier, session manager, audit publisher, token manager, MFA
+    // manager, and device manager
+    securecloud::auth::service::AuthServiceImpl auth_service(verifier, session_mgr, audit_publisher, token_mgr, mfa_mgr,
+                                                             device_mgr);
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);
