@@ -37,12 +37,15 @@ template <> [[nodiscard]] inline std::optional<AccountStatus> parse_enum<Account
 
 // --- 2. DeviceStatus ---
 enum class DeviceStatus {
+    PendingAuthorization,
     Active,
     Revoked,
 };
 
 [[nodiscard]] constexpr std::string_view to_string(DeviceStatus status) noexcept {
     switch (status) {
+    case DeviceStatus::PendingAuthorization:
+        return "PendingAuthorization";
     case DeviceStatus::Active:
         return "Active";
     case DeviceStatus::Revoked:
@@ -52,10 +55,13 @@ enum class DeviceStatus {
 }
 
 template <> [[nodiscard]] inline std::optional<DeviceStatus> parse_enum<DeviceStatus>(std::string_view str) noexcept {
-    if (str == "Active" || str == "ACTIVE") {
+    if (str == "PendingAuthorization" || str == "PENDING_AUTHORIZATION" || str == "pending_authorization") {
+        return DeviceStatus::PendingAuthorization;
+    }
+    if (str == "Active" || str == "ACTIVE" || str == "active") {
         return DeviceStatus::Active;
     }
-    if (str == "Revoked" || str == "REVOKED") {
+    if (str == "Revoked" || str == "REVOKED" || str == "revoked") {
         return DeviceStatus::Revoked;
     }
     return std::nullopt;

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "auth/service/device_manager.hpp"
 #include "securecloud/auth/v1/auth.grpc.pb.h"
 #include "service/audit_event_publisher.hpp"
 #include "service/credential_verifier.hpp"
@@ -17,7 +18,6 @@ namespace securecloud::auth::service {
 
 // Forward declarations of modular sub-components for future tickets
 class AuthenticationController;
-class DeviceManager;
 class CryptoDirectoryManager;
 
 /// Implementation of the securecloud.auth.v1.AuthService gRPC interface.
@@ -27,7 +27,8 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
                              std::shared_ptr<ISessionManager> session_manager = nullptr,
                              std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr,
                              std::shared_ptr<ITokenManager> token_manager = nullptr,
-                             std::shared_ptr<IMfaManager> mfa_manager = nullptr);
+                             std::shared_ptr<IMfaManager> mfa_manager = nullptr,
+                             std::shared_ptr<IDeviceManager> device_manager = nullptr);
     ~AuthServiceImpl() override;
 
     AuthServiceImpl(const AuthServiceImpl&) = delete;
@@ -35,7 +36,7 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
     AuthServiceImpl(AuthServiceImpl&&) = delete;
     AuthServiceImpl& operator=(AuthServiceImpl&&) = delete;
 
-    // --- 12 Proto RPC Implementations (matching auth.proto) ---
+    // --- Proto RPC Implementations (matching auth.proto) ---
 
     ::grpc::Status Authenticate(::grpc::ServerContext* context,
                                 const ::securecloud::auth::v1::AuthenticateRequest* request,
@@ -66,6 +67,14 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
     ::grpc::Status RegisterDevice(::grpc::ServerContext* context,
                                   const ::securecloud::auth::v1::RegisterDeviceRequest* request,
                                   ::securecloud::auth::v1::RegisterDeviceResponse* response) override;
+
+    ::grpc::Status InitiateDevicePairing(::grpc::ServerContext* context,
+                                         const ::securecloud::auth::v1::InitiateDevicePairingRequest* request,
+                                         ::securecloud::auth::v1::InitiateDevicePairingResponse* response) override;
+
+    ::grpc::Status AuthorizeDevice(::grpc::ServerContext* context,
+                                   const ::securecloud::auth::v1::AuthorizeDeviceRequest* request,
+                                   ::securecloud::auth::v1::AuthorizeDeviceResponse* response) override;
 
     ::grpc::Status RevokeDevice(::grpc::ServerContext* context,
                                 const ::securecloud::auth::v1::RevokeDeviceRequest* request,
@@ -110,6 +119,7 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
   private:
     [[nodiscard]] std::string extract_client_identity(const ::grpc::ServerContext* context) const;
     [[nodiscard]] bool is_caller_mfa_verified(const ::grpc::ServerContext* context) const;
+    [[nodiscard]] domain::AuthenticationLevel extract_caller_auth_level(const ::grpc::ServerContext* context) const;
 
     void log_rpc_execution(std::string_view rpc_name, const ::grpc::ServerContext* context,
                            const ::grpc::Status& status, std::chrono::microseconds duration) const;
@@ -120,12 +130,12 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
     std::shared_ptr<IAuditEventPublisher> audit_publisher_;
     std::shared_ptr<ITokenManager> token_manager_;
     std::shared_ptr<IMfaManager> mfa_manager_;
+    std::shared_ptr<IDeviceManager> device_manager_;
 
     std::optional<securecloud::auth::v1::AuthenticationLevel> auth_level_override_for_testing_{std::nullopt};
 
     // Sub-component instances
     std::unique_ptr<AuthenticationController> auth_controller_;
-    std::unique_ptr<DeviceManager> device_manager_;
     std::unique_ptr<CryptoDirectoryManager> crypto_directory_manager_;
 };
 

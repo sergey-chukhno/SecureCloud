@@ -114,7 +114,17 @@ void AuthorizationMiddleware::process(const httplib::Request& req, httplib::Resp
         return;
     }
 
-    // 9. All authorization gates satisfied — dispatch downstream
+    // 9. Propagate verified caller metadata downstream
+    auto& mutable_req = const_cast<httplib::Request&>(req);
+    if (!ctx.user_id().empty()) {
+        mutable_req.set_header("x-user-id", ctx.user_id());
+    }
+    if (!ctx.device_id().empty()) {
+        mutable_req.set_header("x-device-id", ctx.device_id());
+    }
+    mutable_req.set_header("x-auth-level", ctx.is_mfa_verified() ? "mfa_verified" : "primary");
+
+    // 10. All authorization gates satisfied — dispatch downstream
     next(req, res);
 }
 

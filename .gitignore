@@ -14,6 +14,7 @@ vcpkg_installed/
 .idea/
 .vcpkg_archives/
 *.user
+compile_commands.json
 
 # Development PKI, credentials, environment files, and TLS material
 deploy/dev-pki/

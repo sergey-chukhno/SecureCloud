@@ -27,7 +27,11 @@ enum class AuditEventType {
     MfaChallengeCreated,
     MfaChallengeSucceeded,
     MfaChallengeFailed,
-    MfaRecoveryCodeUsed
+    MfaRecoveryCodeUsed,
+    DeviceEnrolled,
+    DevicePairingInitiated,
+    DeviceAuthorized,
+    DeviceRevoked
 };
 
 [[nodiscard]] inline constexpr std::string_view to_string(AuditEventType type) noexcept {
@@ -62,6 +66,14 @@ enum class AuditEventType {
         return "auth.mfa.challenge_failed";
     case AuditEventType::MfaRecoveryCodeUsed:
         return "auth.mfa.recovery_code_used";
+    case AuditEventType::DeviceEnrolled:
+        return "auth.device.enrolled";
+    case AuditEventType::DevicePairingInitiated:
+        return "auth.device.pairing_initiated";
+    case AuditEventType::DeviceAuthorized:
+        return "auth.device.authorized";
+    case AuditEventType::DeviceRevoked:
+        return "auth.device.revoked";
     }
     return "auth.unknown";
 }
@@ -314,6 +326,56 @@ struct AuditEvent {
         ev.timestamp = std::chrono::system_clock::now();
         ev.user_id = user_id;
         ev.session_id = session_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent device_enrolled(const Uuid& user_id, const Uuid& device_id, bool active,
+                                      std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::DeviceEnrolled;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.device_id = device_id;
+        ev.failure_reason = active ? "ACTIVE" : "PENDING_AUTHORIZATION";
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent device_pairing_initiated(const Uuid& user_id, const Uuid& device_id,
+                                               std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::DevicePairingInitiated;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.device_id = device_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent device_authorized(const Uuid& user_id, const Uuid& device_id,
+                                        std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::DeviceAuthorized;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.device_id = device_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent device_revoked(const Uuid& user_id, const Uuid& device_id, std::string_view reason,
+                                     std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::DeviceRevoked;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.device_id = device_id;
+        ev.failure_reason = std::string(reason);
         ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
         return ev;
     }

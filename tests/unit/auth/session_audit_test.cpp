@@ -103,6 +103,16 @@ class MockDeviceRepository : public repository::IDeviceRepository {
     MOCK_METHOD(std::vector<domain::DeviceEntity>, list_active_by_user_id,
                 (const domain::Uuid& user_id, pqxx::transaction_base& tx), (override));
 
+    MOCK_METHOD(std::vector<domain::DeviceEntity>, list_all_by_user_id,
+                (const domain::Uuid& user_id, bool include_revoked), (override));
+    MOCK_METHOD(std::vector<domain::DeviceEntity>, list_all_by_user_id,
+                (const domain::Uuid& user_id, bool include_revoked, pqxx::transaction_base& tx), (override));
+
+    MOCK_METHOD(void, authorize_device, (const domain::Uuid& device_id, domain::time_point authorized_at), (override));
+    MOCK_METHOD(void, authorize_device,
+                (const domain::Uuid& device_id, domain::time_point authorized_at, pqxx::transaction_base& tx),
+                (override));
+
     void revoke_device(const domain::Uuid& /*device_id*/, std::string_view /*reason*/,
                        domain::time_point /*revoked_at*/) override {}
     void revoke_device(const domain::Uuid& /*device_id*/, std::string_view /*reason*/,

@@ -231,6 +231,46 @@ class InMemoryDeviceRepository : public IDeviceRepository {
         return list_active_by_user_id(user_id);
     }
 
+    [[nodiscard]] std::vector<DeviceEntity> list_all_by_user_id(const Uuid& user_id,
+                                                                bool include_revoked = false) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::vector<DeviceEntity> result;
+        for (const auto& [id, dev] : devices_) {
+            if (dev.user_id == user_id) {
+                if (include_revoked || dev.device_status != DeviceStatus::Revoked) {
+                    result.push_back(dev);
+                }
+            }
+        }
+        return result;
+    }
+
+    [[nodiscard]] std::vector<DeviceEntity> list_all_by_user_id(const Uuid& user_id, bool include_revoked,
+                                                                pqxx::transaction_base& /*tx*/) override {
+        return list_all_by_user_id(user_id, include_revoked);
+    }
+
+    void authorize_device(const Uuid& device_id, domain::time_point authorized_at) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = devices_.find(device_id);
+        if (it == devices_.end()) {
+            throw EntityNotFoundException("Device not found: " + device_id.to_string());
+        }
+        if (it->second.device_status == DeviceStatus::Revoked) {
+            throw InvalidEntityStateException("Cannot authorize a revoked device: " + device_id.to_string());
+        }
+        if (it->second.device_status == DeviceStatus::Active) {
+            throw InvalidEntityStateException("Device is already active: " + device_id.to_string());
+        }
+        it->second.device_status = DeviceStatus::Active;
+        it->second.updated_at = authorized_at;
+    }
+
+    void authorize_device(const Uuid& device_id, domain::time_point authorized_at,
+                          pqxx::transaction_base& /*tx*/) override {
+        authorize_device(device_id, authorized_at);
+    }
+
     void revoke_device(const Uuid& device_id, std::string_view reason, domain::time_point revoked_at) override {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = devices_.find(device_id);
@@ -518,6 +558,90 @@ TEST(UserDeviceRepositoryTest, ConcurrentOccCollisionSimulation) {
     auto final_user = user_repo.find_by_id(user_id);
     ASSERT_TRUE(final_user.has_value());
     EXPECT_EQ(final_user->version, 2);
+}
+
+// ============================================================================
+// 8. Device Authorization & Full Listing Tests
+// ============================================================================
+
+TEST(UserDeviceRepositoryTest, DeviceAuthorizationLifecycleAndListing) {
+    InMemoryDeviceRepository device_repo;
+    const auto now = std::chrono::system_clock::now();
+    const auto user_id = Uuid::generate_v7();
+    const auto dev1_id = Uuid::generate_v7();
+    const auto dev2_id = Uuid::generate_v7();
+
+    // 1. Register device 1 in PendingAuthorization status
+    DeviceEntity dev1{
+        .device_id = dev1_id,
+        .user_id = user_id,
+        .device_status = DeviceStatus::PendingAuthorization,
+        .registered_at = now,
+        .revoked_at = std::nullopt,
+        .revocation_reason = std::nullopt,
+        .last_authenticated_at = now,
+        .created_at = now,
+        .updated_at = now,
+    };
+    device_repo.register_device(dev1);
+
+    // 2. Pending device is NOT in active list
+    auto active_devs = device_repo.list_active_by_user_id(user_id);
+    EXPECT_EQ(active_devs.size(), 0);
+
+    // 3. Pending device IS in list_all_by_user_id (excluding revoked)
+    auto all_devs = device_repo.list_all_by_user_id(user_id, false);
+    ASSERT_EQ(all_devs.size(), 1);
+    EXPECT_EQ(all_devs[0].device_id, dev1_id);
+    EXPECT_EQ(all_devs[0].device_status, DeviceStatus::PendingAuthorization);
+
+    // 4. Authorize device 1
+    const auto auth_time = now + std::chrono::minutes(5);
+    EXPECT_NO_THROW(device_repo.authorize_device(dev1_id, auth_time));
+
+    // 5. Device 1 is now Active
+    auto dev1_loaded = device_repo.find_by_id(dev1_id);
+    ASSERT_TRUE(dev1_loaded.has_value());
+    EXPECT_EQ(dev1_loaded->device_status, DeviceStatus::Active);
+    EXPECT_EQ(dev1_loaded->updated_at, auth_time);
+
+    active_devs = device_repo.list_active_by_user_id(user_id);
+    EXPECT_EQ(active_devs.size(), 1);
+
+    // 6. Attempting to authorize an already Active device throws InvalidEntityStateException
+    EXPECT_THROW(device_repo.authorize_device(dev1_id, auth_time), InvalidEntityStateException);
+
+    // 7. Attempting to authorize a non-existent device throws EntityNotFoundException
+    EXPECT_THROW(device_repo.authorize_device(Uuid::generate_v7(), auth_time), EntityNotFoundException);
+
+    // 8. Register device 2 directly as Active, then revoke it
+    DeviceEntity dev2{
+        .device_id = dev2_id,
+        .user_id = user_id,
+        .device_status = DeviceStatus::Active,
+        .registered_at = now,
+        .revoked_at = std::nullopt,
+        .revocation_reason = std::nullopt,
+        .last_authenticated_at = now,
+        .created_at = now,
+        .updated_at = now,
+    };
+    device_repo.register_device(dev2);
+
+    const auto revoke_time = now + std::chrono::hours(1);
+    device_repo.revoke_device(dev2_id, "User requested revocation", revoke_time);
+
+    // 9. Authorizing a revoked device throws InvalidEntityStateException
+    EXPECT_THROW(device_repo.authorize_device(dev2_id, auth_time), InvalidEntityStateException);
+
+    // 10. list_all_by_user_id(user_id, false) excludes dev2 (revoked), contains dev1 (active)
+    auto non_revoked = device_repo.list_all_by_user_id(user_id, false);
+    EXPECT_EQ(non_revoked.size(), 1);
+    EXPECT_EQ(non_revoked[0].device_id, dev1_id);
+
+    // 11. list_all_by_user_id(user_id, true) includes both dev1 and dev2
+    auto all_including_revoked = device_repo.list_all_by_user_id(user_id, true);
+    EXPECT_EQ(all_including_revoked.size(), 2);
 }
 
 } // namespace
