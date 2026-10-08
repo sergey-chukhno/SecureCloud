@@ -63,12 +63,19 @@ class MockDeviceRepository : public repository::IDeviceRepository {
     MOCK_METHOD(void, authorize_device,
                 (const Uuid& device_id, domain::time_point authorized_at, pqxx::transaction_base& tx), (override));
 
-    MOCK_METHOD(void, revoke_device, (const Uuid& device_id, std::string_view reason, domain::time_point revoked_at),
-                (override));
-    MOCK_METHOD(void, revoke_device,
-                (const Uuid& device_id, std::string_view reason, domain::time_point revoked_at,
-                 pqxx::transaction_base& tx),
-                (override));
+    void revoke_device(const Uuid& device_id, std::string_view reason, domain::time_point revoked_at) override {
+        revoke_device_str(device_id, std::string(reason), revoked_at);
+    }
+    MOCK_METHOD(void, revoke_device_str,
+                (const Uuid& device_id, const std::string& reason, domain::time_point revoked_at));
+
+    void revoke_device(const Uuid& device_id, std::string_view reason, domain::time_point revoked_at,
+                       pqxx::transaction_base& tx) override {
+        revoke_device_tx_str(device_id, std::string(reason), revoked_at, tx);
+    }
+    MOCK_METHOD(void, revoke_device_tx_str,
+                (const Uuid& device_id, const std::string& reason, domain::time_point revoked_at,
+                 pqxx::transaction_base& tx));
 
     MOCK_METHOD(void, update_last_authenticated, (const Uuid& device_id, domain::time_point auth_time), (override));
     MOCK_METHOD(void, update_last_authenticated,
@@ -171,7 +178,7 @@ class DeviceRevocationTest : public ::testing::Test {
 TEST_F(DeviceRevocationTest, RevokeDevice_RequiresMfaVerified_RejectsPrimaryOnly) {
     auto active_dev = make_active_device();
     EXPECT_CALL(*device_repo_, find_by_id(device_id_)).Times(0);
-    EXPECT_CALL(*device_repo_, revoke_device(_, _, _)).Times(0);
+    EXPECT_CALL(*device_repo_, revoke_device_str(_, _, _)).Times(0);
     EXPECT_CALL(*session_manager_, revoke_all_device_sessions_str(_, _)).Times(0);
     EXPECT_CALL(*public_key_repo_, revoke_all_device_keys(_, _)).Times(0);
 
@@ -186,7 +193,7 @@ TEST_F(DeviceRevocationTest, RevokeDevice_RequiresMfaVerified_RejectsPrimaryOnly
 TEST_F(DeviceRevocationTest, RevokeDevice_CascadesToSessionManagerAndPublicKeyRepository) {
     auto active_dev = make_active_device();
     EXPECT_CALL(*device_repo_, find_by_id(device_id_)).WillOnce(Return(active_dev));
-    EXPECT_CALL(*device_repo_, revoke_device(device_id_, "Lost phone", _)).Times(1);
+    EXPECT_CALL(*device_repo_, revoke_device_str(device_id_, "Lost phone", _)).Times(1);
     EXPECT_CALL(*session_manager_, revoke_all_device_sessions_str(device_id_, "Lost phone"))
         .WillOnce(Return(SessionRevocationResult::success(2)));
     EXPECT_CALL(*public_key_repo_, revoke_all_device_keys(device_id_, _)).Times(1);
@@ -213,7 +220,7 @@ TEST_F(DeviceRevocationTest, RevokeDevice_EvictsPendingPairingChallenge) {
     const std::string pairing_code = challenge_opt->pairing_code;
 
     // 2. Revoke device
-    EXPECT_CALL(*device_repo_, revoke_device(device_id_, _, _)).Times(1);
+    EXPECT_CALL(*device_repo_, revoke_device_str(device_id_, _, _)).Times(1);
     EXPECT_CALL(*session_manager_, revoke_all_device_sessions_str(device_id_, _))
         .WillOnce(Return(SessionRevocationResult::success(0)));
     EXPECT_CALL(*public_key_repo_, revoke_all_device_keys(device_id_, _)).Times(1);
@@ -251,7 +258,7 @@ TEST_F(DeviceRevocationTest, RevokeDevice_WrongUser_RejectsPermissionDenied) {
     // Device belongs to user_id_, but caller is other_user
     Uuid other_user = Uuid::generate_v7();
     EXPECT_CALL(*device_repo_, find_by_id(device_id_)).WillOnce(Return(active_dev));
-    EXPECT_CALL(*device_repo_, revoke_device(_, _, _)).Times(0);
+    EXPECT_CALL(*device_repo_, revoke_device_str(_, _, _)).Times(0);
     EXPECT_CALL(*session_manager_, revoke_all_device_sessions_str(_, _)).Times(0);
 
     auto result = manager_.revoke_device(other_user, device_id_, "Hacker attempt", AuthenticationLevel::MfaVerified);
@@ -263,7 +270,7 @@ TEST_F(DeviceRevocationTest, RevokeDevice_WrongUser_RejectsPermissionDenied) {
 
 TEST_F(DeviceRevocationTest, RevokeDevice_NotFound_RejectsNotFound) {
     EXPECT_CALL(*device_repo_, find_by_id(device_id_)).WillOnce(Return(std::nullopt));
-    EXPECT_CALL(*device_repo_, revoke_device(_, _, _)).Times(0);
+    EXPECT_CALL(*device_repo_, revoke_device_str(_, _, _)).Times(0);
     EXPECT_CALL(*session_manager_, revoke_all_device_sessions_str(_, _)).Times(0);
 
     auto result = manager_.revoke_device(user_id_, device_id_, "Non-existent", AuthenticationLevel::MfaVerified);
@@ -281,7 +288,7 @@ TEST_F(DeviceRevocationTest, RevokeDevice_AlreadyRevoked_IsIdempotent) {
 
     EXPECT_CALL(*device_repo_, find_by_id(device_id_)).WillOnce(Return(revoked_dev));
     // Must NOT call repository or cascade again
-    EXPECT_CALL(*device_repo_, revoke_device(_, _, _)).Times(0);
+    EXPECT_CALL(*device_repo_, revoke_device_str(_, _, _)).Times(0);
     EXPECT_CALL(*session_manager_, revoke_all_device_sessions_str(_, _)).Times(0);
     EXPECT_CALL(*public_key_repo_, revoke_all_device_keys(_, _)).Times(0);
     EXPECT_CALL(*audit_publisher_, publish(_)).Times(0);

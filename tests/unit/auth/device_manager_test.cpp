@@ -122,12 +122,19 @@ class MockDeviceRepository : public repository::IDeviceRepository {
     MOCK_METHOD(void, authorize_device,
                 (const Uuid& device_id, domain::time_point authorized_at, pqxx::transaction_base& tx), (override));
 
-    MOCK_METHOD(void, revoke_device, (const Uuid& device_id, std::string_view reason, domain::time_point revoked_at),
-                (override));
-    MOCK_METHOD(void, revoke_device,
-                (const Uuid& device_id, std::string_view reason, domain::time_point revoked_at,
-                 pqxx::transaction_base& tx),
-                (override));
+    void revoke_device(const Uuid& device_id, std::string_view reason, domain::time_point revoked_at) override {
+        revoke_device_str(device_id, std::string(reason), revoked_at);
+    }
+    MOCK_METHOD(void, revoke_device_str,
+                (const Uuid& device_id, const std::string& reason, domain::time_point revoked_at));
+
+    void revoke_device(const Uuid& device_id, std::string_view reason, domain::time_point revoked_at,
+                       pqxx::transaction_base& tx) override {
+        revoke_device_tx_str(device_id, std::string(reason), revoked_at, tx);
+    }
+    MOCK_METHOD(void, revoke_device_tx_str,
+                (const Uuid& device_id, const std::string& reason, domain::time_point revoked_at,
+                 pqxx::transaction_base& tx));
 
     MOCK_METHOD(void, update_last_authenticated, (const Uuid& device_id, domain::time_point auth_time), (override));
     MOCK_METHOD(void, update_last_authenticated,

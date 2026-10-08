@@ -19,6 +19,8 @@ if(MSVC)
         /permissive-
         /volatile:iso
         /EHsc
+        /utf-8
+        /Zc:inline
     )
     target_compile_definitions(securecloud_compiler_flags INTERFACE
         _CRT_SECURE_NO_WARNINGS
