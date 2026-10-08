@@ -689,6 +689,51 @@ target_link_libraries(securecloud_auth_service_device_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_service_device_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Key Fingerprint Test Suite (AUTH-008-T01)
+add_executable(securecloud_auth_key_fingerprint_test
+        auth/key_fingerprint_test.cpp
+)
+
+target_link_libraries(securecloud_auth_key_fingerprint_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_key_fingerprint_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Prekey Signature Verifier Test Suite (AUTH-008-T01)
+add_executable(securecloud_auth_prekey_signature_verifier_test
+        auth/prekey_signature_verifier_test.cpp
+)
+
+target_link_libraries(securecloud_auth_prekey_signature_verifier_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_prekey_signature_verifier_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Device Public Key Repository Extensions Test Suite (AUTH-008-T01)
+add_executable(securecloud_auth_public_key_repository_test
+        auth/device_public_key_repository_test.cpp
+)
+
+target_link_libraries(securecloud_auth_public_key_repository_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_public_key_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp

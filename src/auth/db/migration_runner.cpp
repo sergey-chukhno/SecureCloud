@@ -123,6 +123,13 @@ CREATE INDEX IF NOT EXISTS idx_mfa_challenges_user_status ON mfa_challenges(user
 CREATE INDEX IF NOT EXISTS idx_mfa_challenges_session_status ON mfa_challenges(session_id, challenge_status);
 )SQL";
 
+constexpr std::string_view kV004Sql = R"SQL(
+ALTER TABLE device_public_keys ADD COLUMN IF NOT EXISTS signature BYTEA;
+CREATE INDEX IF NOT EXISTS idx_device_keys_otk_claim 
+ON device_public_keys(device_id, created_at) 
+WHERE key_type = 'ONE_TIME_PREKEY' AND key_status = 'Active';
+)SQL";
+
 class AdvisoryLockGuard {
   public:
     AdvisoryLockGuard(pqxx::connection& conn, int64_t lock_id) : conn_(conn), lock_id_(lock_id) {
@@ -200,6 +207,7 @@ std::vector<MigrationScript> MigrationRunner::get_standard_migrations() {
         {1, "create_schema_migrations", std::string(kV001Sql), calculate_checksum(kV001Sql)},
         {2, "create_auth_tables", std::string(kV002Sql), calculate_checksum(kV002Sql)},
         {3, "create_auth_indexes", std::string(kV003Sql), calculate_checksum(kV003Sql)},
+        {4, "add_device_public_key_signature", std::string(kV004Sql), calculate_checksum(kV004Sql)},
     };
 }
 

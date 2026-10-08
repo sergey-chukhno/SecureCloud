@@ -102,6 +102,28 @@ class MockDevicePublicKeyRepository : public repository::IDevicePublicKeyReposit
     MOCK_METHOD(void, revoke_all_device_keys, (const Uuid& device_id, domain::time_point revoked_at), (override));
     MOCK_METHOD(void, revoke_all_device_keys,
                 (const Uuid& device_id, domain::time_point revoked_at, pqxx::transaction_base& tx), (override));
+
+    MOCK_METHOD(std::optional<DevicePublicKeyEntity>, claim_one_time_prekey, (const Uuid& device_id), (override));
+    MOCK_METHOD(std::optional<DevicePublicKeyEntity>, claim_one_time_prekey,
+                (const Uuid& device_id, pqxx::transaction_base& tx), (override));
+
+    MOCK_METHOD(int32_t, count_active_one_time_prekeys, (const Uuid& device_id), (override));
+    MOCK_METHOD(int32_t, count_active_one_time_prekeys, (const Uuid& device_id, pqxx::transaction_base& tx),
+                (override));
+
+    MOCK_METHOD(std::optional<DevicePublicKeyEntity>, find_active_identity_key, (const Uuid& device_id), (override));
+    MOCK_METHOD(std::optional<DevicePublicKeyEntity>, find_active_identity_key,
+                (const Uuid& device_id, pqxx::transaction_base& tx), (override));
+
+    MOCK_METHOD(std::optional<DevicePublicKeyEntity>, find_active_signed_prekey, (const Uuid& device_id), (override));
+    MOCK_METHOD(std::optional<DevicePublicKeyEntity>, find_active_signed_prekey,
+                (const Uuid& device_id, pqxx::transaction_base& tx), (override));
+
+    MOCK_METHOD(void, store_one_time_prekeys,
+                (const Uuid& device_id, const std::vector<std::vector<uint8_t>>& keys), (override));
+    MOCK_METHOD(void, store_one_time_prekeys,
+                (const Uuid& device_id, const std::vector<std::vector<uint8_t>>& keys, pqxx::transaction_base& tx),
+                (override));
 };
 
 class MockSessionManager : public ISessionManager {

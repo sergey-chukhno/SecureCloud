@@ -116,6 +116,13 @@ DevicePublicKeyEntity device_public_key_from_row(const pqxx::row& row) {
     k.created_at = parse_timestamp(row["created_at"]);
     k.revoked_at = parse_opt_timestamp(row["revoked_at"]);
     k.replaced_by_key_id = parse_opt_uuid(row["replaced_by_key_id"]);
+    try {
+        if (!row["signature"].is_null()) {
+            k.signature = parse_bytea(row["signature"]);
+        }
+    } catch (const pqxx::argument_error&) {
+        // "signature" column not present in row projection
+    }
     return k;
 }
 
