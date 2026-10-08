@@ -224,7 +224,7 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
     }
     if (challenge.challenge_status == domain::MfaChallengeStatus::Failed) {
         return domain::MfaChallengeVerificationResult::failure(
-            domain::MfaChallengeVerificationStatus::ChallengeFailed, "Challenge has failed");
+            domain::MfaChallengeVerificationStatus::MaxAttemptsExceeded, "Challenge has failed or locked out");
     }
 
     const auto now = std::chrono::system_clock::now();

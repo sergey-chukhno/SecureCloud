@@ -583,7 +583,8 @@ IMPLEMENT_UNIMPLEMENTED_RPC(UpdateCryptoPrekeys, UpdateCryptoPrekeysRequest, Upd
     if (ver_result.status == domain::MfaChallengeVerificationStatus::ExpiredChallenge) {
         status = ::grpc::Status(::grpc::StatusCode::DEADLINE_EXCEEDED,
                                 ver_result.error_message.empty() ? "MFA challenge has expired" : ver_result.error_message);
-    } else if (ver_result.status == domain::MfaChallengeVerificationStatus::MaxAttemptsExceeded) {
+    } else if (ver_result.status == domain::MfaChallengeVerificationStatus::MaxAttemptsExceeded ||
+               ver_result.status == domain::MfaChallengeVerificationStatus::ChallengeFailed) {
         status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED,
                                 ver_result.error_message.empty() ? "Max verification attempts exceeded" : ver_result.error_message);
     } else {
