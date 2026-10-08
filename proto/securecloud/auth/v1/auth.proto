@@ -89,6 +89,10 @@ message DeviceCryptoRecord {
     bytes signed_prekey_signature = 4;
     bytes one_time_prekey = 5;
     string one_time_prekey_id = 6;
+    DeviceStatus status = 7;
+    string identity_key_fingerprint = 8;
+    int64 signed_prekey_created_at_epoch_ms = 9;
+    int32 remaining_one_time_prekeys = 10;
 }
 
 // ============================================================================
@@ -252,6 +256,9 @@ message GetCryptoIdentityResponse {
     bytes identity_key = 3;
     bytes signed_prekey = 4;
     bytes signed_prekey_signature = 5;
+    DeviceStatus status = 6;
+    string identity_key_fingerprint = 7;
+    int64 signed_prekey_created_at_epoch_ms = 8;
 }
 
 // UpdateCryptoPrekeys uploads new one-time prekeys and/or rotates the signed prekey.
