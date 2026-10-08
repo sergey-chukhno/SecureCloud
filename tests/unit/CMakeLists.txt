@@ -625,6 +625,21 @@ target_link_libraries(securecloud_auth_service_mfa_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_service_mfa_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Device Domain Models & Cryptographic Key Validator Test Suite (AUTH-007-T01)
+add_executable(securecloud_auth_device_domain_test
+        auth/device_domain_test.cpp
+)
+
+target_link_libraries(securecloud_auth_device_domain_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_device_domain_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp

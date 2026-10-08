@@ -27,6 +27,15 @@ class IDeviceRepository {
     [[nodiscard]] virtual std::vector<domain::DeviceEntity> list_active_by_user_id(const domain::Uuid& user_id,
                                                                                    pqxx::transaction_base& tx) = 0;
 
+    [[nodiscard]] virtual std::vector<domain::DeviceEntity> list_all_by_user_id(const domain::Uuid& user_id,
+                                                                                bool include_revoked = false) = 0;
+    [[nodiscard]] virtual std::vector<domain::DeviceEntity>
+    list_all_by_user_id(const domain::Uuid& user_id, bool include_revoked, pqxx::transaction_base& tx) = 0;
+
+    virtual void authorize_device(const domain::Uuid& device_id, domain::time_point authorized_at) = 0;
+    virtual void authorize_device(const domain::Uuid& device_id, domain::time_point authorized_at,
+                                  pqxx::transaction_base& tx) = 0;
+
     virtual void revoke_device(const domain::Uuid& device_id, std::string_view reason,
                                domain::time_point revoked_at) = 0;
     virtual void revoke_device(const domain::Uuid& device_id, std::string_view reason, domain::time_point revoked_at,
@@ -52,6 +61,15 @@ class PostgresDeviceRepository : public IDeviceRepository {
     [[nodiscard]] std::vector<domain::DeviceEntity> list_active_by_user_id(const domain::Uuid& user_id) override;
     [[nodiscard]] std::vector<domain::DeviceEntity> list_active_by_user_id(const domain::Uuid& user_id,
                                                                            pqxx::transaction_base& tx) override;
+
+    [[nodiscard]] std::vector<domain::DeviceEntity> list_all_by_user_id(const domain::Uuid& user_id,
+                                                                        bool include_revoked = false) override;
+    [[nodiscard]] std::vector<domain::DeviceEntity>
+    list_all_by_user_id(const domain::Uuid& user_id, bool include_revoked, pqxx::transaction_base& tx) override;
+
+    void authorize_device(const domain::Uuid& device_id, domain::time_point authorized_at) override;
+    void authorize_device(const domain::Uuid& device_id, domain::time_point authorized_at,
+                          pqxx::transaction_base& tx) override;
 
     void revoke_device(const domain::Uuid& device_id, std::string_view reason, domain::time_point revoked_at) override;
     void revoke_device(const domain::Uuid& device_id, std::string_view reason, domain::time_point revoked_at,

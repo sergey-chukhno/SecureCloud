@@ -27,6 +27,25 @@ constexpr std::string_view kListActiveDevicesByUserSql = "SELECT device_id, user
                                                          "WHERE user_id = $1 AND device_status = 'Active' "
                                                          "ORDER BY created_at ASC;";
 
+constexpr std::string_view kListAllDevicesByUserExcludingRevokedSql =
+    "SELECT device_id, user_id, device_status, registered_at,"
+    "       revoked_at, revocation_reason, last_authenticated_at,"
+    "       created_at, updated_at "
+    "FROM devices "
+    "WHERE user_id = $1 AND device_status != 'Revoked' "
+    "ORDER BY created_at ASC;";
+
+constexpr std::string_view kListAllDevicesByUserSql = "SELECT device_id, user_id, device_status, registered_at,"
+                                                      "       revoked_at, revocation_reason, last_authenticated_at,"
+                                                      "       created_at, updated_at "
+                                                      "FROM devices "
+                                                      "WHERE user_id = $1 "
+                                                      "ORDER BY created_at ASC;";
+
+constexpr std::string_view kAuthorizeDeviceSql = "UPDATE devices "
+                                                 "SET device_status = 'Active', updated_at = $1 "
+                                                 "WHERE device_id = $2 AND device_status = 'PendingAuthorization';";
+
 constexpr std::string_view kRevokeDeviceSql =
     "UPDATE devices "
     "SET device_status = 'Revoked', revocation_reason = $1, revoked_at = $2, updated_at = $3 "
@@ -118,6 +137,65 @@ std::vector<domain::DeviceEntity> PostgresDeviceRepository::list_active_by_user_
         return devices;
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to list active devices for user: " + std::string(ex.what()));
+    }
+}
+
+std::vector<domain::DeviceEntity> PostgresDeviceRepository::list_all_by_user_id(const domain::Uuid& user_id,
+                                                                                bool include_revoked) {
+    auto conn = pool_.acquire();
+    pqxx::work tx(*conn);
+    auto res = list_all_by_user_id(user_id, include_revoked, tx);
+    tx.commit();
+    return res;
+}
+
+std::vector<domain::DeviceEntity> PostgresDeviceRepository::list_all_by_user_id(const domain::Uuid& user_id,
+                                                                                bool include_revoked,
+                                                                                pqxx::transaction_base& tx) {
+    try {
+        const auto query = include_revoked ? kListAllDevicesByUserSql : kListAllDevicesByUserExcludingRevokedSql;
+        auto res = db::exec_sql(tx, query, pqxx::params{user_id.to_string()});
+        std::vector<domain::DeviceEntity> devices;
+        devices.reserve(static_cast<std::size_t>(res.size()));
+        for (const auto& row : res) {
+            devices.push_back(domain::device_from_row(pqxx::row(row)));
+        }
+        return devices;
+    } catch (const pqxx::sql_error& ex) {
+        throw DatabaseExecutionException("Failed to list all devices for user: " + std::string(ex.what()));
+    }
+}
+
+void PostgresDeviceRepository::authorize_device(const domain::Uuid& device_id, domain::time_point authorized_at) {
+    auto conn = pool_.acquire();
+    pqxx::work tx(*conn);
+    authorize_device(device_id, authorized_at, tx);
+    tx.commit();
+}
+
+void PostgresDeviceRepository::authorize_device(const domain::Uuid& device_id, domain::time_point authorized_at,
+                                                pqxx::transaction_base& tx) {
+    try {
+        auto res = db::exec_sql(tx, kAuthorizeDeviceSql,
+                                pqxx::params{domain::to_iso8601(authorized_at), device_id.to_string()});
+        if (res.affected_rows() == 0) {
+            auto check = db::exec_sql(tx, kGetDeviceStatusSql, pqxx::params{device_id.to_string()});
+            if (check.empty()) {
+                throw EntityNotFoundException("Device not found: " + device_id.to_string());
+            }
+            const std::string status = check[0]["device_status"].as<std::string>();
+            if (status == "Revoked") {
+                throw InvalidEntityStateException("Cannot authorize a revoked device: " + device_id.to_string());
+            }
+            if (status == "Active") {
+                throw InvalidEntityStateException("Device is already active: " + device_id.to_string());
+            }
+            throw DatabaseExecutionException("Failed to authorize device: " + device_id.to_string());
+        }
+    } catch (const RepositoryException&) {
+        throw;
+    } catch (const pqxx::sql_error& ex) {
+        throw DatabaseExecutionException("Failed to authorize device: " + std::string(ex.what()));
     }
 }
 
