@@ -12,6 +12,7 @@
 #include "auth/service/audit_event_publisher.hpp"
 #include "auth/service/auth_service_impl.hpp"
 #include "auth/service/credential_verifier.hpp"
+#include "auth/service/crypto_directory_manager.hpp"
 #include "auth/service/device_manager.hpp"
 #include "auth/service/mfa_authenticator_interface.hpp"
 #include "auth/service/mfa_manager.hpp"
@@ -108,6 +109,7 @@ int run_service() {
     std::shared_ptr<securecloud::auth::service::TokenManager> token_mgr;
     std::shared_ptr<securecloud::auth::service::MfaManager> mfa_mgr;
     std::shared_ptr<securecloud::auth::service::DeviceManager> device_mgr;
+    std::shared_ptr<securecloud::auth::service::CryptoDirectoryManager> crypto_directory_mgr;
     auto audit_publisher = std::make_shared<securecloud::auth::service::AuditEventPublisher>();
 
     if (pool) {
@@ -141,12 +143,14 @@ int run_service() {
             mfa_repo, session_repo, user_repo, authenticator, totp_engine, secret_protector, audit_publisher);
         device_mgr = std::make_shared<securecloud::auth::service::DeviceManager>(device_repo, public_key_repo,
                                                                                  session_mgr, audit_publisher);
+        crypto_directory_mgr = std::make_shared<securecloud::auth::service::CryptoDirectoryManager>(
+            device_repo, public_key_repo, audit_publisher);
     }
 
     // Instantiate AuthServiceImpl wired with domain verifier, session manager, audit publisher, token manager, MFA
-    // manager, and device manager
+    // manager, device manager, and crypto directory manager
     securecloud::auth::service::AuthServiceImpl auth_service(verifier, session_mgr, audit_publisher, token_mgr, mfa_mgr,
-                                                             device_mgr);
+                                                             device_mgr, crypto_directory_mgr);
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);

@@ -483,3 +483,25 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_auth_device_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Public Cryptographic Identity End-to-End Integration Test Suite (AUTH-008-T05)
+add_executable(securecloud_auth_crypto_identity_integration_test
+    auth_crypto_identity_integration_test.cpp
+)
+
+target_link_libraries(securecloud_auth_crypto_identity_integration_test PRIVATE
+    securecloud::auth
+    securecloud::gateway_http
+    securecloud::common
+    securecloud_proto
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+    GTest::gmock
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_auth_crypto_identity_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_auth_crypto_identity_integration_test ${SECURECLOUD_TEST_PROPERTIES})
