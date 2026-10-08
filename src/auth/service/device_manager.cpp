@@ -2,6 +2,7 @@
 
 #include "auth/crypto/device_key_validator.hpp"
 #include "auth/domain/audit_event.hpp"
+#include "auth/service/session_manager.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -19,14 +20,19 @@ constexpr std::size_t kPairingCodeLength = 8;
 
 DeviceManager::DeviceManager(std::shared_ptr<repository::IDeviceRepository> device_repo,
                              std::shared_ptr<repository::IDevicePublicKeyRepository> public_key_repo,
+                             std::shared_ptr<ISessionManager> session_manager,
                              std::shared_ptr<IAuditEventPublisher> audit_publisher, std::chrono::seconds pairing_ttl)
     : device_repo_(std::move(device_repo)), public_key_repo_(std::move(public_key_repo)),
-      audit_publisher_(std::move(audit_publisher)), pairing_ttl_(pairing_ttl) {
+      session_manager_(std::move(session_manager)), audit_publisher_(std::move(audit_publisher)),
+      pairing_ttl_(pairing_ttl) {
     if (!device_repo_) {
         throw std::invalid_argument("DeviceManager requires non-null IDeviceRepository");
     }
     if (!public_key_repo_) {
         throw std::invalid_argument("DeviceManager requires non-null IDevicePublicKeyRepository");
+    }
+    if (!session_manager_) {
+        throw std::invalid_argument("DeviceManager requires non-null ISessionManager");
     }
 }
 
@@ -339,6 +345,78 @@ DeviceAuthorizationResult DeviceManager::authorize_device(const domain::Uuid& us
         .success = true,
         .device_id = device_id,
         .status = domain::DeviceStatus::Active,
+    };
+}
+
+DeviceRevocationResult DeviceManager::revoke_device(const domain::Uuid& user_id, const domain::Uuid& device_id,
+                                                    std::string_view reason,
+                                                    domain::AuthenticationLevel caller_auth_level,
+                                                    std::string_view client_ip) {
+    // 1. Enforce MFA verification requirement
+    if (caller_auth_level != domain::AuthenticationLevel::MfaVerified) {
+        return DeviceRevocationResult{
+            .success = false,
+            .device_id = device_id,
+            .is_permission_denied = true,
+            .error_message = "Device revocation requires multi-factor authentication (MFA_VERIFIED)",
+        };
+    }
+
+    // 2. Fetch device record
+    auto dev_opt = device_repo_->find_by_id(device_id);
+    if (!dev_opt.has_value()) {
+        return DeviceRevocationResult{
+            .success = false,
+            .device_id = device_id,
+            .is_not_found = true,
+            .error_message = "Device not found",
+        };
+    }
+
+    // 3. Verify user ownership
+    if (dev_opt->user_id != user_id) {
+        return DeviceRevocationResult{
+            .success = false,
+            .device_id = device_id,
+            .is_permission_denied = true,
+            .error_message = "Device belongs to another user",
+        };
+    }
+
+    // 4. Idempotency check: if already revoked, return success immediately
+    if (dev_opt->device_status == domain::DeviceStatus::Revoked) {
+        return DeviceRevocationResult{
+            .success = true,
+            .device_id = device_id,
+        };
+    }
+
+    const auto now = std::chrono::system_clock::now();
+    const std::string effective_reason = reason.empty() ? "Device revoked by user" : std::string(reason);
+
+    // 5. Update device repository status to Revoked
+    device_repo_->revoke_device(device_id, effective_reason, now);
+
+    // 6. Cascade revocation to active sessions and refresh tokens
+    session_manager_->revoke_all_device_sessions(device_id, effective_reason);
+
+    // 7. Revoke all active public cryptographic keys bound to this device
+    public_key_repo_->revoke_all_device_keys(device_id, now);
+
+    // 8. Evict any pending pairing challenges for this device
+    {
+        std::lock_guard<std::mutex> lock(challenge_mutex_);
+        pairing_challenges_.erase(device_id);
+    }
+
+    // 9. Emit audit event
+    if (audit_publisher_) {
+        audit_publisher_->publish(domain::AuditEvent::device_revoked(user_id, device_id, effective_reason, client_ip));
+    }
+
+    return DeviceRevocationResult{
+        .success = true,
+        .device_id = device_id,
     };
 }
 

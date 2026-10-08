@@ -50,6 +50,15 @@ struct DeviceAuthorizationResult {
     bool is_locked_out{false};
 };
 
+/// Result returned from attempting device revocation.
+struct DeviceRevocationResult {
+    bool success{false};
+    domain::Uuid device_id{};
+    bool is_permission_denied{false};
+    bool is_not_found{false};
+    std::string error_message{};
+};
+
 /// Abstract interface contract for Device lifecycle and pairing orchestration.
 class IDeviceManager {
   public:
@@ -76,6 +85,12 @@ class IDeviceManager {
                                                        domain::AuthenticationLevel caller_auth_level,
                                                        std::string_view client_ip = "unknown") = 0;
 
+    /// Permanently revokes a device endpoint, terminating all associated active sessions,
+    /// refresh tokens, and cryptographic keys. Enforces caller possesses MfaVerified assurance.
+    virtual DeviceRevocationResult revoke_device(const domain::Uuid& user_id, const domain::Uuid& device_id,
+                                                 std::string_view reason, domain::AuthenticationLevel caller_auth_level,
+                                                 std::string_view client_ip = "unknown") = 0;
+
     /// Looks up a device by ID.
     [[nodiscard]] virtual std::optional<domain::DeviceEntity> get_device(const domain::Uuid& device_id) = 0;
 
@@ -83,6 +98,8 @@ class IDeviceManager {
     [[nodiscard]] virtual std::vector<domain::DeviceEntity> list_user_devices(const domain::Uuid& user_id,
                                                                               bool include_revoked = false) = 0;
 };
+
+class ISessionManager;
 
 /// Concrete thread-safe implementation of IDeviceManager.
 class DeviceManager : public IDeviceManager {
@@ -92,6 +109,7 @@ class DeviceManager : public IDeviceManager {
 
     DeviceManager(std::shared_ptr<repository::IDeviceRepository> device_repo,
                   std::shared_ptr<repository::IDevicePublicKeyRepository> public_key_repo,
+                  std::shared_ptr<ISessionManager> session_manager,
                   std::shared_ptr<IAuditEventPublisher> audit_publisher,
                   std::chrono::seconds pairing_ttl = kDefaultPairingTtl);
 
@@ -110,6 +128,10 @@ class DeviceManager : public IDeviceManager {
                                                domain::AuthenticationLevel caller_auth_level,
                                                std::string_view client_ip = "unknown") override;
 
+    DeviceRevocationResult revoke_device(const domain::Uuid& user_id, const domain::Uuid& device_id,
+                                         std::string_view reason, domain::AuthenticationLevel caller_auth_level,
+                                         std::string_view client_ip = "unknown") override;
+
     [[nodiscard]] std::optional<domain::DeviceEntity> get_device(const domain::Uuid& device_id) override;
 
     [[nodiscard]] std::vector<domain::DeviceEntity> list_user_devices(const domain::Uuid& user_id,
@@ -118,6 +140,7 @@ class DeviceManager : public IDeviceManager {
   private:
     std::shared_ptr<repository::IDeviceRepository> device_repo_;
     std::shared_ptr<repository::IDevicePublicKeyRepository> public_key_repo_;
+    std::shared_ptr<ISessionManager> session_manager_;
     std::shared_ptr<IAuditEventPublisher> audit_publisher_;
     std::chrono::seconds pairing_ttl_;
 

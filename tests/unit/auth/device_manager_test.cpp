@@ -2,10 +2,12 @@
 #include "auth/domain/audit_event.hpp"
 #include "auth/domain/entities.hpp"
 #include "auth/domain/enums.hpp"
+#include "auth/domain/session_result.hpp"
 #include "auth/repository/device_public_key_repository.hpp"
 #include "auth/repository/device_repository.hpp"
 #include "auth/service/audit_event_publisher.hpp"
 #include "auth/service/device_manager.hpp"
+#include "auth/service/session_manager.hpp"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -159,6 +161,34 @@ class MockAuditEventPublisher : public IAuditEventPublisher {
     MOCK_METHOD(void, publish, (const domain::AuditEvent& event), (noexcept, override));
 };
 
+class MockSessionManager : public ISessionManager {
+  public:
+    MOCK_METHOD(SessionEstablishmentResult, establish_session, (const domain::UserEntity&, const domain::Uuid&),
+                (override));
+    MOCK_METHOD(domain::SessionValidationResult, validate_session, (const domain::Uuid&, std::optional<domain::Uuid>),
+                (override));
+    MOCK_METHOD(std::vector<domain::SessionEntity>, list_active_sessions_for_user, (const domain::Uuid&), (override));
+    MOCK_METHOD(std::vector<domain::SessionEntity>, list_active_sessions_for_device, (const domain::Uuid&), (override));
+    domain::SessionRevocationResult revoke_session(const domain::Uuid& session_id, std::string_view reason) override {
+        return revoke_session_str(session_id, std::string(reason));
+    }
+    MOCK_METHOD(domain::SessionRevocationResult, revoke_session_str, (const domain::Uuid&, const std::string&));
+
+    domain::SessionRevocationResult revoke_all_device_sessions(const domain::Uuid& device_id,
+                                                               std::string_view reason) override {
+        return revoke_all_device_sessions_str(device_id, std::string(reason));
+    }
+    MOCK_METHOD(domain::SessionRevocationResult, revoke_all_device_sessions_str,
+                (const domain::Uuid&, const std::string&));
+
+    domain::SessionRevocationResult revoke_all_user_sessions(const domain::Uuid& user_id,
+                                                             std::string_view reason) override {
+        return revoke_all_user_sessions_str(user_id, std::string(reason));
+    }
+    MOCK_METHOD(domain::SessionRevocationResult, revoke_all_user_sessions_str,
+                (const domain::Uuid&, const std::string&));
+};
+
 // ============================================================================
 // Test Fixture
 // ============================================================================
@@ -168,6 +198,7 @@ class DeviceManagerTest : public ::testing::Test {
     std::shared_ptr<NiceMock<MockDeviceRepository>> device_repo_{std::make_shared<NiceMock<MockDeviceRepository>>()};
     std::shared_ptr<NiceMock<MockDevicePublicKeyRepository>> public_key_repo_{
         std::make_shared<NiceMock<MockDevicePublicKeyRepository>>()};
+    std::shared_ptr<NiceMock<MockSessionManager>> session_manager_{std::make_shared<NiceMock<MockSessionManager>>()};
     std::shared_ptr<NiceMock<MockAuditEventPublisher>> audit_publisher_{
         std::make_shared<NiceMock<MockAuditEventPublisher>>()};
 
@@ -180,7 +211,7 @@ class DeviceManagerTest : public ::testing::Test {
 // ============================================================================
 
 TEST_F(DeviceManagerTest, EnrollDevice_WithMfaVerified_DirectlyActive) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     DeviceEntity saved_device;
     EXPECT_CALL(*device_repo_, register_device(_)).WillOnce(SaveArg<0>(&saved_device));
@@ -199,7 +230,7 @@ TEST_F(DeviceManagerTest, EnrollDevice_WithMfaVerified_DirectlyActive) {
 }
 
 TEST_F(DeviceManagerTest, EnrollDevice_WithPrimaryOnly_PendingAuthorizationAndGeneratesPIN) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     DeviceEntity saved_device;
     EXPECT_CALL(*device_repo_, register_device(_)).WillOnce(SaveArg<0>(&saved_device));
@@ -218,7 +249,7 @@ TEST_F(DeviceManagerTest, EnrollDevice_WithPrimaryOnly_PendingAuthorizationAndGe
 }
 
 TEST_F(DeviceManagerTest, EnrollDevice_InvalidSignature_RejectsWithoutWriting) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     auto corrupted_sig = bundle_.signature;
     corrupted_sig[0] ^= 0xFF;
@@ -235,7 +266,7 @@ TEST_F(DeviceManagerTest, EnrollDevice_InvalidSignature_RejectsWithoutWriting) {
 }
 
 TEST_F(DeviceManagerTest, EnrollDevice_ZeroPrivateKeyViolation_RejectsImmediately) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     std::string bad_marker = "-----BEGIN PRIVATE KEY-----";
     std::vector<uint8_t> bad_id(bad_marker.begin(), bad_marker.end());
@@ -256,7 +287,7 @@ TEST_F(DeviceManagerTest, EnrollDevice_ZeroPrivateKeyViolation_RejectsImmediatel
 // ============================================================================
 
 TEST_F(DeviceManagerTest, AuthorizeDevice_ValidPairingCode_PromotesToActive) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     // 1. Enroll as PrimaryOnly
     auto enroll_res = manager.enroll_device(user_id_, bundle_.identity_pub, bundle_.signed_prekey, bundle_.signature,
@@ -293,7 +324,7 @@ TEST_F(DeviceManagerTest, AuthorizeDevice_ValidPairingCode_PromotesToActive) {
 }
 
 TEST_F(DeviceManagerTest, AuthorizeDevice_ToleratesHyphenAndSpaceAndLowercase) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     auto enroll_res = manager.enroll_device(user_id_, bundle_.identity_pub, bundle_.signed_prekey, bundle_.signature,
                                             bundle_.one_time_prekeys, AuthenticationLevel::PrimaryOnly);
@@ -328,7 +359,7 @@ TEST_F(DeviceManagerTest, AuthorizeDevice_ToleratesHyphenAndSpaceAndLowercase) {
 }
 
 TEST_F(DeviceManagerTest, AuthorizeDevice_InvalidCode_LocksOutAfterThreeFailedAttempts) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     auto enroll_res = manager.enroll_device(user_id_, bundle_.identity_pub, bundle_.signed_prekey, bundle_.signature,
                                             bundle_.one_time_prekeys, AuthenticationLevel::PrimaryOnly);
@@ -375,7 +406,7 @@ TEST_F(DeviceManagerTest, AuthorizeDevice_InvalidCode_LocksOutAfterThreeFailedAt
 
 TEST_F(DeviceManagerTest, AuthorizeDevice_ExpiredChallenge_Rejects) {
     // 0-second TTL
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_, std::chrono::seconds(0));
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_, std::chrono::seconds(0));
 
     auto enroll_res = manager.enroll_device(user_id_, bundle_.identity_pub, bundle_.signed_prekey, bundle_.signature,
                                             bundle_.one_time_prekeys, AuthenticationLevel::PrimaryOnly);
@@ -405,7 +436,7 @@ TEST_F(DeviceManagerTest, AuthorizeDevice_ExpiredChallenge_Rejects) {
 }
 
 TEST_F(DeviceManagerTest, AuthorizeDevice_MfaVerifiedCaller_BypassesPairingPin) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     auto enroll_res = manager.enroll_device(user_id_, bundle_.identity_pub, bundle_.signed_prekey, bundle_.signature,
                                             bundle_.one_time_prekeys, AuthenticationLevel::PrimaryOnly);
@@ -434,7 +465,7 @@ TEST_F(DeviceManagerTest, AuthorizeDevice_MfaVerifiedCaller_BypassesPairingPin) 
 }
 
 TEST_F(DeviceManagerTest, AuthorizeDevice_WrongUser_Rejects) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     auto dev_id = Uuid::generate_v7();
     const auto now = std::chrono::system_clock::now();
@@ -458,7 +489,7 @@ TEST_F(DeviceManagerTest, AuthorizeDevice_WrongUser_Rejects) {
 }
 
 TEST_F(DeviceManagerTest, AuthorizeDevice_AlreadyActiveOrRevoked_Rejects) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     auto dev_id = Uuid::generate_v7();
     const auto now = std::chrono::system_clock::now();
@@ -489,7 +520,7 @@ TEST_F(DeviceManagerTest, AuthorizeDevice_AlreadyActiveOrRevoked_Rejects) {
 }
 
 TEST_F(DeviceManagerTest, InitiateDevicePairing_GeneratesFreshChallengeForPendingDevice) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     auto dev_id = Uuid::generate_v7();
     const auto now = std::chrono::system_clock::now();
@@ -520,7 +551,7 @@ TEST_F(DeviceManagerTest, InitiateDevicePairing_GeneratesFreshChallengeForPendin
 }
 
 TEST_F(DeviceManagerTest, ListUserDevices_DelegatesToRepository) {
-    DeviceManager manager(device_repo_, public_key_repo_, audit_publisher_);
+    DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
     std::vector<DeviceEntity> mock_list = {
         DeviceEntity{.device_id = Uuid::generate_v7(), .user_id = user_id_, .device_status = DeviceStatus::Active},
