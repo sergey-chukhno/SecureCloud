@@ -734,6 +734,22 @@ target_link_libraries(securecloud_auth_public_key_repository_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_public_key_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Crypto Directory Manager Test Suite (AUTH-008-T02)
+add_executable(securecloud_auth_crypto_directory_manager_test
+        auth/crypto_directory_manager_test.cpp
+)
+
+target_link_libraries(securecloud_auth_crypto_directory_manager_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_crypto_directory_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp

@@ -25,6 +25,7 @@ add_library(securecloud_auth_config STATIC
         service/totp_authenticator.cpp
         service/mfa_manager.cpp
         service/device_manager.cpp
+        service/crypto_directory_manager.cpp
         service/audit_event_publisher.cpp
         service/auth_service_impl.cpp
 )

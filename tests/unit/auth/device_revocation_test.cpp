@@ -119,8 +119,8 @@ class MockDevicePublicKeyRepository : public repository::IDevicePublicKeyReposit
     MOCK_METHOD(std::optional<DevicePublicKeyEntity>, find_active_signed_prekey,
                 (const Uuid& device_id, pqxx::transaction_base& tx), (override));
 
-    MOCK_METHOD(void, store_one_time_prekeys,
-                (const Uuid& device_id, const std::vector<std::vector<uint8_t>>& keys), (override));
+    MOCK_METHOD(void, store_one_time_prekeys, (const Uuid& device_id, const std::vector<std::vector<uint8_t>>& keys),
+                (override));
     MOCK_METHOD(void, store_one_time_prekeys,
                 (const Uuid& device_id, const std::vector<std::vector<uint8_t>>& keys, pqxx::transaction_base& tx),
                 (override));
