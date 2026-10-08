@@ -26,27 +26,27 @@ struct UserEntity {
 
 /// Represents an enrolled user device endpoint.
 struct DeviceEntity {
-    Uuid device_id;
-    Uuid user_id;
+    Uuid device_id{};
+    Uuid user_id{};
     DeviceStatus device_status{DeviceStatus::Active};
-    time_point registered_at;
-    std::optional<time_point> revoked_at;
-    std::optional<std::string> revocation_reason;
-    time_point last_authenticated_at;
-    time_point created_at;
-    time_point updated_at;
+    time_point registered_at{};
+    std::optional<time_point> revoked_at{std::nullopt};
+    std::optional<std::string> revocation_reason{std::nullopt};
+    time_point last_authenticated_at{};
+    time_point created_at{};
+    time_point updated_at{};
 };
 
 /// Represents public cryptographic material for end-to-end encryption.
 struct DevicePublicKeyEntity {
-    Uuid key_id;
-    Uuid device_id;
+    Uuid key_id{};
+    Uuid device_id{};
     KeyType key_type{KeyType::IdentitySigning};
-    std::vector<uint8_t> public_key;
+    std::vector<uint8_t> public_key{};
     KeyStatus key_status{KeyStatus::Active};
-    time_point created_at;
-    std::optional<time_point> revoked_at;
-    std::optional<Uuid> replaced_by_key_id;
+    time_point created_at{};
+    std::optional<time_point> revoked_at{std::nullopt};
+    std::optional<Uuid> replaced_by_key_id{std::nullopt};
 };
 
 /// Represents an authenticated session lifecycle record.

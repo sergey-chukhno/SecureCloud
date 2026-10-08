@@ -553,10 +553,30 @@ TEST_F(DeviceManagerTest, InitiateDevicePairing_GeneratesFreshChallengeForPendin
 TEST_F(DeviceManagerTest, ListUserDevices_DelegatesToRepository) {
     DeviceManager manager(device_repo_, public_key_repo_, session_manager_, audit_publisher_);
 
+    const auto now = std::chrono::system_clock::now();
     std::vector<DeviceEntity> mock_list = {
-        DeviceEntity{.device_id = Uuid::generate_v7(), .user_id = user_id_, .device_status = DeviceStatus::Active},
         DeviceEntity{
-            .device_id = Uuid::generate_v7(), .user_id = user_id_, .device_status = DeviceStatus::PendingAuthorization},
+            .device_id = Uuid::generate_v7(),
+            .user_id = user_id_,
+            .device_status = DeviceStatus::Active,
+            .registered_at = now,
+            .revoked_at = std::nullopt,
+            .revocation_reason = std::nullopt,
+            .last_authenticated_at = now,
+            .created_at = now,
+            .updated_at = now,
+        },
+        DeviceEntity{
+            .device_id = Uuid::generate_v7(),
+            .user_id = user_id_,
+            .device_status = DeviceStatus::PendingAuthorization,
+            .registered_at = now,
+            .revoked_at = std::nullopt,
+            .revocation_reason = std::nullopt,
+            .last_authenticated_at = now,
+            .created_at = now,
+            .updated_at = now,
+        },
     };
 
     EXPECT_CALL(*device_repo_, list_all_by_user_id(user_id_, false)).WillOnce(Return(mock_list));

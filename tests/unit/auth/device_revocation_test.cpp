@@ -149,14 +149,17 @@ class DeviceRevocationTest : public ::testing::Test {
     Uuid device_id_{Uuid::generate_v7()};
 
     DeviceEntity make_active_device() {
+        const auto now = std::chrono::system_clock::now();
         return DeviceEntity{
             .device_id = device_id_,
             .user_id = user_id_,
             .device_status = DeviceStatus::Active,
-            .registered_at = std::chrono::system_clock::now() - std::chrono::hours(1),
-            .last_authenticated_at = std::chrono::system_clock::now() - std::chrono::minutes(10),
+            .registered_at = now - std::chrono::hours(1),
             .revoked_at = std::nullopt,
             .revocation_reason = std::nullopt,
+            .last_authenticated_at = now - std::chrono::minutes(10),
+            .created_at = now - std::chrono::hours(1),
+            .updated_at = now,
         };
     }
 };
