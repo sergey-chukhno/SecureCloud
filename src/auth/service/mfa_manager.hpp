@@ -37,43 +37,36 @@ class IMfaManager {
     /**
      * @brief Initiates enrollment: generates a fresh secret, stores pending config, and returns setup URI.
      */
-    [[nodiscard]] virtual domain::MfaEnrollmentInitiation initiate_enrollment(
-        const domain::Uuid& user_id,
-        std::string_view issuer = "SecureCloud",
-        std::string_view account_name = "") = 0;
+    [[nodiscard]] virtual domain::MfaEnrollmentInitiation initiate_enrollment(const domain::Uuid& user_id,
+                                                                              std::string_view issuer = "SecureCloud",
+                                                                              std::string_view account_name = "") = 0;
 
     /**
      * @brief Confirms enrollment with the initial TOTP code and generates single-use backup recovery codes.
      */
-    [[nodiscard]] virtual domain::MfaEnrollmentConfirmationResult confirm_enrollment(
-        const domain::Uuid& user_id,
-        std::string_view code,
-        const std::string& client_ip = "unknown") = 0;
+    [[nodiscard]] virtual domain::MfaEnrollmentConfirmationResult
+    confirm_enrollment(const domain::Uuid& user_id, std::string_view code,
+                       const std::string& client_ip = "unknown") = 0;
 
     /**
      * @brief Disables MFA for a user upon presenting a valid active code or recovery code.
      */
-    [[nodiscard]] virtual bool disable_mfa(
-        const domain::Uuid& user_id,
-        std::string_view code_or_recovery,
-        const std::string& client_ip = "unknown") = 0;
+    [[nodiscard]] virtual bool disable_mfa(const domain::Uuid& user_id, std::string_view code_or_recovery,
+                                           const std::string& client_ip = "unknown") = 0;
 
     /**
      * @brief Creates a new pending MFA challenge with a default 5-minute TTL.
      */
-    [[nodiscard]] virtual domain::MfaChallengeEntity create_challenge(
-        const domain::Uuid& user_id,
-        const domain::Uuid& session_id,
-        domain::MfaChallengePurpose purpose,
-        std::chrono::seconds ttl = std::chrono::minutes(5)) = 0;
+    [[nodiscard]] virtual domain::MfaChallengeEntity
+    create_challenge(const domain::Uuid& user_id, const domain::Uuid& session_id, domain::MfaChallengePurpose purpose,
+                     std::chrono::seconds ttl = std::chrono::minutes(5)) = 0;
 
     /**
      * @brief Solves an MFA challenge with TOTP or backup code, promoting the session to MFA_VERIFIED.
      */
-    [[nodiscard]] virtual domain::MfaChallengeVerificationResult verify_challenge(
-        const domain::Uuid& challenge_id,
-        std::string_view credential,
-        const std::string& client_ip = "unknown") = 0;
+    [[nodiscard]] virtual domain::MfaChallengeVerificationResult
+    verify_challenge(const domain::Uuid& challenge_id, std::string_view credential,
+                     const std::string& client_ip = "unknown") = 0;
 };
 
 /**
@@ -90,38 +83,30 @@ class MfaManager : public IMfaManager {
     MfaManager(std::shared_ptr<repository::IMfaRepository> mfa_repository,
                std::shared_ptr<repository::ISessionRepository> session_repository,
                std::shared_ptr<repository::IUserRepository> user_repository,
-               std::shared_ptr<IMfaAuthenticator> authenticator,
-               std::shared_ptr<crypto::TotpEngine> totp_engine,
+               std::shared_ptr<IMfaAuthenticator> authenticator, std::shared_ptr<crypto::TotpEngine> totp_engine,
                std::shared_ptr<crypto::MfaSecretProtector> secret_protector,
                std::shared_ptr<IAuditEventPublisher> audit_publisher);
 
     [[nodiscard]] bool is_mfa_enabled_for_user(const domain::Uuid& user_id) override;
 
-    [[nodiscard]] domain::MfaEnrollmentInitiation initiate_enrollment(
-        const domain::Uuid& user_id,
-        std::string_view issuer = "SecureCloud",
-        std::string_view account_name = "") override;
+    [[nodiscard]] domain::MfaEnrollmentInitiation initiate_enrollment(const domain::Uuid& user_id,
+                                                                      std::string_view issuer = "SecureCloud",
+                                                                      std::string_view account_name = "") override;
 
-    [[nodiscard]] domain::MfaEnrollmentConfirmationResult confirm_enrollment(
-        const domain::Uuid& user_id,
-        std::string_view code,
-        const std::string& client_ip = "unknown") override;
+    [[nodiscard]] domain::MfaEnrollmentConfirmationResult
+    confirm_enrollment(const domain::Uuid& user_id, std::string_view code,
+                       const std::string& client_ip = "unknown") override;
 
-    [[nodiscard]] bool disable_mfa(
-        const domain::Uuid& user_id,
-        std::string_view code_or_recovery,
-        const std::string& client_ip = "unknown") override;
+    [[nodiscard]] bool disable_mfa(const domain::Uuid& user_id, std::string_view code_or_recovery,
+                                   const std::string& client_ip = "unknown") override;
 
-    [[nodiscard]] domain::MfaChallengeEntity create_challenge(
-        const domain::Uuid& user_id,
-        const domain::Uuid& session_id,
-        domain::MfaChallengePurpose purpose,
-        std::chrono::seconds ttl = std::chrono::minutes(5)) override;
+    [[nodiscard]] domain::MfaChallengeEntity
+    create_challenge(const domain::Uuid& user_id, const domain::Uuid& session_id, domain::MfaChallengePurpose purpose,
+                     std::chrono::seconds ttl = std::chrono::minutes(5)) override;
 
-    [[nodiscard]] domain::MfaChallengeVerificationResult verify_challenge(
-        const domain::Uuid& challenge_id,
-        std::string_view credential,
-        const std::string& client_ip = "unknown") override;
+    [[nodiscard]] domain::MfaChallengeVerificationResult
+    verify_challenge(const domain::Uuid& challenge_id, std::string_view credential,
+                     const std::string& client_ip = "unknown") override;
 
   private:
     std::shared_ptr<repository::IMfaRepository> mfa_repository_;

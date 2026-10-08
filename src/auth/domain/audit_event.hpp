@@ -293,8 +293,7 @@ struct AuditEvent {
         return ev;
     }
 
-    static AuditEvent mfa_challenge_failed(const Uuid& user_id, const Uuid& session_id,
-                                           std::string_view failure_reason,
+    static AuditEvent mfa_challenge_failed(const Uuid& user_id, const Uuid& session_id, std::string_view failure_reason,
                                            std::string_view client_ip = "unknown") {
         AuditEvent ev;
         ev.event_id = Uuid::generate_v7();

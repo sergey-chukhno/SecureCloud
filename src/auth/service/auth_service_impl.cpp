@@ -17,8 +17,7 @@ class CryptoDirectoryManager {};
 AuthServiceImpl::AuthServiceImpl(std::shared_ptr<ICredentialVerifier> credential_verifier,
                                  std::shared_ptr<ISessionManager> session_manager,
                                  std::shared_ptr<IAuditEventPublisher> audit_publisher,
-                                 std::shared_ptr<ITokenManager> token_manager,
-                                 std::shared_ptr<IMfaManager> mfa_manager)
+                                 std::shared_ptr<ITokenManager> token_manager, std::shared_ptr<IMfaManager> mfa_manager)
     : credential_verifier_(std::move(credential_verifier)), session_manager_(std::move(session_manager)),
       audit_publisher_(std::move(audit_publisher)), token_manager_(std::move(token_manager)),
       mfa_manager_(std::move(mfa_manager)) {}
@@ -218,8 +217,7 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
         response->set_expires_at_epoch_ms(expires_ms);
 
         auto status = ::grpc::Status::OK;
-        auto duration =
-            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
         log_rpc_execution("Authenticate", context, status, duration);
         return status;
     }
@@ -447,10 +445,9 @@ IMPLEMENT_UNIMPLEMENTED_RPC(UpdateCryptoPrekeys, UpdateCryptoPrekeysRequest, Upd
 
 #undef IMPLEMENT_UNIMPLEMENTED_RPC
 
-::grpc::Status AuthServiceImpl::RevokeDevice(
-    ::grpc::ServerContext* context,
-    const ::securecloud::auth::v1::RevokeDeviceRequest* request,
-    ::securecloud::auth::v1::RevokeDeviceResponse* response) {
+::grpc::Status AuthServiceImpl::RevokeDevice(::grpc::ServerContext* context,
+                                             const ::securecloud::auth::v1::RevokeDeviceRequest* request,
+                                             ::securecloud::auth::v1::RevokeDeviceResponse* response) {
     auto start = std::chrono::steady_clock::now();
 
     if (!session_manager_) {
@@ -483,11 +480,13 @@ IMPLEMENT_UNIMPLEMENTED_RPC(UpdateCryptoPrekeys, UpdateCryptoPrekeysRequest, Upd
         return status;
     }
 
-    session_manager_->revoke_all_device_sessions(*dev_id_res, request->reason().empty() ? "Device revoked" : request->reason());
+    session_manager_->revoke_all_device_sessions(*dev_id_res,
+                                                 request->reason().empty() ? "Device revoked" : request->reason());
 
     response->set_revoked(true);
     response->set_revoked_at_epoch_ms(
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
 
     auto status = ::grpc::Status::OK;
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -495,10 +494,9 @@ IMPLEMENT_UNIMPLEMENTED_RPC(UpdateCryptoPrekeys, UpdateCryptoPrekeysRequest, Upd
     return status;
 }
 
-::grpc::Status AuthServiceImpl::VerifyMfaChallenge(
-    ::grpc::ServerContext* context,
-    const ::securecloud::auth::v1::VerifyMfaChallengeRequest* request,
-    ::securecloud::auth::v1::VerifyMfaChallengeResponse* response) {
+::grpc::Status AuthServiceImpl::VerifyMfaChallenge(::grpc::ServerContext* context,
+                                                   const ::securecloud::auth::v1::VerifyMfaChallengeRequest* request,
+                                                   ::securecloud::auth::v1::VerifyMfaChallengeResponse* response) {
     auto start = std::chrono::steady_clock::now();
 
     if (!request || !response) {
@@ -536,22 +534,26 @@ IMPLEMENT_UNIMPLEMENTED_RPC(UpdateCryptoPrekeys, UpdateCryptoPrekeysRequest, Upd
     if (ver_result.status == domain::MfaChallengeVerificationStatus::Success) {
         if (!ver_result.session_id.has_value()) {
             auto status = ::grpc::Status(::grpc::StatusCode::INTERNAL, "Session ID missing from verification result");
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
             log_rpc_execution("VerifyMfaChallenge", context, status, duration);
             return status;
         }
 
         if (!session_manager_) {
             auto status = ::grpc::Status(::grpc::StatusCode::INTERNAL, "Session manager not configured");
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
             log_rpc_execution("VerifyMfaChallenge", context, status, duration);
             return status;
         }
 
         auto session_val = session_manager_->validate_session(*ver_result.session_id);
         if (!session_val.is_valid() || !session_val.session.has_value()) {
-            auto status = ::grpc::Status(::grpc::StatusCode::INTERNAL, "Session not found or invalid after MFA verification");
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            auto status =
+                ::grpc::Status(::grpc::StatusCode::INTERNAL, "Session not found or invalid after MFA verification");
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
             log_rpc_execution("VerifyMfaChallenge", context, status, duration);
             return status;
         }
@@ -581,15 +583,18 @@ IMPLEMENT_UNIMPLEMENTED_RPC(UpdateCryptoPrekeys, UpdateCryptoPrekeysRequest, Upd
 
     ::grpc::Status status;
     if (ver_result.status == domain::MfaChallengeVerificationStatus::ExpiredChallenge) {
-        status = ::grpc::Status(::grpc::StatusCode::DEADLINE_EXCEEDED,
-                                ver_result.error_message.empty() ? "MFA challenge has expired" : ver_result.error_message);
+        status =
+            ::grpc::Status(::grpc::StatusCode::DEADLINE_EXCEEDED,
+                           ver_result.error_message.empty() ? "MFA challenge has expired" : ver_result.error_message);
     } else if (ver_result.status == domain::MfaChallengeVerificationStatus::MaxAttemptsExceeded ||
                ver_result.status == domain::MfaChallengeVerificationStatus::ChallengeFailed) {
-        status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED,
-                                ver_result.error_message.empty() ? "Max verification attempts exceeded" : ver_result.error_message);
+        status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, ver_result.error_message.empty()
+                                                                           ? "Max verification attempts exceeded"
+                                                                           : ver_result.error_message);
     } else {
-        status = ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED,
-                                ver_result.error_message.empty() ? "Invalid verification code" : ver_result.error_message);
+        status =
+            ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED,
+                           ver_result.error_message.empty() ? "Invalid verification code" : ver_result.error_message);
     }
 
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -597,10 +602,10 @@ IMPLEMENT_UNIMPLEMENTED_RPC(UpdateCryptoPrekeys, UpdateCryptoPrekeysRequest, Upd
     return status;
 }
 
-::grpc::Status AuthServiceImpl::InitiateMfaEnrollment(
-    ::grpc::ServerContext* context,
-    const ::securecloud::auth::v1::InitiateMfaEnrollmentRequest* request,
-    ::securecloud::auth::v1::InitiateMfaEnrollmentResponse* response) {
+::grpc::Status
+AuthServiceImpl::InitiateMfaEnrollment(::grpc::ServerContext* context,
+                                       const ::securecloud::auth::v1::InitiateMfaEnrollmentRequest* request,
+                                       ::securecloud::auth::v1::InitiateMfaEnrollmentResponse* response) {
     auto start = std::chrono::steady_clock::now();
 
     if (!request || !response) {
@@ -644,10 +649,10 @@ IMPLEMENT_UNIMPLEMENTED_RPC(UpdateCryptoPrekeys, UpdateCryptoPrekeysRequest, Upd
     }
 }
 
-::grpc::Status AuthServiceImpl::ConfirmMfaEnrollment(
-    ::grpc::ServerContext* context,
-    const ::securecloud::auth::v1::ConfirmMfaEnrollmentRequest* request,
-    ::securecloud::auth::v1::ConfirmMfaEnrollmentResponse* response) {
+::grpc::Status
+AuthServiceImpl::ConfirmMfaEnrollment(::grpc::ServerContext* context,
+                                      const ::securecloud::auth::v1::ConfirmMfaEnrollmentRequest* request,
+                                      ::securecloud::auth::v1::ConfirmMfaEnrollmentResponse* response) {
     auto start = std::chrono::steady_clock::now();
 
     if (!request || !response) {
@@ -700,10 +705,9 @@ IMPLEMENT_UNIMPLEMENTED_RPC(UpdateCryptoPrekeys, UpdateCryptoPrekeysRequest, Upd
     return status;
 }
 
-::grpc::Status AuthServiceImpl::DisableMfa(
-    ::grpc::ServerContext* context,
-    const ::securecloud::auth::v1::DisableMfaRequest* request,
-    ::securecloud::auth::v1::DisableMfaResponse* response) {
+::grpc::Status AuthServiceImpl::DisableMfa(::grpc::ServerContext* context,
+                                           const ::securecloud::auth::v1::DisableMfaRequest* request,
+                                           ::securecloud::auth::v1::DisableMfaResponse* response) {
     auto start = std::chrono::steady_clock::now();
 
     if (!request || !response) {

@@ -16,12 +16,9 @@ MfaManager::MfaManager(std::shared_ptr<repository::IMfaRepository> mfa_repositor
                        std::shared_ptr<crypto::TotpEngine> totp_engine,
                        std::shared_ptr<crypto::MfaSecretProtector> secret_protector,
                        std::shared_ptr<IAuditEventPublisher> audit_publisher)
-    : mfa_repository_(std::move(mfa_repository)),
-      session_repository_(std::move(session_repository)),
-      user_repository_(std::move(user_repository)),
-      authenticator_(std::move(authenticator)),
-      totp_engine_(std::move(totp_engine)),
-      secret_protector_(std::move(secret_protector)),
+    : mfa_repository_(std::move(mfa_repository)), session_repository_(std::move(session_repository)),
+      user_repository_(std::move(user_repository)), authenticator_(std::move(authenticator)),
+      totp_engine_(std::move(totp_engine)), secret_protector_(std::move(secret_protector)),
       audit_publisher_(std::move(audit_publisher)) {
     if (!mfa_repository_) {
         throw std::invalid_argument("MfaManager: mfa_repository cannot be null");
@@ -51,9 +48,8 @@ bool MfaManager::is_mfa_enabled_for_user(const domain::Uuid& user_id) {
     return config.has_value() && config->status == domain::MfaStatus::Enabled;
 }
 
-domain::MfaEnrollmentInitiation MfaManager::initiate_enrollment(const domain::Uuid& user_id,
-                                                               std::string_view issuer,
-                                                               std::string_view account_name) {
+domain::MfaEnrollmentInitiation MfaManager::initiate_enrollment(const domain::Uuid& user_id, std::string_view issuer,
+                                                                std::string_view account_name) {
     auto user = user_repository_->find_by_id(user_id);
     if (!user.has_value()) {
         throw std::invalid_argument("MfaManager: user not found: " + user_id.to_string());
@@ -92,28 +88,27 @@ domain::MfaEnrollmentInitiation MfaManager::initiate_enrollment(const domain::Uu
     return {config.mfa_configuration_id, domain::SecretMfaString(base32_secret), otpauth_uri};
 }
 
-domain::MfaEnrollmentConfirmationResult MfaManager::confirm_enrollment(const domain::Uuid& user_id,
-                                                                       std::string_view code,
-                                                                       const std::string& client_ip) {
+domain::MfaEnrollmentConfirmationResult
+MfaManager::confirm_enrollment(const domain::Uuid& user_id, std::string_view code, const std::string& client_ip) {
     auto config_opt = mfa_repository_->find_mfa_config_by_user_id(user_id);
     if (!config_opt.has_value()) {
-        return domain::MfaEnrollmentConfirmationResult::failure(
-            domain::MfaEnrollmentStatus::ConfigurationNotFound, "No MFA configuration found for user");
+        return domain::MfaEnrollmentConfirmationResult::failure(domain::MfaEnrollmentStatus::ConfigurationNotFound,
+                                                                "No MFA configuration found for user");
     }
 
     auto& config = *config_opt;
     if (config.status == domain::MfaStatus::Enabled) {
-        return domain::MfaEnrollmentConfirmationResult::failure(
-            domain::MfaEnrollmentStatus::AlreadyEnabled, "MFA is already enabled for this account");
+        return domain::MfaEnrollmentConfirmationResult::failure(domain::MfaEnrollmentStatus::AlreadyEnabled,
+                                                                "MFA is already enabled for this account");
     }
     if (config.status != domain::MfaStatus::Pending) {
-        return domain::MfaEnrollmentConfirmationResult::failure(
-            domain::MfaEnrollmentStatus::ConfigurationNotFound, "MFA configuration is not in pending status");
+        return domain::MfaEnrollmentConfirmationResult::failure(domain::MfaEnrollmentStatus::ConfigurationNotFound,
+                                                                "MFA configuration is not in pending status");
     }
 
     const auto now = std::chrono::system_clock::now();
-    const auto now_epoch = static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
+    const auto now_epoch =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
 
     auto ver_res = authenticator_->verify_factor(config.encrypted_secret, code, now_epoch, user_id.to_string());
     if (!ver_res.success) {
@@ -145,14 +140,14 @@ bool MfaManager::disable_mfa(const domain::Uuid& user_id, std::string_view code_
     }
 
     const auto now = std::chrono::system_clock::now();
-    const auto now_epoch = static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
+    const auto now_epoch =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
 
     bool verified = false;
 
     // Check TOTP code
-    auto ver_res = authenticator_->verify_factor(config_opt->encrypted_secret, code_or_recovery, now_epoch,
-                                                 user_id.to_string());
+    auto ver_res =
+        authenticator_->verify_factor(config_opt->encrypted_secret, code_or_recovery, now_epoch, user_id.to_string());
     if (ver_res.success) {
         verified = true;
     } else {
@@ -187,10 +182,8 @@ bool MfaManager::disable_mfa(const domain::Uuid& user_id, std::string_view code_
     return true;
 }
 
-domain::MfaChallengeEntity MfaManager::create_challenge(const domain::Uuid& user_id,
-                                                        const domain::Uuid& session_id,
-                                                        domain::MfaChallengePurpose purpose,
-                                                        std::chrono::seconds ttl) {
+domain::MfaChallengeEntity MfaManager::create_challenge(const domain::Uuid& user_id, const domain::Uuid& session_id,
+                                                        domain::MfaChallengePurpose purpose, std::chrono::seconds ttl) {
     const auto now = std::chrono::system_clock::now();
 
     domain::MfaChallengeEntity challenge;
@@ -213,14 +206,14 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
                                                                     const std::string& client_ip) {
     auto challenge_opt = mfa_repository_->find_challenge_by_id(challenge_id);
     if (!challenge_opt.has_value()) {
-        return domain::MfaChallengeVerificationResult::failure(
-            domain::MfaChallengeVerificationStatus::InvalidCode, "Challenge not found");
+        return domain::MfaChallengeVerificationResult::failure(domain::MfaChallengeVerificationStatus::InvalidCode,
+                                                               "Challenge not found");
     }
 
     auto& challenge = *challenge_opt;
     if (challenge.challenge_status == domain::MfaChallengeStatus::Completed) {
-        return domain::MfaChallengeVerificationResult::failure(
-            domain::MfaChallengeVerificationStatus::AlreadyCompleted, "Challenge already completed");
+        return domain::MfaChallengeVerificationResult::failure(domain::MfaChallengeVerificationStatus::AlreadyCompleted,
+                                                               "Challenge already completed");
     }
     if (challenge.challenge_status == domain::MfaChallengeStatus::Failed) {
         return domain::MfaChallengeVerificationResult::failure(
@@ -230,10 +223,10 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
     const auto now = std::chrono::system_clock::now();
     if (challenge.challenge_status == domain::MfaChallengeStatus::Expired || now > challenge.expires_at) {
         mfa_repository_->fail_challenge(challenge_id);
-        audit_publisher_->publish(domain::AuditEvent::mfa_challenge_failed(
-            challenge.user_id, challenge.session_id, "Challenge expired", client_ip));
-        return domain::MfaChallengeVerificationResult::failure(
-            domain::MfaChallengeVerificationStatus::ExpiredChallenge, "Challenge has expired");
+        audit_publisher_->publish(domain::AuditEvent::mfa_challenge_failed(challenge.user_id, challenge.session_id,
+                                                                           "Challenge expired", client_ip));
+        return domain::MfaChallengeVerificationResult::failure(domain::MfaChallengeVerificationStatus::ExpiredChallenge,
+                                                               "Challenge has expired");
     }
 
     // Check brute-force attempts
@@ -253,12 +246,12 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
 
     auto config_opt = mfa_repository_->find_mfa_config_by_user_id(challenge.user_id);
     if (!config_opt.has_value() || config_opt->status != domain::MfaStatus::Enabled) {
-        return domain::MfaChallengeVerificationResult::failure(
-            domain::MfaChallengeVerificationStatus::ChallengeFailed, "MFA is not enabled for user");
+        return domain::MfaChallengeVerificationResult::failure(domain::MfaChallengeVerificationStatus::ChallengeFailed,
+                                                               "MFA is not enabled for user");
     }
 
-    const auto now_epoch = static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
+    const auto now_epoch =
+        static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(now.time_since_epoch()).count());
 
     bool verified = false;
     bool is_recovery = false;
@@ -311,10 +304,10 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
                 domain::MfaChallengeVerificationStatus::MaxAttemptsExceeded,
                 "Invalid code; max verification attempts exceeded");
         }
-        audit_publisher_->publish(domain::AuditEvent::mfa_challenge_failed(
-            challenge.user_id, challenge.session_id, "Invalid verification code", client_ip));
-        return domain::MfaChallengeVerificationResult::failure(
-            domain::MfaChallengeVerificationStatus::InvalidCode, "Invalid verification code");
+        audit_publisher_->publish(domain::AuditEvent::mfa_challenge_failed(challenge.user_id, challenge.session_id,
+                                                                           "Invalid verification code", client_ip));
+        return domain::MfaChallengeVerificationResult::failure(domain::MfaChallengeVerificationStatus::InvalidCode,
+                                                               "Invalid verification code");
     }
 
     // Verification succeeded! Complete challenge in repository
@@ -325,11 +318,11 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
     session_repository_->touch_session_activity(challenge.session_id, now);
 
     if (is_recovery) {
-        audit_publisher_->publish(domain::AuditEvent::mfa_recovery_code_used(
-            challenge.user_id, challenge.session_id, client_ip));
+        audit_publisher_->publish(
+            domain::AuditEvent::mfa_recovery_code_used(challenge.user_id, challenge.session_id, client_ip));
     }
-    audit_publisher_->publish(domain::AuditEvent::mfa_challenge_succeeded(
-        challenge.user_id, challenge.session_id, client_ip));
+    audit_publisher_->publish(
+        domain::AuditEvent::mfa_challenge_succeeded(challenge.user_id, challenge.session_id, client_ip));
 
     // Clear challenge attempts
     {

@@ -112,15 +112,11 @@ TEST_F(TotpAuthenticatorTest, VerifyFactor_Failure_EmptyInputs) {
 
 class MockWebAuthnAuthenticator : public IMfaAuthenticator {
   public:
-    [[nodiscard]] MfaFactorType factor_type() const noexcept override {
-        return MfaFactorType::WebAuthn;
-    }
+    [[nodiscard]] MfaFactorType factor_type() const noexcept override { return MfaFactorType::WebAuthn; }
 
-    [[nodiscard]] MfaFactorVerificationResult verify_factor(
-        std::span<const uint8_t> /*encrypted_secret*/,
-        std::string_view credential,
-        uint64_t /*timestamp_seconds*/,
-        std::string_view /*aad*/) const override {
+    [[nodiscard]] MfaFactorVerificationResult verify_factor(std::span<const uint8_t> /*encrypted_secret*/,
+                                                            std::string_view credential, uint64_t /*timestamp_seconds*/,
+                                                            std::string_view /*aad*/) const override {
         if (credential == "valid_webauthn_assertion_json") {
             return MfaFactorVerificationResult::ok(0);
         }

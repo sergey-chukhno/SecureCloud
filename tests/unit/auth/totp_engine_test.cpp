@@ -139,7 +139,8 @@ TEST(TotpEngineTest, GenerateSecretBytes_ProducesSecureRandomData) {
     // Assert not all zeros
     bool has_nonzero = false;
     for (uint8_t b : secret1) {
-        if (b != 0) has_nonzero = true;
+        if (b != 0)
+            has_nonzero = true;
     }
     EXPECT_TRUE(has_nonzero);
 }
@@ -201,8 +202,10 @@ TEST(TotpEngineTest, GenerateOtpauthUri_FormatsStandardUri) {
     TotpEngine engine;
     std::string uri = engine.generate_otpauth_uri("SecureCloud", "alice@example.com", "JBSWY3DPEHPK3PXP");
 
-    EXPECT_EQ(uri,
-              "otpauth://totp/SecureCloud:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=SecureCloud&algorithm=SHA1&digits=6&period=30");
+    EXPECT_EQ(
+        uri,
+        "otpauth://totp/"
+        "SecureCloud:alice%40example.com?secret=JBSWY3DPEHPK3PXP&issuer=SecureCloud&algorithm=SHA1&digits=6&period=30");
 }
 
 // ============================================================================
@@ -214,9 +217,8 @@ TEST(MfaSecretProtectorTest, RoundTrip_EncryptDecrypt_MatchesOriginal) {
     const std::string kek_hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
     MfaSecretProtector protector(kek_hex);
 
-    std::vector<uint8_t> secret_plaintext = {0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80,
-                                             0x90, 0xA0, 0xB0, 0xC0, 0xD0, 0xE0, 0xF0, 0x01,
-                                             0x02, 0x03, 0x04, 0x05};
+    std::vector<uint8_t> secret_plaintext = {0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xA0,
+                                             0xB0, 0xC0, 0xD0, 0xE0, 0xF0, 0x01, 0x02, 0x03, 0x04, 0x05};
 
     auto encrypted = protector.encrypt(secret_plaintext, "user-uuid-1234");
 

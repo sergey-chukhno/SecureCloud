@@ -54,7 +54,7 @@ class MockSessionManager : public ISessionManager {
     MOCK_METHOD(domain::SessionRevocationResult, revoke_all_device_sessions_impl,
                 (const domain::Uuid&, const std::string&));
     domain::SessionRevocationResult revoke_all_user_sessions(const domain::Uuid& /*user_id*/,
-                                                               std::string_view /*reason*/) override {
+                                                             std::string_view /*reason*/) override {
         return domain::SessionRevocationResult::success(1);
     }
 };
@@ -81,47 +81,37 @@ class MockMfaManager : public IMfaManager {
   public:
     MOCK_METHOD(bool, is_mfa_enabled_for_user, (const domain::Uuid&), (override));
 
-    domain::MfaEnrollmentInitiation initiate_enrollment(
-        const domain::Uuid& user_id,
-        std::string_view issuer,
-        std::string_view account_name) override {
+    domain::MfaEnrollmentInitiation initiate_enrollment(const domain::Uuid& user_id, std::string_view issuer,
+                                                        std::string_view account_name) override {
         return initiate_enrollment_impl(user_id, std::string(issuer), std::string(account_name));
     }
     MOCK_METHOD(domain::MfaEnrollmentInitiation, initiate_enrollment_impl,
                 (const domain::Uuid&, const std::string&, const std::string&));
 
-    domain::MfaEnrollmentConfirmationResult confirm_enrollment(
-        const domain::Uuid& user_id,
-        std::string_view code,
-        const std::string& client_ip) override {
+    domain::MfaEnrollmentConfirmationResult confirm_enrollment(const domain::Uuid& user_id, std::string_view code,
+                                                               const std::string& client_ip) override {
         return confirm_enrollment_impl(user_id, std::string(code), client_ip);
     }
     MOCK_METHOD(domain::MfaEnrollmentConfirmationResult, confirm_enrollment_impl,
                 (const domain::Uuid&, const std::string&, const std::string&));
 
-    bool disable_mfa(
-        const domain::Uuid& user_id,
-        std::string_view code_or_recovery,
-        const std::string& client_ip) override {
+    bool disable_mfa(const domain::Uuid& user_id, std::string_view code_or_recovery,
+                     const std::string& client_ip) override {
         return disable_mfa_impl(user_id, std::string(code_or_recovery), client_ip);
     }
-    MOCK_METHOD(bool, disable_mfa_impl,
-                (const domain::Uuid&, const std::string&, const std::string&));
+    MOCK_METHOD(bool, disable_mfa_impl, (const domain::Uuid&, const std::string&, const std::string&));
 
-    domain::MfaChallengeEntity create_challenge(
-        const domain::Uuid& user_id,
-        const domain::Uuid& session_id,
-        domain::MfaChallengePurpose purpose,
-        std::chrono::seconds ttl) override {
+    domain::MfaChallengeEntity create_challenge(const domain::Uuid& user_id, const domain::Uuid& session_id,
+                                                domain::MfaChallengePurpose purpose,
+                                                std::chrono::seconds ttl) override {
         return create_challenge_impl(user_id, session_id, purpose, ttl);
     }
     MOCK_METHOD(domain::MfaChallengeEntity, create_challenge_impl,
                 (const domain::Uuid&, const domain::Uuid&, domain::MfaChallengePurpose, std::chrono::seconds));
 
-    domain::MfaChallengeVerificationResult verify_challenge(
-        const domain::Uuid& challenge_id,
-        std::string_view credential,
-        const std::string& client_ip) override {
+    domain::MfaChallengeVerificationResult verify_challenge(const domain::Uuid& challenge_id,
+                                                            std::string_view credential,
+                                                            const std::string& client_ip) override {
         return verify_challenge_impl(challenge_id, std::string(credential), client_ip);
     }
     MOCK_METHOD(domain::MfaChallengeVerificationResult, verify_challenge_impl,
@@ -153,8 +143,9 @@ domain::DeviceEntity create_test_device(const domain::Uuid& user_id, const domai
     return device;
 }
 
-domain::SessionEntity create_test_session(const domain::Uuid& user_id, const domain::Uuid& device_id,
-                                         domain::AuthenticationLevel level = domain::AuthenticationLevel::PrimaryOnly) {
+domain::SessionEntity
+create_test_session(const domain::Uuid& user_id, const domain::Uuid& device_id,
+                    domain::AuthenticationLevel level = domain::AuthenticationLevel::PrimaryOnly) {
     domain::SessionEntity session;
     session.session_id = domain::Uuid::generate_v7();
     session.user_id = user_id;
@@ -182,8 +173,8 @@ class AuthServiceMfaTest : public ::testing::Test {
         device_ = create_test_device(user_id_, device_id_);
         session_ = create_test_session(user_id_, device_id_);
 
-        service_ = std::make_unique<AuthServiceImpl>(
-            mock_verifier_, mock_session_mgr_, mock_audit_pub_, mock_token_mgr_, mock_mfa_mgr_);
+        service_ = std::make_unique<AuthServiceImpl>(mock_verifier_, mock_session_mgr_, mock_audit_pub_,
+                                                     mock_token_mgr_, mock_mfa_mgr_);
     }
 
     std::shared_ptr<StrictMock<MockCredentialVerifier>> mock_verifier_;
@@ -256,7 +247,8 @@ TEST_F(AuthServiceMfaTest, Authenticate_UserWithMfa_ReturnsMfaRequiredAndSuppres
     challenge.created_at = std::chrono::system_clock::now();
     challenge.expires_at = challenge.created_at + std::chrono::minutes(5);
 
-    EXPECT_CALL(*mock_mfa_mgr_, create_challenge_impl(user_id_, session_.session_id, domain::MfaChallengePurpose::Login, _))
+    EXPECT_CALL(*mock_mfa_mgr_,
+                create_challenge_impl(user_id_, session_.session_id, domain::MfaChallengePurpose::Login, _))
         .WillOnce(Return(challenge));
     EXPECT_CALL(*mock_token_mgr_, issue_initial_tokens(_, _)).Times(0);
 
@@ -314,8 +306,8 @@ TEST_F(AuthServiceMfaTest, VerifyMfaChallenge_InvalidCode_ReturnsUnauthenticated
     req.set_code("000000");
     securecloud::auth::v1::VerifyMfaChallengeResponse resp;
 
-    auto ver_res = domain::MfaChallengeVerificationResult::failure(
-        domain::MfaChallengeVerificationStatus::InvalidCode, "Invalid verification code");
+    auto ver_res = domain::MfaChallengeVerificationResult::failure(domain::MfaChallengeVerificationStatus::InvalidCode,
+                                                                   "Invalid verification code");
     EXPECT_CALL(*mock_mfa_mgr_, verify_challenge_impl(challenge_id, "000000", _)).WillOnce(Return(ver_res));
 
     auto status = service_->VerifyMfaChallenge(&context_, &req, &resp);
@@ -425,10 +417,8 @@ TEST_F(AuthServiceMfaTest, ConfirmMfaEnrollment_Success_ReturnsRecoveryCodes) {
     req.set_code("123456");
     securecloud::auth::v1::ConfirmMfaEnrollmentResponse resp;
 
-    std::vector<std::string> recovery_codes = {
-        "1111-2222", "3333-4444", "5555-6666", "7777-8888",
-        "9999-0000", "AAAA-BBBB", "CCCC-DDDD", "EEEE-FFFF"
-    };
+    std::vector<std::string> recovery_codes = {"1111-2222", "3333-4444", "5555-6666", "7777-8888",
+                                               "9999-0000", "AAAA-BBBB", "CCCC-DDDD", "EEEE-FFFF"};
     auto confirm_res = domain::MfaEnrollmentConfirmationResult::success(recovery_codes);
 
     EXPECT_CALL(*mock_mfa_mgr_, confirm_enrollment_impl(user_id_, "123456", _)).WillOnce(Return(confirm_res));
@@ -447,8 +437,8 @@ TEST_F(AuthServiceMfaTest, ConfirmMfaEnrollment_InvalidCode_ReturnsUnauthenticat
     req.set_code("000000");
     securecloud::auth::v1::ConfirmMfaEnrollmentResponse resp;
 
-    auto confirm_res = domain::MfaEnrollmentConfirmationResult::failure(
-        domain::MfaEnrollmentStatus::InvalidCode, "Invalid verification code");
+    auto confirm_res = domain::MfaEnrollmentConfirmationResult::failure(domain::MfaEnrollmentStatus::InvalidCode,
+                                                                        "Invalid verification code");
 
     EXPECT_CALL(*mock_mfa_mgr_, confirm_enrollment_impl(user_id_, "000000", _)).WillOnce(Return(confirm_res));
 
@@ -459,7 +449,8 @@ TEST_F(AuthServiceMfaTest, ConfirmMfaEnrollment_InvalidCode_ReturnsUnauthenticat
 }
 
 TEST_F(AuthServiceMfaTest, DisableMfa_ValidCode_ReturnsSuccess) {
-    service_->set_caller_auth_level_for_testing(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    service_->set_caller_auth_level_for_testing(
+        securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
     securecloud::auth::v1::DisableMfaRequest req;
     req.set_user_id(user_id_.to_string());
     req.set_code("123456");
@@ -474,7 +465,8 @@ TEST_F(AuthServiceMfaTest, DisableMfa_ValidCode_ReturnsSuccess) {
 }
 
 TEST_F(AuthServiceMfaTest, DisableMfa_InvalidCode_ReturnsUnauthenticated) {
-    service_->set_caller_auth_level_for_testing(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    service_->set_caller_auth_level_for_testing(
+        securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
     securecloud::auth::v1::DisableMfaRequest req;
     req.set_user_id(user_id_.to_string());
     req.set_code("000000");
@@ -489,7 +481,8 @@ TEST_F(AuthServiceMfaTest, DisableMfa_InvalidCode_ReturnsUnauthenticated) {
 }
 
 TEST_F(AuthServiceMfaTest, DisableMfa_NotMfaVerified_ReturnsPermissionDenied) {
-    service_->set_caller_auth_level_for_testing(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    service_->set_caller_auth_level_for_testing(
+        securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
     securecloud::auth::v1::DisableMfaRequest req;
     req.set_user_id(user_id_.to_string());
     req.set_code("123456");
@@ -504,7 +497,8 @@ TEST_F(AuthServiceMfaTest, DisableMfa_NotMfaVerified_ReturnsPermissionDenied) {
 }
 
 TEST_F(AuthServiceMfaTest, RevokeDevice_NotMfaVerified_ReturnsPermissionDenied) {
-    service_->set_caller_auth_level_for_testing(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    service_->set_caller_auth_level_for_testing(
+        securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
     securecloud::auth::v1::RevokeDeviceRequest req;
     req.set_device_id(device_id_.to_string());
     req.set_user_id(user_id_.to_string());
@@ -518,7 +512,8 @@ TEST_F(AuthServiceMfaTest, RevokeDevice_NotMfaVerified_ReturnsPermissionDenied) 
 }
 
 TEST_F(AuthServiceMfaTest, RevokeDevice_MfaVerified_RevokesAndReturnsSuccess) {
-    service_->set_caller_auth_level_for_testing(securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    service_->set_caller_auth_level_for_testing(
+        securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
     securecloud::auth::v1::RevokeDeviceRequest req;
     req.set_device_id(device_id_.to_string());
     req.set_user_id(user_id_.to_string());

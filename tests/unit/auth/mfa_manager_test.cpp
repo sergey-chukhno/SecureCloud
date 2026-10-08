@@ -63,7 +63,7 @@ class MockMfaRepository : public IMfaRepository {
 
     MOCK_METHOD(std::optional<MfaConfigurationEntity>, find_mfa_config_by_user_id, (const Uuid&), (override));
     std::optional<MfaConfigurationEntity> find_mfa_config_by_user_id(const Uuid& user_id,
-                                                                    pqxx::transaction_base&) override {
+                                                                     pqxx::transaction_base&) override {
         return find_mfa_config_by_user_id(user_id);
     }
 
@@ -85,8 +85,7 @@ class MockMfaRepository : public IMfaRepository {
     }
 
     MOCK_METHOD(std::optional<MfaChallengeEntity>, find_challenge_by_id, (const Uuid&), (override));
-    std::optional<MfaChallengeEntity> find_challenge_by_id(const Uuid& challenge_id,
-                                                           pqxx::transaction_base&) override {
+    std::optional<MfaChallengeEntity> find_challenge_by_id(const Uuid& challenge_id, pqxx::transaction_base&) override {
         return find_challenge_by_id(challenge_id);
     }
 
@@ -97,9 +96,7 @@ class MockMfaRepository : public IMfaRepository {
     }
 
     MOCK_METHOD(void, fail_challenge, (const Uuid&), (override));
-    void fail_challenge(const Uuid& challenge_id, pqxx::transaction_base&) override {
-        fail_challenge(challenge_id);
-    }
+    void fail_challenge(const Uuid& challenge_id, pqxx::transaction_base&) override { fail_challenge(challenge_id); }
 };
 
 class MockSessionRepository : public ISessionRepository {
@@ -108,9 +105,7 @@ class MockSessionRepository : public ISessionRepository {
     void create_session(const SessionEntity& s, pqxx::transaction_base&) override { create_session(s); }
 
     MOCK_METHOD(std::optional<SessionEntity>, find_by_id, (const Uuid&), (override));
-    std::optional<SessionEntity> find_by_id(const Uuid& id, pqxx::transaction_base&) override {
-        return find_by_id(id);
-    }
+    std::optional<SessionEntity> find_by_id(const Uuid& id, pqxx::transaction_base&) override { return find_by_id(id); }
 
     MOCK_METHOD(std::vector<SessionEntity>, list_active_by_user_id, (const Uuid&), (override));
     std::vector<SessionEntity> list_active_by_user_id(const Uuid& u, pqxx::transaction_base&) override {
@@ -128,9 +123,7 @@ class MockSessionRepository : public ISessionRepository {
     }
 
     MOCK_METHOD(void, revoke_session, (const Uuid&, domain::time_point), (override));
-    void revoke_session(const Uuid& s, domain::time_point t, pqxx::transaction_base&) override {
-        revoke_session(s, t);
-    }
+    void revoke_session(const Uuid& s, domain::time_point t, pqxx::transaction_base&) override { revoke_session(s, t); }
 
     MOCK_METHOD(void, revoke_all_user_sessions, (const Uuid&, domain::time_point), (override));
     void revoke_all_user_sessions(const Uuid& u, domain::time_point t, pqxx::transaction_base&) override {
@@ -174,9 +167,7 @@ class MockUserRepository : public IUserRepository {
     void create_user(const UserEntity& u, pqxx::transaction_base&) override { create_user(u); }
 
     MOCK_METHOD(std::optional<UserEntity>, find_by_id, (const Uuid&), (override));
-    std::optional<UserEntity> find_by_id(const Uuid& id, pqxx::transaction_base&) override {
-        return find_by_id(id);
-    }
+    std::optional<UserEntity> find_by_id(const Uuid& id, pqxx::transaction_base&) override { return find_by_id(id); }
 
     std::optional<UserEntity> find_by_credential_identifier(std::string_view id) override {
         return find_by_credential_identifier_str(std::string(id));
@@ -218,8 +209,7 @@ class MfaManagerTest : public ::testing::Test {
         audit_publisher_ = std::make_shared<MockAuditEventPublisher>();
 
         mfa_manager_ = std::make_unique<MfaManager>(mfa_repository_, session_repository_, user_repository_,
-                                                    authenticator_, totp_engine_, secret_protector_,
-                                                    audit_publisher_);
+                                                    authenticator_, totp_engine_, secret_protector_, audit_publisher_);
 
         user_id_ = Uuid::generate_v7();
         session_id_ = Uuid::generate_v7();
@@ -254,8 +244,7 @@ TEST_F(MfaManagerTest, InitiateEnrollment_Success_StoresPendingConfigAndReturnsU
     EXPECT_CALL(*mfa_repository_, find_mfa_config_by_user_id(user_id_)).WillOnce(Return(std::nullopt));
 
     MfaConfigurationEntity stored_config;
-    EXPECT_CALL(*mfa_repository_, store_mfa_configuration(_))
-        .WillOnce(DoAll(SaveArg<0>(&stored_config), Return()));
+    EXPECT_CALL(*mfa_repository_, store_mfa_configuration(_)).WillOnce(DoAll(SaveArg<0>(&stored_config), Return()));
     EXPECT_CALL(*audit_publisher_, publish(_)).Times(1);
 
     auto result = mfa_manager_->initiate_enrollment(user_id_, "SecureCloud");

@@ -20,9 +20,9 @@ namespace securecloud::auth::crypto {
  */
 class MfaSecretProtector {
   public:
-    static constexpr size_t kKeySize = 32;       ///< 256-bit Key Encryption Key (KEK)
-    static constexpr size_t kIvSize = 12;        ///< 96-bit NIST standard GCM IV
-    static constexpr size_t kTagSize = 16;       ///< 128-bit GCM authentication tag
+    static constexpr size_t kKeySize = 32;                       ///< 256-bit Key Encryption Key (KEK)
+    static constexpr size_t kIvSize = 12;                        ///< 96-bit NIST standard GCM IV
+    static constexpr size_t kTagSize = 16;                       ///< 128-bit GCM authentication tag
     static constexpr size_t kMinCipherSize = kIvSize + kTagSize; ///< 28 bytes minimum
 
     /**
@@ -48,8 +48,7 @@ class MfaSecretProtector {
      * @param aad Optional additional authenticated data (e.g., user_id).
      * @return Formatted vector containing [IV || Ciphertext || Tag].
      */
-    [[nodiscard]] std::vector<uint8_t> encrypt(std::span<const uint8_t> plaintext,
-                                               std::string_view aad = "") const;
+    [[nodiscard]] std::vector<uint8_t> encrypt(std::span<const uint8_t> plaintext, std::string_view aad = "") const;
 
     /**
      * @brief Decrypts and authenticates payload using AES-256-GCM.

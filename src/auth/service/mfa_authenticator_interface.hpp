@@ -21,13 +21,9 @@ struct MfaFactorVerificationResult {
     uint64_t matched_time_step = 0; ///< Non-zero for TOTP replay prevention, 0 for WebAuthn
     std::string error_message{};
 
-    static MfaFactorVerificationResult ok(uint64_t time_step = 0) {
-        return {true, time_step, {}};
-    }
+    static MfaFactorVerificationResult ok(uint64_t time_step = 0) { return {true, time_step, {}}; }
 
-    static MfaFactorVerificationResult fail(std::string message) {
-        return {false, 0, std::move(message)};
-    }
+    static MfaFactorVerificationResult fail(std::string message) { return {false, 0, std::move(message)}; }
 };
 
 /**
@@ -50,11 +46,10 @@ class IMfaAuthenticator {
      * @param aad Optional Additional Authenticated Data (e.g. user_id string) for decryption.
      * @return Verification outcome including matched time step.
      */
-    [[nodiscard]] virtual MfaFactorVerificationResult verify_factor(
-        std::span<const uint8_t> encrypted_secret,
-        std::string_view credential,
-        uint64_t timestamp_seconds,
-        std::string_view aad = "") const = 0;
+    [[nodiscard]] virtual MfaFactorVerificationResult verify_factor(std::span<const uint8_t> encrypted_secret,
+                                                                    std::string_view credential,
+                                                                    uint64_t timestamp_seconds,
+                                                                    std::string_view aad = "") const = 0;
 };
 
 /**
@@ -65,15 +60,11 @@ class TotpAuthenticator : public IMfaAuthenticator {
     TotpAuthenticator(std::shared_ptr<crypto::TotpEngine> totp_engine,
                       std::shared_ptr<crypto::MfaSecretProtector> secret_protector);
 
-    [[nodiscard]] domain::MfaFactorType factor_type() const noexcept override {
-        return domain::MfaFactorType::Totp;
-    }
+    [[nodiscard]] domain::MfaFactorType factor_type() const noexcept override { return domain::MfaFactorType::Totp; }
 
-    [[nodiscard]] MfaFactorVerificationResult verify_factor(
-        std::span<const uint8_t> encrypted_secret,
-        std::string_view credential,
-        uint64_t timestamp_seconds,
-        std::string_view aad = "") const override;
+    [[nodiscard]] MfaFactorVerificationResult verify_factor(std::span<const uint8_t> encrypted_secret,
+                                                            std::string_view credential, uint64_t timestamp_seconds,
+                                                            std::string_view aad = "") const override;
 
   private:
     std::shared_ptr<crypto::TotpEngine> totp_engine_;

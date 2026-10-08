@@ -23,13 +23,7 @@ struct MfaEnrollmentInitiation {
 /**
  * @brief Status codes for MFA enrollment confirmation.
  */
-enum class MfaEnrollmentStatus {
-    Success,
-    InvalidCode,
-    ConfigurationNotFound,
-    AlreadyEnabled,
-    Expired
-};
+enum class MfaEnrollmentStatus { Success, InvalidCode, ConfigurationNotFound, AlreadyEnabled, Expired };
 
 /**
  * @brief Result of confirming an MFA enrollment attempt with the initial code.
@@ -72,12 +66,9 @@ struct MfaChallengeVerificationResult {
     std::optional<Uuid> session_id{std::nullopt};
     std::optional<Uuid> user_id{std::nullopt};
 
-    [[nodiscard]] bool is_success() const noexcept {
-        return status == MfaChallengeVerificationStatus::Success;
-    }
+    [[nodiscard]] bool is_success() const noexcept { return status == MfaChallengeVerificationStatus::Success; }
 
-    static MfaChallengeVerificationResult success(uint64_t time_step = 0,
-                                                  std::optional<Uuid> session_id = std::nullopt,
+    static MfaChallengeVerificationResult success(uint64_t time_step = 0, std::optional<Uuid> session_id = std::nullopt,
                                                   std::optional<Uuid> user_id = std::nullopt) {
         return {MfaChallengeVerificationStatus::Success, time_step, {}, std::move(session_id), std::move(user_id)};
     }

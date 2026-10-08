@@ -98,11 +98,11 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
                                         const ::securecloud::auth::v1::ConfirmMfaEnrollmentRequest* request,
                                         ::securecloud::auth::v1::ConfirmMfaEnrollmentResponse* response) override;
 
-    ::grpc::Status DisableMfa(::grpc::ServerContext* context,
-                              const ::securecloud::auth::v1::DisableMfaRequest* request,
+    ::grpc::Status DisableMfa(::grpc::ServerContext* context, const ::securecloud::auth::v1::DisableMfaRequest* request,
                               ::securecloud::auth::v1::DisableMfaResponse* response) override;
 
-    /// Allows test suites to simulate caller authentication level when invoking service directly without gRPC server pipeline
+    /// Allows test suites to simulate caller authentication level when invoking service directly without gRPC server
+    /// pipeline
     void set_caller_auth_level_for_testing(std::optional<securecloud::auth::v1::AuthenticationLevel> level) noexcept {
         auth_level_override_for_testing_ = level;
     }

@@ -17,9 +17,8 @@ TotpAuthenticator::TotpAuthenticator(std::shared_ptr<crypto::TotpEngine> totp_en
 }
 
 MfaFactorVerificationResult TotpAuthenticator::verify_factor(std::span<const uint8_t> encrypted_secret,
-                                                            std::string_view credential,
-                                                            uint64_t timestamp_seconds,
-                                                            std::string_view aad) const {
+                                                             std::string_view credential, uint64_t timestamp_seconds,
+                                                             std::string_view aad) const {
     if (encrypted_secret.empty()) {
         return MfaFactorVerificationResult::fail("Encrypted secret cannot be empty");
     }

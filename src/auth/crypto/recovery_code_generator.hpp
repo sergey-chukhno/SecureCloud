@@ -50,9 +50,8 @@ class RecoveryCodeGenerator {
      * @param hashed_codes_pool List of remaining active hashed codes.
      * @return Index of the matched code in the pool to be consumed, or std::nullopt if invalid.
      */
-    [[nodiscard]] static std::optional<size_t> verify_and_consume(
-        std::string_view raw_code,
-        const std::vector<std::string>& hashed_codes_pool);
+    [[nodiscard]] static std::optional<size_t> verify_and_consume(std::string_view raw_code,
+                                                                  const std::vector<std::string>& hashed_codes_pool);
 };
 
 } // namespace securecloud::auth::crypto

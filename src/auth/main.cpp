@@ -136,8 +136,10 @@ int run_service() {
             mfa_repo, session_repo, user_repo, authenticator, totp_engine, secret_protector, audit_publisher);
     }
 
-    // Instantiate AuthServiceImpl wired with domain verifier, session manager, audit publisher, token manager, and MFA manager
-    securecloud::auth::service::AuthServiceImpl auth_service(verifier, session_mgr, audit_publisher, token_mgr, mfa_mgr);
+    // Instantiate AuthServiceImpl wired with domain verifier, session manager, audit publisher, token manager, and MFA
+    // manager
+    securecloud::auth::service::AuthServiceImpl auth_service(verifier, session_mgr, audit_publisher, token_mgr,
+                                                             mfa_mgr);
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);

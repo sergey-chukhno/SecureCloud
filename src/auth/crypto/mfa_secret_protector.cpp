@@ -41,8 +41,7 @@ std::array<uint8_t, 32> parse_key(std::string_view key_str) {
         }
         return key;
     }
-    throw std::invalid_argument(
-        "MfaSecretProtector: key must be either 32 raw bytes or 64 hexadecimal characters");
+    throw std::invalid_argument("MfaSecretProtector: key must be either 32 raw bytes or 64 hexadecimal characters");
 }
 
 struct EvpCipherCtxDeleter {
@@ -81,8 +80,7 @@ MfaSecretProtector& MfaSecretProtector::operator=(MfaSecretProtector&& other) no
     return *this;
 }
 
-std::vector<uint8_t> MfaSecretProtector::encrypt(std::span<const uint8_t> plaintext,
-                                                 std::string_view aad) const {
+std::vector<uint8_t> MfaSecretProtector::encrypt(std::span<const uint8_t> plaintext, std::string_view aad) const {
     // 1. Generate 12-byte random IV
     std::array<uint8_t, kIvSize> iv{};
     if (RAND_bytes(iv.data(), static_cast<int>(iv.size())) != 1) {
@@ -108,8 +106,7 @@ std::vector<uint8_t> MfaSecretProtector::encrypt(std::span<const uint8_t> plaint
 
     int out_len = 0;
     if (!aad.empty()) {
-        if (EVP_EncryptUpdate(ctx.get(), nullptr, &out_len,
-                              reinterpret_cast<const uint8_t*>(aad.data()),
+        if (EVP_EncryptUpdate(ctx.get(), nullptr, &out_len, reinterpret_cast<const uint8_t*>(aad.data()),
                               static_cast<int>(aad.size())) != 1) {
             throw std::runtime_error("MfaSecretProtector: failed to process AAD");
         }
@@ -173,8 +170,7 @@ std::vector<uint8_t> MfaSecretProtector::decrypt(std::span<const uint8_t> encryp
 
     int out_len = 0;
     if (!aad.empty()) {
-        if (EVP_DecryptUpdate(ctx.get(), nullptr, &out_len,
-                              reinterpret_cast<const uint8_t*>(aad.data()),
+        if (EVP_DecryptUpdate(ctx.get(), nullptr, &out_len, reinterpret_cast<const uint8_t*>(aad.data()),
                               static_cast<int>(aad.size())) != 1) {
             throw std::runtime_error("MfaSecretProtector: failed to process AAD");
         }

@@ -81,9 +81,8 @@ std::string RecoveryCodeGenerator::hash_code(std::string_view code) {
     return oss.str();
 }
 
-std::optional<size_t> RecoveryCodeGenerator::verify_and_consume(
-    std::string_view raw_code,
-    const std::vector<std::string>& hashed_codes_pool) {
+std::optional<size_t> RecoveryCodeGenerator::verify_and_consume(std::string_view raw_code,
+                                                                const std::vector<std::string>& hashed_codes_pool) {
     if (raw_code.empty() || hashed_codes_pool.empty()) {
         return std::nullopt;
     }

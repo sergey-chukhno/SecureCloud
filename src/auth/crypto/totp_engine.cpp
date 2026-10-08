@@ -95,10 +95,9 @@ std::string TotpEngine::compute_code(std::span<const uint8_t> secret, uint64_t t
 
     // 4. Dynamic Truncation (RFC 4226 §5.4)
     const uint8_t offset = hash[hash_len - 1] & 0x0F;
-    const uint32_t binary_code = (static_cast<uint32_t>(hash[offset] & 0x7F) << 24) |
-                                 (static_cast<uint32_t>(hash[offset + 1] & 0xFF) << 16) |
-                                 (static_cast<uint32_t>(hash[offset + 2] & 0xFF) << 8) |
-                                 static_cast<uint32_t>(hash[offset + 3] & 0xFF);
+    const uint32_t binary_code =
+        (static_cast<uint32_t>(hash[offset] & 0x7F) << 24) | (static_cast<uint32_t>(hash[offset + 1] & 0xFF) << 16) |
+        (static_cast<uint32_t>(hash[offset + 2] & 0xFF) << 8) | static_cast<uint32_t>(hash[offset + 3] & 0xFF);
 
     // 5. Modulo 10^digits and format with leading zeros
     const uint32_t modulo = power_of_ten(config_.digits);
@@ -110,7 +109,7 @@ std::string TotpEngine::compute_code(std::span<const uint8_t> secret, uint64_t t
 }
 
 TotpVerificationResult TotpEngine::verify_code(std::span<const uint8_t> secret, std::string_view code,
-                                              uint64_t timestamp_seconds) const {
+                                               uint64_t timestamp_seconds) const {
     // Sanitize user code (remove any accidental whitespace)
     std::string clean_code;
     clean_code.reserve(code.size());

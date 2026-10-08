@@ -135,12 +135,12 @@ class AuthMfaIntegrationTest : public ::testing::Test {
         totp_engine_ = std::make_shared<crypto::TotpEngine>();
         authenticator_ = std::make_shared<service::TotpAuthenticator>(totp_engine_, secret_protector_);
 
-        mfa_manager_ = std::make_shared<service::MfaManager>(
-            mfa_repo_, session_repo_, user_repo_, authenticator_, totp_engine_, secret_protector_, audit_publisher_);
+        mfa_manager_ = std::make_shared<service::MfaManager>(mfa_repo_, session_repo_, user_repo_, authenticator_,
+                                                             totp_engine_, secret_protector_, audit_publisher_);
     }
 
-    std::unique_ptr<service::AuthServiceImpl> create_auth_service(
-        std::shared_ptr<service::IMfaManager> custom_mfa_mgr = nullptr) {
+    std::unique_ptr<service::AuthServiceImpl>
+    create_auth_service(std::shared_ptr<service::IMfaManager> custom_mfa_mgr = nullptr) {
         auto verifier = std::make_shared<service::CredentialVerifier>(user_repo_, hasher_);
         auto session_mgr = std::make_shared<service::SessionManager>(session_repo_, device_repo_,
                                                                      std::chrono::hours(24), audit_publisher_);
@@ -364,7 +364,8 @@ TEST_F(AuthMfaIntegrationTest, ThreeAttemptLockoutProtection) {
     // 6. Attempt 4: Even with correct TOTP code -> PERMISSION_DENIED (Locked out)
     {
         now_sec = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count());
         auto valid_code = totp_engine_->compute_code(*raw_secret, now_sec);
 
         grpc::ServerContext ctx;
@@ -581,7 +582,8 @@ TEST_F(AuthMfaIntegrationTest, DurabilityAcrossServiceRestart) {
         auto raw_secret = crypto::Base32::decode(secret_str);
         ASSERT_TRUE(raw_secret.has_value());
         auto now_sec = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count());
         auto enrollment_code = totp_engine_->compute_code(*raw_secret, now_sec);
 
         grpc::ServerContext confirm_ctx;
@@ -612,7 +614,8 @@ TEST_F(AuthMfaIntegrationTest, DurabilityAcrossServiceRestart) {
         auto raw_secret = crypto::Base32::decode(secret_str);
         ASSERT_TRUE(raw_secret.has_value());
         auto now_sec = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+            std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count());
         auto challenge_code = totp_engine_->compute_code(*raw_secret, now_sec);
 
         grpc::ServerContext challenge_ctx;

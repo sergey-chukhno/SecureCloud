@@ -13,8 +13,8 @@ namespace securecloud::auth::crypto {
  * @brief Supported HMAC hash algorithms for TOTP per RFC 6238.
  */
 enum class TotpHashAlgorithm {
-    Sha1,   ///< RFC 6238 default, universally supported by Google Authenticator / 1Password
-    Sha256  ///< Higher collision resistance
+    Sha1,  ///< RFC 6238 default, universally supported by Google Authenticator / 1Password
+    Sha256 ///< Higher collision resistance
 };
 
 /**
@@ -71,9 +71,8 @@ class TotpEngine {
      * @param timestamp_seconds Current Unix epoch timestamp in seconds.
      * @return Verification result indicating validity and the matched time step.
      */
-    [[nodiscard]] TotpVerificationResult verify_code(std::span<const uint8_t> secret,
-                                                    std::string_view code,
-                                                    uint64_t timestamp_seconds) const;
+    [[nodiscard]] TotpVerificationResult verify_code(std::span<const uint8_t> secret, std::string_view code,
+                                                     uint64_t timestamp_seconds) const;
 
     /**
      * @brief Formats a standard otpauth:// URI for rendering as a QR code in client authenticators.
@@ -82,9 +81,8 @@ class TotpEngine {
      * @param base32_secret Base32-encoded secret string.
      * @return Fully formatted and URL-encoded otpauth://totp/ URI.
      */
-    [[nodiscard]] std::string generate_otpauth_uri(std::string_view issuer,
-                                                  std::string_view account_name,
-                                                  std::string_view base32_secret) const;
+    [[nodiscard]] std::string generate_otpauth_uri(std::string_view issuer, std::string_view account_name,
+                                                   std::string_view base32_secret) const;
 
     [[nodiscard]] const TotpConfig& config() const noexcept { return config_; }
 

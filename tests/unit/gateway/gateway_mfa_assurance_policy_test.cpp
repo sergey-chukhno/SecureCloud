@@ -112,8 +112,7 @@ TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_Unauthenticated_RejectsWith
 // ============================================================================
 
 TEST_F(GatewayMfaAssurancePolicyTest, StandardRoute_PrimaryOnlyToken_AllowsAccess) {
-    auto ctx = make_context("usr-1", "dev-1",
-                            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
+    auto ctx = make_context("usr-1", "dev-1", securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
                             {"user:profile"});
 
     RequestContext req_ctx("req-std-1", "127.0.0.1", 1000, ctx);
@@ -135,8 +134,7 @@ TEST_F(GatewayMfaAssurancePolicyTest, StandardRoute_PrimaryOnlyToken_AllowsAcces
 // ============================================================================
 
 TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_MfaDisable_PrimaryOnlyToken_RejectsWith403) {
-    auto ctx = make_context("usr-1", "dev-1",
-                            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    auto ctx = make_context("usr-1", "dev-1", securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
 
     RequestContext req_ctx("req-mfa-dis", "127.0.0.1", 1000, ctx);
     ScopedRequestContext scoped_ctx(req_ctx);
@@ -158,8 +156,7 @@ TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_MfaDisable_PrimaryOnlyToken
 }
 
 TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_DevicesRevoke_PrimaryOnlyToken_RejectsWith403) {
-    auto ctx = make_context("usr-1", "dev-1",
-                            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    auto ctx = make_context("usr-1", "dev-1", securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
 
     RequestContext req_ctx("req-dev-rev", "127.0.0.1", 1000, ctx);
     ScopedRequestContext scoped_ctx(req_ctx);
@@ -179,8 +176,7 @@ TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_DevicesRevoke_PrimaryOnlyTo
 }
 
 TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_UserDelete_PrimaryOnlyToken_RejectsWith403) {
-    auto ctx = make_context("usr-1", "dev-1",
-                            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    auto ctx = make_context("usr-1", "dev-1", securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
 
     RequestContext req_ctx("req-usr-del", "127.0.0.1", 1000, ctx);
     ScopedRequestContext scoped_ctx(req_ctx);
@@ -200,8 +196,7 @@ TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_UserDelete_PrimaryOnlyToken
 }
 
 TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_AdminEndpoint_PrimaryOnlyToken_RejectsWith403) {
-    auto ctx = make_context("usr-1", "dev-1",
-                            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    auto ctx = make_context("usr-1", "dev-1", securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
 
     RequestContext req_ctx("req-admin", "127.0.0.1", 1000, ctx);
     ScopedRequestContext scoped_ctx(req_ctx);
@@ -225,8 +220,8 @@ TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_AdminEndpoint_PrimaryOnlyTo
 // ============================================================================
 
 TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_MfaDisable_MfaVerifiedToken_AllowsAccess) {
-    auto ctx = make_context("usr-1", "dev-1",
-                            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    auto ctx =
+        make_context("usr-1", "dev-1", securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
 
     RequestContext req_ctx("req-mfa-ok", "127.0.0.1", 1000, ctx);
     ScopedRequestContext scoped_ctx(req_ctx);
@@ -243,8 +238,8 @@ TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_MfaDisable_MfaVerifiedToken
 }
 
 TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_DevicesRevoke_MfaVerifiedToken_AllowsAccess) {
-    auto ctx = make_context("usr-1", "dev-1",
-                            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    auto ctx =
+        make_context("usr-1", "dev-1", securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
 
     RequestContext req_ctx("req-rev-ok", "127.0.0.1", 1000, ctx);
     ScopedRequestContext scoped_ctx(req_ctx);
@@ -261,8 +256,8 @@ TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_DevicesRevoke_MfaVerifiedTo
 }
 
 TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_UserDelete_MfaVerifiedToken_AllowsAccess) {
-    auto ctx = make_context("usr-1", "dev-1",
-                            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    auto ctx =
+        make_context("usr-1", "dev-1", securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
 
     RequestContext req_ctx("req-del-ok", "127.0.0.1", 1000, ctx);
     ScopedRequestContext scoped_ctx(req_ctx);
@@ -279,8 +274,8 @@ TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_UserDelete_MfaVerifiedToken
 }
 
 TEST_F(GatewayMfaAssurancePolicyTest, SensitiveRoute_AdminEndpoint_MfaVerifiedToken_AllowsAccess) {
-    auto ctx = make_context("usr-1", "dev-1",
-                            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    auto ctx =
+        make_context("usr-1", "dev-1", securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
 
     RequestContext req_ctx("req-adm-ok", "127.0.0.1", 1000, ctx);
     ScopedRequestContext scoped_ctx(req_ctx);
