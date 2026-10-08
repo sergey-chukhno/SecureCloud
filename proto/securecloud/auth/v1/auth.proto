@@ -12,6 +12,7 @@ enum DeviceStatus {
     DEVICE_STATUS_UNSPECIFIED = 0;
     DEVICE_STATUS_ACTIVE = 1;
     DEVICE_STATUS_REVOKED = 2;
+    DEVICE_STATUS_PENDING_AUTHORIZATION = 3;
 }
 
 enum AuthenticationLevel {
@@ -190,6 +191,32 @@ message RegisterDeviceResponse {
     string device_id = 1;
     DeviceStatus status = 2;
     int64 registered_at_epoch_ms = 3;
+    string pairing_code = 4;
+    int64 pairing_code_expires_at_epoch_ms = 5;
+}
+
+// InitiateDevicePairing creates or refreshes an 8-character pairing challenge.
+message InitiateDevicePairingRequest {
+    string user_id = 1;
+    string device_id = 2;
+}
+
+message InitiateDevicePairingResponse {
+    string pairing_code = 1;
+    int64 expires_at_epoch_ms = 2;
+}
+
+// AuthorizeDevice validates the pairing challenge PIN or accepts MFA-verified caller.
+message AuthorizeDeviceRequest {
+    string user_id = 1;
+    string device_id = 2;
+    string pairing_code = 3;
+}
+
+message AuthorizeDeviceResponse {
+    bool authorized = 1;
+    DeviceStatus status = 2;
+    int64 authorized_at_epoch_ms = 3;
 }
 
 // RevokeDevice revokes a device, invalidating all associated sessions.
@@ -301,6 +328,8 @@ service AuthService {
     rpc ListUserDevices(ListUserDevicesRequest) returns (ListUserDevicesResponse);
 
     rpc RegisterDevice(RegisterDeviceRequest) returns (RegisterDeviceResponse);
+    rpc InitiateDevicePairing(InitiateDevicePairingRequest) returns (InitiateDevicePairingResponse);
+    rpc AuthorizeDevice(AuthorizeDeviceRequest) returns (AuthorizeDeviceResponse);
     rpc RevokeDevice(RevokeDeviceRequest) returns (RevokeDeviceResponse);
 
     rpc GetDeviceCryptoDirectory(GetDeviceCryptoDirectoryRequest) returns (GetDeviceCryptoDirectoryResponse);
