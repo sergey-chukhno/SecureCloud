@@ -20,7 +20,14 @@ enum class AuditEventType {
     SessionExpiredAttempt,
     SessionRevokedAttempt,
     TokenRefreshed,
-    TokenReuseDetected
+    TokenReuseDetected,
+    MfaEnrollmentInitiated,
+    MfaEnrollmentConfirmed,
+    MfaDisabled,
+    MfaChallengeCreated,
+    MfaChallengeSucceeded,
+    MfaChallengeFailed,
+    MfaRecoveryCodeUsed
 };
 
 [[nodiscard]] inline constexpr std::string_view to_string(AuditEventType type) noexcept {
@@ -41,6 +48,20 @@ enum class AuditEventType {
         return "auth.token.refreshed";
     case AuditEventType::TokenReuseDetected:
         return "auth.token.reuse_detected";
+    case AuditEventType::MfaEnrollmentInitiated:
+        return "auth.mfa.enrollment_initiated";
+    case AuditEventType::MfaEnrollmentConfirmed:
+        return "auth.mfa.enrollment_confirmed";
+    case AuditEventType::MfaDisabled:
+        return "auth.mfa.disabled";
+    case AuditEventType::MfaChallengeCreated:
+        return "auth.mfa.challenge_created";
+    case AuditEventType::MfaChallengeSucceeded:
+        return "auth.mfa.challenge_succeeded";
+    case AuditEventType::MfaChallengeFailed:
+        return "auth.mfa.challenge_failed";
+    case AuditEventType::MfaRecoveryCodeUsed:
+        return "auth.mfa.recovery_code_used";
     }
     return "auth.unknown";
 }
@@ -215,6 +236,85 @@ struct AuditEvent {
         ev.session_id = session_id;
         ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
         ev.failure_reason = "Compromised refresh token reuse detected; session revoked";
+        return ev;
+    }
+
+    static AuditEvent mfa_enrollment_initiated(const Uuid& user_id, std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::MfaEnrollmentInitiated;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent mfa_enrollment_confirmed(const Uuid& user_id, std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::MfaEnrollmentConfirmed;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent mfa_disabled(const Uuid& user_id, std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::MfaDisabled;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent mfa_challenge_created(const Uuid& user_id, const Uuid& session_id,
+                                            std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::MfaChallengeCreated;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.session_id = session_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent mfa_challenge_succeeded(const Uuid& user_id, const Uuid& session_id,
+                                              std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::MfaChallengeSucceeded;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.session_id = session_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent mfa_challenge_failed(const Uuid& user_id, const Uuid& session_id, std::string_view failure_reason,
+                                           std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::MfaChallengeFailed;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.session_id = session_id;
+        ev.failure_reason = std::string(failure_reason);
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent mfa_recovery_code_used(const Uuid& user_id, const Uuid& session_id,
+                                             std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::MfaRecoveryCodeUsed;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.session_id = session_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
         return ev;
     }
 };

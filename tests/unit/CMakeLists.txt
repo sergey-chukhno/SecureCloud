@@ -562,6 +562,69 @@ target_link_libraries(securecloud_auth_service_token_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_service_token_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth RFC 6238 TOTP Engine, Base32 Codec & MFA Secret Protector Test Suite (AUTH-006-T01)
+add_executable(securecloud_auth_totp_engine_test
+        auth/totp_engine_test.cpp
+)
+
+target_link_libraries(securecloud_auth_totp_engine_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_totp_engine_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth MFA Authenticator Abstraction & Recovery Code Test Suite (AUTH-006-T02)
+add_executable(securecloud_auth_mfa_authenticator_test
+        auth/mfa_authenticator_test.cpp
+)
+
+target_link_libraries(securecloud_auth_mfa_authenticator_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_mfa_authenticator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth MFA Stateful Lifecycle & Challenge Management Engine Test Suite (AUTH-006-T03)
+add_executable(securecloud_auth_mfa_manager_test
+        auth/mfa_manager_test.cpp
+)
+
+target_link_libraries(securecloud_auth_mfa_manager_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_mfa_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Service MFA Step-Up & VerifyMfaChallenge RPC Test Suite (AUTH-006-T04)
+add_executable(securecloud_auth_service_mfa_test
+        auth/auth_service_mfa_test.cpp
+)
+
+target_link_libraries(securecloud_auth_service_mfa_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud_proto
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_service_mfa_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp
@@ -830,6 +893,22 @@ target_link_libraries(securecloud_authorization_middleware_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_authorization_middleware_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway MFA Assurance Policy Unit Test Suite (AUTH-006-T05)
+add_executable(securecloud_gateway_mfa_assurance_policy_test
+    gateway/gateway_mfa_assurance_policy_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_mfa_assurance_policy_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_mfa_assurance_policy_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Gateway Error Mapper & RFC 7807 Problem Details Test (GW-008-T01)
 add_executable(securecloud_gateway_error_mapper_test

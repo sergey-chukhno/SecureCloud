@@ -12,9 +12,15 @@ add_library(securecloud_auth_config STATIC
         repository/mfa_repository.cpp
         crypto/argon2id_hasher.cpp
         crypto/token_crypto.cpp
+        crypto/base32.cpp
+        crypto/totp_engine.cpp
+        crypto/mfa_secret_protector.cpp
+        crypto/recovery_code_generator.cpp
         service/credential_verifier.cpp
         service/session_manager.cpp
         service/token_manager.cpp
+        service/totp_authenticator.cpp
+        service/mfa_manager.cpp
         service/audit_event_publisher.cpp
         service/auth_service_impl.cpp
 )
