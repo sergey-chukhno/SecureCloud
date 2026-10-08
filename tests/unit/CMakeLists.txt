@@ -640,6 +640,22 @@ target_link_libraries(securecloud_auth_device_domain_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_device_domain_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Device Manager Test Suite (AUTH-007-T02)
+add_executable(securecloud_auth_device_manager_test
+        auth/device_manager_test.cpp
+)
+
+target_link_libraries(securecloud_auth_device_manager_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_device_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp
