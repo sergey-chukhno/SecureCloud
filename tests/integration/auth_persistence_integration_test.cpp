@@ -120,11 +120,11 @@ TEST(AuthPersistencePreflightTest, StrictPort5432Protection) {
 // ============================================================================
 
 TEST_F(AuthPersistenceIntegrationTest, MigrationRunnerAppliesAllMigrationsAndIsIdempotent) {
-    // Re-running run_migrations must detect that all 3 migrations are already applied and return 0
+    // Re-running run_migrations must detect that all 4 migrations are already applied and return 0
     db::MigrationRunner runner(*pool_);
     auto result = runner.run_migrations();
     EXPECT_EQ(result.migrations_applied, 0) << "MigrationRunner must be idempotent when re-run on current schema";
-    EXPECT_EQ(result.current_version, 3);
+    EXPECT_EQ(result.current_version, 4);
 }
 
 // ============================================================================

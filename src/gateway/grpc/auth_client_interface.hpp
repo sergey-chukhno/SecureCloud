@@ -34,6 +34,9 @@ class IAuthClient {
     virtual Result<securecloud::auth::v1::GetDeviceCryptoDirectoryResponse>
     get_device_crypto_directory(const securecloud::auth::v1::GetDeviceCryptoDirectoryRequest& req,
                                 ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::UpdateCryptoPrekeysResponse>
+    update_crypto_prekeys(const securecloud::auth::v1::UpdateCryptoPrekeysRequest& req, ClientCallContext& ctx) = 0;
 };
 
 } // namespace securecloud::gateway::grpc

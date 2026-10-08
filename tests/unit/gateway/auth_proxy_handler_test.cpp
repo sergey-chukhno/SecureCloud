@@ -60,6 +60,12 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::GetDeviceCryptoDirectoryRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::UpdateCryptoPrekeysResponse>,
+                update_crypto_prekeys,
+                (const securecloud::auth::v1::UpdateCryptoPrekeysRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 class AuthProxyHandlerTest : public ::testing::Test {
@@ -574,7 +580,245 @@ TEST_F(AuthProxyHandlerTest, RegisterRoutesRegistersAllAuthRoutes) {
     // POST /api/v1/auth/revoke
     // GET /api/v1/users/me
     // POST /api/v1/devices
-    EXPECT_EQ(router.route_count(), 5);
+    // GET /api/v1/users/:user_id/devices/crypto-directory
+    // GET /api/v1/devices/:device_id/crypto-identity
+    // POST /api/v1/devices/:device_id/prekeys
+    EXPECT_EQ(router.route_count(), 8);
+}
+
+TEST_F(AuthProxyHandlerTest, GetDeviceCryptoDirectorySuccess) {
+    httplib::Request req;
+    req.path_params["user_id"] = "user-target";
+
+    AuthenticatedContext ctx("user-dave", "dev-dave", "sess-dave",
+                             securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {},
+                             2000000000000LL);
+
+    securecloud::auth::v1::GetDeviceCryptoDirectoryResponse dir_resp;
+    auto* rec = dir_resp.add_devices();
+    rec->set_device_id("dev-target-1");
+    rec->set_identity_key("key-bytes-1");
+    rec->set_signed_prekey("spk-bytes-1");
+    rec->set_signed_prekey_signature("spk-sig-1");
+    rec->set_one_time_prekey("otk-bytes-1");
+    rec->set_one_time_prekey_id("otk-uuid-1");
+    rec->set_status(securecloud::auth::v1::DeviceStatus::DEVICE_STATUS_ACTIVE);
+    rec->set_identity_key_fingerprint("fp-target-1");
+    rec->set_signed_prekey_created_at_epoch_ms(1700000000000LL);
+    rec->set_remaining_one_time_prekeys(99);
+
+    EXPECT_CALL(*mock_client_, get_device_crypto_directory(_, _))
+        .WillOnce([&dir_resp](const securecloud::auth::v1::GetDeviceCryptoDirectoryRequest& r,
+                              securecloud::gateway::grpc::ClientCallContext& /*call_ctx*/) {
+            EXPECT_EQ(r.user_id(), "user-target");
+            return securecloud::gateway::grpc::Result<securecloud::auth::v1::GetDeviceCryptoDirectoryResponse>(
+                dir_resp);
+        });
+
+    httplib::Response res;
+    handler_->handle_get_device_crypto_directory(req, res, ctx);
+
+    EXPECT_EQ(res.status, 200);
+    auto body = nlohmann::json::parse(res.body);
+    EXPECT_EQ(body["user_id"], "user-target");
+    ASSERT_EQ(body["devices"].size(), 1);
+    EXPECT_EQ(body["devices"][0]["device_id"], "dev-target-1");
+    EXPECT_EQ(body["devices"][0]["one_time_prekey"], "otk-bytes-1");
+    EXPECT_EQ(body["devices"][0]["remaining_one_time_prekeys"], 99);
+}
+
+TEST_F(AuthProxyHandlerTest, GetDeviceCryptoDirectoryWithFilterParams) {
+    httplib::Request req;
+    req.path_params["user_id"] = "user-target";
+    req.params = {{"device_ids", "dev-1,dev-2"}};
+
+    AuthenticatedContext ctx("user-dave", "dev-dave", "sess-dave",
+                             securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {},
+                             2000000000000LL);
+
+    EXPECT_CALL(*mock_client_, get_device_crypto_directory(_, _))
+        .WillOnce([](const securecloud::auth::v1::GetDeviceCryptoDirectoryRequest& r,
+                     securecloud::gateway::grpc::ClientCallContext& /*call_ctx*/) {
+            EXPECT_EQ(r.user_id(), "user-target");
+            EXPECT_EQ(r.device_ids_size(), 2);
+            EXPECT_EQ(r.device_ids(0), "dev-1");
+            EXPECT_EQ(r.device_ids(1), "dev-2");
+            securecloud::auth::v1::GetDeviceCryptoDirectoryResponse resp;
+            return securecloud::gateway::grpc::Result<securecloud::auth::v1::GetDeviceCryptoDirectoryResponse>(resp);
+        });
+
+    httplib::Response res;
+    handler_->handle_get_device_crypto_directory(req, res, ctx);
+
+    EXPECT_EQ(res.status, 200);
+}
+
+TEST_F(AuthProxyHandlerTest, GetCryptoIdentitySuccess) {
+    httplib::Request req;
+    req.path_params["device_id"] = "dev-target";
+
+    AuthenticatedContext ctx("user-dave", "dev-dave", "sess-dave",
+                             securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {},
+                             2000000000000LL);
+
+    securecloud::auth::v1::GetCryptoIdentityResponse ident_resp;
+    ident_resp.set_device_id("dev-target");
+    ident_resp.set_user_id("user-target");
+    ident_resp.set_identity_key("ik-bytes");
+    ident_resp.set_signed_prekey("spk-bytes");
+    ident_resp.set_signed_prekey_signature("sig-bytes");
+    ident_resp.set_status(securecloud::auth::v1::DeviceStatus::DEVICE_STATUS_ACTIVE);
+    ident_resp.set_identity_key_fingerprint("fp-ik");
+    ident_resp.set_signed_prekey_created_at_epoch_ms(1710000000000LL);
+
+    EXPECT_CALL(*mock_client_, get_crypto_identity(_, _))
+        .WillOnce([&ident_resp](const securecloud::auth::v1::GetCryptoIdentityRequest& r,
+                                securecloud::gateway::grpc::ClientCallContext& /*call_ctx*/) {
+            EXPECT_EQ(r.device_id(), "dev-target");
+            return securecloud::gateway::grpc::Result<securecloud::auth::v1::GetCryptoIdentityResponse>(ident_resp);
+        });
+
+    httplib::Response res;
+    handler_->handle_get_crypto_identity(req, res, ctx);
+
+    EXPECT_EQ(res.status, 200);
+    auto body = nlohmann::json::parse(res.body);
+    EXPECT_EQ(body["device_id"], "dev-target");
+    EXPECT_EQ(body["user_id"], "user-target");
+    EXPECT_EQ(body["identity_key_fingerprint"], "fp-ik");
+}
+
+TEST_F(AuthProxyHandlerTest, GetCryptoIdentityNotFoundReturns404) {
+    httplib::Request req;
+    req.path_params["device_id"] = "dev-nonexistent";
+
+    AuthenticatedContext ctx("user-dave", "dev-dave", "sess-dave",
+                             securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {},
+                             2000000000000LL);
+
+    EXPECT_CALL(*mock_client_, get_crypto_identity(_, _))
+        .WillOnce([](const securecloud::auth::v1::GetCryptoIdentityRequest& /*r*/,
+                     securecloud::gateway::grpc::ClientCallContext& /*call_ctx*/) {
+            return securecloud::gateway::grpc::Result<securecloud::auth::v1::GetCryptoIdentityResponse>(
+                securecloud::gateway::grpc::DependencyError{
+                    .kind = securecloud::gateway::grpc::DependencyErrorKind::NotFound,
+                    .message = "Device not found",
+                    .grpc_code = ::grpc::StatusCode::NOT_FOUND,
+                });
+        });
+
+    httplib::Response res;
+    handler_->handle_get_crypto_identity(req, res, ctx);
+
+    EXPECT_EQ(res.status, 404);
+    auto body = nlohmann::json::parse(res.body);
+    EXPECT_EQ(body["error"]["code"], "NOT_FOUND");
+}
+
+TEST_F(AuthProxyHandlerTest, UpdateCryptoPrekeysSuccess) {
+    httplib::Request req;
+    req.path_params["device_id"] = "dev-dave";
+    req.body =
+        nlohmann::json{
+            {"signed_prekey", "new-spk"},
+            {"signed_prekey_signature", "new-sig"},
+            {"one_time_prekeys", {"otk-new"}},
+        }
+            .dump();
+
+    AuthenticatedContext ctx("user-dave", "dev-dave", "sess-dave",
+                             securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {},
+                             2000000000000LL);
+
+    securecloud::auth::v1::UpdateCryptoPrekeysResponse upd_resp;
+    upd_resp.set_active_one_time_prekey_count(20);
+    upd_resp.set_updated_at_epoch_ms(1720000000000LL);
+
+    EXPECT_CALL(*mock_client_, update_crypto_prekeys(_, _))
+        .WillOnce([&upd_resp](const securecloud::auth::v1::UpdateCryptoPrekeysRequest& r,
+                              securecloud::gateway::grpc::ClientCallContext& /*call_ctx*/) {
+            EXPECT_EQ(r.device_id(), "dev-dave");
+            EXPECT_EQ(r.signed_prekey(), "new-spk");
+            EXPECT_EQ(r.signed_prekey_signature(), "new-sig");
+            EXPECT_EQ(r.one_time_prekeys_size(), 1);
+            EXPECT_EQ(r.one_time_prekeys(0), "otk-new");
+            return securecloud::gateway::grpc::Result<securecloud::auth::v1::UpdateCryptoPrekeysResponse>(upd_resp);
+        });
+
+    httplib::Response res;
+    handler_->handle_update_crypto_prekeys(req, res, ctx);
+
+    EXPECT_EQ(res.status, 200);
+    auto body = nlohmann::json::parse(res.body);
+    EXPECT_EQ(body["device_id"], "dev-dave");
+    EXPECT_EQ(body["active_one_time_prekey_count"], 20);
+    EXPECT_EQ(body["updated_at_epoch_ms"], 1720000000000LL);
+}
+
+TEST_F(AuthProxyHandlerTest, UpdateCryptoPrekeysMismatchedDeviceReturns403) {
+    httplib::Request req;
+    req.path_params["device_id"] = "dev-other";
+    req.body = R"({"signed_prekey":"spk","signed_prekey_signature":"sig"})";
+
+    AuthenticatedContext ctx("user-dave", "dev-dave", "sess-dave",
+                             securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {},
+                             2000000000000LL);
+
+    EXPECT_CALL(*mock_client_, update_crypto_prekeys(_, _)).Times(0);
+
+    httplib::Response res;
+    handler_->handle_update_crypto_prekeys(req, res, ctx);
+
+    EXPECT_EQ(res.status, 403);
+    auto body = nlohmann::json::parse(res.body);
+    EXPECT_EQ(body["error"]["code"], "DEVICE_MISMATCH");
+}
+
+TEST_F(AuthProxyHandlerTest, UpdateCryptoPrekeysMalformedJsonReturns400) {
+    httplib::Request req;
+    req.path_params["device_id"] = "dev-dave";
+    req.body = "not-a-{json";
+
+    AuthenticatedContext ctx("user-dave", "dev-dave", "sess-dave",
+                             securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {},
+                             2000000000000LL);
+
+    EXPECT_CALL(*mock_client_, update_crypto_prekeys(_, _)).Times(0);
+
+    httplib::Response res;
+    handler_->handle_update_crypto_prekeys(req, res, ctx);
+
+    EXPECT_EQ(res.status, 400);
+    auto body = nlohmann::json::parse(res.body);
+    EXPECT_EQ(body["error"]["code"], "BAD_REQUEST");
+}
+
+TEST_F(AuthProxyHandlerTest, UpdateCryptoPrekeysDownstreamPermissionDeniedReturns403) {
+    httplib::Request req;
+    req.path_params["device_id"] = "dev-dave";
+    req.body = R"({"signed_prekey":"bad-spk","signed_prekey_signature":"bad-sig"})";
+
+    AuthenticatedContext ctx("user-dave", "dev-dave", "sess-dave",
+                             securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {},
+                             2000000000000LL);
+
+    EXPECT_CALL(*mock_client_, update_crypto_prekeys(_, _))
+        .WillOnce([](const securecloud::auth::v1::UpdateCryptoPrekeysRequest& /*r*/,
+                     securecloud::gateway::grpc::ClientCallContext& /*call_ctx*/) {
+            return securecloud::gateway::grpc::Result<securecloud::auth::v1::UpdateCryptoPrekeysResponse>(
+                securecloud::gateway::grpc::DependencyError{
+                    .kind = securecloud::gateway::grpc::DependencyErrorKind::PermissionDenied,
+                    .message = "Signature verification failed",
+                    .grpc_code = ::grpc::StatusCode::PERMISSION_DENIED,
+                });
+        });
+
+    httplib::Response res;
+    handler_->handle_update_crypto_prekeys(req, res, ctx);
+
+    EXPECT_EQ(res.status, 403);
+    auto body = nlohmann::json::parse(res.body);
+    EXPECT_EQ(body["error"]["code"], "PERMISSION_DENIED");
 }
 
 } // namespace

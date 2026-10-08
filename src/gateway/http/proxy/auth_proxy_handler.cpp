@@ -98,6 +98,20 @@ void AuthProxyHandler::register_routes(Router& router) {
     router.post_authenticated("/api/v1/devices",
                               [this](const httplib::Request& req, httplib::Response& res,
                                      const AuthenticatedContext& ctx) { handle_register_device(req, res, ctx); });
+
+    router.get_authenticated(
+        "/api/v1/users/:user_id/devices/crypto-directory",
+        [this](const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx) {
+            handle_get_device_crypto_directory(req, res, ctx);
+        });
+
+    router.get_authenticated("/api/v1/devices/:device_id/crypto-identity",
+                             [this](const httplib::Request& req, httplib::Response& res,
+                                    const AuthenticatedContext& ctx) { handle_get_crypto_identity(req, res, ctx); });
+
+    router.post_authenticated("/api/v1/devices/:device_id/prekeys",
+                              [this](const httplib::Request& req, httplib::Response& res,
+                                     const AuthenticatedContext& ctx) { handle_update_crypto_prekeys(req, res, ctx); });
 }
 
 std::string AuthProxyHandler::extract_request_id(const httplib::Request& req) {
@@ -537,6 +551,304 @@ void AuthProxyHandler::handle_register_device(const httplib::Request& req, httpl
                                {"registered_at_epoch_ms", val.registered_at_epoch_ms()}};
 
     res.status = 201;
+    res.set_content(res_json.dump(), k_content_type_json);
+}
+
+void AuthProxyHandler::handle_get_device_crypto_directory(const httplib::Request& req, httplib::Response& res,
+                                                          const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
+    const std::string request_id = extract_request_id(req);
+
+    auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
+    if (!bulkhead_lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
+        return;
+    }
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    if (ctx.user_id().empty()) {
+        ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
+        return;
+    }
+
+    std::string user_id = Router::get_path_param(req, "user_id");
+    if (user_id.empty()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing user_id path parameter", request_id);
+        return;
+    }
+
+    securecloud::auth::v1::GetDeviceCryptoDirectoryRequest dir_req;
+    dir_req.set_user_id(user_id);
+
+    if (req.has_param("device_ids")) {
+        std::string raw_ids = req.get_param_value("device_ids");
+        size_t start = 0;
+        while (start < raw_ids.size()) {
+            size_t comma = raw_ids.find(',', start);
+            std::string id =
+                (comma == std::string::npos) ? raw_ids.substr(start) : raw_ids.substr(start, comma - start);
+            if (!id.empty()) {
+                dir_req.add_device_ids(id);
+            }
+            if (comma == std::string::npos)
+                break;
+            start = comma + 1;
+        }
+    }
+
+    auto rpc_res = retry_policy_->execute(
+        *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
+        [this, &dir_req, &request_id, &ctx](std::chrono::milliseconds budget) {
+            grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
+            call_ctx.add_metadata("x-user-id", ctx.user_id());
+            if (!ctx.device_id().empty()) {
+                call_ctx.add_metadata("x-device-id", ctx.device_id());
+            }
+            call_ctx.add_metadata("x-auth-level", ctx.is_mfa_verified() ? "mfa_verified" : "primary");
+            return auth_client_->get_device_crypto_directory(dir_req, call_ctx);
+        });
+
+    if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
+        const auto& err = rpc_res.error();
+        int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
+        std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
+        ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
+        return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
+    }
+
+    const auto& val = rpc_res.value();
+    nlohmann::json devices_json = nlohmann::json::array();
+    for (const auto& dev : val.devices()) {
+        nlohmann::json record = {
+            {"device_id", dev.device_id()},
+            {"identity_key", dev.identity_key()},
+            {"signed_prekey", dev.signed_prekey()},
+            {"signed_prekey_signature", dev.signed_prekey_signature()},
+            {"one_time_prekey", dev.one_time_prekey()},
+            {"one_time_prekey_id", dev.one_time_prekey_id()},
+            {"status", static_cast<int>(dev.status())},
+            {"identity_key_fingerprint", dev.identity_key_fingerprint()},
+            {"signed_prekey_created_at_epoch_ms", dev.signed_prekey_created_at_epoch_ms()},
+            {"remaining_one_time_prekeys", dev.remaining_one_time_prekeys()},
+        };
+        devices_json.push_back(std::move(record));
+    }
+
+    nlohmann::json res_json = {{"user_id", user_id}, {"devices", std::move(devices_json)}};
+
+    res.status = 200;
+    res.set_content(res_json.dump(), k_content_type_json);
+}
+
+void AuthProxyHandler::handle_get_crypto_identity(const httplib::Request& req, httplib::Response& res,
+                                                  const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
+    const std::string request_id = extract_request_id(req);
+
+    auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
+    if (!bulkhead_lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
+        return;
+    }
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    if (ctx.user_id().empty()) {
+        ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
+        return;
+    }
+
+    std::string device_id = Router::get_path_param(req, "device_id");
+    if (device_id.empty()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing device_id path parameter", request_id);
+        return;
+    }
+
+    securecloud::auth::v1::GetCryptoIdentityRequest ident_req;
+    ident_req.set_device_id(device_id);
+
+    auto rpc_res = retry_policy_->execute(
+        *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
+        [this, &ident_req, &request_id, &ctx](std::chrono::milliseconds budget) {
+            grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
+            call_ctx.add_metadata("x-user-id", ctx.user_id());
+            if (!ctx.device_id().empty()) {
+                call_ctx.add_metadata("x-device-id", ctx.device_id());
+            }
+            call_ctx.add_metadata("x-auth-level", ctx.is_mfa_verified() ? "mfa_verified" : "primary");
+            return auth_client_->get_crypto_identity(ident_req, call_ctx);
+        });
+
+    if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
+        const auto& err = rpc_res.error();
+        int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
+        std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
+        ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
+        return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
+    }
+
+    const auto& val = rpc_res.value();
+    nlohmann::json res_json = {
+        {"device_id", val.device_id()},
+        {"user_id", val.user_id()},
+        {"identity_key", val.identity_key()},
+        {"signed_prekey", val.signed_prekey()},
+        {"signed_prekey_signature", val.signed_prekey_signature()},
+        {"status", static_cast<int>(val.status())},
+        {"identity_key_fingerprint", val.identity_key_fingerprint()},
+        {"signed_prekey_created_at_epoch_ms", val.signed_prekey_created_at_epoch_ms()},
+    };
+
+    res.status = 200;
+    res.set_content(res_json.dump(), k_content_type_json);
+}
+
+void AuthProxyHandler::handle_update_crypto_prekeys(const httplib::Request& req, httplib::Response& res,
+                                                    const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
+    const std::string request_id = extract_request_id(req);
+
+    auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
+    if (!bulkhead_lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
+        return;
+    }
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    if (ctx.user_id().empty()) {
+        ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
+        return;
+    }
+
+    std::string device_id = Router::get_path_param(req, "device_id");
+    if (device_id.empty()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing device_id path parameter", request_id);
+        return;
+    }
+
+    if (!ctx.device_id().empty() && ctx.device_id() != device_id) {
+        ErrorMapper::write_error(res, 403, "DEVICE_MISMATCH",
+                                 "Caller device does not match target device for prekey update", request_id);
+        return;
+    }
+
+    nlohmann::json body;
+    try {
+        body = nlohmann::json::parse(req.body);
+    } catch (const nlohmann::json::exception&) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Malformed JSON request body", request_id);
+        return;
+    }
+
+    if (!body.is_object()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Request body must be a JSON object", request_id);
+        return;
+    }
+
+    securecloud::auth::v1::UpdateCryptoPrekeysRequest upd_req;
+    upd_req.set_device_id(device_id);
+
+    if (body.contains("signed_prekey") && body["signed_prekey"].is_string()) {
+        upd_req.set_signed_prekey(body["signed_prekey"].get<std::string>());
+    }
+    if (body.contains("signed_prekey_signature") && body["signed_prekey_signature"].is_string()) {
+        upd_req.set_signed_prekey_signature(body["signed_prekey_signature"].get<std::string>());
+    }
+    if (body.contains("one_time_prekeys") && body["one_time_prekeys"].is_array()) {
+        for (const auto& item : body["one_time_prekeys"]) {
+            if (item.is_string()) {
+                upd_req.add_one_time_prekeys(item.get<std::string>());
+            }
+        }
+    }
+
+    auto rpc_res = retry_policy_->execute(
+        *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
+        [this, &upd_req, &request_id, &ctx](std::chrono::milliseconds budget) {
+            grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
+            call_ctx.add_metadata("x-user-id", ctx.user_id());
+            if (!ctx.device_id().empty()) {
+                call_ctx.add_metadata("x-device-id", ctx.device_id());
+            }
+            call_ctx.add_metadata("x-auth-level", ctx.is_mfa_verified() ? "mfa_verified" : "primary");
+            return auth_client_->update_crypto_prekeys(upd_req, call_ctx);
+        });
+
+    if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
+        const auto& err = rpc_res.error();
+        int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
+        std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
+        ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
+        return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
+    }
+
+    const auto& val = rpc_res.value();
+    nlohmann::json res_json = {
+        {"device_id", device_id},
+        {"active_one_time_prekey_count", val.active_one_time_prekey_count()},
+        {"updated_at_epoch_ms", val.updated_at_epoch_ms()},
+    };
+
+    res.status = 200;
     res.set_content(res_json.dump(), k_content_type_json);
 }
 

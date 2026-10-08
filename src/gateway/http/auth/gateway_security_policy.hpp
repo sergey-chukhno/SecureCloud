@@ -3,6 +3,7 @@
 #include "http/auth/authenticated_context.hpp"
 #include "securecloud/auth/v1/auth.pb.h"
 
+#include <regex>
 #include <shared_mutex>
 #include <string>
 #include <string_view>
@@ -46,11 +47,11 @@ struct RouteSecurityRule {
 };
 
 /**
- * @brief Declarative perimeter security policy and route authorization rule engine.
+ * @brief Declaratively registers an authorization rule.
  *
  * Implements deterministic route authorization evaluation with:
- * - Precedence: Exact route match > Longest prefix match > Fail-closed default.
- * - Wildcard HTTP verbs ('*') supported for prefix and exact rules.
+ * - Precedence: Exact route match > Parameterized pattern match > Longest prefix match > Fail-closed default.
+ * - Wildcard HTTP verbs ('*') supported for prefix, parameterized, and exact rules.
  * - Thread-safe concurrent evaluation via shared mutex.
  * - Fail-closed: Any unmapped path automatically defaults to RouteAccess::Protected.
  */
@@ -71,7 +72,7 @@ class GatewaySecurityPolicy {
      * @brief Declaratively registers an authorization rule.
      *
      * @param method HTTP method (e.g. "GET", "POST", or "*" for any method).
-     * @param path_pattern Exact route path or prefix ending with wildcard suffix (e.g. prefix ending with slash-star).
+     * @param path_pattern Exact route path, parameterized pattern (:param or {param}), or wildcard prefix.
      * @param access Access category (Public, Protected, Sensitive).
      * @param required_scopes Optional list of required scopes (e.g. {"messages:write"}).
      * @param min_auth_level Minimum authentication assurance level.
@@ -105,10 +106,20 @@ class GatewaySecurityPolicy {
         RouteSecurityRule rule;
     };
 
+    struct ParameterizedRule {
+        std::string method;
+        std::string pattern;
+        std::regex regex;
+        RouteSecurityRule rule;
+    };
+
     mutable std::unique_ptr<std::shared_mutex> mutex_;
     std::unordered_map<std::string, RouteSecurityRule> exact_rules_;
     std::vector<PrefixRule> prefix_rules_;
+    std::vector<ParameterizedRule> parameterized_rules_;
 
+    [[nodiscard]] static bool is_parameterized_pattern(std::string_view path);
+    [[nodiscard]] static std::regex compile_pattern_regex(std::string_view path);
     [[nodiscard]] static std::string normalize_path(std::string_view raw_path);
     [[nodiscard]] static std::string make_exact_key(std::string_view method, std::string_view path);
 };

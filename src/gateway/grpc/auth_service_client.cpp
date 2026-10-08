@@ -128,4 +128,18 @@ AuthServiceClient::get_device_crypto_directory(const securecloud::auth::v1::GetD
     return resp;
 }
 
+Result<securecloud::auth::v1::UpdateCryptoPrekeysResponse>
+AuthServiceClient::update_crypto_prekeys(const securecloud::auth::v1::UpdateCryptoPrekeysRequest& req,
+                                         ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::UpdateCryptoPrekeysResponse resp;
+    auto status = stub_->UpdateCryptoPrekeys(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
 } // namespace securecloud::gateway::grpc
