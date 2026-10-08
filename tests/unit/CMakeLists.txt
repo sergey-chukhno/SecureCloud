@@ -974,6 +974,22 @@ target_link_libraries(securecloud_gateway_mfa_assurance_policy_test PRIVATE
 
 gtest_discover_tests(securecloud_gateway_mfa_assurance_policy_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Device Perimeter Assurance Policy Unit Test Suite (AUTH-007-T05)
+add_executable(securecloud_gateway_device_assurance_policy_test
+    gateway/gateway_device_assurance_policy_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_device_assurance_policy_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_device_assurance_policy_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Error Mapper & RFC 7807 Problem Details Test (GW-008-T01)
 add_executable(securecloud_gateway_error_mapper_test
     gateway/error_mapper_test.cpp

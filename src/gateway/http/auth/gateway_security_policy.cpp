@@ -73,6 +73,28 @@ GatewaySecurityPolicy GatewaySecurityPolicy::create_default() {
     policy.add_rule("*", "/api/v1/admin/*", RouteAccess::Sensitive, {},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
 
+    // Device lifecycle perimeter routes (AUTH-007-T05)
+    policy.add_rule("POST", "/api/v1/devices/register", RouteAccess::Sensitive, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    policy.add_rule("POST", "/api/v1/devices/authorize", RouteAccess::Sensitive, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    policy.add_rule("POST", "/api/v1/devices/revoke", RouteAccess::Sensitive, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    policy.add_rule("GET", "/api/v1/devices", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("GET", "/api/v1/devices/*", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+
+    // Auth service aliases for device lifecycle
+    policy.add_rule("POST", "/api/v1/auth/devices/register", RouteAccess::Sensitive, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    policy.add_rule("POST", "/api/v1/auth/devices/authorize", RouteAccess::Sensitive, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    policy.add_rule("GET", "/api/v1/auth/devices", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("GET", "/api/v1/auth/devices/*", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+
     // Auth microservice protected routes
     policy.add_rule("POST", "/api/v1/auth/revoke", RouteAccess::Protected, {"auth:revoke"},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {"access"});
