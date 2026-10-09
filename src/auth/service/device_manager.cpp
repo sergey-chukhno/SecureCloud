@@ -125,6 +125,7 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
         .created_at = now,
         .revoked_at = std::nullopt,
         .replaced_by_key_id = std::nullopt,
+        .signature = std::vector<uint8_t>(signature.begin(), signature.end()),
     };
     public_key_repo_->store_public_key(spk_entity);
 

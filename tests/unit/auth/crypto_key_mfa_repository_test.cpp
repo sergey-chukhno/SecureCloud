@@ -117,6 +117,111 @@ class InMemoryDevicePublicKeyRepository : public IDevicePublicKeyRepository {
         revoke_all_device_keys(device_id, revoked_at);
     }
 
+    [[nodiscard]] std::optional<DevicePublicKeyEntity> claim_one_time_prekey(const Uuid& device_id) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        DevicePublicKeyEntity* oldest = nullptr;
+        for (auto& [_, k] : keys_) {
+            if (k.device_id == device_id && k.key_type == KeyType::OneTimePrekey && k.key_status == KeyStatus::Active) {
+                if (!oldest || k.created_at < oldest->created_at) {
+                    oldest = &k;
+                }
+            }
+        }
+        if (!oldest) {
+            return std::nullopt;
+        }
+        oldest->key_status = KeyStatus::Claimed;
+        return *oldest;
+    }
+
+    [[nodiscard]] std::optional<DevicePublicKeyEntity> claim_one_time_prekey(const Uuid& device_id,
+                                                                             pqxx::transaction_base& /*tx*/) override {
+        return claim_one_time_prekey(device_id);
+    }
+
+    [[nodiscard]] int32_t count_active_one_time_prekeys(const Uuid& device_id) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        int32_t count = 0;
+        for (const auto& [_, k] : keys_) {
+            if (k.device_id == device_id && k.key_type == KeyType::OneTimePrekey && k.key_status == KeyStatus::Active) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    [[nodiscard]] int32_t count_active_one_time_prekeys(const Uuid& device_id,
+                                                        pqxx::transaction_base& /*tx*/) override {
+        return count_active_one_time_prekeys(device_id);
+    }
+
+    [[nodiscard]] std::optional<DevicePublicKeyEntity> find_active_identity_key(const Uuid& device_id) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        DevicePublicKeyEntity* newest = nullptr;
+        for (auto& [_, k] : keys_) {
+            if (k.device_id == device_id && k.key_type == KeyType::IdentitySigning &&
+                k.key_status == KeyStatus::Active) {
+                if (!newest || k.created_at > newest->created_at) {
+                    newest = &k;
+                }
+            }
+        }
+        if (!newest) {
+            return std::nullopt;
+        }
+        return *newest;
+    }
+
+    [[nodiscard]] std::optional<DevicePublicKeyEntity>
+    find_active_identity_key(const Uuid& device_id, pqxx::transaction_base& /*tx*/) override {
+        return find_active_identity_key(device_id);
+    }
+
+    [[nodiscard]] std::optional<DevicePublicKeyEntity> find_active_signed_prekey(const Uuid& device_id) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        DevicePublicKeyEntity* newest = nullptr;
+        for (auto& [_, k] : keys_) {
+            if (k.device_id == device_id && k.key_type == KeyType::SignedPrekey && k.key_status == KeyStatus::Active) {
+                if (!newest || k.created_at > newest->created_at) {
+                    newest = &k;
+                }
+            }
+        }
+        if (!newest) {
+            return std::nullopt;
+        }
+        return *newest;
+    }
+
+    [[nodiscard]] std::optional<DevicePublicKeyEntity>
+    find_active_signed_prekey(const Uuid& device_id, pqxx::transaction_base& /*tx*/) override {
+        return find_active_signed_prekey(device_id);
+    }
+
+    void store_one_time_prekeys(const Uuid& device_id, const std::vector<std::vector<uint8_t>>& keys) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto now = std::chrono::system_clock::now();
+        for (const auto& key_bytes : keys) {
+            DevicePublicKeyEntity otk{
+                .key_id = Uuid::generate_v7(),
+                .device_id = device_id,
+                .key_type = KeyType::OneTimePrekey,
+                .public_key = key_bytes,
+                .key_status = KeyStatus::Active,
+                .created_at = now,
+                .revoked_at = std::nullopt,
+                .replaced_by_key_id = std::nullopt,
+                .signature = std::nullopt,
+            };
+            keys_[otk.key_id] = otk;
+        }
+    }
+
+    void store_one_time_prekeys(const Uuid& device_id, const std::vector<std::vector<uint8_t>>& keys,
+                                pqxx::transaction_base& /*tx*/) override {
+        store_one_time_prekeys(device_id, keys);
+    }
+
   private:
     std::mutex mutex_;
     std::map<Uuid, DevicePublicKeyEntity> keys_;

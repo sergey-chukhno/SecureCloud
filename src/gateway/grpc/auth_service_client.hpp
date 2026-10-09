@@ -40,6 +40,10 @@ class AuthServiceClient : public IAuthClient {
     get_device_crypto_directory(const securecloud::auth::v1::GetDeviceCryptoDirectoryRequest& req,
                                 ClientCallContext& ctx) override;
 
+    Result<securecloud::auth::v1::UpdateCryptoPrekeysResponse>
+    update_crypto_prekeys(const securecloud::auth::v1::UpdateCryptoPrekeysRequest& req,
+                          ClientCallContext& ctx) override;
+
   private:
     std::shared_ptr<securecloud::auth::v1::AuthService::StubInterface> stub_;
 };

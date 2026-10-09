@@ -65,6 +65,12 @@ const ::grpc::ClientContext& ClientCallContext::raw_context() const noexcept {
     return *context_;
 }
 
+void ClientCallContext::add_metadata(const std::string& key, const std::string& value) {
+    if (context_) {
+        context_->AddMetadata(key, value);
+    }
+}
+
 void ClientCallContext::cancel() noexcept {
     bool expected = false;
     if (cancelled_.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {

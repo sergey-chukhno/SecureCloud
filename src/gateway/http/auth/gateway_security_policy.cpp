@@ -95,6 +95,14 @@ GatewaySecurityPolicy GatewaySecurityPolicy::create_default() {
     policy.add_rule("GET", "/api/v1/auth/devices/*", RouteAccess::Protected, {},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
 
+    // Cryptographic identity & prekey directory routes (AUTH-008-T04)
+    policy.add_rule("GET", "/api/v1/users/:user_id/devices/crypto-directory", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("GET", "/api/v1/devices/:device_id/crypto-identity", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("POST", "/api/v1/devices/:device_id/prekeys", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+
     // Auth microservice protected routes
     policy.add_rule("POST", "/api/v1/auth/revoke", RouteAccess::Protected, {"auth:revoke"},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {"access"});
@@ -171,6 +179,14 @@ void GatewaySecurityPolicy::add_rule(std::string method, std::string path_patter
         std::stable_sort(prefix_rules_.begin(), prefix_rules_.end(), [](const PrefixRule& a, const PrefixRule& b) {
             return a.prefix.length() > b.prefix.length();
         });
+    } else if (is_parameterized_pattern(path_pattern)) {
+        std::regex re = compile_pattern_regex(path_pattern);
+        parameterized_rules_.push_back(ParameterizedRule{
+            .method = std::move(method),
+            .pattern = std::move(path_pattern),
+            .regex = std::move(re),
+            .rule = std::move(rule),
+        });
     } else {
         std::string normalized = normalize_path(path_pattern);
         exact_rules_[make_exact_key(method, normalized)] = std::move(rule);
@@ -192,7 +208,17 @@ RouteSecurityRule GatewaySecurityPolicy::evaluate(std::string_view method, std::
         return it->second;
     }
 
-    // 3. Prefix matching: longest prefix first
+    // 3. Parameterized pattern matching
+    for (const auto& p_rule : parameterized_rules_) {
+        if (p_rule.method != "*" && p_rule.method != method) {
+            continue;
+        }
+        if (std::regex_match(normalized, p_rule.regex)) {
+            return p_rule.rule;
+        }
+    }
+
+    // 4. Prefix matching: longest prefix first
     for (const auto& p_rule : prefix_rules_) {
         if (p_rule.method != "*" && p_rule.method != method) {
             continue;
@@ -212,7 +238,7 @@ RouteSecurityRule GatewaySecurityPolicy::evaluate(std::string_view method, std::
         }
     }
 
-    // 4. Fail-closed default: any unmapped route is strictly Protected
+    // 5. Fail-closed default: any unmapped route is strictly Protected
     return RouteSecurityRule{
         .access = RouteAccess::Protected,
         .min_auth_level = securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY,
@@ -220,6 +246,46 @@ RouteSecurityRule GatewaySecurityPolicy::evaluate(std::string_view method, std::
         .alternative_scopes = {},
         .require_device_bound = false,
     };
+}
+
+bool GatewaySecurityPolicy::is_parameterized_pattern(std::string_view path) {
+    return path.find(':') != std::string_view::npos || path.find('{') != std::string_view::npos;
+}
+
+std::regex GatewaySecurityPolicy::compile_pattern_regex(std::string_view path) {
+    std::string regex_str = "^";
+    size_t i = 0;
+    while (i < path.size()) {
+        if (path[i] == ':' && i + 1 < path.size() &&
+            (std::isalnum(static_cast<unsigned char>(path[i + 1])) || path[i + 1] == '_')) {
+            size_t start = i + 1;
+            size_t end = start;
+            while (end < path.size() && (std::isalnum(static_cast<unsigned char>(path[end])) || path[end] == '_')) {
+                ++end;
+            }
+            regex_str += "([^/]+)";
+            i = end;
+        } else if (path[i] == '{') {
+            size_t end = path.find('}', i);
+            if (end != std::string_view::npos) {
+                regex_str += "([^/]+)";
+                i = end + 1;
+            } else {
+                regex_str += "\\{";
+                ++i;
+            }
+        } else {
+            char c = path[i];
+            if (c == '.' || c == '+' || c == '?' || c == '*' || c == '^' || c == '$' || c == '(' || c == ')' ||
+                c == '[' || c == ']' || c == '\\') {
+                regex_str += '\\';
+            }
+            regex_str += c;
+            ++i;
+        }
+    }
+    regex_str += "$";
+    return std::regex(regex_str);
 }
 
 std::string GatewaySecurityPolicy::normalize_path(std::string_view raw_path) {

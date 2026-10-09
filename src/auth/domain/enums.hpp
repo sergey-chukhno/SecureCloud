@@ -110,6 +110,7 @@ enum class KeyStatus {
     Active,
     Revoked,
     Replaced,
+    Claimed,
 };
 
 [[nodiscard]] constexpr std::string_view to_string(KeyStatus status) noexcept {
@@ -120,19 +121,24 @@ enum class KeyStatus {
         return "Revoked";
     case KeyStatus::Replaced:
         return "Replaced";
+    case KeyStatus::Claimed:
+        return "Claimed";
     }
     return "Unknown";
 }
 
 template <> [[nodiscard]] inline std::optional<KeyStatus> parse_enum<KeyStatus>(std::string_view str) noexcept {
-    if (str == "Active" || str == "ACTIVE") {
+    if (str == "Active" || str == "ACTIVE" || str == "active") {
         return KeyStatus::Active;
     }
-    if (str == "Revoked" || str == "REVOKED") {
+    if (str == "Revoked" || str == "REVOKED" || str == "revoked") {
         return KeyStatus::Revoked;
     }
-    if (str == "Replaced" || str == "REPLACED") {
+    if (str == "Replaced" || str == "REPLACED" || str == "replaced") {
         return KeyStatus::Replaced;
+    }
+    if (str == "Claimed" || str == "CLAIMED" || str == "claimed") {
+        return KeyStatus::Claimed;
     }
     return std::nullopt;
 }

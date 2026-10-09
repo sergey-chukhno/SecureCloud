@@ -47,6 +47,21 @@ struct DevicePublicKeyEntity {
     time_point created_at{};
     std::optional<time_point> revoked_at{std::nullopt};
     std::optional<Uuid> replaced_by_key_id{std::nullopt};
+    std::optional<std::vector<uint8_t>> signature{std::nullopt};
+};
+
+/// Represents an authoritative E2E prekey directory bundle for asynchronous key agreement (X3DH / PQXDH).
+struct PrekeyBundle {
+    Uuid device_id{};
+    std::vector<uint8_t> identity_key{};
+    std::string identity_key_fingerprint{};
+    std::vector<uint8_t> signed_prekey{};
+    std::vector<uint8_t> signed_prekey_signature{};
+    std::optional<std::vector<uint8_t>> one_time_prekey{std::nullopt};
+    std::optional<Uuid> one_time_prekey_id{std::nullopt};
+    DeviceStatus device_status{DeviceStatus::Active};
+    time_point signed_prekey_created_at{};
+    int32_t remaining_one_time_prekeys{0};
 };
 
 /// Represents an authenticated session lifecycle record.

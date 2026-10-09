@@ -65,6 +65,12 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::GetDeviceCryptoDirectoryRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::UpdateCryptoPrekeysResponse>,
+                update_crypto_prekeys,
+                (const securecloud::auth::v1::UpdateCryptoPrekeysRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 GatewayCircuitBreakerConfig make_test_cb_config(uint32_t failure_threshold = 5, uint32_t recovery_timeout_ms = 1000,

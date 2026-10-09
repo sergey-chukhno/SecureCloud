@@ -36,6 +36,8 @@ class ClientCallContext {
     [[nodiscard]] ::grpc::ClientContext& raw_context() noexcept;
     [[nodiscard]] const ::grpc::ClientContext& raw_context() const noexcept;
 
+    void add_metadata(const std::string& key, const std::string& value);
+
     void cancel() noexcept;
     [[nodiscard]] bool is_cancelled() const noexcept;
 

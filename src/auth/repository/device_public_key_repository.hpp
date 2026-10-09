@@ -34,6 +34,30 @@ class IDevicePublicKeyRepository {
     virtual void revoke_all_device_keys(const domain::Uuid& device_id, domain::time_point revoked_at) = 0;
     virtual void revoke_all_device_keys(const domain::Uuid& device_id, domain::time_point revoked_at,
                                         pqxx::transaction_base& tx) = 0;
+
+    [[nodiscard]] virtual std::optional<domain::DevicePublicKeyEntity>
+    claim_one_time_prekey(const domain::Uuid& device_id) = 0;
+    [[nodiscard]] virtual std::optional<domain::DevicePublicKeyEntity>
+    claim_one_time_prekey(const domain::Uuid& device_id, pqxx::transaction_base& tx) = 0;
+
+    [[nodiscard]] virtual int32_t count_active_one_time_prekeys(const domain::Uuid& device_id) = 0;
+    [[nodiscard]] virtual int32_t count_active_one_time_prekeys(const domain::Uuid& device_id,
+                                                                pqxx::transaction_base& tx) = 0;
+
+    [[nodiscard]] virtual std::optional<domain::DevicePublicKeyEntity>
+    find_active_identity_key(const domain::Uuid& device_id) = 0;
+    [[nodiscard]] virtual std::optional<domain::DevicePublicKeyEntity>
+    find_active_identity_key(const domain::Uuid& device_id, pqxx::transaction_base& tx) = 0;
+
+    [[nodiscard]] virtual std::optional<domain::DevicePublicKeyEntity>
+    find_active_signed_prekey(const domain::Uuid& device_id) = 0;
+    [[nodiscard]] virtual std::optional<domain::DevicePublicKeyEntity>
+    find_active_signed_prekey(const domain::Uuid& device_id, pqxx::transaction_base& tx) = 0;
+
+    virtual void store_one_time_prekeys(const domain::Uuid& device_id,
+                                        const std::vector<std::vector<uint8_t>>& keys) = 0;
+    virtual void store_one_time_prekeys(const domain::Uuid& device_id, const std::vector<std::vector<uint8_t>>& keys,
+                                        pqxx::transaction_base& tx) = 0;
 };
 
 /// PostgreSQL-backed implementation of IDevicePublicKeyRepository.
@@ -59,6 +83,29 @@ class PostgresDevicePublicKeyRepository : public IDevicePublicKeyRepository {
 
     void revoke_all_device_keys(const domain::Uuid& device_id, domain::time_point revoked_at) override;
     void revoke_all_device_keys(const domain::Uuid& device_id, domain::time_point revoked_at,
+                                pqxx::transaction_base& tx) override;
+
+    [[nodiscard]] std::optional<domain::DevicePublicKeyEntity>
+    claim_one_time_prekey(const domain::Uuid& device_id) override;
+    [[nodiscard]] std::optional<domain::DevicePublicKeyEntity>
+    claim_one_time_prekey(const domain::Uuid& device_id, pqxx::transaction_base& tx) override;
+
+    [[nodiscard]] int32_t count_active_one_time_prekeys(const domain::Uuid& device_id) override;
+    [[nodiscard]] int32_t count_active_one_time_prekeys(const domain::Uuid& device_id,
+                                                        pqxx::transaction_base& tx) override;
+
+    [[nodiscard]] std::optional<domain::DevicePublicKeyEntity>
+    find_active_identity_key(const domain::Uuid& device_id) override;
+    [[nodiscard]] std::optional<domain::DevicePublicKeyEntity>
+    find_active_identity_key(const domain::Uuid& device_id, pqxx::transaction_base& tx) override;
+
+    [[nodiscard]] std::optional<domain::DevicePublicKeyEntity>
+    find_active_signed_prekey(const domain::Uuid& device_id) override;
+    [[nodiscard]] std::optional<domain::DevicePublicKeyEntity>
+    find_active_signed_prekey(const domain::Uuid& device_id, pqxx::transaction_base& tx) override;
+
+    void store_one_time_prekeys(const domain::Uuid& device_id, const std::vector<std::vector<uint8_t>>& keys) override;
+    void store_one_time_prekeys(const domain::Uuid& device_id, const std::vector<std::vector<uint8_t>>& keys,
                                 pqxx::transaction_base& tx) override;
 
   private:

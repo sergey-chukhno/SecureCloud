@@ -31,7 +31,9 @@ enum class AuditEventType {
     DeviceEnrolled,
     DevicePairingInitiated,
     DeviceAuthorized,
-    DeviceRevoked
+    DeviceRevoked,
+    PrekeysUpdated,
+    SignedPrekeyRotated
 };
 
 [[nodiscard]] inline constexpr std::string_view to_string(AuditEventType type) noexcept {
@@ -74,6 +76,10 @@ enum class AuditEventType {
         return "auth.device.authorized";
     case AuditEventType::DeviceRevoked:
         return "auth.device.revoked";
+    case AuditEventType::PrekeysUpdated:
+        return "auth.device.prekeys_updated";
+    case AuditEventType::SignedPrekeyRotated:
+        return "auth.device.signed_prekey_rotated";
     }
     return "auth.unknown";
 }
@@ -376,6 +382,31 @@ struct AuditEvent {
         ev.user_id = user_id;
         ev.device_id = device_id;
         ev.failure_reason = std::string(reason);
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent prekeys_updated(const Uuid& user_id, const Uuid& device_id, int32_t active_count,
+                                      std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::PrekeysUpdated;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.device_id = device_id;
+        ev.failure_reason = "ACTIVE_COUNT=" + std::to_string(active_count);
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent signed_prekey_rotated(const Uuid& user_id, const Uuid& device_id,
+                                            std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::SignedPrekeyRotated;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.device_id = device_id;
         ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
         return ev;
     }

@@ -53,6 +53,12 @@ class AuthProxyHandler {
     void handle_revoke(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
     void handle_get_me(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
     void handle_register_device(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
+    void handle_get_device_crypto_directory(const httplib::Request& req, httplib::Response& res,
+                                            const AuthenticatedContext& ctx);
+    void handle_get_crypto_identity(const httplib::Request& req, httplib::Response& res,
+                                    const AuthenticatedContext& ctx);
+    void handle_update_crypto_prekeys(const httplib::Request& req, httplib::Response& res,
+                                      const AuthenticatedContext& ctx);
 
     [[nodiscard]] const std::shared_ptr<DeadlineManager>& deadline_manager() const noexcept {
         return deadline_manager_;

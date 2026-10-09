@@ -689,6 +689,84 @@ target_link_libraries(securecloud_auth_service_device_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_service_device_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Key Fingerprint Test Suite (AUTH-008-T01)
+add_executable(securecloud_auth_key_fingerprint_test
+        auth/key_fingerprint_test.cpp
+)
+
+target_link_libraries(securecloud_auth_key_fingerprint_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_key_fingerprint_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Prekey Signature Verifier Test Suite (AUTH-008-T01)
+add_executable(securecloud_auth_prekey_signature_verifier_test
+        auth/prekey_signature_verifier_test.cpp
+)
+
+target_link_libraries(securecloud_auth_prekey_signature_verifier_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_prekey_signature_verifier_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Device Public Key Repository Extensions Test Suite (AUTH-008-T01)
+add_executable(securecloud_auth_public_key_repository_test
+        auth/device_public_key_repository_test.cpp
+)
+
+target_link_libraries(securecloud_auth_public_key_repository_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_public_key_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Crypto Directory Manager Test Suite (AUTH-008-T02)
+add_executable(securecloud_auth_crypto_directory_manager_test
+        auth/crypto_directory_manager_test.cpp
+)
+
+target_link_libraries(securecloud_auth_crypto_directory_manager_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_crypto_directory_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Service Crypto RPCs Test Suite (AUTH-008-T03)
+add_executable(securecloud_auth_service_crypto_test
+        auth/auth_service_crypto_test.cpp
+)
+
+target_link_libraries(securecloud_auth_service_crypto_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud_proto
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_service_crypto_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp
@@ -989,6 +1067,23 @@ target_link_libraries(securecloud_gateway_device_assurance_policy_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_gateway_device_assurance_policy_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Crypto Directory Perimeter Policy Unit Test Suite (AUTH-008-T04)
+add_executable(securecloud_gateway_crypto_directory_policy_test
+    gateway/gateway_crypto_directory_policy_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_crypto_directory_policy_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_crypto_directory_policy_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Gateway Error Mapper & RFC 7807 Problem Details Test (GW-008-T01)
 add_executable(securecloud_gateway_error_mapper_test
