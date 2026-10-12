@@ -85,6 +85,29 @@ class MockAuthClientForPrekeys : public securecloud::gateway::grpc::IAuthClient 
                 (const securecloud::auth::v1::GetPublicSigningKeyRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::InitiateMfaEnrollmentResponse>,
+                initiate_mfa_enrollment,
+                (const securecloud::auth::v1::InitiateMfaEnrollmentRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ConfirmMfaEnrollmentResponse>,
+                confirm_mfa_enrollment,
+                (const securecloud::auth::v1::ConfirmMfaEnrollmentRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::VerifyMfaChallengeResponse>,
+                verify_mfa_challenge,
+                (const securecloud::auth::v1::VerifyMfaChallengeRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::DisableMfaResponse>, disable_mfa,
+                (const securecloud::auth::v1::DisableMfaRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 AuthenticatedContext make_context(std::string user_id, std::string device_id,

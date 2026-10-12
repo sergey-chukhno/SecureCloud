@@ -115,6 +115,16 @@ GatewaySecurityPolicy GatewaySecurityPolicy::create_default() {
     policy.add_rule("GET", "/api/v1/auth/me", RouteAccess::Protected, {"user:profile"},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {"auth:profile"});
 
+    // Multi-factor authentication lifecycle routes (AUTH-010-T02)
+    policy.add_rule("POST", "/api/v1/auth/mfa/enroll", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("POST", "/api/v1/auth/mfa/confirm", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("POST", "/api/v1/auth/mfa/verify", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("POST", "/api/v1/auth/mfa/challenge", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+
     // Messaging microservice protected routes
     policy.add_rule("POST", "/api/v1/messages/send", RouteAccess::Protected, {"messages:send"},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {"messages:write"});

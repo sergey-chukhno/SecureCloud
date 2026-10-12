@@ -1037,6 +1037,22 @@ target_link_libraries(securecloud_auth_proxy_handler_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_proxy_handler_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Auth Microservice MFA HTTP Proxy Handler Test (AUTH-010-T02)
+add_executable(securecloud_auth_proxy_handler_mfa_test
+    gateway/auth_proxy_handler_mfa_test.cpp
+)
+
+target_link_libraries(securecloud_auth_proxy_handler_mfa_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_proxy_handler_mfa_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Files Microservice HTTP Streaming Proxy Handler Test (GW-010-T03)
 add_executable(securecloud_files_proxy_handler_test
     gateway/files_proxy_handler_test.cpp

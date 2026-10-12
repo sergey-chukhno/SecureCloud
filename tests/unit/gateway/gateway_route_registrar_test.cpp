@@ -84,6 +84,29 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::GetPublicSigningKeyRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::InitiateMfaEnrollmentResponse>,
+                initiate_mfa_enrollment,
+                (const securecloud::auth::v1::InitiateMfaEnrollmentRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ConfirmMfaEnrollmentResponse>,
+                confirm_mfa_enrollment,
+                (const securecloud::auth::v1::ConfirmMfaEnrollmentRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::VerifyMfaChallengeResponse>,
+                verify_mfa_challenge,
+                (const securecloud::auth::v1::VerifyMfaChallengeRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::DisableMfaResponse>, disable_mfa,
+                (const securecloud::auth::v1::DisableMfaRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 class GatewayRouteRegistrarTest : public ::testing::Test {
@@ -121,9 +144,9 @@ TEST_F(GatewayRouteRegistrarTest, RegisterAllRoutesPopulatesRouterTable) {
     // Crypto Identity & Prekeys: 5 (/api/v1/users/:user_id/devices/crypto-directory,
     // /api/v1/devices/:device_id/crypto-identity, /api/v1/devices/:device_id/prekeys,
     // /api/v1/devices/:device_id/prekeys/inventory, /api/v1/devices/:device_id/prekeys/claim)
-    // Stubs: 6 (3 messages, 2 files, 1 audit)
-    // Total = 21 routes
-    EXPECT_EQ(router.route_count(), 21);
+    // MFA Endpoints: 5 (/api/v1/auth/mfa/enroll, /api/v1/auth/mfa/confirm, /api/v1/auth/mfa/verify,
+    // /api/v1/auth/mfa/challenge, /api/v1/auth/mfa/disable) Stubs: 6 (3 messages, 2 files, 1 audit) Total = 26 routes
+    EXPECT_EQ(router.route_count(), 26);
 }
 
 TEST_F(GatewayRouteRegistrarTest, HealthLiveServing) {
@@ -310,7 +333,7 @@ TEST_F(GatewayRouteRegistrarTest, SharedPtrConstructorOverload) {
 
     Router router;
     registrar_shared.register_all_routes(router);
-    EXPECT_EQ(router.route_count(), 21);
+    EXPECT_EQ(router.route_count(), 26);
 }
 
 } // namespace

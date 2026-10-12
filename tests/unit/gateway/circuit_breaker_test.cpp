@@ -89,6 +89,29 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::GetPublicSigningKeyRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::InitiateMfaEnrollmentResponse>,
+                initiate_mfa_enrollment,
+                (const securecloud::auth::v1::InitiateMfaEnrollmentRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ConfirmMfaEnrollmentResponse>,
+                confirm_mfa_enrollment,
+                (const securecloud::auth::v1::ConfirmMfaEnrollmentRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::VerifyMfaChallengeResponse>,
+                verify_mfa_challenge,
+                (const securecloud::auth::v1::VerifyMfaChallengeRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::DisableMfaResponse>, disable_mfa,
+                (const securecloud::auth::v1::DisableMfaRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 GatewayCircuitBreakerConfig make_test_cb_config(uint32_t failure_threshold = 5, uint32_t recovery_timeout_ms = 1000,

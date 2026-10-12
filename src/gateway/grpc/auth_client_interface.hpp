@@ -47,6 +47,18 @@ class IAuthClient {
 
     virtual Result<securecloud::auth::v1::GetPublicSigningKeyResponse>
     get_public_signing_key(const securecloud::auth::v1::GetPublicSigningKeyRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::InitiateMfaEnrollmentResponse>
+    initiate_mfa_enrollment(const securecloud::auth::v1::InitiateMfaEnrollmentRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::ConfirmMfaEnrollmentResponse>
+    confirm_mfa_enrollment(const securecloud::auth::v1::ConfirmMfaEnrollmentRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::VerifyMfaChallengeResponse>
+    verify_mfa_challenge(const securecloud::auth::v1::VerifyMfaChallengeRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::DisableMfaResponse>
+    disable_mfa(const securecloud::auth::v1::DisableMfaRequest& req, ClientCallContext& ctx) = 0;
 };
 
 } // namespace securecloud::gateway::grpc

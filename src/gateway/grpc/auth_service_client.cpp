@@ -184,4 +184,59 @@ AuthServiceClient::get_public_signing_key(const securecloud::auth::v1::GetPublic
     return resp;
 }
 
+Result<securecloud::auth::v1::InitiateMfaEnrollmentResponse>
+AuthServiceClient::initiate_mfa_enrollment(const securecloud::auth::v1::InitiateMfaEnrollmentRequest& req,
+                                           ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::InitiateMfaEnrollmentResponse resp;
+    auto status = stub_->InitiateMfaEnrollment(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
+Result<securecloud::auth::v1::ConfirmMfaEnrollmentResponse>
+AuthServiceClient::confirm_mfa_enrollment(const securecloud::auth::v1::ConfirmMfaEnrollmentRequest& req,
+                                          ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::ConfirmMfaEnrollmentResponse resp;
+    auto status = stub_->ConfirmMfaEnrollment(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
+Result<securecloud::auth::v1::VerifyMfaChallengeResponse>
+AuthServiceClient::verify_mfa_challenge(const securecloud::auth::v1::VerifyMfaChallengeRequest& req,
+                                        ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::VerifyMfaChallengeResponse resp;
+    auto status = stub_->VerifyMfaChallenge(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
+Result<securecloud::auth::v1::DisableMfaResponse>
+AuthServiceClient::disable_mfa(const securecloud::auth::v1::DisableMfaRequest& req, ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::DisableMfaResponse resp;
+    auto status = stub_->DisableMfa(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
 } // namespace securecloud::gateway::grpc

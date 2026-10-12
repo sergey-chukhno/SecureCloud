@@ -84,6 +84,29 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::GetPublicSigningKeyRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::InitiateMfaEnrollmentResponse>,
+                initiate_mfa_enrollment,
+                (const securecloud::auth::v1::InitiateMfaEnrollmentRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ConfirmMfaEnrollmentResponse>,
+                confirm_mfa_enrollment,
+                (const securecloud::auth::v1::ConfirmMfaEnrollmentRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::VerifyMfaChallengeResponse>,
+                verify_mfa_challenge,
+                (const securecloud::auth::v1::VerifyMfaChallengeRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::DisableMfaResponse>, disable_mfa,
+                (const securecloud::auth::v1::DisableMfaRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 class AuthProxyHandlerTest : public ::testing::Test {
@@ -603,7 +626,12 @@ TEST_F(AuthProxyHandlerTest, RegisterRoutesRegistersAllAuthRoutes) {
     // POST /api/v1/devices/:device_id/prekeys
     // GET /api/v1/devices/:device_id/prekeys/inventory
     // POST /api/v1/devices/:device_id/prekeys/claim
-    EXPECT_EQ(router.route_count(), 10);
+    // POST /api/v1/auth/mfa/enroll
+    // POST /api/v1/auth/mfa/confirm
+    // POST /api/v1/auth/mfa/verify
+    // POST /api/v1/auth/mfa/challenge
+    // POST /api/v1/auth/mfa/disable
+    EXPECT_EQ(router.route_count(), 15);
 }
 
 TEST_F(AuthProxyHandlerTest, GetDeviceCryptoDirectorySuccess) {
