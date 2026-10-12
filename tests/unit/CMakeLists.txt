@@ -719,6 +719,22 @@ target_link_libraries(securecloud_auth_prekey_signature_verifier_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_prekey_signature_verifier_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Prekey Batch Validator Test Suite (AUTH-009-T01)
+add_executable(securecloud_auth_prekey_validator_test
+        auth/prekey_validator_test.cpp
+)
+
+target_link_libraries(securecloud_auth_prekey_validator_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_prekey_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Auth Device Public Key Repository Extensions Test Suite (AUTH-008-T01)
 add_executable(securecloud_auth_public_key_repository_test
         auth/device_public_key_repository_test.cpp

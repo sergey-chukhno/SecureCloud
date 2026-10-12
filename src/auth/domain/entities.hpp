@@ -116,4 +116,17 @@ struct MfaChallengeEntity {
     std::optional<time_point> completed_at;
 };
 
+/// Represents prekey inventory health and replenishment status for a specific device.
+struct PrekeyInventoryStatus {
+    Uuid device_id{};
+    int32_t active_one_time_prekeys{0};
+    int32_t claimed_one_time_prekeys{0};
+    int32_t low_inventory_threshold{20};
+    bool is_low_inventory{false};
+    bool is_exhausted{false};
+    std::optional<time_point> signed_prekey_created_at{std::nullopt};
+    int64_t signed_prekey_age_seconds{0};
+    bool signed_prekey_needs_rotation{false};
+};
+
 } // namespace securecloud::auth::domain

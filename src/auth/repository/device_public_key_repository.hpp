@@ -44,6 +44,16 @@ class IDevicePublicKeyRepository {
     [[nodiscard]] virtual int32_t count_active_one_time_prekeys(const domain::Uuid& device_id,
                                                                 pqxx::transaction_base& tx) = 0;
 
+    [[nodiscard]] virtual int32_t count_claimed_one_time_prekeys(const domain::Uuid& device_id) = 0;
+    [[nodiscard]] virtual int32_t count_claimed_one_time_prekeys(const domain::Uuid& device_id,
+                                                                 pqxx::transaction_base& tx) = 0;
+
+    [[nodiscard]] virtual bool has_active_key_conflict(const domain::Uuid& device_id,
+                                                       std::span<const uint8_t> public_key) = 0;
+    [[nodiscard]] virtual bool has_active_key_conflict(const domain::Uuid& device_id,
+                                                       std::span<const uint8_t> public_key,
+                                                       pqxx::transaction_base& tx) = 0;
+
     [[nodiscard]] virtual std::optional<domain::DevicePublicKeyEntity>
     find_active_identity_key(const domain::Uuid& device_id) = 0;
     [[nodiscard]] virtual std::optional<domain::DevicePublicKeyEntity>
@@ -93,6 +103,15 @@ class PostgresDevicePublicKeyRepository : public IDevicePublicKeyRepository {
     [[nodiscard]] int32_t count_active_one_time_prekeys(const domain::Uuid& device_id) override;
     [[nodiscard]] int32_t count_active_one_time_prekeys(const domain::Uuid& device_id,
                                                         pqxx::transaction_base& tx) override;
+
+    [[nodiscard]] int32_t count_claimed_one_time_prekeys(const domain::Uuid& device_id) override;
+    [[nodiscard]] int32_t count_claimed_one_time_prekeys(const domain::Uuid& device_id,
+                                                         pqxx::transaction_base& tx) override;
+
+    [[nodiscard]] bool has_active_key_conflict(const domain::Uuid& device_id,
+                                               std::span<const uint8_t> public_key) override;
+    [[nodiscard]] bool has_active_key_conflict(const domain::Uuid& device_id, std::span<const uint8_t> public_key,
+                                               pqxx::transaction_base& tx) override;
 
     [[nodiscard]] std::optional<domain::DevicePublicKeyEntity>
     find_active_identity_key(const domain::Uuid& device_id) override;
