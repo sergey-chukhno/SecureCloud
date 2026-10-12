@@ -112,6 +112,32 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::DisableMfaRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::GetDeviceResponse>, get_device,
+                (const securecloud::auth::v1::GetDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ListUserDevicesResponse>, list_user_devices,
+                (const securecloud::auth::v1::ListUserDevicesRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::InitiateDevicePairingResponse>,
+                initiate_device_pairing,
+                (const securecloud::auth::v1::InitiateDevicePairingRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::AuthorizeDeviceResponse>, authorize_device,
+                (const securecloud::auth::v1::AuthorizeDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::RevokeDeviceResponse>, revoke_device,
+                (const securecloud::auth::v1::RevokeDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 GatewayCircuitBreakerConfig make_test_cb_config(uint32_t failure_threshold = 5, uint32_t recovery_timeout_ms = 1000,

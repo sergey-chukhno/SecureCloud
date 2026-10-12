@@ -107,6 +107,32 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::DisableMfaRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::GetDeviceResponse>, get_device,
+                (const securecloud::auth::v1::GetDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ListUserDevicesResponse>, list_user_devices,
+                (const securecloud::auth::v1::ListUserDevicesRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::InitiateDevicePairingResponse>,
+                initiate_device_pairing,
+                (const securecloud::auth::v1::InitiateDevicePairingRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::AuthorizeDeviceResponse>, authorize_device,
+                (const securecloud::auth::v1::AuthorizeDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::RevokeDeviceResponse>, revoke_device,
+                (const securecloud::auth::v1::RevokeDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 class AuthProxyHandlerTest : public ::testing::Test {
@@ -631,7 +657,14 @@ TEST_F(AuthProxyHandlerTest, RegisterRoutesRegistersAllAuthRoutes) {
     // POST /api/v1/auth/mfa/verify
     // POST /api/v1/auth/mfa/challenge
     // POST /api/v1/auth/mfa/disable
-    EXPECT_EQ(router.route_count(), 15);
+    // GET /api/v1/devices
+    // GET /api/v1/devices/:device_id
+    // POST /api/v1/devices/pairing
+    // POST /api/v1/devices/pair
+    // POST /api/v1/devices/:device_id/authorize
+    // DELETE /api/v1/devices/:device_id
+    // POST /api/v1/devices/:device_id/revoke
+    EXPECT_EQ(router.route_count(), 22);
 }
 
 TEST_F(AuthProxyHandlerTest, GetDeviceCryptoDirectorySuccess) {

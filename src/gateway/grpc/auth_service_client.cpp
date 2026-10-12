@@ -239,4 +239,70 @@ AuthServiceClient::disable_mfa(const securecloud::auth::v1::DisableMfaRequest& r
     return resp;
 }
 
+Result<securecloud::auth::v1::GetDeviceResponse>
+AuthServiceClient::get_device(const securecloud::auth::v1::GetDeviceRequest& req, ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::GetDeviceResponse resp;
+    auto status = stub_->GetDevice(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
+Result<securecloud::auth::v1::ListUserDevicesResponse>
+AuthServiceClient::list_user_devices(const securecloud::auth::v1::ListUserDevicesRequest& req, ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::ListUserDevicesResponse resp;
+    auto status = stub_->ListUserDevices(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
+Result<securecloud::auth::v1::InitiateDevicePairingResponse>
+AuthServiceClient::initiate_device_pairing(const securecloud::auth::v1::InitiateDevicePairingRequest& req,
+                                           ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::InitiateDevicePairingResponse resp;
+    auto status = stub_->InitiateDevicePairing(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
+Result<securecloud::auth::v1::AuthorizeDeviceResponse>
+AuthServiceClient::authorize_device(const securecloud::auth::v1::AuthorizeDeviceRequest& req, ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::AuthorizeDeviceResponse resp;
+    auto status = stub_->AuthorizeDevice(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
+Result<securecloud::auth::v1::RevokeDeviceResponse>
+AuthServiceClient::revoke_device(const securecloud::auth::v1::RevokeDeviceRequest& req, ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::RevokeDeviceResponse resp;
+    auto status = stub_->RevokeDevice(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
 } // namespace securecloud::gateway::grpc

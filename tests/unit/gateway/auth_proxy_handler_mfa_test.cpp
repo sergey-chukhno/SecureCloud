@@ -108,6 +108,32 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::DisableMfaRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::GetDeviceResponse>, get_device,
+                (const securecloud::auth::v1::GetDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ListUserDevicesResponse>, list_user_devices,
+                (const securecloud::auth::v1::ListUserDevicesRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::InitiateDevicePairingResponse>,
+                initiate_device_pairing,
+                (const securecloud::auth::v1::InitiateDevicePairingRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::AuthorizeDeviceResponse>, authorize_device,
+                (const securecloud::auth::v1::AuthorizeDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::RevokeDeviceResponse>, revoke_device,
+                (const securecloud::auth::v1::RevokeDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 AuthenticatedContext make_context(std::string user_id = "user-123", std::string device_id = "dev-456",
@@ -454,8 +480,8 @@ TEST_F(AuthProxyHandlerMfaTest, RegisterRoutesBindsAllMfaEndpoints) {
     EXPECT_EQ(router.route_count(), 0);
     handler_->register_routes(router);
 
-    // Previously 10 routes, now 15 with the 5 MFA routes (enroll, confirm, verify, challenge, disable)
-    EXPECT_EQ(router.route_count(), 15);
+    // Previously 15 routes, now 22 with the 7 device lifecycle routes
+    EXPECT_EQ(router.route_count(), 22);
 
     // Verify router dispatches to the MFA endpoint (e.g., empty JSON results in 400 rather than 404)
     httplib::Request req;

@@ -142,6 +142,36 @@ void AuthProxyHandler::register_routes(Router& router) {
     router.post_authenticated("/api/v1/auth/mfa/disable",
                               [this](const httplib::Request& req, httplib::Response& res,
                                      const AuthenticatedContext& ctx) { handle_disable_mfa(req, res, ctx); });
+
+    router.get_authenticated("/api/v1/devices",
+                             [this](const httplib::Request& req, httplib::Response& res,
+                                    const AuthenticatedContext& ctx) { handle_list_devices(req, res, ctx); });
+
+    router.get_authenticated("/api/v1/devices/:device_id",
+                             [this](const httplib::Request& req, httplib::Response& res,
+                                    const AuthenticatedContext& ctx) { handle_get_device(req, res, ctx); });
+
+    router.post_authenticated("/api/v1/devices/pairing", [this](const httplib::Request& req, httplib::Response& res,
+                                                                const AuthenticatedContext& ctx) {
+        handle_initiate_device_pairing(req, res, ctx);
+    });
+
+    router.post_authenticated("/api/v1/devices/pair", [this](const httplib::Request& req, httplib::Response& res,
+                                                             const AuthenticatedContext& ctx) {
+        handle_initiate_device_pairing(req, res, ctx);
+    });
+
+    router.post_authenticated("/api/v1/devices/:device_id/authorize",
+                              [this](const httplib::Request& req, httplib::Response& res,
+                                     const AuthenticatedContext& ctx) { handle_authorize_device(req, res, ctx); });
+
+    router.del_authenticated("/api/v1/devices/:device_id",
+                             [this](const httplib::Request& req, httplib::Response& res,
+                                    const AuthenticatedContext& ctx) { handle_revoke_device(req, res, ctx); });
+
+    router.post_authenticated("/api/v1/devices/:device_id/revoke",
+                              [this](const httplib::Request& req, httplib::Response& res,
+                                     const AuthenticatedContext& ctx) { handle_revoke_device(req, res, ctx); });
 }
 
 std::string AuthProxyHandler::extract_request_id(const httplib::Request& req) {
@@ -1398,6 +1428,475 @@ void AuthProxyHandler::handle_disable_mfa(const httplib::Request& req, httplib::
     const auto& val = rpc_res.value();
     nlohmann::json res_json = {{"success", val.success()}};
 
+    res.status = 200;
+    res.set_content(res_json.dump(), k_content_type_json);
+}
+
+void AuthProxyHandler::handle_list_devices(const httplib::Request& req, httplib::Response& res,
+                                           const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
+    const std::string request_id = extract_request_id(req);
+
+    auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
+    if (!bulkhead_lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
+        return;
+    }
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    if (ctx.user_id().empty()) {
+        ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
+        return;
+    }
+
+    bool include_revoked = false;
+    if (req.has_param("include_revoked")) {
+        const std::string param_val = req.get_param_value("include_revoked");
+        include_revoked = (param_val == "true" || param_val == "1");
+    }
+
+    securecloud::auth::v1::ListUserDevicesRequest rpc_req;
+    rpc_req.set_user_id(ctx.user_id());
+    rpc_req.set_include_revoked(include_revoked);
+
+    auto rpc_res = retry_policy_->execute(
+        *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
+        [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
+            grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
+            call_ctx.add_metadata("x-user-id", ctx.user_id());
+            if (!ctx.device_id().empty()) {
+                call_ctx.add_metadata("x-device-id", ctx.device_id());
+            }
+            call_ctx.add_metadata("x-auth-level", ctx.is_mfa_verified() ? "mfa_verified" : "primary");
+            return auth_client_->list_user_devices(rpc_req, call_ctx);
+        });
+
+    if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
+        const auto& err = rpc_res.error();
+        int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
+        std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
+        ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
+        return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
+    }
+
+    const auto& val = rpc_res.value();
+    nlohmann::json devices_json = nlohmann::json::array();
+    for (const auto& dev : val.devices()) {
+        devices_json.push_back({{"device_id", dev.device_id()},
+                                {"user_id", dev.user_id()},
+                                {"device_status", securecloud::auth::v1::DeviceStatus_Name(dev.device_status())},
+                                {"registered_at_epoch_ms", dev.registered_at_epoch_ms()},
+                                {"revoked_at_epoch_ms", dev.revoked_at_epoch_ms()},
+                                {"revocation_reason", dev.revocation_reason()},
+                                {"last_authenticated_at_epoch_ms", dev.last_authenticated_at_epoch_ms()}});
+    }
+
+    nlohmann::json res_json = {{"devices", std::move(devices_json)}};
+    res.status = 200;
+    res.set_content(res_json.dump(), k_content_type_json);
+}
+
+void AuthProxyHandler::handle_get_device(const httplib::Request& req, httplib::Response& res,
+                                         const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
+    const std::string request_id = extract_request_id(req);
+
+    auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
+    if (!bulkhead_lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
+        return;
+    }
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    if (ctx.user_id().empty()) {
+        ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
+        return;
+    }
+
+    std::string device_id = Router::get_path_param(req, "device_id");
+    if (device_id.empty() && req.path_params.contains("device_id")) {
+        device_id = req.path_params.at("device_id");
+    }
+    if (device_id.empty()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing device_id path parameter", request_id);
+        return;
+    }
+
+    securecloud::auth::v1::GetDeviceRequest rpc_req;
+    rpc_req.set_device_id(device_id);
+
+    auto rpc_res = retry_policy_->execute(
+        *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
+        [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
+            grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
+            call_ctx.add_metadata("x-user-id", ctx.user_id());
+            if (!ctx.device_id().empty()) {
+                call_ctx.add_metadata("x-device-id", ctx.device_id());
+            }
+            call_ctx.add_metadata("x-auth-level", ctx.is_mfa_verified() ? "mfa_verified" : "primary");
+            return auth_client_->get_device(rpc_req, call_ctx);
+        });
+
+    if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
+        const auto& err = rpc_res.error();
+        int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
+        std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
+        ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
+        return;
+    }
+
+    const auto& dev = rpc_res.value().device();
+    if (!dev.user_id().empty() && dev.user_id() != ctx.user_id()) {
+        ErrorMapper::write_error(res, 403, "PERMISSION_DENIED", "Caller not authorized to view device", request_id);
+        return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
+    }
+
+    nlohmann::json dev_obj = {{"device_id", dev.device_id()},
+                              {"user_id", dev.user_id()},
+                              {"device_status", securecloud::auth::v1::DeviceStatus_Name(dev.device_status())},
+                              {"registered_at_epoch_ms", dev.registered_at_epoch_ms()},
+                              {"revoked_at_epoch_ms", dev.revoked_at_epoch_ms()},
+                              {"revocation_reason", dev.revocation_reason()},
+                              {"last_authenticated_at_epoch_ms", dev.last_authenticated_at_epoch_ms()}};
+
+    nlohmann::json res_json = {{"device", std::move(dev_obj)}};
+    res.status = 200;
+    res.set_content(res_json.dump(), k_content_type_json);
+}
+
+void AuthProxyHandler::handle_initiate_device_pairing(const httplib::Request& req, httplib::Response& res,
+                                                      const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
+    const std::string request_id = extract_request_id(req);
+
+    auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
+    if (!bulkhead_lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
+        return;
+    }
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    if (ctx.user_id().empty()) {
+        ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
+        return;
+    }
+
+    std::string target_device_id = ctx.device_id();
+    if (!req.body.empty()) {
+        nlohmann::json body;
+        try {
+            body = nlohmann::json::parse(req.body);
+            if (body.is_object() && body.contains("device_id") && body["device_id"].is_string()) {
+                target_device_id = body["device_id"].get<std::string>();
+            }
+        } catch (const nlohmann::json::exception&) {
+            ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Malformed JSON request body", request_id);
+            return;
+        }
+    }
+
+    if (target_device_id.empty()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing device_id for pairing", request_id);
+        return;
+    }
+
+    securecloud::auth::v1::InitiateDevicePairingRequest rpc_req;
+    rpc_req.set_user_id(ctx.user_id());
+    rpc_req.set_device_id(target_device_id);
+
+    auto rpc_res = retry_policy_->execute(
+        *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
+        [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
+            grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
+            call_ctx.add_metadata("x-user-id", ctx.user_id());
+            if (!ctx.device_id().empty()) {
+                call_ctx.add_metadata("x-device-id", ctx.device_id());
+            }
+            call_ctx.add_metadata("x-auth-level", ctx.is_mfa_verified() ? "mfa_verified" : "primary");
+            return auth_client_->initiate_device_pairing(rpc_req, call_ctx);
+        });
+
+    if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
+        const auto& err = rpc_res.error();
+        int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
+        std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
+        ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
+        return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
+    }
+
+    const auto& val = rpc_res.value();
+    nlohmann::json res_json = {{"pairing_code", val.pairing_code()},
+                               {"expires_at_epoch_ms", val.expires_at_epoch_ms()}};
+    res.status = 200;
+    res.set_content(res_json.dump(), k_content_type_json);
+}
+
+void AuthProxyHandler::handle_authorize_device(const httplib::Request& req, httplib::Response& res,
+                                               const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
+    const std::string request_id = extract_request_id(req);
+
+    auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
+    if (!bulkhead_lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
+        return;
+    }
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    if (ctx.user_id().empty()) {
+        ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
+        return;
+    }
+
+    if (!ctx.is_mfa_verified()) {
+        ErrorMapper::write_error(res, 403, "MFA_REQUIRED", "MFA verification required to authorize device pairing",
+                                 request_id);
+        return;
+    }
+
+    std::string device_id = Router::get_path_param(req, "device_id");
+    if (device_id.empty() && req.path_params.contains("device_id")) {
+        device_id = req.path_params.at("device_id");
+    }
+
+    if (req.body.empty()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing request body", request_id);
+        return;
+    }
+
+    nlohmann::json body;
+    try {
+        body = nlohmann::json::parse(req.body);
+    } catch (const nlohmann::json::exception&) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Malformed JSON request body", request_id);
+        return;
+    }
+
+    if (!body.is_object()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Request body must be a JSON object", request_id);
+        return;
+    }
+
+    if (device_id.empty() && body.contains("device_id") && body["device_id"].is_string()) {
+        device_id = body["device_id"].get<std::string>();
+    }
+
+    if (device_id.empty()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing device_id", request_id);
+        return;
+    }
+
+    if (!body.contains("pairing_code") || !body["pairing_code"].is_string() ||
+        body["pairing_code"].get<std::string>().empty()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing or empty pairing_code", request_id);
+        return;
+    }
+
+    securecloud::auth::v1::AuthorizeDeviceRequest rpc_req;
+    rpc_req.set_user_id(ctx.user_id());
+    rpc_req.set_device_id(device_id);
+    rpc_req.set_pairing_code(body["pairing_code"].get<std::string>());
+
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::NON_IDEMPOTENT,
+                                          [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              call_ctx.add_metadata("x-user-id", ctx.user_id());
+                                              if (!ctx.device_id().empty()) {
+                                                  call_ctx.add_metadata("x-device-id", ctx.device_id());
+                                              }
+                                              call_ctx.add_metadata("x-auth-level", "mfa_verified");
+                                              return auth_client_->authorize_device(rpc_req, call_ctx);
+                                          });
+
+    if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
+        const auto& err = rpc_res.error();
+        int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
+        std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
+        ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
+        return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
+    }
+
+    const auto& val = rpc_res.value();
+    nlohmann::json res_json = {{"authorized", val.authorized()},
+                               {"status", securecloud::auth::v1::DeviceStatus_Name(val.status())},
+                               {"authorized_at_epoch_ms", val.authorized_at_epoch_ms()}};
+    res.status = 200;
+    res.set_content(res_json.dump(), k_content_type_json);
+}
+
+void AuthProxyHandler::handle_revoke_device(const httplib::Request& req, httplib::Response& res,
+                                            const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
+    const std::string request_id = extract_request_id(req);
+
+    auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
+    if (!bulkhead_lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
+        return;
+    }
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    if (ctx.user_id().empty()) {
+        ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
+        return;
+    }
+
+    if (!ctx.is_mfa_verified()) {
+        ErrorMapper::write_error(res, 403, "MFA_REQUIRED", "MFA verification required to revoke device", request_id);
+        return;
+    }
+
+    std::string device_id = Router::get_path_param(req, "device_id");
+    if (device_id.empty() && req.path_params.contains("device_id")) {
+        device_id = req.path_params.at("device_id");
+    }
+
+    std::string reason = "User requested revocation";
+    if (!req.body.empty()) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            if (body.is_object()) {
+                if (device_id.empty() && body.contains("device_id") && body["device_id"].is_string()) {
+                    device_id = body["device_id"].get<std::string>();
+                }
+                if (body.contains("reason") && body["reason"].is_string()) {
+                    reason = body["reason"].get<std::string>();
+                }
+            }
+        } catch (const nlohmann::json::exception&) {
+            ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Malformed JSON request body", request_id);
+            return;
+        }
+    }
+
+    if (device_id.empty()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing device_id", request_id);
+        return;
+    }
+
+    securecloud::auth::v1::RevokeDeviceRequest rpc_req;
+    rpc_req.set_device_id(device_id);
+    rpc_req.set_user_id(ctx.user_id());
+    rpc_req.set_reason(reason);
+
+    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
+                                          OperationIdempotency::NON_IDEMPOTENT,
+                                          [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
+                                              grpc::ClientCallContext call_ctx(request_id, budget);
+                                              ActiveCallGuard guard(*this, request_id, call_ctx);
+                                              call_ctx.add_metadata("x-user-id", ctx.user_id());
+                                              if (!ctx.device_id().empty()) {
+                                                  call_ctx.add_metadata("x-device-id", ctx.device_id());
+                                              }
+                                              call_ctx.add_metadata("x-auth-level", "mfa_verified");
+                                              return auth_client_->revoke_device(rpc_req, call_ctx);
+                                          });
+
+    if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
+        const auto& err = rpc_res.error();
+        int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
+        std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
+        ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
+        return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
+    }
+
+    const auto& val = rpc_res.value();
+    nlohmann::json res_json = {{"revoked", val.revoked()}, {"revoked_at_epoch_ms", val.revoked_at_epoch_ms()}};
     res.status = 200;
     res.set_content(res_json.dump(), k_content_type_json);
 }

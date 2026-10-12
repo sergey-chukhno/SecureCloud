@@ -59,6 +59,21 @@ class IAuthClient {
 
     virtual Result<securecloud::auth::v1::DisableMfaResponse>
     disable_mfa(const securecloud::auth::v1::DisableMfaRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::GetDeviceResponse>
+    get_device(const securecloud::auth::v1::GetDeviceRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::ListUserDevicesResponse>
+    list_user_devices(const securecloud::auth::v1::ListUserDevicesRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::InitiateDevicePairingResponse>
+    initiate_device_pairing(const securecloud::auth::v1::InitiateDevicePairingRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::AuthorizeDeviceResponse>
+    authorize_device(const securecloud::auth::v1::AuthorizeDeviceRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::RevokeDeviceResponse>
+    revoke_device(const securecloud::auth::v1::RevokeDeviceRequest& req, ClientCallContext& ctx) = 0;
 };
 
 } // namespace securecloud::gateway::grpc
