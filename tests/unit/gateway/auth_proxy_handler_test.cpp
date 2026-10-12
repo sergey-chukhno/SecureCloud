@@ -66,6 +66,18 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::UpdateCryptoPrekeysRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::GetPrekeyInventoryStatusResponse>,
+                get_prekey_inventory_status,
+                (const securecloud::auth::v1::GetPrekeyInventoryStatusRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ClaimPrekeyBundleResponse>,
+                claim_prekey_bundle,
+                (const securecloud::auth::v1::ClaimPrekeyBundleRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 class AuthProxyHandlerTest : public ::testing::Test {
@@ -583,7 +595,9 @@ TEST_F(AuthProxyHandlerTest, RegisterRoutesRegistersAllAuthRoutes) {
     // GET /api/v1/users/:user_id/devices/crypto-directory
     // GET /api/v1/devices/:device_id/crypto-identity
     // POST /api/v1/devices/:device_id/prekeys
-    EXPECT_EQ(router.route_count(), 8);
+    // GET /api/v1/devices/:device_id/prekeys/inventory
+    // POST /api/v1/devices/:device_id/prekeys/claim
+    EXPECT_EQ(router.route_count(), 10);
 }
 
 TEST_F(AuthProxyHandlerTest, GetDeviceCryptoDirectorySuccess) {
