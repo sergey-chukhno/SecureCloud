@@ -120,22 +120,32 @@ jobs:
         shell: pwsh
         run: |
           $cmakeZip = "${{ github.workspace }}/.vcpkg_downloads/cmake-4.4.3-windows-x86_64.zip"
-          if (-not (Test-Path $cmakeZip) -or ((Get-Item $cmakeZip).Length -lt 10000000)) {
+          $needsDownload = $true
+          if (Test-Path -Path $cmakeZip) {
+            $file = Get-Item -Path $cmakeZip
+            if ($file.Length -gt 10000000) {
+              $needsDownload = $false
+              Write-Host "cmake-4.4.3-windows-x86_64.zip already cached ($($file.Length) bytes)."
+            }
+          }
+
+          if ($needsDownload) {
             Write-Host "Pre-fetching cmake-4.4.3-windows-x86_64.zip with retries..."
             $url = "https://github.com/Kitware/CMake/releases/download/v4.4.3/cmake-4.4.3-windows-x86_64.zip"
             $retries = 5
             for ($i = 1; $i -le $retries; $i++) {
               Write-Host "Download attempt $i of $retries..."
               & curl.exe -sSL --retry 3 --retry-delay 5 -o $cmakeZip $url
-              if (Test-Path $cmakeZip -and ((Get-Item $cmakeZip).Length -gt 10000000)) {
-                Write-Host "Successfully downloaded cmake 4.4.3 ($((Get-Item $cmakeZip).Length) bytes)"
-                break
+              if (Test-Path -Path $cmakeZip) {
+                $downloaded = Get-Item -Path $cmakeZip
+                if ($downloaded.Length -gt 10000000) {
+                  Write-Host "Successfully downloaded cmake 4.4.3 ($($downloaded.Length) bytes)"
+                  break
+                }
               }
               Write-Host "Attempt $i produced incomplete file, retrying in 10s..."
               Start-Sleep -Seconds 10
             }
-          } else {
-            Write-Host "cmake-4.4.3-windows-x86_64.zip already cached ($((Get-Item $cmakeZip).Length) bytes)."
           }
 
       - name: Set up MSVC Developer Command Prompt
