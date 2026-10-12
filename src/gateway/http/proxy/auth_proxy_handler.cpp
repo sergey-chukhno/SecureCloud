@@ -112,6 +112,14 @@ void AuthProxyHandler::register_routes(Router& router) {
     router.post_authenticated("/api/v1/devices/:device_id/prekeys",
                               [this](const httplib::Request& req, httplib::Response& res,
                                      const AuthenticatedContext& ctx) { handle_update_crypto_prekeys(req, res, ctx); });
+
+    router.get_authenticated("/api/v1/devices/:device_id/prekeys/inventory",
+                             [this](const httplib::Request& req, httplib::Response& res,
+                                    const AuthenticatedContext& ctx) { handle_get_prekey_inventory(req, res, ctx); });
+
+    router.post_authenticated("/api/v1/devices/:device_id/prekeys/claim",
+                              [this](const httplib::Request& req, httplib::Response& res,
+                                     const AuthenticatedContext& ctx) { handle_claim_device_prekey(req, res, ctx); });
 }
 
 std::string AuthProxyHandler::extract_request_id(const httplib::Request& req) {
@@ -846,6 +854,204 @@ void AuthProxyHandler::handle_update_crypto_prekeys(const httplib::Request& req,
         {"device_id", device_id},
         {"active_one_time_prekey_count", val.active_one_time_prekey_count()},
         {"updated_at_epoch_ms", val.updated_at_epoch_ms()},
+    };
+
+    res.status = 200;
+    res.set_content(res_json.dump(), k_content_type_json);
+}
+
+void AuthProxyHandler::handle_get_prekey_inventory(const httplib::Request& req, httplib::Response& res,
+                                                   const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
+    const std::string request_id = extract_request_id(req);
+
+    auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
+    if (!bulkhead_lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
+        return;
+    }
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    if (ctx.user_id().empty()) {
+        ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
+        return;
+    }
+
+    std::string device_id = Router::get_path_param(req, "device_id");
+    if (device_id.empty()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing device_id path parameter", request_id);
+        return;
+    }
+
+    if (!ctx.device_id().empty() && ctx.device_id() != device_id) {
+        ErrorMapper::write_error(res, 403, "DEVICE_MISMATCH",
+                                 "Caller device does not match target device for prekey inventory inspection",
+                                 request_id);
+        return;
+    }
+
+    securecloud::auth::v1::GetPrekeyInventoryStatusRequest inv_req;
+    inv_req.set_device_id(device_id);
+
+    auto rpc_res = retry_policy_->execute(
+        *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
+        [this, &inv_req, &request_id, &ctx](std::chrono::milliseconds budget) {
+            grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
+            call_ctx.add_metadata("x-user-id", ctx.user_id());
+            if (!ctx.device_id().empty()) {
+                call_ctx.add_metadata("x-device-id", ctx.device_id());
+            }
+            call_ctx.add_metadata("x-auth-level", ctx.is_mfa_verified() ? "mfa_verified" : "primary");
+            return auth_client_->get_prekey_inventory_status(inv_req, call_ctx);
+        });
+
+    if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
+        const auto& err = rpc_res.error();
+        int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
+        std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
+        ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
+        return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
+    }
+
+    const auto& val = rpc_res.value();
+    nlohmann::json res_json = {
+        {"device_id", val.device_id()},
+        {"active_one_time_prekeys", val.active_one_time_prekeys()},
+        {"claimed_one_time_prekeys", val.claimed_one_time_prekeys()},
+        {"low_inventory_threshold", val.low_inventory_threshold()},
+        {"is_low_inventory", val.is_low_inventory()},
+        {"is_exhausted", val.is_exhausted()},
+        {"signed_prekey_created_at_epoch_ms", val.signed_prekey_created_at_epoch_ms()},
+        {"signed_prekey_age_seconds", val.signed_prekey_age_seconds()},
+        {"signed_prekey_needs_rotation", val.signed_prekey_needs_rotation()},
+    };
+
+    res.status = 200;
+    res.set_content(res_json.dump(), k_content_type_json);
+}
+
+void AuthProxyHandler::handle_claim_device_prekey(const httplib::Request& req, httplib::Response& res,
+                                                  const AuthenticatedContext& ctx) {
+    const auto start_tp = deadline_manager_->now();
+    const std::string request_id = extract_request_id(req);
+
+    auto bulkhead_lease = bulkhead_manager_->acquire(WorkloadCategory::Auth);
+    if (!bulkhead_lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id, circuit_breaker_->remaining_recovery_time_sec());
+        return;
+    }
+
+    const auto service_timeout = std::chrono::milliseconds(deadline_manager_->config().auth_timeout_ms);
+    const auto effective_deadline = deadline_manager_->compute_effective_deadline(req, service_timeout);
+
+    if (!deadline_manager_->has_sufficient_budget(start_tp, effective_deadline)) {
+        ErrorMapper::write_error(res, 504, "GATEWAY_TIMEOUT", "Request deadline exceeded before dispatch", request_id);
+        return;
+    }
+
+    if (ctx.user_id().empty()) {
+        ErrorMapper::write_error(res, 401, "UNAUTHORIZED", "Unauthenticated context", request_id);
+        return;
+    }
+
+    std::string device_id = Router::get_path_param(req, "device_id");
+    if (device_id.empty()) {
+        ErrorMapper::write_error(res, 400, "BAD_REQUEST", "Missing device_id path parameter", request_id);
+        return;
+    }
+
+    securecloud::auth::v1::ClaimPrekeyBundleRequest claim_req;
+    claim_req.set_device_id(device_id);
+
+    auto rpc_res = retry_policy_->execute(
+        *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
+        [this, &claim_req, &request_id, &ctx](std::chrono::milliseconds budget) {
+            grpc::ClientCallContext call_ctx(request_id, budget);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
+            call_ctx.add_metadata("x-user-id", ctx.user_id());
+            if (!ctx.device_id().empty()) {
+                call_ctx.add_metadata("x-device-id", ctx.device_id());
+            }
+            call_ctx.add_metadata("x-auth-level", ctx.is_mfa_verified() ? "mfa_verified" : "primary");
+            return auth_client_->claim_prekey_bundle(claim_req, call_ctx);
+        });
+
+    if (!rpc_res) {
+        if (circuit_breaker_) {
+            circuit_breaker_->record_status(rpc_res.error().grpc_code);
+        }
+        const auto& err = rpc_res.error();
+        int http_status = ErrorMapper::grpc_to_http_status(err.grpc_code);
+        std::string error_code(ErrorMapper::grpc_to_error_code(err.grpc_code));
+        ErrorMapper::write_error(res, http_status, error_code, err.message, request_id);
+        return;
+    }
+
+    if (circuit_breaker_) {
+        circuit_breaker_->record_success();
+    }
+
+    const auto& val = rpc_res.value();
+    std::string exhaustion_str = "UNSPECIFIED";
+    switch (val.exhaustion_state()) {
+    case securecloud::auth::v1::PREKEY_EXHAUSTION_STATE_HEALTHY:
+        exhaustion_str = "HEALTHY";
+        break;
+    case securecloud::auth::v1::PREKEY_EXHAUSTION_STATE_LOW:
+        exhaustion_str = "LOW";
+        break;
+    case securecloud::auth::v1::PREKEY_EXHAUSTION_STATE_EXHAUSTED:
+        exhaustion_str = "EXHAUSTED";
+        break;
+    default:
+        break;
+    }
+
+    nlohmann::json bundle_json = {
+        {"device_id", val.bundle().device_id()},
+        {"identity_key", val.bundle().identity_key()},
+        {"identity_key_fingerprint", val.bundle().identity_key_fingerprint()},
+        {"signed_prekey", val.bundle().signed_prekey()},
+        {"signed_prekey_signature", val.bundle().signed_prekey_signature()},
+        {"signed_prekey_created_at_epoch_ms", val.bundle().signed_prekey_created_at_epoch_ms()},
+        {"status", "Active"},
+    };
+
+    if (!val.bundle().one_time_prekey().empty()) {
+        bundle_json["one_time_prekey"] = val.bundle().one_time_prekey();
+    }
+    if (!val.bundle().one_time_prekey_id().empty()) {
+        bundle_json["one_time_prekey_id"] = val.bundle().one_time_prekey_id();
+    }
+
+    nlohmann::json res_json = {
+        {"bundle", std::move(bundle_json)},
+        {"exhaustion_state", exhaustion_str},
     };
 
     res.status = 200;

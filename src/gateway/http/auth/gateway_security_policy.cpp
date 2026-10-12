@@ -103,6 +103,12 @@ GatewaySecurityPolicy GatewaySecurityPolicy::create_default() {
     policy.add_rule("POST", "/api/v1/devices/:device_id/prekeys", RouteAccess::Protected, {},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
 
+    // Prekey inventory and claiming routes (AUTH-009-T04)
+    policy.add_rule("GET", "/api/v1/devices/:device_id/prekeys/inventory", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("POST", "/api/v1/devices/:device_id/prekeys/claim", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+
     // Auth microservice protected routes
     policy.add_rule("POST", "/api/v1/auth/revoke", RouteAccess::Protected, {"auth:revoke"},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {"access"});

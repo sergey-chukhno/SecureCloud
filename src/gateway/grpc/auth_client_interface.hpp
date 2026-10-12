@@ -37,6 +37,13 @@ class IAuthClient {
 
     virtual Result<securecloud::auth::v1::UpdateCryptoPrekeysResponse>
     update_crypto_prekeys(const securecloud::auth::v1::UpdateCryptoPrekeysRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::GetPrekeyInventoryStatusResponse>
+    get_prekey_inventory_status(const securecloud::auth::v1::GetPrekeyInventoryStatusRequest& req,
+                                ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::ClaimPrekeyBundleResponse>
+    claim_prekey_bundle(const securecloud::auth::v1::ClaimPrekeyBundleRequest& req, ClientCallContext& ctx) = 0;
 };
 
 } // namespace securecloud::gateway::grpc

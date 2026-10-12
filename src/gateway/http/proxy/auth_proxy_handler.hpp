@@ -59,6 +59,10 @@ class AuthProxyHandler {
                                     const AuthenticatedContext& ctx);
     void handle_update_crypto_prekeys(const httplib::Request& req, httplib::Response& res,
                                       const AuthenticatedContext& ctx);
+    void handle_get_prekey_inventory(const httplib::Request& req, httplib::Response& res,
+                                     const AuthenticatedContext& ctx);
+    void handle_claim_device_prekey(const httplib::Request& req, httplib::Response& res,
+                                    const AuthenticatedContext& ctx);
 
     [[nodiscard]] const std::shared_ptr<DeadlineManager>& deadline_manager() const noexcept {
         return deadline_manager_;

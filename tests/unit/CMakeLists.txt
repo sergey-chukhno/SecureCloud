@@ -1133,6 +1133,23 @@ target_link_libraries(securecloud_gateway_crypto_directory_policy_test PRIVATE
 
 gtest_discover_tests(securecloud_gateway_crypto_directory_policy_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Prekey Inventory & Claim Perimeter Policy Unit Test Suite (AUTH-009-T04)
+add_executable(securecloud_gateway_prekey_inventory_policy_test
+    gateway/gateway_prekey_inventory_policy_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_prekey_inventory_policy_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::httplib
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_prekey_inventory_policy_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Error Mapper & RFC 7807 Problem Details Test (GW-008-T01)
 add_executable(securecloud_gateway_error_mapper_test
     gateway/error_mapper_test.cpp
