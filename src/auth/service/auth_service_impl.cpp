@@ -1606,4 +1606,43 @@ AuthServiceImpl::ConfirmMfaEnrollment(::grpc::ServerContext* context,
     return status;
 }
 
+::grpc::Status AuthServiceImpl::GetPublicSigningKey(::grpc::ServerContext* context,
+                                                    const ::securecloud::auth::v1::GetPublicSigningKeyRequest* request,
+                                                    ::securecloud::auth::v1::GetPublicSigningKeyResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPublicSigningKey", context, status, duration);
+        return status;
+    }
+
+    if (!token_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::FAILED_PRECONDITION, "Token service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPublicSigningKey", context, status, duration);
+        return status;
+    }
+
+    auto signer = token_manager_->signer();
+    if (!signer) {
+        auto status = ::grpc::Status(::grpc::StatusCode::FAILED_PRECONDITION, "Token signer not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPublicSigningKey", context, status, duration);
+        return status;
+    }
+
+    response->set_key_id(signer->get_key_id());
+    response->set_algorithm("Ed25519");
+    const auto raw_key = signer->get_public_key_raw();
+    response->set_public_key_raw(raw_key.data(), raw_key.size());
+    response->set_public_key_pem(signer->get_public_key_pem());
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("GetPublicSigningKey", context, status, duration);
+    return status;
+}
+
 } // namespace securecloud::auth::service

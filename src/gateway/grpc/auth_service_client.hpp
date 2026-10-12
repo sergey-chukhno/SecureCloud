@@ -51,6 +51,10 @@ class AuthServiceClient : public IAuthClient {
     Result<securecloud::auth::v1::ClaimPrekeyBundleResponse>
     claim_prekey_bundle(const securecloud::auth::v1::ClaimPrekeyBundleRequest& req, ClientCallContext& ctx) override;
 
+    Result<securecloud::auth::v1::GetPublicSigningKeyResponse>
+    get_public_signing_key(const securecloud::auth::v1::GetPublicSigningKeyRequest& req,
+                           ClientCallContext& ctx) override;
+
   private:
     std::shared_ptr<securecloud::auth::v1::AuthService::StubInterface> stub_;
 };

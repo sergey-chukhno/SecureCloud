@@ -76,6 +76,12 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::ClaimPrekeyBundleRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::GetPublicSigningKeyResponse>,
+                get_public_signing_key,
+                (const securecloud::auth::v1::GetPublicSigningKeyRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 securecloud::auth::v1::ValidateSessionResponse

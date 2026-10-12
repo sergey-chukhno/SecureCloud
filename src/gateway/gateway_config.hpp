@@ -113,6 +113,11 @@ struct GatewayConfig {
     std::string files_endpoint{"files:50054"};
     std::string audit_endpoint{"audit:50055"};
 
+    // Token Verification & Key Distribution Settings (AUTH-010-T01)
+    std::string token_verification_mode{"remote_rpc"}; // "remote_rpc" or "local"
+    std::string auth_public_key_pem;
+    std::string auth_public_key_path;
+
     // Peer Probe Settings
     std::string peer_probe_target;
     std::string peer_probe_name;

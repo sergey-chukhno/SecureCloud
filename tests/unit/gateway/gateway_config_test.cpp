@@ -413,5 +413,48 @@ TEST(GatewayConfigTest, RateLimitingConfigRejectsOutOfBounds) {
     }
 }
 
+TEST(GatewayConfigTest, TokenVerificationConfigDefaultsToRemoteRpc) {
+    common::configuration::InMemoryConfigurationSource source(std::unordered_map<std::string, std::string>{});
+    common::configuration::ValidationResult errors;
+    auto config = GatewayConfig::load(source, errors);
+    EXPECT_TRUE(errors.is_valid());
+    EXPECT_EQ(config.token_verification_mode, "remote_rpc");
+    EXPECT_TRUE(config.auth_public_key_pem.empty());
+    EXPECT_TRUE(config.auth_public_key_path.empty());
+}
+
+TEST(GatewayConfigTest, TokenVerificationConfigLoadsLocalModeAndPublicKey) {
+    common::configuration::InMemoryConfigurationSource source({
+        {"SECURECLOUD_GATEWAY_TOKEN_VERIFICATION_MODE", "local"},
+        {"SECURECLOUD_GATEWAY_AUTH_PUBLIC_KEY_PEM",
+         "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A\n-----END PUBLIC KEY-----"},
+        {"SECURECLOUD_GATEWAY_AUTH_PUBLIC_KEY_PATH", "/etc/securecloud/keys/auth_pub.pem"},
+    });
+    common::configuration::ValidationResult errors;
+    auto config = GatewayConfig::load(source, errors, /*validate_file_paths=*/false);
+    EXPECT_TRUE(errors.is_valid());
+    EXPECT_EQ(config.token_verification_mode, "local");
+    EXPECT_NE(config.auth_public_key_pem.find("BEGIN PUBLIC KEY"), std::string::npos);
+    EXPECT_EQ(config.auth_public_key_path, "/etc/securecloud/keys/auth_pub.pem");
+}
+
+TEST(GatewayConfigTest, TokenVerificationConfigRejectsInvalidMode) {
+    common::configuration::InMemoryConfigurationSource source({
+        {"SECURECLOUD_GATEWAY_TOKEN_VERIFICATION_MODE", "invalid_mode"},
+    });
+    common::configuration::ValidationResult errors;
+    auto config = GatewayConfig::load(source, errors);
+    EXPECT_FALSE(errors.is_valid());
+}
+
+TEST(GatewayConfigTest, TokenVerificationConfigRejectsNonExistentPublicKeyPath) {
+    common::configuration::InMemoryConfigurationSource source({
+        {"SECURECLOUD_GATEWAY_AUTH_PUBLIC_KEY_PATH", "/non/existent/path/pubkey.pem"},
+    });
+    common::configuration::ValidationResult errors;
+    auto config = GatewayConfig::load(source, errors, /*validate_file_paths=*/true);
+    EXPECT_FALSE(errors.is_valid());
+}
+
 } // namespace
 } // namespace securecloud::gateway

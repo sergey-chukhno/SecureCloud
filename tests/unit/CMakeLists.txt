@@ -815,6 +815,24 @@ target_link_libraries(securecloud_auth_service_prekey_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_service_prekey_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Service Public Signing Key Distribution Test Suite (AUTH-010-T01)
+add_executable(securecloud_auth_service_public_key_test
+        auth/auth_service_public_key_test.cpp
+)
+
+target_link_libraries(securecloud_auth_service_public_key_test PRIVATE
+        securecloud::auth
+        securecloud::gateway_http
+        securecloud::common
+        securecloud_proto
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_service_public_key_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp

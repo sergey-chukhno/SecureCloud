@@ -170,4 +170,18 @@ AuthServiceClient::claim_prekey_bundle(const securecloud::auth::v1::ClaimPrekeyB
     return resp;
 }
 
+Result<securecloud::auth::v1::GetPublicSigningKeyResponse>
+AuthServiceClient::get_public_signing_key(const securecloud::auth::v1::GetPublicSigningKeyRequest& req,
+                                          ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::GetPublicSigningKeyResponse resp;
+    auto status = stub_->GetPublicSigningKey(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
 } // namespace securecloud::gateway::grpc

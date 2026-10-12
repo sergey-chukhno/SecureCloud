@@ -44,6 +44,9 @@ class IAuthClient {
 
     virtual Result<securecloud::auth::v1::ClaimPrekeyBundleResponse>
     claim_prekey_bundle(const securecloud::auth::v1::ClaimPrekeyBundleRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::GetPublicSigningKeyResponse>
+    get_public_signing_key(const securecloud::auth::v1::GetPublicSigningKeyRequest& req, ClientCallContext& ctx) = 0;
 };
 
 } // namespace securecloud::gateway::grpc
