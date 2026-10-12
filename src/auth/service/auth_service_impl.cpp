@@ -17,11 +17,12 @@ AuthServiceImpl::AuthServiceImpl(std::shared_ptr<ICredentialVerifier> credential
                                  std::shared_ptr<IAuditEventPublisher> audit_publisher,
                                  std::shared_ptr<ITokenManager> token_manager, std::shared_ptr<IMfaManager> mfa_manager,
                                  std::shared_ptr<IDeviceManager> device_manager,
-                                 std::shared_ptr<ICryptoDirectoryManager> crypto_directory_manager)
+                                 std::shared_ptr<ICryptoDirectoryManager> crypto_directory_manager,
+                                 std::shared_ptr<IPrekeyManager> prekey_manager)
     : credential_verifier_(std::move(credential_verifier)), session_manager_(std::move(session_manager)),
       audit_publisher_(std::move(audit_publisher)), token_manager_(std::move(token_manager)),
       mfa_manager_(std::move(mfa_manager)), device_manager_(std::move(device_manager)),
-      crypto_directory_manager_(std::move(crypto_directory_manager)) {}
+      crypto_directory_manager_(std::move(crypto_directory_manager)), prekey_manager_(std::move(prekey_manager)) {}
 
 AuthServiceImpl::~AuthServiceImpl() = default;
 
@@ -756,6 +757,161 @@ AuthServiceImpl::GetDeviceCryptoDirectory(::grpc::ServerContext* context,
 
     auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
     log_rpc_execution("UpdateCryptoPrekeys", context, status, duration);
+    return status;
+}
+
+::grpc::Status
+AuthServiceImpl::GetPrekeyInventoryStatus(::grpc::ServerContext* context,
+                                          const ::securecloud::auth::v1::GetPrekeyInventoryStatusRequest* request,
+                                          ::securecloud::auth::v1::GetPrekeyInventoryStatusResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!prekey_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Prekey manager service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPrekeyInventoryStatus", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPrekeyInventoryStatus", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res) {
+        auto status =
+            ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device_id format: must be valid UUID");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPrekeyInventoryStatus", context, status, duration);
+        return status;
+    }
+
+    auto inv_res = prekey_manager_->get_inventory_status(*dev_id_res);
+    ::grpc::Status status = ::grpc::Status::OK;
+    switch (inv_res.status) {
+    case PrekeyInventoryStatusResult::Status::Success: {
+        const auto& inv = inv_res.inventory_status;
+        response->set_device_id(inv.device_id.to_string());
+        response->set_active_one_time_prekeys(inv.active_one_time_prekeys);
+        response->set_claimed_one_time_prekeys(inv.claimed_one_time_prekeys);
+        response->set_low_inventory_threshold(inv.low_inventory_threshold);
+        response->set_is_low_inventory(inv.is_low_inventory);
+        response->set_is_exhausted(inv.is_exhausted);
+        if (inv.signed_prekey_created_at.has_value()) {
+            response->set_signed_prekey_created_at_epoch_ms(
+                std::chrono::duration_cast<std::chrono::milliseconds>(inv.signed_prekey_created_at->time_since_epoch())
+                    .count());
+        } else {
+            response->set_signed_prekey_created_at_epoch_ms(0);
+        }
+        response->set_signed_prekey_age_seconds(inv.signed_prekey_age_seconds);
+        response->set_signed_prekey_needs_rotation(inv.signed_prekey_needs_rotation);
+        status = ::grpc::Status::OK;
+        break;
+    }
+    case PrekeyInventoryStatusResult::Status::NotFound:
+        status = ::grpc::Status(::grpc::StatusCode::NOT_FOUND, inv_res.error_message);
+        break;
+    case PrekeyInventoryStatusResult::Status::DeviceRevoked:
+        status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, inv_res.error_message);
+        break;
+    case PrekeyInventoryStatusResult::Status::InternalError:
+        status = ::grpc::Status(::grpc::StatusCode::INTERNAL, inv_res.error_message);
+        break;
+    }
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("GetPrekeyInventoryStatus", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::ClaimPrekeyBundle(::grpc::ServerContext* context,
+                                                  const ::securecloud::auth::v1::ClaimPrekeyBundleRequest* request,
+                                                  ::securecloud::auth::v1::ClaimPrekeyBundleResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!prekey_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Prekey manager service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ClaimPrekeyBundle", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ClaimPrekeyBundle", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res) {
+        auto status =
+            ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device_id format: must be valid UUID");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ClaimPrekeyBundle", context, status, duration);
+        return status;
+    }
+
+    auto claim_res = prekey_manager_->claim_device_prekey_bundle(*dev_id_res);
+    ::grpc::Status status = ::grpc::Status::OK;
+    switch (claim_res.status) {
+    case ClaimPrekeyBundleResult::Status::Success: {
+        auto* bundle = response->mutable_bundle();
+        bundle->set_device_id(claim_res.device_id.to_string());
+        bundle->set_identity_key(claim_res.identity_key.data(), claim_res.identity_key.size());
+        bundle->set_identity_key_fingerprint(claim_res.identity_key_fingerprint);
+        bundle->set_signed_prekey(claim_res.signed_prekey.data(), claim_res.signed_prekey.size());
+        bundle->set_signed_prekey_signature(claim_res.signed_prekey_signature.data(),
+                                            claim_res.signed_prekey_signature.size());
+        bundle->set_signed_prekey_created_at_epoch_ms(
+            std::chrono::duration_cast<std::chrono::milliseconds>(claim_res.signed_prekey_created_at.time_since_epoch())
+                .count());
+        bundle->set_status(securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+
+        if (claim_res.one_time_prekey.has_value()) {
+            bundle->set_one_time_prekey(claim_res.one_time_prekey->data(), claim_res.one_time_prekey->size());
+        }
+        if (claim_res.one_time_prekey_id.has_value()) {
+            bundle->set_one_time_prekey_id(claim_res.one_time_prekey_id->to_string());
+        }
+
+        switch (claim_res.exhaustion_state) {
+        case domain::PrekeyExhaustionState::InventoryHealthy:
+            response->set_exhaustion_state(
+                securecloud::auth::v1::PrekeyExhaustionState::PREKEY_EXHAUSTION_STATE_HEALTHY);
+            break;
+        case domain::PrekeyExhaustionState::InventoryLow:
+            response->set_exhaustion_state(securecloud::auth::v1::PrekeyExhaustionState::PREKEY_EXHAUSTION_STATE_LOW);
+            break;
+        case domain::PrekeyExhaustionState::InventoryExhausted:
+            response->set_exhaustion_state(
+                securecloud::auth::v1::PrekeyExhaustionState::PREKEY_EXHAUSTION_STATE_EXHAUSTED);
+            break;
+        }
+
+        status = ::grpc::Status::OK;
+        break;
+    }
+    case ClaimPrekeyBundleResult::Status::NotFound:
+        status = ::grpc::Status(::grpc::StatusCode::NOT_FOUND, claim_res.error_message);
+        break;
+    case ClaimPrekeyBundleResult::Status::DeviceRevoked:
+        status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, claim_res.error_message);
+        break;
+    case ClaimPrekeyBundleResult::Status::DeviceNotActive:
+        status = ::grpc::Status(::grpc::StatusCode::FAILED_PRECONDITION, claim_res.error_message);
+        break;
+    case ClaimPrekeyBundleResult::Status::InternalError:
+        status = ::grpc::Status(::grpc::StatusCode::INTERNAL, claim_res.error_message);
+        break;
+    }
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("ClaimPrekeyBundle", context, status, duration);
     return status;
 }
 

@@ -2,6 +2,7 @@
 
 #include "auth/service/crypto_directory_manager.hpp"
 #include "auth/service/device_manager.hpp"
+#include "auth/service/prekey_manager.hpp"
 #include "securecloud/auth/v1/auth.grpc.pb.h"
 #include "service/audit_event_publisher.hpp"
 #include "service/credential_verifier.hpp"
@@ -29,7 +30,8 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
                              std::shared_ptr<ITokenManager> token_manager = nullptr,
                              std::shared_ptr<IMfaManager> mfa_manager = nullptr,
                              std::shared_ptr<IDeviceManager> device_manager = nullptr,
-                             std::shared_ptr<ICryptoDirectoryManager> crypto_directory_manager = nullptr);
+                             std::shared_ptr<ICryptoDirectoryManager> crypto_directory_manager = nullptr,
+                             std::shared_ptr<IPrekeyManager> prekey_manager = nullptr);
     ~AuthServiceImpl() override;
 
     AuthServiceImpl(const AuthServiceImpl&) = delete;
@@ -94,6 +96,15 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
                                        const ::securecloud::auth::v1::UpdateCryptoPrekeysRequest* request,
                                        ::securecloud::auth::v1::UpdateCryptoPrekeysResponse* response) override;
 
+    ::grpc::Status
+    GetPrekeyInventoryStatus(::grpc::ServerContext* context,
+                             const ::securecloud::auth::v1::GetPrekeyInventoryStatusRequest* request,
+                             ::securecloud::auth::v1::GetPrekeyInventoryStatusResponse* response) override;
+
+    ::grpc::Status ClaimPrekeyBundle(::grpc::ServerContext* context,
+                                     const ::securecloud::auth::v1::ClaimPrekeyBundleRequest* request,
+                                     ::securecloud::auth::v1::ClaimPrekeyBundleResponse* response) override;
+
     // --- MFA RPC Implementations ---
 
     ::grpc::Status VerifyMfaChallenge(::grpc::ServerContext* context,
@@ -142,6 +153,7 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
     std::shared_ptr<IMfaManager> mfa_manager_;
     std::shared_ptr<IDeviceManager> device_manager_;
     std::shared_ptr<ICryptoDirectoryManager> crypto_directory_manager_;
+    std::shared_ptr<IPrekeyManager> prekey_manager_;
 
     std::optional<securecloud::auth::v1::AuthenticationLevel> auth_level_override_for_testing_{std::nullopt};
     std::optional<domain::Uuid> caller_user_id_override_for_testing_{std::nullopt};
