@@ -217,6 +217,9 @@ TEST(AuditEventPublisherTest, AuditEventType_ToString_MatchesExpectedNames) {
     EXPECT_EQ(domain::to_string(domain::AuditEventType::AccountDisabledAccessAttempt), "auth.account.disabled_attempt");
     EXPECT_EQ(domain::to_string(domain::AuditEventType::TokenRefreshed), "auth.token.refreshed");
     EXPECT_EQ(domain::to_string(domain::AuditEventType::TokenReuseDetected), "auth.token.reuse_detected");
+    EXPECT_EQ(domain::to_string(domain::AuditEventType::PrekeyInventoryLow), "auth.device.prekey_inventory_low");
+    EXPECT_EQ(domain::to_string(domain::AuditEventType::PrekeyInventoryExhausted),
+              "auth.device.prekey_inventory_exhausted");
 }
 
 } // namespace

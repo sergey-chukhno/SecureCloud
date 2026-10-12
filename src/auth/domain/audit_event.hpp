@@ -33,7 +33,9 @@ enum class AuditEventType {
     DeviceAuthorized,
     DeviceRevoked,
     PrekeysUpdated,
-    SignedPrekeyRotated
+    SignedPrekeyRotated,
+    PrekeyInventoryLow,
+    PrekeyInventoryExhausted
 };
 
 [[nodiscard]] inline constexpr std::string_view to_string(AuditEventType type) noexcept {
@@ -80,6 +82,10 @@ enum class AuditEventType {
         return "auth.device.prekeys_updated";
     case AuditEventType::SignedPrekeyRotated:
         return "auth.device.signed_prekey_rotated";
+    case AuditEventType::PrekeyInventoryLow:
+        return "auth.device.prekey_inventory_low";
+    case AuditEventType::PrekeyInventoryExhausted:
+        return "auth.device.prekey_inventory_exhausted";
     }
     return "auth.unknown";
 }
@@ -407,6 +413,32 @@ struct AuditEvent {
         ev.timestamp = std::chrono::system_clock::now();
         ev.user_id = user_id;
         ev.device_id = device_id;
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent prekey_inventory_low(const Uuid& user_id, const Uuid& device_id, int32_t remaining_count,
+                                           std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::PrekeyInventoryLow;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.device_id = device_id;
+        ev.failure_reason = "REMAINING_COUNT=" + std::to_string(remaining_count);
+        ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
+        return ev;
+    }
+
+    static AuditEvent prekey_inventory_exhausted(const Uuid& user_id, const Uuid& device_id,
+                                                 std::string_view client_ip = "unknown") {
+        AuditEvent ev;
+        ev.event_id = Uuid::generate_v7();
+        ev.event_type = AuditEventType::PrekeyInventoryExhausted;
+        ev.timestamp = std::chrono::system_clock::now();
+        ev.user_id = user_id;
+        ev.device_id = device_id;
+        ev.failure_reason = "REMAINING_COUNT=0";
         ev.client_ip = client_ip.empty() ? "unknown" : std::string(client_ip);
         return ev;
     }
