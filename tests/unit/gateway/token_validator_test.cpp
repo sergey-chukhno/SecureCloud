@@ -64,6 +64,18 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::UpdateCryptoPrekeysRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::GetPrekeyInventoryStatusResponse>,
+                get_prekey_inventory_status,
+                (const securecloud::auth::v1::GetPrekeyInventoryStatusRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ClaimPrekeyBundleResponse>,
+                claim_prekey_bundle,
+                (const securecloud::auth::v1::ClaimPrekeyBundleRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 securecloud::auth::v1::ValidateSessionResponse

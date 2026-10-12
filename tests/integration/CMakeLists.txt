@@ -505,3 +505,24 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_auth_crypto_identity_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Prekey Concurrency & Stress Integration Test Suite (AUTH-009-T05)
+add_executable(securecloud_auth_prekey_concurrency_integration_test
+    auth_prekey_concurrency_integration_test.cpp
+)
+
+target_link_libraries(securecloud_auth_prekey_concurrency_integration_test PRIVATE
+    securecloud::auth
+    securecloud::common
+    securecloud_proto
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+    GTest::gmock
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_auth_prekey_concurrency_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_auth_prekey_concurrency_integration_test ${SECURECLOUD_TEST_PROPERTIES})

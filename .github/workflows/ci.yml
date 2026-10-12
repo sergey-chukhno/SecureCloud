@@ -94,23 +94,59 @@ jobs:
     runs-on: windows-2022
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg_archives
+      VCPKG_DOWNLOADS: ${{ github.workspace }}/.vcpkg_downloads
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Restore vcpkg binary archives
+      - name: Restore vcpkg binary archives and downloads
         id: vcpkg-cache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ github.workspace }}/.vcpkg_archives
+          path: |
+            ${{ github.workspace }}/.vcpkg_archives
+            ${{ github.workspace }}/.vcpkg_downloads
           key: vcpkg-msvc-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
             vcpkg-msvc-
 
-      - name: Ensure vcpkg cache directory exists
+      - name: Ensure vcpkg cache directories exist
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg_archives"
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg_downloads"
+
+      - name: Pre-fetch vcpkg tools
+        shell: pwsh
+        run: |
+          $cmakeZip = "${{ github.workspace }}/.vcpkg_downloads/cmake-4.4.3-windows-x86_64.zip"
+          $needsDownload = $true
+          if (Test-Path -Path $cmakeZip) {
+            $file = Get-Item -Path $cmakeZip
+            if ($file.Length -gt 10000000) {
+              $needsDownload = $false
+              Write-Host "cmake-4.4.3-windows-x86_64.zip already cached ($($file.Length) bytes)."
+            }
+          }
+
+          if ($needsDownload) {
+            Write-Host "Pre-fetching cmake-4.4.3-windows-x86_64.zip with retries..."
+            $url = "https://github.com/Kitware/CMake/releases/download/v4.4.3/cmake-4.4.3-windows-x86_64.zip"
+            $retries = 5
+            for ($i = 1; $i -le $retries; $i++) {
+              Write-Host "Download attempt $i of $retries..."
+              & curl.exe -sSL --retry 3 --retry-delay 5 -o $cmakeZip $url
+              if (Test-Path -Path $cmakeZip) {
+                $downloaded = Get-Item -Path $cmakeZip
+                if ($downloaded.Length -gt 10000000) {
+                  Write-Host "Successfully downloaded cmake 4.4.3 ($($downloaded.Length) bytes)"
+                  break
+                }
+              }
+              Write-Host "Attempt $i produced incomplete file, retrying in 10s..."
+              Start-Sleep -Seconds 10
+            }
+          }
 
       - name: Set up MSVC Developer Command Prompt
         uses: ilammy/msvc-dev-cmd@v1
@@ -144,13 +180,15 @@ jobs:
             $attempt++
           }
 
-      - name: Save vcpkg binary archives
+      - name: Save vcpkg binary archives and downloads
         uses: actions/cache/save@v4
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
         continue-on-error: true
         with:
-          path: ${{ github.workspace }}/.vcpkg_archives
-          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+          path: |
+            ${{ github.workspace }}/.vcpkg_archives
+            ${{ github.workspace }}/.vcpkg_downloads
+          key: vcpkg-msvc-${{ hashFiles('vcpkg.json') }}
 
       - name: Build All Targets
         shell: pwsh

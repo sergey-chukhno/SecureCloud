@@ -137,6 +137,40 @@ class InMemoryDevicePublicKeyRepository : public IDevicePublicKeyRepository {
         return count_active_one_time_prekeys(device_id);
     }
 
+    [[nodiscard]] int32_t count_claimed_one_time_prekeys(const Uuid& device_id) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        int32_t count = 0;
+        for (const auto& [_, k] : keys_) {
+            if (k.device_id == device_id && k.key_type == KeyType::OneTimePrekey &&
+                k.key_status == KeyStatus::Claimed) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    [[nodiscard]] int32_t count_claimed_one_time_prekeys(const Uuid& device_id,
+                                                         pqxx::transaction_base& /*tx*/) override {
+        return count_claimed_one_time_prekeys(device_id);
+    }
+
+    [[nodiscard]] bool has_active_key_conflict(const Uuid& device_id, std::span<const uint8_t> public_key) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& [_, k] : keys_) {
+            if (k.device_id == device_id && k.key_status == KeyStatus::Active &&
+                k.public_key.size() == public_key.size() &&
+                std::equal(k.public_key.begin(), k.public_key.end(), public_key.begin())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    [[nodiscard]] bool has_active_key_conflict(const Uuid& device_id, std::span<const uint8_t> public_key,
+                                               pqxx::transaction_base& /*tx*/) override {
+        return has_active_key_conflict(device_id, public_key);
+    }
+
     [[nodiscard]] std::optional<DevicePublicKeyEntity> find_active_identity_key(const Uuid& device_id) override {
         std::lock_guard<std::mutex> lock(mutex_);
         DevicePublicKeyEntity* newest = nullptr;

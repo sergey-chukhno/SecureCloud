@@ -42,6 +42,13 @@ enum SessionStatus {
     SESSION_STATUS_EXPIRED = 3;
 }
 
+enum PrekeyExhaustionState {
+    PREKEY_EXHAUSTION_STATE_UNSPECIFIED = 0;
+    PREKEY_EXHAUSTION_STATE_HEALTHY = 1;
+    PREKEY_EXHAUSTION_STATE_LOW = 2;
+    PREKEY_EXHAUSTION_STATE_EXHAUSTED = 3;
+}
+
 // ============================================================================
 // Domain Entity Messages
 // ============================================================================
@@ -274,6 +281,33 @@ message UpdateCryptoPrekeysResponse {
     int64 updated_at_epoch_ms = 2;
 }
 
+// GetPrekeyInventoryStatus checks prekey inventory levels and rotation requirements.
+message GetPrekeyInventoryStatusRequest {
+    string device_id = 1;
+}
+
+message GetPrekeyInventoryStatusResponse {
+    string device_id = 1;
+    int32 active_one_time_prekeys = 2;
+    int32 claimed_one_time_prekeys = 3;
+    int32 low_inventory_threshold = 4;
+    bool is_low_inventory = 5;
+    bool is_exhausted = 6;
+    int64 signed_prekey_created_at_epoch_ms = 7;
+    int64 signed_prekey_age_seconds = 8;
+    bool signed_prekey_needs_rotation = 9;
+}
+
+// ClaimPrekeyBundle atomically claims an E2E prekey bundle for a target device.
+message ClaimPrekeyBundleRequest {
+    string device_id = 1;
+}
+
+message ClaimPrekeyBundleResponse {
+    DeviceCryptoRecord bundle = 1;
+    PrekeyExhaustionState exhaustion_state = 2;
+}
+
 // MFA Operations
 message VerifyMfaChallengeRequest {
     string challenge_id = 1;
@@ -342,6 +376,8 @@ service AuthService {
     rpc GetDeviceCryptoDirectory(GetDeviceCryptoDirectoryRequest) returns (GetDeviceCryptoDirectoryResponse);
     rpc GetCryptoIdentity(GetCryptoIdentityRequest) returns (GetCryptoIdentityResponse);
     rpc UpdateCryptoPrekeys(UpdateCryptoPrekeysRequest) returns (UpdateCryptoPrekeysResponse);
+    rpc GetPrekeyInventoryStatus(GetPrekeyInventoryStatusRequest) returns (GetPrekeyInventoryStatusResponse);
+    rpc ClaimPrekeyBundle(ClaimPrekeyBundleRequest) returns (ClaimPrekeyBundleResponse);
 
     rpc VerifyMfaChallenge(VerifyMfaChallengeRequest) returns (VerifyMfaChallengeResponse);
     rpc InitiateMfaEnrollment(InitiateMfaEnrollmentRequest) returns (InitiateMfaEnrollmentResponse);

@@ -389,4 +389,38 @@ template <>
     return std::nullopt;
 }
 
+// --- 12. PrekeyExhaustionState ---
+enum class PrekeyExhaustionState {
+    InventoryHealthy,
+    InventoryLow,
+    InventoryExhausted,
+};
+
+[[nodiscard]] constexpr std::string_view to_string(PrekeyExhaustionState state) noexcept {
+    switch (state) {
+    case PrekeyExhaustionState::InventoryHealthy:
+        return "INVENTORY_HEALTHY";
+    case PrekeyExhaustionState::InventoryLow:
+        return "INVENTORY_LOW";
+    case PrekeyExhaustionState::InventoryExhausted:
+        return "INVENTORY_EXHAUSTED";
+    }
+    return "UNKNOWN";
+}
+
+template <>
+[[nodiscard]] inline std::optional<PrekeyExhaustionState>
+parse_enum<PrekeyExhaustionState>(std::string_view str) noexcept {
+    if (str == "INVENTORY_HEALTHY" || str == "InventoryHealthy") {
+        return PrekeyExhaustionState::InventoryHealthy;
+    }
+    if (str == "INVENTORY_LOW" || str == "InventoryLow") {
+        return PrekeyExhaustionState::InventoryLow;
+    }
+    if (str == "INVENTORY_EXHAUSTED" || str == "InventoryExhausted") {
+        return PrekeyExhaustionState::InventoryExhausted;
+    }
+    return std::nullopt;
+}
+
 } // namespace securecloud::auth::domain

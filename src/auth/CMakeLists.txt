@@ -19,6 +19,7 @@ add_library(securecloud_auth_config STATIC
         crypto/device_key_validator.cpp
         crypto/key_fingerprint.cpp
         crypto/prekey_signature_verifier.cpp
+        crypto/prekey_validator.cpp
         service/credential_verifier.cpp
         service/session_manager.cpp
         service/token_manager.cpp
@@ -26,6 +27,7 @@ add_library(securecloud_auth_config STATIC
         service/mfa_manager.cpp
         service/device_manager.cpp
         service/crypto_directory_manager.cpp
+        service/prekey_manager.cpp
         service/audit_event_publisher.cpp
         service/auth_service_impl.cpp
 )

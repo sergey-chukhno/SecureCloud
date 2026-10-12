@@ -66,6 +66,18 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::UpdateCryptoPrekeysRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::GetPrekeyInventoryStatusResponse>,
+                get_prekey_inventory_status,
+                (const securecloud::auth::v1::GetPrekeyInventoryStatusRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ClaimPrekeyBundleResponse>,
+                claim_prekey_bundle,
+                (const securecloud::auth::v1::ClaimPrekeyBundleRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 class GatewayRouteRegistrarTest : public ::testing::Test {
@@ -100,10 +112,12 @@ TEST_F(GatewayRouteRegistrarTest, RegisterAllRoutesPopulatesRouterTable) {
     // Health: 2 (/health/live, /health/ready)
     // Auth Core: 5 (/api/v1/auth/login, /api/v1/auth/refresh, /api/v1/auth/revoke, /api/v1/users/me, /api/v1/devices)
     // Auth Aliases: 3 (/api/v1/auth/me, /api/v1/auth/device/register, /api/v1/auth/logout)
-    // Crypto Identity & Prekeys: 3 (/api/v1/users/:user_id/devices/crypto-directory,
-    // /api/v1/devices/:device_id/crypto-identity, /api/v1/devices/:device_id/prekeys) Stubs: 6 (3 messages, 2 files, 1
-    // audit) Total = 19 routes
-    EXPECT_EQ(router.route_count(), 19);
+    // Crypto Identity & Prekeys: 5 (/api/v1/users/:user_id/devices/crypto-directory,
+    // /api/v1/devices/:device_id/crypto-identity, /api/v1/devices/:device_id/prekeys,
+    // /api/v1/devices/:device_id/prekeys/inventory, /api/v1/devices/:device_id/prekeys/claim)
+    // Stubs: 6 (3 messages, 2 files, 1 audit)
+    // Total = 21 routes
+    EXPECT_EQ(router.route_count(), 21);
 }
 
 TEST_F(GatewayRouteRegistrarTest, HealthLiveServing) {
@@ -290,7 +304,7 @@ TEST_F(GatewayRouteRegistrarTest, SharedPtrConstructorOverload) {
 
     Router router;
     registrar_shared.register_all_routes(router);
-    EXPECT_EQ(router.route_count(), 19);
+    EXPECT_EQ(router.route_count(), 21);
 }
 
 } // namespace

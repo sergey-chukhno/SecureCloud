@@ -142,4 +142,32 @@ AuthServiceClient::update_crypto_prekeys(const securecloud::auth::v1::UpdateCryp
     return resp;
 }
 
+Result<securecloud::auth::v1::GetPrekeyInventoryStatusResponse>
+AuthServiceClient::get_prekey_inventory_status(const securecloud::auth::v1::GetPrekeyInventoryStatusRequest& req,
+                                               ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::GetPrekeyInventoryStatusResponse resp;
+    auto status = stub_->GetPrekeyInventoryStatus(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
+Result<securecloud::auth::v1::ClaimPrekeyBundleResponse>
+AuthServiceClient::claim_prekey_bundle(const securecloud::auth::v1::ClaimPrekeyBundleRequest& req,
+                                       ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::auth::v1::ClaimPrekeyBundleResponse resp;
+    auto status = stub_->ClaimPrekeyBundle(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
 } // namespace securecloud::gateway::grpc

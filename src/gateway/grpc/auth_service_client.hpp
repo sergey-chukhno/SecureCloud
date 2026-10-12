@@ -44,6 +44,13 @@ class AuthServiceClient : public IAuthClient {
     update_crypto_prekeys(const securecloud::auth::v1::UpdateCryptoPrekeysRequest& req,
                           ClientCallContext& ctx) override;
 
+    Result<securecloud::auth::v1::GetPrekeyInventoryStatusResponse>
+    get_prekey_inventory_status(const securecloud::auth::v1::GetPrekeyInventoryStatusRequest& req,
+                                ClientCallContext& ctx) override;
+
+    Result<securecloud::auth::v1::ClaimPrekeyBundleResponse>
+    claim_prekey_bundle(const securecloud::auth::v1::ClaimPrekeyBundleRequest& req, ClientCallContext& ctx) override;
+
   private:
     std::shared_ptr<securecloud::auth::v1::AuthService::StubInterface> stub_;
 };

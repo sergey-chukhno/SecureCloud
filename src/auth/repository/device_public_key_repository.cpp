@@ -56,6 +56,17 @@ constexpr std::string_view kCountActiveOneTimePrekeysSql =
     "FROM device_public_keys "
     "WHERE device_id = $1 AND key_type = 'ONE_TIME_PREKEY' AND key_status = 'Active';";
 
+constexpr std::string_view kCountClaimedOneTimePrekeysSql =
+    "SELECT COUNT(*) "
+    "FROM device_public_keys "
+    "WHERE device_id = $1 AND key_type = 'ONE_TIME_PREKEY' AND key_status = 'Claimed';";
+
+constexpr std::string_view kHasActiveKeyConflictSql =
+    "SELECT EXISTS ("
+    "    SELECT 1 FROM device_public_keys "
+    "    WHERE device_id = $1 AND public_key = $2 AND key_status = 'Active'"
+    ");";
+
 constexpr std::string_view kFindActiveIdentityKeySql =
     "SELECT key_id, device_id, key_type, public_key, key_status, created_at, revoked_at, replaced_by_key_id, signature "
     "FROM device_public_keys "
@@ -260,6 +271,52 @@ int32_t PostgresDevicePublicKeyRepository::count_active_one_time_prekeys(const d
         return res[0][0].as<int32_t>();
     } catch (const pqxx::sql_error& ex) {
         throw DatabaseExecutionException("Failed to count active one-time prekeys: " + std::string(ex.what()));
+    }
+}
+
+int32_t PostgresDevicePublicKeyRepository::count_claimed_one_time_prekeys(const domain::Uuid& device_id) {
+    auto conn = pool_.acquire();
+    pqxx::work tx(*conn);
+    auto count = count_claimed_one_time_prekeys(device_id, tx);
+    tx.commit();
+    return count;
+}
+
+int32_t PostgresDevicePublicKeyRepository::count_claimed_one_time_prekeys(const domain::Uuid& device_id,
+                                                                          pqxx::transaction_base& tx) {
+    try {
+        auto res = db::exec_sql(tx, kCountClaimedOneTimePrekeysSql, pqxx::params{device_id.to_string()});
+        if (res.empty() || res[0][0].is_null()) {
+            return 0;
+        }
+        return res[0][0].as<int32_t>();
+    } catch (const pqxx::sql_error& ex) {
+        throw DatabaseExecutionException("Failed to count claimed one-time prekeys: " + std::string(ex.what()));
+    }
+}
+
+bool PostgresDevicePublicKeyRepository::has_active_key_conflict(const domain::Uuid& device_id,
+                                                                std::span<const uint8_t> public_key) {
+    auto conn = pool_.acquire();
+    pqxx::work tx(*conn);
+    auto conflict = has_active_key_conflict(device_id, public_key, tx);
+    tx.commit();
+    return conflict;
+}
+
+bool PostgresDevicePublicKeyRepository::has_active_key_conflict(const domain::Uuid& device_id,
+                                                                std::span<const uint8_t> public_key,
+                                                                pqxx::transaction_base& tx) {
+    try {
+        std::basic_string<std::byte> byte_span(reinterpret_cast<const std::byte*>(public_key.data()),
+                                               public_key.size());
+        auto res = db::exec_sql(tx, kHasActiveKeyConflictSql, pqxx::params{device_id.to_string(), byte_span});
+        if (res.empty() || res[0][0].is_null()) {
+            return false;
+        }
+        return res[0][0].as<bool>();
+    } catch (const pqxx::sql_error& ex) {
+        throw DatabaseExecutionException("Failed to check active key conflict: " + std::string(ex.what()));
     }
 }
 

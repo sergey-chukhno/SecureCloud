@@ -183,6 +183,15 @@ class MockDevicePublicKeyRepository : public repository::IDevicePublicKeyReposit
     MOCK_METHOD(void, store_one_time_prekeys,
                 (const Uuid& device_id, const std::vector<std::vector<uint8_t>>& keys, pqxx::transaction_base& tx),
                 (override));
+
+    MOCK_METHOD(int32_t, count_claimed_one_time_prekeys, (const Uuid& device_id), (override));
+    MOCK_METHOD(int32_t, count_claimed_one_time_prekeys, (const Uuid& device_id, pqxx::transaction_base& tx),
+                (override));
+
+    MOCK_METHOD(bool, has_active_key_conflict, (const Uuid& device_id, std::span<const uint8_t> public_key),
+                (override));
+    MOCK_METHOD(bool, has_active_key_conflict,
+                (const Uuid& device_id, std::span<const uint8_t> public_key, pqxx::transaction_base& tx), (override));
 };
 
 class MockAuditEventPublisher : public IAuditEventPublisher {

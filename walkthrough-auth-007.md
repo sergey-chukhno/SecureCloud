@@ -367,6 +367,17 @@ When `DeviceManager::revoke_device` executes:
 
 ### 3.5. gRPC Protocol Architecture & Service Implementations
 
+#### Architectural Necessity: Why Auth Implementation Registers with Protobuf Contracts
+A fundamental architectural tenet of SecureCloud is strict service isolation and clear process boundaries:
+1. **Microservices & IPC Boundaries**:
+   `Auth` runs as an independent, isolated backend daemon process hosting its own private cryptographic engine and PostgreSQL database enclave. `Gateway` (and external client runtimes) resides in separate processes communicating strictly across **mTLS-authenticated gRPC** boundaries.
+   [`AuthServiceImpl`](file:///Users/sergeychukhno/Desktop/C:C++/SecureCloud/src/auth/service/auth_service_impl.hpp) acts as the **gRPC transport adapter** translating binary wire payloads from the network into calls on internal C++ domain managers ([`DeviceManager`](file:///Users/sergeychukhno/Desktop/C:C++/SecureCloud/src/auth/service/device_manager.hpp), `SessionManager`, `TokenManager`).
+2. **Protobuf Contract as the Single Source of Truth**:
+   The Protocol Buffer contract ([`proto/securecloud/auth/v1/auth.proto`](file:///Users/sergeychukhno/Desktop/C:C++/SecureCloud/proto/securecloud/auth/v1/auth.proto)) defines the authoritative wire contract:
+   - **Strong Typing & Serialization**: Enforces deterministic binary serialization, schema versioning, and zero-leakage safety across compilers, platforms, and architectures.
+   - **Generated Base Classes**: `protoc` generates abstract service bases (`securecloud::auth::v1::AuthService::Service`) from which `AuthServiceImpl` derives to serve remote calls.
+   - **Gateway Perimeter Integration**: The API Gateway forwards client HTTP payloads to `Auth` through typed gRPC stubs generated directly from `auth.proto`. Without registering device lifecycle methods in the proto contract, the Gateway has no IPC interface to execute device enrollment, pairing, authorization, or revocation.
+
 The protocol buffer definitions in [`proto/securecloud/auth/v1/auth.proto`](file:///Users/sergeychukhno/Desktop/C:C++/SecureCloud/proto/securecloud/auth/v1/auth.proto) define 6 RPC endpoints:
 
 1. `RegisterDevice`: Accepts public keys and user ID; creates `Active` or `PendingAuthorization` device based on caller's `x-auth-level`.
