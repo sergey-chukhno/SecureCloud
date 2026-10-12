@@ -18,11 +18,13 @@ AuthServiceImpl::AuthServiceImpl(std::shared_ptr<ICredentialVerifier> credential
                                  std::shared_ptr<ITokenManager> token_manager, std::shared_ptr<IMfaManager> mfa_manager,
                                  std::shared_ptr<IDeviceManager> device_manager,
                                  std::shared_ptr<ICryptoDirectoryManager> crypto_directory_manager,
-                                 std::shared_ptr<IPrekeyManager> prekey_manager)
+                                 std::shared_ptr<IPrekeyManager> prekey_manager,
+                                 std::shared_ptr<repository::IUserRepository> user_repository)
     : credential_verifier_(std::move(credential_verifier)), session_manager_(std::move(session_manager)),
       audit_publisher_(std::move(audit_publisher)), token_manager_(std::move(token_manager)),
       mfa_manager_(std::move(mfa_manager)), device_manager_(std::move(device_manager)),
-      crypto_directory_manager_(std::move(crypto_directory_manager)), prekey_manager_(std::move(prekey_manager)) {}
+      crypto_directory_manager_(std::move(crypto_directory_manager)), prekey_manager_(std::move(prekey_manager)),
+      user_repository_(std::move(user_repository)) {}
 
 AuthServiceImpl::~AuthServiceImpl() = default;
 
@@ -503,10 +505,59 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
         return status;                                                                                          \
     }
 
-// Remaining Unimplemented Proto RPCs
-IMPLEMENT_UNIMPLEMENTED_RPC(GetUser, GetUserRequest, GetUserResponse)
-
 #undef IMPLEMENT_UNIMPLEMENTED_RPC
+
+::grpc::Status AuthServiceImpl::GetUser(::grpc::ServerContext* context,
+                                        const ::securecloud::auth::v1::GetUserRequest* request,
+                                        ::securecloud::auth::v1::GetUserResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!user_repository_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "User repository not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetUser", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetUser", context, status, duration);
+        return status;
+    }
+
+    auto user_id_res = domain::Uuid::from_string(request->user_id());
+    if (!user_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid user UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetUser", context, status, duration);
+        return status;
+    }
+
+    auto user_opt = user_repository_->find_by_id(*user_id_res);
+    if (!user_opt.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "User not found");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetUser", context, status, duration);
+        return status;
+    }
+
+    auto* proto_user = response->mutable_user();
+    proto_user->set_user_id(user_opt->user_id.to_string());
+    proto_user->set_credential_identifier(user_opt->credential_identifier);
+    proto_user->set_account_status(user_opt->account_status == domain::AccountStatus::Active
+                                       ? securecloud::auth::v1::AccountStatus::ACCOUNT_STATUS_ACTIVE
+                                       : securecloud::auth::v1::AccountStatus::ACCOUNT_STATUS_DISABLED);
+    proto_user->set_created_at_epoch_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(user_opt->created_at.time_since_epoch()).count());
+    proto_user->set_updated_at_epoch_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(user_opt->updated_at.time_since_epoch()).count());
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("GetUser", context, status, duration);
+    return status;
+}
 
 ::grpc::Status
 AuthServiceImpl::GetDeviceCryptoDirectory(::grpc::ServerContext* context,

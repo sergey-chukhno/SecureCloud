@@ -1896,7 +1896,11 @@ void AuthProxyHandler::handle_revoke_device(const httplib::Request& req, httplib
     }
 
     const auto& val = rpc_res.value();
-    nlohmann::json res_json = {{"revoked", val.revoked()}, {"revoked_at_epoch_ms", val.revoked_at_epoch_ms()}};
+    nlohmann::json res_json = {
+        {"revoked", val.revoked()},
+        {"success", val.revoked()},
+        {"revoked_at_epoch_ms", val.revoked_at_epoch_ms()},
+    };
     res.status = 200;
     res.set_content(res_json.dump(), k_content_type_json);
 }
