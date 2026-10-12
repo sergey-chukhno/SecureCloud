@@ -33,10 +33,16 @@ class MockPrekeyManager : public IPrekeyManager {
     MOCK_METHOD(PrekeyInventoryStatusResult, get_inventory_status, (const Uuid& device_id), (override));
     MOCK_METHOD(ClaimPrekeyBundleResult, claim_device_prekey_bundle, (const Uuid& device_id), (override));
 
-    MOCK_METHOD(ReplenishPrekeysResult, replenish_one_time_prekeys,
-                (const Uuid& caller_user_id, const Uuid& caller_device_id, const domain::Uuid& target_device_id,
-                 const std::vector<std::vector<uint8_t>>& new_otks, std::string_view client_ip),
-                (override));
+    ReplenishPrekeysResult replenish_one_time_prekeys(const Uuid& caller_user_id, const Uuid& caller_device_id,
+                                                      const domain::Uuid& target_device_id,
+                                                      const std::vector<std::vector<uint8_t>>& new_otks,
+                                                      std::string_view client_ip) override {
+        return replenish_one_time_prekeys_impl(caller_user_id, caller_device_id, target_device_id, new_otks,
+                                               std::string(client_ip));
+    }
+
+    MOCK_METHOD(ReplenishPrekeysResult, replenish_one_time_prekeys_impl,
+                (const Uuid&, const Uuid&, const Uuid&, const std::vector<std::vector<uint8_t>>&, const std::string&));
 
     RotateSignedPrekeyResult rotate_signed_prekey(const Uuid& caller_user_id, const Uuid& caller_device_id,
                                                   const Uuid& target_device_id,

@@ -150,7 +150,7 @@ jobs:
         continue-on-error: true
         with:
           path: ${{ github.workspace }}/.vcpkg_archives
-          key: ${{ steps.vcpkg-cache.outputs.cache-primary-key }}
+          key: vcpkg-msvc-${{ hashFiles('vcpkg.json') }}
 
       - name: Build All Targets
         shell: pwsh
