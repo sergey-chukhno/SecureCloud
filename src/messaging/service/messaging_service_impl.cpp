@@ -1,5 +1,12 @@
 #include "service/messaging_service_impl.hpp"
 
+#ifdef SendMessage
+#undef SendMessage
+#endif
+#ifdef GetMessage
+#undef GetMessage
+#endif
+
 #include "securecloud/security/mtls_config.hpp"
 
 #include <iostream>
@@ -31,14 +38,14 @@ MessagingServiceImpl::MessagingServiceImpl(std::shared_ptr<concurrency::BoundedW
                                                  const ::securecloud::messaging::v1::SendMessageRequest* /*request*/,
                                                  ::securecloud::messaging::v1::SendMessageResponse* /*response*/) {
     log_rpc_invocation("SendMessage", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 ::grpc::Status MessagingServiceImpl::GetMessages(::grpc::ServerContext* context,
                                                  const ::securecloud::messaging::v1::GetMessagesRequest* /*request*/,
                                                  ::securecloud::messaging::v1::GetMessagesResponse* /*response*/) {
     log_rpc_invocation("GetMessages", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 ::grpc::Status
@@ -46,7 +53,7 @@ MessagingServiceImpl::AcknowledgeDelivery(::grpc::ServerContext* context,
                                           const ::securecloud::messaging::v1::AcknowledgeDeliveryRequest* /*request*/,
                                           ::securecloud::messaging::v1::AcknowledgeDeliveryResponse* /*response*/) {
     log_rpc_invocation("AcknowledgeDelivery", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 ::grpc::Status
@@ -54,7 +61,7 @@ MessagingServiceImpl::SendReadReceipt(::grpc::ServerContext* context,
                                       const ::securecloud::messaging::v1::SendReadReceiptRequest* /*request*/,
                                       ::securecloud::messaging::v1::SendReadReceiptResponse* /*response*/) {
     log_rpc_invocation("SendReadReceipt", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 // --- Conversation & membership RPCs ---
@@ -64,7 +71,7 @@ MessagingServiceImpl::CreateConversation(::grpc::ServerContext* context,
                                          const ::securecloud::messaging::v1::CreateConversationRequest* /*request*/,
                                          ::securecloud::messaging::v1::CreateConversationResponse* /*response*/) {
     log_rpc_invocation("CreateConversation", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 ::grpc::Status
@@ -72,7 +79,7 @@ MessagingServiceImpl::GetConversation(::grpc::ServerContext* context,
                                       const ::securecloud::messaging::v1::GetConversationRequest* /*request*/,
                                       ::securecloud::messaging::v1::GetConversationResponse* /*response*/) {
     log_rpc_invocation("GetConversation", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 ::grpc::Status
@@ -80,7 +87,7 @@ MessagingServiceImpl::ListConversations(::grpc::ServerContext* context,
                                         const ::securecloud::messaging::v1::ListConversationsRequest* /*request*/,
                                         ::securecloud::messaging::v1::ListConversationsResponse* /*response*/) {
     log_rpc_invocation("ListConversations", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 ::grpc::Status
@@ -88,7 +95,7 @@ MessagingServiceImpl::AddParticipant(::grpc::ServerContext* context,
                                      const ::securecloud::messaging::v1::AddParticipantRequest* /*request*/,
                                      ::securecloud::messaging::v1::AddParticipantResponse* /*response*/) {
     log_rpc_invocation("AddParticipant", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 ::grpc::Status
@@ -96,7 +103,7 @@ MessagingServiceImpl::RemoveParticipant(::grpc::ServerContext* context,
                                         const ::securecloud::messaging::v1::RemoveParticipantRequest* /*request*/,
                                         ::securecloud::messaging::v1::RemoveParticipantResponse* /*response*/) {
     log_rpc_invocation("RemoveParticipant", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 // --- Device synchronization RPCs ---
@@ -106,7 +113,7 @@ MessagingServiceImpl::SyncDeviceMessages(::grpc::ServerContext* context,
                                          const ::securecloud::messaging::v1::SyncDeviceMessagesRequest* /*request*/,
                                          ::securecloud::messaging::v1::SyncDeviceMessagesResponse* /*response*/) {
     log_rpc_invocation("SyncDeviceMessages", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 ::grpc::Status
@@ -114,7 +121,7 @@ MessagingServiceImpl::GetSyncCursor(::grpc::ServerContext* context,
                                     const ::securecloud::messaging::v1::GetSyncCursorRequest* /*request*/,
                                     ::securecloud::messaging::v1::GetSyncCursorResponse* /*response*/) {
     log_rpc_invocation("GetSyncCursor", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 ::grpc::Status
@@ -122,7 +129,7 @@ MessagingServiceImpl::UpdateSyncCursor(::grpc::ServerContext* context,
                                        const ::securecloud::messaging::v1::UpdateSyncCursorRequest* /*request*/,
                                        ::securecloud::messaging::v1::UpdateSyncCursorResponse* /*response*/) {
     log_rpc_invocation("UpdateSyncCursor", context);
-    return ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
 // --- Metadata & security helpers ---
@@ -134,11 +141,11 @@ std::string MessagingServiceImpl::extract_correlation_id(const ::grpc::ServerCon
     const auto& metadata = context->client_metadata();
     auto it = metadata.find("x-correlation-id");
     if (it != metadata.end()) {
-        return std::string(it->second.data(), it->second.size());
+        return {it->second.data(), it->second.size()};
     }
     it = metadata.find("x-request-id");
     if (it != metadata.end()) {
-        return std::string(it->second.data(), it->second.size());
+        return {it->second.data(), it->second.size()};
     }
     return "";
 }

@@ -1,7 +1,23 @@
 #include "concurrency/bounded_worker_pool.hpp"
 #include "messaging_config.hpp"
+
+#ifdef SendMessage
+#undef SendMessage
+#endif
+#ifdef GetMessage
+#undef GetMessage
+#endif
+
 #include "securecloud/messaging/v1/messaging.grpc.pb.h"
 #include "securecloud/messaging/v1/messaging.pb.h"
+
+#ifdef SendMessage
+#undef SendMessage
+#endif
+#ifdef GetMessage
+#undef GetMessage
+#endif
+
 #include "securecloud/security/mtls_config.hpp"
 #include "service/messaging_service_impl.hpp"
 

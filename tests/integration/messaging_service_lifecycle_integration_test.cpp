@@ -3,8 +3,24 @@
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/health/health_service_impl.hpp"
 #include "securecloud/health/health_status_manager.hpp"
+
+#ifdef SendMessage
+#undef SendMessage
+#endif
+#ifdef GetMessage
+#undef GetMessage
+#endif
+
 #include "securecloud/messaging/v1/messaging.grpc.pb.h"
 #include "securecloud/messaging/v1/messaging.pb.h"
+
+#ifdef SendMessage
+#undef SendMessage
+#endif
+#ifdef GetMessage
+#undef GetMessage
+#endif
+
 #include "securecloud/security/mtls_config.hpp"
 #include "service/messaging_service_impl.hpp"
 
@@ -18,20 +34,6 @@
 #include <string>
 #include <thread>
 #include <vector>
-
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#else
-#include <arpa/inet.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <unistd.h>
-#endif
 
 namespace securecloud::messaging {
 namespace {

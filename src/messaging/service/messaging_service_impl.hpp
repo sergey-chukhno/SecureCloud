@@ -1,7 +1,23 @@
 #pragma once
 
 #include "concurrency/bounded_worker_pool.hpp"
+
+// Undefine conflicting Win32 macros before and after gRPC header includes
+#ifdef SendMessage
+#undef SendMessage
+#endif
+#ifdef GetMessage
+#undef GetMessage
+#endif
+
 #include "securecloud/messaging/v1/messaging.grpc.pb.h"
+
+#ifdef SendMessage
+#undef SendMessage
+#endif
+#ifdef GetMessage
+#undef GetMessage
+#endif
 
 #include <grpcpp/grpcpp.h>
 #include <memory>
