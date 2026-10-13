@@ -358,7 +358,7 @@ TEST_F(AuthProxyResilienceTest, GrpcStatusCodeTranslationMatrix) {
     struct TestCase {
         ::grpc::StatusCode grpc_code;
         int expected_http_status;
-        std::string_view expected_error_code;
+        std::string expected_error_code;
     };
 
     const std::vector<TestCase> cases = {
@@ -385,7 +385,7 @@ TEST_F(AuthProxyResilienceTest, GrpcStatusCodeTranslationMatrix) {
 
         auto body = nlohmann::json::parse(res.body);
         EXPECT_EQ(body["status"], tc.expected_http_status);
-        EXPECT_EQ(body["error"]["code"], tc.expected_error_code);
+        EXPECT_EQ(body["error"]["code"].get<std::string>(), tc.expected_error_code);
         EXPECT_EQ(body["detail"], "Detailed error explanation");
         EXPECT_EQ(body["request_id"], "req-matrix");
     }
