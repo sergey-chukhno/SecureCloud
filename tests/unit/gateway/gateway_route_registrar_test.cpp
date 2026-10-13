@@ -78,6 +78,61 @@ class MockAuthClient : public securecloud::gateway::grpc::IAuthClient {
                 (const securecloud::auth::v1::ClaimPrekeyBundleRequest& req,
                  securecloud::gateway::grpc::ClientCallContext& ctx),
                 (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::GetPublicSigningKeyResponse>,
+                get_public_signing_key,
+                (const securecloud::auth::v1::GetPublicSigningKeyRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::InitiateMfaEnrollmentResponse>,
+                initiate_mfa_enrollment,
+                (const securecloud::auth::v1::InitiateMfaEnrollmentRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ConfirmMfaEnrollmentResponse>,
+                confirm_mfa_enrollment,
+                (const securecloud::auth::v1::ConfirmMfaEnrollmentRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::VerifyMfaChallengeResponse>,
+                verify_mfa_challenge,
+                (const securecloud::auth::v1::VerifyMfaChallengeRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::DisableMfaResponse>, disable_mfa,
+                (const securecloud::auth::v1::DisableMfaRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::GetDeviceResponse>, get_device,
+                (const securecloud::auth::v1::GetDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::ListUserDevicesResponse>, list_user_devices,
+                (const securecloud::auth::v1::ListUserDevicesRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::InitiateDevicePairingResponse>,
+                initiate_device_pairing,
+                (const securecloud::auth::v1::InitiateDevicePairingRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::AuthorizeDeviceResponse>, authorize_device,
+                (const securecloud::auth::v1::AuthorizeDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
+
+    MOCK_METHOD(securecloud::gateway::grpc::Result<securecloud::auth::v1::RevokeDeviceResponse>, revoke_device,
+                (const securecloud::auth::v1::RevokeDeviceRequest& req,
+                 securecloud::gateway::grpc::ClientCallContext& ctx),
+                (override));
 };
 
 class GatewayRouteRegistrarTest : public ::testing::Test {
@@ -115,9 +170,12 @@ TEST_F(GatewayRouteRegistrarTest, RegisterAllRoutesPopulatesRouterTable) {
     // Crypto Identity & Prekeys: 5 (/api/v1/users/:user_id/devices/crypto-directory,
     // /api/v1/devices/:device_id/crypto-identity, /api/v1/devices/:device_id/prekeys,
     // /api/v1/devices/:device_id/prekeys/inventory, /api/v1/devices/:device_id/prekeys/claim)
-    // Stubs: 6 (3 messages, 2 files, 1 audit)
-    // Total = 21 routes
-    EXPECT_EQ(router.route_count(), 21);
+    // MFA Endpoints: 5 (/api/v1/auth/mfa/enroll, /api/v1/auth/mfa/confirm, /api/v1/auth/mfa/verify,
+    // /api/v1/auth/mfa/challenge, /api/v1/auth/mfa/disable)
+    // Device Lifecycle: 7 (/api/v1/devices [GET], /api/v1/devices/:device_id [GET], /api/v1/devices/pairing,
+    // /api/v1/devices/pair, /api/v1/devices/:device_id/authorize, /api/v1/devices/:device_id [DELETE],
+    // /api/v1/devices/:device_id/revoke) Stubs: 6 (3 messages, 2 files, 1 audit) Total = 33 routes
+    EXPECT_EQ(router.route_count(), 33);
 }
 
 TEST_F(GatewayRouteRegistrarTest, HealthLiveServing) {
@@ -304,7 +362,7 @@ TEST_F(GatewayRouteRegistrarTest, SharedPtrConstructorOverload) {
 
     Router router;
     registrar_shared.register_all_routes(router);
-    EXPECT_EQ(router.route_count(), 21);
+    EXPECT_EQ(router.route_count(), 33);
 }
 
 } // namespace

@@ -64,6 +64,21 @@ class AuthProxyHandler {
     void handle_claim_device_prekey(const httplib::Request& req, httplib::Response& res,
                                     const AuthenticatedContext& ctx);
 
+    void handle_initiate_mfa_enrollment(const httplib::Request& req, httplib::Response& res,
+                                        const AuthenticatedContext& ctx);
+    void handle_confirm_mfa_enrollment(const httplib::Request& req, httplib::Response& res,
+                                       const AuthenticatedContext& ctx);
+    void handle_verify_mfa_challenge(const httplib::Request& req, httplib::Response& res,
+                                     const AuthenticatedContext& ctx);
+    void handle_disable_mfa(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
+
+    void handle_list_devices(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
+    void handle_get_device(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
+    void handle_initiate_device_pairing(const httplib::Request& req, httplib::Response& res,
+                                        const AuthenticatedContext& ctx);
+    void handle_authorize_device(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
+    void handle_revoke_device(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
+
     [[nodiscard]] const std::shared_ptr<DeadlineManager>& deadline_manager() const noexcept {
         return deadline_manager_;
     }

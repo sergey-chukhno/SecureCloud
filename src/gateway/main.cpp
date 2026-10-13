@@ -6,6 +6,7 @@
 #include "http/auth/authentication_middleware.hpp"
 #include "http/auth/authorization_middleware.hpp"
 #include "http/auth/gateway_security_policy.hpp"
+#include "http/auth/local_token_verifier.hpp"
 #include "http/middleware/drain_middleware.hpp"
 #include "http/middleware/logging_middleware.hpp"
 #include "http/middleware/rate_limiter_middleware.hpp"
@@ -34,10 +35,12 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <fstream>
 #include <grpcpp/grpcpp.h>
 #include <httplib.h>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -147,7 +150,56 @@ int run_service() {
     // Configure downstream Auth gRPC client & perimeter validation
     auto auth_channel = channel_manager.get_auth_channel();
     auto auth_client = std::make_shared<securecloud::gateway::grpc::AuthServiceClient>(auth_channel);
-    auto token_validator = std::make_shared<securecloud::gateway::http::AuthServiceTokenValidator>(auth_client);
+
+    std::shared_ptr<securecloud::gateway::http::ITokenValidator> token_validator;
+    if (config.token_verification_mode == "local") {
+        std::string public_key_pem = config.auth_public_key_pem;
+        if (public_key_pem.empty() && !config.auth_public_key_path.empty()) {
+            std::ifstream file(config.auth_public_key_path);
+            if (file.is_open()) {
+                std::stringstream buffer;
+                buffer << file.rdbuf();
+                public_key_pem = buffer.str();
+            }
+        }
+        if (public_key_pem.empty()) {
+            securecloud::gateway::grpc::ClientCallContext ctx(std::chrono::milliseconds(2000));
+            securecloud::auth::v1::GetPublicSigningKeyRequest req;
+            auto key_res = auth_client->get_public_signing_key(req, ctx);
+            if (key_res.has_value()) {
+                public_key_pem = key_res.value().public_key_pem();
+                std::cout << "[SecureCloud] [" << config.common.service_name
+                          << "] Fetched public signing key from AuthService (key_id: " << key_res.value().key_id()
+                          << ")\n";
+            } else {
+                std::cerr << "[SecureCloud] [" << config.common.service_name
+                          << "] WARNING: Failed to fetch public signing key from AuthService: "
+                          << key_res.error().message << ". Falling back to remote RPC validation.\n";
+            }
+        }
+
+        if (!public_key_pem.empty()) {
+            try {
+                token_validator = securecloud::gateway::http::LocalTokenVerifier::from_public_key_pem(public_key_pem);
+                std::cout << "[SecureCloud] [" << config.common.service_name
+                          << "] Initialized LocalTokenVerifier for offline Ed25519 token verification\n";
+            } catch (const std::exception& ex) {
+                std::cerr << "[SecureCloud] [" << config.common.service_name
+                          << "] ERROR: Failed to construct LocalTokenVerifier: " << ex.what()
+                          << ". Falling back to remote RPC validation.\n";
+                token_validator = std::make_shared<securecloud::gateway::http::AuthServiceTokenValidator>(auth_client);
+            }
+        } else {
+            token_validator = std::make_shared<securecloud::gateway::http::AuthServiceTokenValidator>(auth_client);
+            std::cout << "[SecureCloud] [" << config.common.service_name
+                      << "] Initialized AuthServiceTokenValidator (remote RPC fallback)\n";
+        }
+    } else {
+        token_validator = std::make_shared<securecloud::gateway::http::AuthServiceTokenValidator>(auth_client);
+        std::cout << "[SecureCloud] [" << config.common.service_name
+                  << "] Initialized AuthServiceTokenValidator for remote gRPC token validation\n";
+    }
+
     auto security_policy = std::make_shared<securecloud::gateway::http::GatewaySecurityPolicy>(
         securecloud::gateway::http::GatewaySecurityPolicy::create_default());
 

@@ -353,6 +353,15 @@ message DisableMfaResponse {
     bool success = 1;
 }
 
+message GetPublicSigningKeyRequest {}
+
+message GetPublicSigningKeyResponse {
+    string key_id = 1;
+    string algorithm = 2;
+    bytes public_key_raw = 3;
+    string public_key_pem = 4;
+}
+
 // ============================================================================
 // Service Interface
 // ============================================================================
@@ -383,5 +392,7 @@ service AuthService {
     rpc InitiateMfaEnrollment(InitiateMfaEnrollmentRequest) returns (InitiateMfaEnrollmentResponse);
     rpc ConfirmMfaEnrollment(ConfirmMfaEnrollmentRequest) returns (ConfirmMfaEnrollmentResponse);
     rpc DisableMfa(DisableMfaRequest) returns (DisableMfaResponse);
+
+    rpc GetPublicSigningKey(GetPublicSigningKeyRequest) returns (GetPublicSigningKeyResponse);
 }
 

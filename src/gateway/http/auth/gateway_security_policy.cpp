@@ -73,14 +73,28 @@ GatewaySecurityPolicy GatewaySecurityPolicy::create_default() {
     policy.add_rule("*", "/api/v1/admin/*", RouteAccess::Sensitive, {},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
 
-    // Device lifecycle perimeter routes (AUTH-007-T05)
+    // Device lifecycle perimeter routes (AUTH-007-T05, AUTH-010-T03)
     policy.add_rule("POST", "/api/v1/devices/register", RouteAccess::Sensitive, {},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
     policy.add_rule("POST", "/api/v1/devices/authorize", RouteAccess::Sensitive, {},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    policy.add_rule("POST", "/api/v1/devices/:device_id/authorize", RouteAccess::Sensitive, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
     policy.add_rule("POST", "/api/v1/devices/revoke", RouteAccess::Sensitive, {},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    policy.add_rule("POST", "/api/v1/devices/:device_id/revoke", RouteAccess::Sensitive, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    policy.add_rule("DELETE", "/api/v1/devices/*", RouteAccess::Sensitive, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    policy.add_rule("DELETE", "/api/v1/devices/:device_id", RouteAccess::Sensitive, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+    policy.add_rule("POST", "/api/v1/devices/pairing", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("POST", "/api/v1/devices/pair", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
     policy.add_rule("GET", "/api/v1/devices", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("GET", "/api/v1/devices/:device_id", RouteAccess::Protected, {},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
     policy.add_rule("GET", "/api/v1/devices/*", RouteAccess::Protected, {},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
@@ -114,6 +128,16 @@ GatewaySecurityPolicy GatewaySecurityPolicy::create_default() {
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {"access"});
     policy.add_rule("GET", "/api/v1/auth/me", RouteAccess::Protected, {"user:profile"},
                     securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY, {"auth:profile"});
+
+    // Multi-factor authentication lifecycle routes (AUTH-010-T02)
+    policy.add_rule("POST", "/api/v1/auth/mfa/enroll", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("POST", "/api/v1/auth/mfa/confirm", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("POST", "/api/v1/auth/mfa/verify", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
+    policy.add_rule("POST", "/api/v1/auth/mfa/challenge", RouteAccess::Protected, {},
+                    securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_PRIMARY);
 
     // Messaging microservice protected routes
     policy.add_rule("POST", "/api/v1/messages/send", RouteAccess::Protected, {"messages:send"},

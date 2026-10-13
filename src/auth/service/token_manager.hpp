@@ -53,6 +53,9 @@ class ITokenManager {
     virtual domain::TokenRefreshResult refresh_tokens(std::string_view refresh_token_secret,
                                                       const domain::Uuid& device_id,
                                                       std::string_view client_ip = "unknown") = 0;
+
+    /// Returns the active token signer if available.
+    [[nodiscard]] virtual std::shared_ptr<crypto::ITokenSigner> signer() const noexcept { return nullptr; }
 };
 
 /**
@@ -87,7 +90,7 @@ class TokenManager final : public ITokenManager {
                                               std::string_view client_ip = "unknown") override;
 
     [[nodiscard]] const TokenManagerConfig& config() const noexcept { return config_; }
-    [[nodiscard]] std::shared_ptr<crypto::ITokenSigner> signer() const noexcept { return token_signer_; }
+    [[nodiscard]] std::shared_ptr<crypto::ITokenSigner> signer() const noexcept override { return token_signer_; }
 
   private:
     std::shared_ptr<crypto::ITokenSigner> token_signer_;

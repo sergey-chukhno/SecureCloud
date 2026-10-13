@@ -51,6 +51,40 @@ class AuthServiceClient : public IAuthClient {
     Result<securecloud::auth::v1::ClaimPrekeyBundleResponse>
     claim_prekey_bundle(const securecloud::auth::v1::ClaimPrekeyBundleRequest& req, ClientCallContext& ctx) override;
 
+    Result<securecloud::auth::v1::GetPublicSigningKeyResponse>
+    get_public_signing_key(const securecloud::auth::v1::GetPublicSigningKeyRequest& req,
+                           ClientCallContext& ctx) override;
+
+    Result<securecloud::auth::v1::InitiateMfaEnrollmentResponse>
+    initiate_mfa_enrollment(const securecloud::auth::v1::InitiateMfaEnrollmentRequest& req,
+                            ClientCallContext& ctx) override;
+
+    Result<securecloud::auth::v1::ConfirmMfaEnrollmentResponse>
+    confirm_mfa_enrollment(const securecloud::auth::v1::ConfirmMfaEnrollmentRequest& req,
+                           ClientCallContext& ctx) override;
+
+    Result<securecloud::auth::v1::VerifyMfaChallengeResponse>
+    verify_mfa_challenge(const securecloud::auth::v1::VerifyMfaChallengeRequest& req, ClientCallContext& ctx) override;
+
+    Result<securecloud::auth::v1::DisableMfaResponse> disable_mfa(const securecloud::auth::v1::DisableMfaRequest& req,
+                                                                  ClientCallContext& ctx) override;
+
+    Result<securecloud::auth::v1::GetDeviceResponse> get_device(const securecloud::auth::v1::GetDeviceRequest& req,
+                                                                ClientCallContext& ctx) override;
+
+    Result<securecloud::auth::v1::ListUserDevicesResponse>
+    list_user_devices(const securecloud::auth::v1::ListUserDevicesRequest& req, ClientCallContext& ctx) override;
+
+    Result<securecloud::auth::v1::InitiateDevicePairingResponse>
+    initiate_device_pairing(const securecloud::auth::v1::InitiateDevicePairingRequest& req,
+                            ClientCallContext& ctx) override;
+
+    Result<securecloud::auth::v1::AuthorizeDeviceResponse>
+    authorize_device(const securecloud::auth::v1::AuthorizeDeviceRequest& req, ClientCallContext& ctx) override;
+
+    Result<securecloud::auth::v1::RevokeDeviceResponse>
+    revoke_device(const securecloud::auth::v1::RevokeDeviceRequest& req, ClientCallContext& ctx) override;
+
   private:
     std::shared_ptr<securecloud::auth::v1::AuthService::StubInterface> stub_;
 };

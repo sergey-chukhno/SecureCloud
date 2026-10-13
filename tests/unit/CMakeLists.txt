@@ -815,6 +815,24 @@ target_link_libraries(securecloud_auth_service_prekey_test PRIVATE
 
 gtest_discover_tests(securecloud_auth_service_prekey_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Auth Service Public Signing Key Distribution Test Suite (AUTH-010-T01)
+add_executable(securecloud_auth_service_public_key_test
+        auth/auth_service_public_key_test.cpp
+)
+
+target_link_libraries(securecloud_auth_service_public_key_test PRIVATE
+        securecloud::auth
+        securecloud::gateway_http
+        securecloud::common
+        securecloud_proto
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_auth_service_public_key_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway HTTP & JSON Dependencies Smoke Test (GW-001-T01)
 add_executable(securecloud_http_smoke_test
     gateway/http_smoke_test.cpp
@@ -1018,6 +1036,54 @@ target_link_libraries(securecloud_auth_proxy_handler_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_auth_proxy_handler_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Auth Microservice MFA HTTP Proxy Handler Test (AUTH-010-T02)
+add_executable(securecloud_auth_proxy_handler_mfa_test
+    gateway/auth_proxy_handler_mfa_test.cpp
+)
+
+target_link_libraries(securecloud_auth_proxy_handler_mfa_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_proxy_handler_mfa_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Auth Microservice Device Lifecycle HTTP Proxy Handler Test (AUTH-010-T03)
+add_executable(securecloud_auth_proxy_handler_device_lifecycle_test
+    gateway/auth_proxy_handler_device_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_auth_proxy_handler_device_lifecycle_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_proxy_handler_device_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Auth Microservice Perimeter Resilience & RFC 7807 Error Mapping Test (AUTH-010-T04)
+add_executable(securecloud_auth_proxy_resilience_test
+    gateway/auth_proxy_resilience_test.cpp
+)
+
+target_link_libraries(securecloud_auth_proxy_resilience_test PRIVATE
+    securecloud::gateway_http
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_proxy_resilience_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Gateway Files Microservice HTTP Streaming Proxy Handler Test (GW-010-T03)
 add_executable(securecloud_files_proxy_handler_test

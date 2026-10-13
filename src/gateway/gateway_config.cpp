@@ -640,6 +640,33 @@ void load_downstream_endpoints(GatewayConfig& config, const common::configuratio
                    config.audit_endpoint, out_errors);
 }
 
+void load_token_verification_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                                    common::configuration::ValidationResult& out_errors, bool validate_file_paths) {
+    if (auto mode_opt = source.get("SECURECLOUD_GATEWAY_TOKEN_VERIFICATION_MODE"); mode_opt.has_value()) {
+        std::string mode = *mode_opt;
+        if (mode == "local" || mode == "remote_rpc") {
+            config.token_verification_mode = mode;
+        } else {
+            out_errors.add_error("SECURECLOUD_GATEWAY_TOKEN_VERIFICATION_MODE",
+                                 "invalid token verification mode: '" + mode + "'; must be 'local' or 'remote_rpc'");
+        }
+    }
+
+    if (auto pem_opt = source.get("SECURECLOUD_GATEWAY_AUTH_PUBLIC_KEY_PEM"); pem_opt.has_value()) {
+        config.auth_public_key_pem = *pem_opt;
+    }
+
+    if (auto path_opt = source.get("SECURECLOUD_GATEWAY_AUTH_PUBLIC_KEY_PATH"); path_opt.has_value()) {
+        config.auth_public_key_path = *path_opt;
+        if (validate_file_paths && !config.auth_public_key_path.empty()) {
+            if (!std::filesystem::exists(std::filesystem::path(config.auth_public_key_path))) {
+                out_errors.add_error("SECURECLOUD_GATEWAY_AUTH_PUBLIC_KEY_PATH",
+                                     "public key file does not exist on disk: '" + config.auth_public_key_path + "'");
+            }
+        }
+    }
+}
+
 } // namespace
 
 std::string GatewayConfig::http_listen_endpoint() const {
@@ -689,6 +716,7 @@ GatewayConfig GatewayConfig::load(const common::configuration::ConfigurationSour
     load_circuit_breaker_config(config, source, out_errors);
     load_streaming_config(config, source, out_errors);
     load_downstream_endpoints(config, source, out_errors);
+    load_token_verification_config(config, source, out_errors, validate_file_paths);
 
     config.peer_probe_target = source.get("SECURECLOUD_GATEWAY_PEER_PROBE_TARGET")
                                    .value_or(source.get("SECURECLOUD_PEER_PROBE_TARGET").value_or(""));

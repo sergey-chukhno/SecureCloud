@@ -1,5 +1,6 @@
 #pragma once
 
+#include "auth/repository/user_repository.hpp"
 #include "auth/service/crypto_directory_manager.hpp"
 #include "auth/service/device_manager.hpp"
 #include "auth/service/prekey_manager.hpp"
@@ -31,7 +32,8 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
                              std::shared_ptr<IMfaManager> mfa_manager = nullptr,
                              std::shared_ptr<IDeviceManager> device_manager = nullptr,
                              std::shared_ptr<ICryptoDirectoryManager> crypto_directory_manager = nullptr,
-                             std::shared_ptr<IPrekeyManager> prekey_manager = nullptr);
+                             std::shared_ptr<IPrekeyManager> prekey_manager = nullptr,
+                             std::shared_ptr<repository::IUserRepository> user_repository = nullptr);
     ~AuthServiceImpl() override;
 
     AuthServiceImpl(const AuthServiceImpl&) = delete;
@@ -122,6 +124,10 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
     ::grpc::Status DisableMfa(::grpc::ServerContext* context, const ::securecloud::auth::v1::DisableMfaRequest* request,
                               ::securecloud::auth::v1::DisableMfaResponse* response) override;
 
+    ::grpc::Status GetPublicSigningKey(::grpc::ServerContext* context,
+                                       const ::securecloud::auth::v1::GetPublicSigningKeyRequest* request,
+                                       ::securecloud::auth::v1::GetPublicSigningKeyResponse* response) override;
+
     /// Allows test suites to simulate caller authentication level when invoking service directly without gRPC server
     /// pipeline
     void set_caller_auth_level_for_testing(std::optional<securecloud::auth::v1::AuthenticationLevel> level) noexcept {
@@ -154,6 +160,7 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
     std::shared_ptr<IDeviceManager> device_manager_;
     std::shared_ptr<ICryptoDirectoryManager> crypto_directory_manager_;
     std::shared_ptr<IPrekeyManager> prekey_manager_;
+    std::shared_ptr<repository::IUserRepository> user_repository_;
 
     std::optional<securecloud::auth::v1::AuthenticationLevel> auth_level_override_for_testing_{std::nullopt};
     std::optional<domain::Uuid> caller_user_id_override_for_testing_{std::nullopt};
