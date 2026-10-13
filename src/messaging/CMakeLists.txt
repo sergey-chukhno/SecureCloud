@@ -1,8 +1,10 @@
 add_library(securecloud_messaging_config STATIC
     messaging_config.cpp
+    concurrency/bounded_worker_pool.cpp
 )
 
 add_library(securecloud::messaging_config ALIAS securecloud_messaging_config)
+add_library(securecloud::messaging ALIAS securecloud_messaging_config)
 
 target_include_directories(securecloud_messaging_config PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
