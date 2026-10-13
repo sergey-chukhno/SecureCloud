@@ -65,6 +65,8 @@ TEST(ProtoSmokeTest, AuthServiceStubTypeLinkage) {
 namespace {
 constexpr uint64_t k_test_encrypted_size = 10485760;
 constexpr uint32_t k_test_expected_chunks = 3;
+constexpr int64_t k_test_expires_at_unix_ms = 1760000000000LL;
+constexpr int64_t k_test_accepted_at_unix_ms = 1750000000000LL;
 } // namespace
 
 TEST(ProtoSmokeTest, FilesMessageConstructionAndSerialization) {
@@ -113,7 +115,7 @@ TEST(ProtoSmokeTest, MessagingMessageConstructionAndSerialization) {
     request.set_sender_device_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36011");
     request.set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_URGENT);
     request.set_client_idempotency_token("idem-token-12345");
-    request.set_expires_at_unix_ms(1760000000000LL);
+    request.set_expires_at_unix_ms(k_test_expires_at_unix_ms);
 
     auto* target = request.add_delivery_targets();
     target->set_recipient_user_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36012");
@@ -146,7 +148,7 @@ TEST(ProtoSmokeTest, MessagingMessageConstructionAndSerialization) {
     securecloud::messaging::v1::SendMessageResponse response;
     response.set_message_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36099");
     response.set_conversation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36010");
-    response.set_accepted_at_unix_ms(1750000000000LL);
+    response.set_accepted_at_unix_ms(k_test_accepted_at_unix_ms);
     response.set_initial_state(securecloud::messaging::v1::DELIVERY_STATE_QUEUED);
     response.set_target_count(1);
     EXPECT_EQ(response.initial_state(), securecloud::messaging::v1::DELIVERY_STATE_QUEUED);
