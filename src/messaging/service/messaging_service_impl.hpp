@@ -79,6 +79,15 @@ class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingS
                                      const ::securecloud::messaging::v1::RemoveParticipantRequest* request,
                                      ::securecloud::messaging::v1::RemoveParticipantResponse* response) override;
 
+    ::grpc::Status LeaveConversation(::grpc::ServerContext* context,
+                                     const ::securecloud::messaging::v1::LeaveConversationRequest* request,
+                                     ::securecloud::messaging::v1::LeaveConversationResponse* response) override;
+
+    ::grpc::Status
+    UpdateConversationMetadata(::grpc::ServerContext* context,
+                               const ::securecloud::messaging::v1::UpdateConversationMetadataRequest* request,
+                               ::securecloud::messaging::v1::UpdateConversationMetadataResponse* response) override;
+
     // --- Device synchronization RPCs ---
     ::grpc::Status SyncDeviceMessages(::grpc::ServerContext* context,
                                       const ::securecloud::messaging::v1::SyncDeviceMessagesRequest* request,
@@ -91,6 +100,19 @@ class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingS
     ::grpc::Status UpdateSyncCursor(::grpc::ServerContext* context,
                                     const ::securecloud::messaging::v1::UpdateSyncCursorRequest* request,
                                     ::securecloud::messaging::v1::UpdateSyncCursorResponse* response) override;
+
+    // --- Presence signaling & query RPCs ---
+    ::grpc::Status UpdatePresence(::grpc::ServerContext* context,
+                                  const ::securecloud::messaging::v1::UpdatePresenceRequest* request,
+                                  ::securecloud::messaging::v1::UpdatePresenceResponse* response) override;
+
+    ::grpc::Status GetPresence(::grpc::ServerContext* context,
+                               const ::securecloud::messaging::v1::GetPresenceRequest* request,
+                               ::securecloud::messaging::v1::GetPresenceResponse* response) override;
+
+    ::grpc::Status BatchGetPresence(::grpc::ServerContext* context,
+                                    const ::securecloud::messaging::v1::BatchGetPresenceRequest* request,
+                                    ::securecloud::messaging::v1::BatchGetPresenceResponse* response) override;
 
     /// Helper to extract correlation ID from gRPC context metadata (x-correlation-id or x-request-id).
     [[nodiscard]] static std::string extract_correlation_id(const ::grpc::ServerContext* context);

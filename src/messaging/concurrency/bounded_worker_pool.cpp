@@ -29,7 +29,7 @@ bool BoundedWorkerPool::try_submit(std::function<void()> task) {
         return false;
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     if (is_shutdown_ || is_draining_ || tasks_.size() >= max_queue_capacity_) {
         return false;
     }
@@ -60,7 +60,7 @@ bool BoundedWorkerPool::submit_with_timeout(std::function<void()> task, std::chr
 void BoundedWorkerPool::shutdown() {
     std::vector<std::thread> to_join;
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::scoped_lock lock(mutex_);
         if (is_shutdown_) {
             return;
         }
@@ -118,17 +118,17 @@ size_t BoundedWorkerPool::queue_capacity() const noexcept {
 }
 
 size_t BoundedWorkerPool::queued_tasks() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     return tasks_.size();
 }
 
 size_t BoundedWorkerPool::active_workers() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     return active_workers_;
 }
 
 bool BoundedWorkerPool::is_shutdown() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::scoped_lock lock(mutex_);
     return is_shutdown_;
 }
 
@@ -161,12 +161,13 @@ void BoundedWorkerPool::worker_loop(size_t /*worker_index*/) {
             if (task) {
                 task();
             }
+            // NOLINTNEXTLINE(bugprone-empty-catch)
         } catch (...) {
             // Task exceptions must not terminate worker thread
         }
 
         {
-            std::lock_guard<std::mutex> lock(mutex_);
+            std::scoped_lock lock(mutex_);
             --active_workers_;
             if (is_draining_ && tasks_.empty() && active_workers_ == 0) {
                 cv_drained_.notify_all();

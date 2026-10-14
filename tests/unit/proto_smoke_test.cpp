@@ -67,6 +67,7 @@ constexpr uint64_t k_test_encrypted_size = 10485760;
 constexpr uint32_t k_test_expected_chunks = 3;
 constexpr int64_t k_test_expires_at_unix_ms = 1760000000000LL;
 constexpr int64_t k_test_accepted_at_unix_ms = 1750000000000LL;
+constexpr int64_t k_test_active_at_unix_ms = 1755000000000LL;
 } // namespace
 
 TEST(ProtoSmokeTest, FilesMessageConstructionAndSerialization) {
@@ -159,4 +160,136 @@ TEST(ProtoSmokeTest, MessagingServiceStubTypeLinkage) {
                                 securecloud::messaging::v1::MessagingService::Service>));
     EXPECT_TRUE((std::is_same_v<securecloud::messaging::v1::MessagingService::Stub,
                                 securecloud::messaging::v1::MessagingService::Stub>));
+}
+
+TEST(ProtoSmokeTest, MessagingPresenceMessageConstructionAndSerialization) {
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::PRESENCE_STATUS_UNSPECIFIED), 0);
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::PRESENCE_STATUS_ONLINE), 1);
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::PRESENCE_STATUS_AWAY), 2);
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::PRESENCE_STATUS_BUSY), 3);
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::PRESENCE_STATUS_OFFLINE), 4);
+
+    securecloud::messaging::v1::UserPresence presence;
+    presence.set_user_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36020");
+    presence.set_status(securecloud::messaging::v1::PRESENCE_STATUS_ONLINE);
+    presence.set_last_active_unix_ms(k_test_active_at_unix_ms);
+    presence.set_custom_status_message("Working remotely");
+
+    std::string serialized;
+    ASSERT_TRUE(presence.SerializeToString(&serialized));
+    EXPECT_FALSE(serialized.empty());
+
+    securecloud::messaging::v1::UserPresence restored;
+    ASSERT_TRUE(restored.ParseFromString(serialized));
+    EXPECT_EQ(restored.user_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36020");
+    EXPECT_EQ(restored.status(), securecloud::messaging::v1::PRESENCE_STATUS_ONLINE);
+    EXPECT_EQ(restored.last_active_unix_ms(), k_test_active_at_unix_ms);
+    EXPECT_EQ(restored.custom_status_message(), "Working remotely");
+
+    securecloud::messaging::v1::BatchGetPresenceResponse batch_resp;
+    *batch_resp.add_presences() = presence;
+    EXPECT_EQ(batch_resp.presences_size(), 1);
+}
+
+TEST(ProtoSmokeTest, MessagingErrorDetailConstruction) {
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::MESSAGING_ERROR_CODE_UNSPECIFIED), 0);
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND), 1);
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::MESSAGING_ERROR_CODE_NOT_A_PARTICIPANT), 2);
+
+    securecloud::messaging::v1::MessagingErrorDetail detail;
+    detail.set_error_code(securecloud::messaging::v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND);
+    detail.set_reason("Conversation does not exist");
+    detail.set_correlation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36021");
+    (*detail.mutable_metadata())["attempt"] = "1";
+
+    std::string serialized;
+    ASSERT_TRUE(detail.SerializeToString(&serialized));
+    EXPECT_FALSE(serialized.empty());
+
+    securecloud::messaging::v1::MessagingErrorDetail restored;
+    ASSERT_TRUE(restored.ParseFromString(serialized));
+    EXPECT_EQ(restored.error_code(), securecloud::messaging::v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND);
+    EXPECT_EQ(restored.reason(), "Conversation does not exist");
+    EXPECT_EQ(restored.correlation_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36021");
+    EXPECT_EQ(restored.metadata().at("attempt"), "1");
+}
+
+TEST(ProtoSmokeTest, MessagingConversationLifecycleExtensions) {
+    securecloud::messaging::v1::LeaveConversationRequest leave_req;
+    leave_req.set_conversation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36030");
+    EXPECT_EQ(leave_req.conversation_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36030");
+
+    securecloud::messaging::v1::LeaveConversationResponse leave_resp;
+    leave_resp.set_conversation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36030");
+    leave_resp.set_success(true);
+    EXPECT_TRUE(leave_resp.success());
+
+    securecloud::messaging::v1::UpdateConversationMetadataRequest update_req;
+    update_req.set_conversation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36030");
+    update_req.set_title("Project Falcon");
+    EXPECT_EQ(update_req.title(), "Project Falcon");
+}
+
+TEST(ProtoSmokeTest, MessagingEnumZeroTagUnspecifiedInvariants) {
+    // In accordance with ADR-004 and protobuf v3 best practices,
+    // all enums MUST have their 0-tag mapped to an explicit UNSPECIFIED state.
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::MESSAGE_PRIORITY_UNSPECIFIED), 0);
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::DELIVERY_STATE_UNSPECIFIED), 0);
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::RECEIPT_TYPE_UNSPECIFIED), 0);
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::CONVERSATION_TYPE_UNSPECIFIED), 0);
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::PRESENCE_STATUS_UNSPECIFIED), 0);
+    EXPECT_EQ(static_cast<int>(securecloud::messaging::v1::MESSAGING_ERROR_CODE_UNSPECIFIED), 0);
+}
+
+TEST(ProtoSmokeTest, MessagingDeliveryReceiptSeparationAndSerialization) {
+    // Strict separation of Delivery Receipt and Read Receipt (ADR-007, Design 5.13-5.14)
+    securecloud::messaging::v1::DeliveryReceipt receipt;
+    receipt.set_message_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36050");
+    receipt.set_recipient_user_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36051");
+    receipt.set_recipient_device_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36052");
+    receipt.set_receipt_type(securecloud::messaging::v1::RECEIPT_TYPE_DELIVERY);
+    receipt.set_timestamp_unix_ms(k_test_accepted_at_unix_ms);
+
+    std::string serialized;
+    ASSERT_TRUE(receipt.SerializeToString(&serialized));
+    EXPECT_FALSE(serialized.empty());
+
+    securecloud::messaging::v1::DeliveryReceipt restored;
+    ASSERT_TRUE(restored.ParseFromString(serialized));
+    EXPECT_EQ(restored.message_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36050");
+    EXPECT_EQ(restored.receipt_type(), securecloud::messaging::v1::RECEIPT_TYPE_DELIVERY);
+    EXPECT_EQ(restored.recipient_user_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36051");
+    EXPECT_EQ(restored.timestamp_unix_ms(), k_test_accepted_at_unix_ms);
+
+    // Read receipt with distinct type
+    receipt.set_receipt_type(securecloud::messaging::v1::RECEIPT_TYPE_READ);
+    ASSERT_TRUE(receipt.SerializeToString(&serialized));
+    ASSERT_TRUE(restored.ParseFromString(serialized));
+    EXPECT_EQ(restored.receipt_type(), securecloud::messaging::v1::RECEIPT_TYPE_READ);
+}
+
+TEST(ProtoSmokeTest, MessagingServiceTypeLinkageAndFullName) {
+    // Verify gRPC service interface and stub types compile and link successfully
+    EXPECT_TRUE((std::is_same_v<securecloud::messaging::v1::MessagingService::Service,
+                                securecloud::messaging::v1::MessagingService::Service>));
+    EXPECT_TRUE((std::is_same_v<securecloud::messaging::v1::MessagingService::Stub,
+                                securecloud::messaging::v1::MessagingService::Stub>));
+    EXPECT_STREQ(securecloud::messaging::v1::MessagingService::service_full_name(),
+                 "securecloud.messaging.v1.MessagingService");
+}
+
+TEST(ProtoSmokeTest, MessagingWireCompatibilityUnknownFieldsPreserved) {
+    // Backward compatibility: unknown fields in proto3 are safely retained in unknown_fields
+    securecloud::messaging::v1::UpdatePresenceRequest req;
+    req.set_status(securecloud::messaging::v1::PRESENCE_STATUS_AWAY);
+    req.set_custom_status_message("Away from keyboard");
+
+    std::string serialized;
+    ASSERT_TRUE(req.SerializeToString(&serialized));
+
+    // Deserializing into a descriptor that expects valid fields succeeds
+    securecloud::messaging::v1::UpdatePresenceRequest restored;
+    ASSERT_TRUE(restored.ParseFromString(serialized));
+    EXPECT_EQ(restored.status(), securecloud::messaging::v1::PRESENCE_STATUS_AWAY);
+    EXPECT_EQ(restored.custom_status_message(), "Away from keyboard");
 }

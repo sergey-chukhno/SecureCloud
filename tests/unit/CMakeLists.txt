@@ -1610,3 +1610,78 @@ target_link_libraries(securecloud_messaging_service_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_messaging_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Common Caller Context & Canonical UUID Unit Test Suite (MSG-002-T02)
+add_executable(securecloud_caller_context_test
+    common/caller_context_test.cpp
+)
+
+target_link_libraries(securecloud_caller_context_test PRIVATE
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_caller_context_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Caller Context & Idempotency Token Unit Test Suite (MSG-002-T02)
+add_executable(securecloud_messaging_caller_context_test
+    messaging/messaging_caller_context_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_caller_context_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_caller_context_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Contract Semantics & Delivery Lifecycle Unit Test Suite (MSG-002-T03)
+add_executable(securecloud_messaging_contract_semantics_test
+    messaging/messaging_contract_semantics_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_contract_semantics_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_contract_semantics_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Error Mapper, Deadlines & Cancellation Unit Test Suite (MSG-002-T04)
+add_executable(securecloud_messaging_error_mapper_test
+    messaging/messaging_error_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_error_mapper_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_error_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Typed MessagingServiceClient Test (MSG-002-T05)
+add_executable(securecloud_messaging_service_client_test
+    gateway/messaging_service_client_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_service_client_test PRIVATE
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_service_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+

@@ -388,6 +388,72 @@ TEST_F(MessagingServiceLifecycleIntegrationTest, GatewayClientEstablishesMtlsCha
         EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
     }
 
+    // 13. LeaveConversation
+    {
+        grpc::ClientContext context;
+        context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
+        v1::LeaveConversationRequest req;
+        req.set_conversation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+        v1::LeaveConversationResponse resp;
+
+        auto status = stub->LeaveConversation(&context, req, &resp);
+        EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+        EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+    }
+
+    // 14. UpdateConversationMetadata
+    {
+        grpc::ClientContext context;
+        context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
+        v1::UpdateConversationMetadataRequest req;
+        req.set_conversation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+        req.set_title("New Title");
+        v1::UpdateConversationMetadataResponse resp;
+
+        auto status = stub->UpdateConversationMetadata(&context, req, &resp);
+        EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+        EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+    }
+
+    // 15. UpdatePresence
+    {
+        grpc::ClientContext context;
+        context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
+        v1::UpdatePresenceRequest req;
+        req.set_status(v1::PRESENCE_STATUS_ONLINE);
+        v1::UpdatePresenceResponse resp;
+
+        auto status = stub->UpdatePresence(&context, req, &resp);
+        EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+        EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+    }
+
+    // 16. GetPresence
+    {
+        grpc::ClientContext context;
+        context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
+        v1::GetPresenceRequest req;
+        req.set_user_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36002");
+        v1::GetPresenceResponse resp;
+
+        auto status = stub->GetPresence(&context, req, &resp);
+        EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+        EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+    }
+
+    // 17. BatchGetPresence
+    {
+        grpc::ClientContext context;
+        context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
+        v1::BatchGetPresenceRequest req;
+        req.add_user_ids("0191ec4d-91b4-7b4d-b6a9-8e41e3d36002");
+        v1::BatchGetPresenceResponse resp;
+
+        auto status = stub->BatchGetPresence(&context, req, &resp);
+        EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+        EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+    }
+
     shutdown_server(running);
 }
 
@@ -563,6 +629,58 @@ TEST_F(MessagingServiceLifecycleIntegrationTest, ObservationalGuardEnforcesZeroD
     EXPECT_GE(config.workers.max_queued_submissions, 16u);
     EXPECT_GE(config.workers.max_queued_deliveries, 16u);
     EXPECT_GE(config.workers.max_queued_syncs, 16u);
+}
+
+// ============================================================================
+// TC7: End-to-End Caller Context & Metadata Header Propagation Across mTLS
+// ============================================================================
+
+TEST_F(MessagingServiceLifecycleIntegrationTest, EndToEndCallerContextAndMetadataHeaderPropagationAcrossMtls) {
+    MessagingServiceImpl messaging_service(submission_pool_, delivery_pool_, sync_pool_);
+
+    auto running = start_messaging_mtls_server(&messaging_service, nullptr);
+
+    auto channel = MtlsCredentialLoader::create_mtls_channel(running.address, gateway_config_, "messaging");
+    auto stub = v1::MessagingService::NewStub(channel);
+
+    // Call SendMessage with full security and correlation headers
+    {
+        grpc::ClientContext context;
+        context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
+        context.AddMetadata("x-user-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002");
+        context.AddMetadata("x-device-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
+        context.AddMetadata("x-correlation-id", "corr-integ-ctx-propagation-01");
+        context.AddMetadata("x-roles", "user,messaging.sender");
+
+        v1::SendMessageRequest req;
+        req.set_conversation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+        req.set_sender_device_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
+        v1::SendMessageResponse resp;
+
+        auto status = stub->SendMessage(&context, req, &resp);
+        EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+        EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+    }
+
+    // Call UpdatePresence with identity metadata
+    {
+        grpc::ClientContext context;
+        context.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
+        context.AddMetadata("x-user-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002");
+        context.AddMetadata("x-device-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
+        context.AddMetadata("x-correlation-id", "corr-integ-presence-01");
+
+        v1::UpdatePresenceRequest req;
+        req.set_status(v1::PRESENCE_STATUS_AWAY);
+        req.set_custom_status_message("In a meeting");
+        v1::UpdatePresenceResponse resp;
+
+        auto status = stub->UpdatePresence(&context, req, &resp);
+        EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+        EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+    }
+
+    shutdown_server(running);
 }
 
 } // namespace
