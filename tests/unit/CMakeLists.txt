@@ -1698,3 +1698,19 @@ target_link_libraries(securecloud_conversation_domain_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_conversation_domain_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Conversation and Membership Repository Unit Test Suite (MSG-003-T02)
+add_executable(securecloud_conversation_repository_test
+    messaging/conversation_repository_test.cpp
+)
+
+target_link_libraries(securecloud_conversation_repository_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_conversation_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
