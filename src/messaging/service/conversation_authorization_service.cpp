@@ -105,8 +105,7 @@ AuthorizationResult ConversationAuthorizationService::can_add_participant(const 
 
     auto meta = conversation_repo_.find_group_metadata(conv_id);
     if (meta && meta->status == domain::GroupStatus::Closed) {
-        return AuthorizationResult::denied(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND,
-                                           "Group conversation is closed");
+        return AuthorizationResult::denied(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, "Group conversation is closed");
     }
 
     auto caller_part = membership_repo_.find_participant(conv_id, caller);
@@ -181,8 +180,7 @@ AuthorizationResult ConversationAuthorizationService::can_remove_participant(con
 
     auto meta = conversation_repo_.find_group_metadata(conv_id);
     if (meta && meta->status == domain::GroupStatus::Closed) {
-        return AuthorizationResult::denied(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND,
-                                           "Group conversation is closed");
+        return AuthorizationResult::denied(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, "Group conversation is closed");
     }
 
     if (caller == target_user) {
@@ -300,8 +298,7 @@ AuthorizationResult ConversationAuthorizationService::can_update_metadata(const 
 
     auto meta = conversation_repo_.find_group_metadata(conv_id);
     if (meta && meta->status == domain::GroupStatus::Closed) {
-        return AuthorizationResult::denied(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND,
-                                           "Group conversation is closed");
+        return AuthorizationResult::denied(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, "Group conversation is closed");
     }
 
     auto caller_part = membership_repo_.find_participant(conv_id, caller);

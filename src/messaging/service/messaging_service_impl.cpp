@@ -233,6 +233,9 @@ MessagingServiceImpl::ListConversations(::grpc::ServerContext* context,
     }
 
     for (const auto& item : result.value.items) {
+        if (item.membership_status != domain::MembershipStatus::Active) {
+            continue;
+        }
         auto* conv_meta = response->add_conversations();
         conv_meta->set_conversation_id(item.conversation_id.to_string());
         conv_meta->set_type(item.type == domain::ConversationType::Direct ? v1::CONVERSATION_TYPE_DIRECT

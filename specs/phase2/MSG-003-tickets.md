@@ -350,12 +350,12 @@ Subsequent cards in the Phase 2 backlog—including Message Submission & Idempot
 
 ## 5. Architectural Invariants & Verification Checklist
 
-- [ ] **Authoritative Conversation Ownership**: Messaging exclusively manages conversation and participant state without external database joins.
-- [ ] **Logical Participant Invariant**: Membership represents `UserId`; device expansion is strictly deferred to downstream message delivery.
-- [ ] **Direct Conversation Pair Invariant**: Alice + Bob and Bob + Alice resolve deterministically to the same direct conversation UUID.
-- [ ] **No Direct Conversation Member Additions**: Attempts to add members to a direct conversation are rejected with `FAILED_PRECONDITION`.
-- [ ] **Admin Privilege Enforced**: Only participants with role `ADMIN` may add/remove participants or close group conversations.
-- [ ] **Closed Group Invariant**: Closed group conversations reject membership mutations and freeze roster state.
-- [ ] **Transactional Outbox Maintained**: State mutations write outbox events for downstream notification and audit integration.
-- [ ] **Gateway Stubs Replaced Cleanly**: Gateway conversation routes delegate to `IMessagingClient` with bulkhead protection.
-- [ ] **No Plaintext or Crypto Keys in Conversation Domain**: Conversation entities contain zero cryptographic session material.
+- [x] **Authoritative Conversation Ownership**: Messaging exclusively manages conversation and participant state without external database joins.
+- [x] **Logical Participant Invariant**: Membership represents `UserId`; device expansion is strictly deferred to downstream message delivery.
+- [x] **Direct Conversation Pair Invariant**: Alice + Bob and Bob + Alice resolve deterministically to the same direct conversation UUID.
+- [x] **No Direct Conversation Member Additions**: Attempts to add members to a direct conversation are rejected with `FAILED_PRECONDITION`.
+- [x] **Admin Privilege Enforced**: Only participants with role `ADMIN` may add/remove participants or close group conversations.
+- [x] **Closed Group Invariant**: Closed group conversations reject membership mutations and freeze roster state.
+- [x] **Transactional Outbox Maintained**: State mutations write outbox events for downstream notification and audit integration.
+- [x] **Gateway Stubs Replaced Cleanly**: Gateway conversation routes delegate to `IMessagingClient` with bulkhead protection.
+- [x] **No Plaintext or Crypto Keys in Conversation Domain**: Conversation entities contain zero cryptographic session material.
