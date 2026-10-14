@@ -1684,4 +1684,17 @@ target_link_libraries(securecloud_messaging_service_client_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_service_client_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Conversation Domain Model, Value Objects & Lifecycle Unit Test Suite (MSG-003-T01)
+add_executable(securecloud_conversation_domain_test
+    messaging/conversation_domain_test.cpp
+)
 
+target_link_libraries(securecloud_conversation_domain_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_conversation_domain_test ${SECURECLOUD_TEST_PROPERTIES})

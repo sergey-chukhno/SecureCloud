@@ -5,6 +5,7 @@ add_library(securecloud_messaging_config STATIC
     service/messaging_caller_context.cpp
     service/delivery_lifecycle.cpp
     service/messaging_error_mapper.cpp
+    domain/conversation_lifecycle.cpp
 )
 
 
