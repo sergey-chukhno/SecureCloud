@@ -289,6 +289,69 @@ TEST_F(MessagingServiceInProcessTest, UpdateSyncCursorReturnsUnimplemented) {
     EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
 }
 
+TEST_F(MessagingServiceInProcessTest, LeaveConversationReturnsUnimplemented) {
+    grpc::ClientContext context;
+    v1::LeaveConversationRequest request;
+    request.set_conversation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+
+    v1::LeaveConversationResponse response;
+    auto status = stub_->LeaveConversation(&context, request, &response);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+    EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+}
+
+TEST_F(MessagingServiceInProcessTest, UpdateConversationMetadataReturnsUnimplemented) {
+    grpc::ClientContext context;
+    v1::UpdateConversationMetadataRequest request;
+    request.set_conversation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+    request.set_title("New Title");
+
+    v1::UpdateConversationMetadataResponse response;
+    auto status = stub_->UpdateConversationMetadata(&context, request, &response);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+    EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+}
+
+TEST_F(MessagingServiceInProcessTest, UpdatePresenceReturnsUnimplemented) {
+    grpc::ClientContext context;
+    v1::UpdatePresenceRequest request;
+    request.set_status(v1::PRESENCE_STATUS_ONLINE);
+    request.set_custom_status_message("Available");
+
+    v1::UpdatePresenceResponse response;
+    auto status = stub_->UpdatePresence(&context, request, &response);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+    EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+}
+
+TEST_F(MessagingServiceInProcessTest, GetPresenceReturnsUnimplemented) {
+    grpc::ClientContext context;
+    v1::GetPresenceRequest request;
+    request.set_user_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+
+    v1::GetPresenceResponse response;
+    auto status = stub_->GetPresence(&context, request, &response);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+    EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+}
+
+TEST_F(MessagingServiceInProcessTest, BatchGetPresenceReturnsUnimplemented) {
+    grpc::ClientContext context;
+    v1::BatchGetPresenceRequest request;
+    request.add_user_ids("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+    request.add_user_ids("0191ec4d-91b4-7b4d-b6a9-8e41e3d36002");
+
+    v1::BatchGetPresenceResponse response;
+    auto status = stub_->BatchGetPresence(&context, request, &response);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
+    EXPECT_EQ(status.error_message(), MessagingServiceImpl::k_unimplemented_message);
+}
+
 // ============================================================================
 // Correlation ID Extraction Unit Tests
 // ============================================================================

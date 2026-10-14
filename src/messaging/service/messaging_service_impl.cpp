@@ -106,6 +106,21 @@ MessagingServiceImpl::RemoveParticipant(::grpc::ServerContext* context,
     return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 
+::grpc::Status
+MessagingServiceImpl::LeaveConversation(::grpc::ServerContext* context,
+                                        const ::securecloud::messaging::v1::LeaveConversationRequest* /*request*/,
+                                        ::securecloud::messaging::v1::LeaveConversationResponse* /*response*/) {
+    log_rpc_invocation("LeaveConversation", context);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+}
+
+::grpc::Status MessagingServiceImpl::UpdateConversationMetadata(
+    ::grpc::ServerContext* context, const ::securecloud::messaging::v1::UpdateConversationMetadataRequest* /*request*/,
+    ::securecloud::messaging::v1::UpdateConversationMetadataResponse* /*response*/) {
+    log_rpc_invocation("UpdateConversationMetadata", context);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+}
+
 // --- Device synchronization RPCs ---
 
 ::grpc::Status
@@ -129,6 +144,31 @@ MessagingServiceImpl::UpdateSyncCursor(::grpc::ServerContext* context,
                                        const ::securecloud::messaging::v1::UpdateSyncCursorRequest* /*request*/,
                                        ::securecloud::messaging::v1::UpdateSyncCursorResponse* /*response*/) {
     log_rpc_invocation("UpdateSyncCursor", context);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+}
+
+// --- Presence signaling & query RPCs ---
+
+::grpc::Status
+MessagingServiceImpl::UpdatePresence(::grpc::ServerContext* context,
+                                     const ::securecloud::messaging::v1::UpdatePresenceRequest* /*request*/,
+                                     ::securecloud::messaging::v1::UpdatePresenceResponse* /*response*/) {
+    log_rpc_invocation("UpdatePresence", context);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+}
+
+::grpc::Status MessagingServiceImpl::GetPresence(::grpc::ServerContext* context,
+                                                 const ::securecloud::messaging::v1::GetPresenceRequest* /*request*/,
+                                                 ::securecloud::messaging::v1::GetPresenceResponse* /*response*/) {
+    log_rpc_invocation("GetPresence", context);
+    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+}
+
+::grpc::Status
+MessagingServiceImpl::BatchGetPresence(::grpc::ServerContext* context,
+                                       const ::securecloud::messaging::v1::BatchGetPresenceRequest* /*request*/,
+                                       ::securecloud::messaging::v1::BatchGetPresenceResponse* /*response*/) {
+    log_rpc_invocation("BatchGetPresence", context);
     return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
 }
 

@@ -34,9 +34,50 @@ enum ConversationType {
   CONVERSATION_TYPE_GROUP = 2;
 }
 
+// User online/active presence state (Design 5.25, 5.32).
+// Note: Presence is an ephemeral operational signal, separate from durable message queues.
+enum PresenceStatus {
+  PRESENCE_STATUS_UNSPECIFIED = 0;
+  PRESENCE_STATUS_ONLINE = 1;
+  PRESENCE_STATUS_AWAY = 2;
+  PRESENCE_STATUS_BUSY = 3;
+  PRESENCE_STATUS_OFFLINE = 4;
+}
+
+// Canonical domain error codes for structured Messaging service errors.
+enum MessagingErrorCode {
+  MESSAGING_ERROR_CODE_UNSPECIFIED = 0;
+  MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND = 1;
+  MESSAGING_ERROR_CODE_NOT_A_PARTICIPANT = 2;
+  MESSAGING_ERROR_CODE_DEVICE_REVOKED = 3;
+  MESSAGING_ERROR_CODE_IDEMPOTENCY_CONFLICT = 4;
+  MESSAGING_ERROR_CODE_PAYLOAD_TOO_LARGE = 5;
+  MESSAGING_ERROR_CODE_QUEUE_CAPACITY_EXCEEDED = 6;
+  MESSAGING_ERROR_CODE_CURSOR_OUT_OF_BOUNDS = 7;
+  MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE = 8;
+  MESSAGING_ERROR_CODE_MESSAGE_EXPIRED = 9;
+}
+
 // ---------------------------------------------------------------------------
 // Value Objects & Sub-messages
 // ---------------------------------------------------------------------------
+
+// Ephemeral presence state for an authenticated user.
+message UserPresence {
+  string user_id = 1;                  // Canonical 36-char UUIDv4/v7
+  PresenceStatus status = 2;
+  int64 last_active_unix_ms = 3;
+  string custom_status_message = 4;
+}
+
+// Structured domain error detail returned across gRPC boundaries.
+message MessagingErrorDetail {
+  MessagingErrorCode error_code = 1;
+  string reason = 2;
+  string correlation_id = 3;
+  map<string, string> metadata = 4;
+}
+
 
 // Opaque end-to-end encrypted payload (ADR-008).
 // The Messaging backend never inspects or decrypts these bytes.
@@ -206,7 +247,27 @@ message RemoveParticipantResponse {
   uint32 total_participants = 3;
 }
 
-// 10. SyncDeviceMessages
+// 10. LeaveConversation
+message LeaveConversationRequest {
+  string conversation_id = 1;
+}
+
+message LeaveConversationResponse {
+  string conversation_id = 1;
+  bool success = 2;
+}
+
+// 11. UpdateConversationMetadata
+message UpdateConversationMetadataRequest {
+  string conversation_id = 1;
+  string title = 2;
+}
+
+message UpdateConversationMetadataResponse {
+  ConversationMetadata conversation = 1;
+}
+
+// 12. SyncDeviceMessages
 message SyncDeviceMessagesRequest {
   string device_id = 1;
   int64 since_sequence = 2;
@@ -220,7 +281,7 @@ message SyncDeviceMessagesResponse {
   bool has_more = 4;
 }
 
-// 11. GetSyncCursor
+// 13. GetSyncCursor
 message GetSyncCursorRequest {
   string device_id = 1;
 }
@@ -229,7 +290,7 @@ message GetSyncCursorResponse {
   SyncCursor cursor = 1;
 }
 
-// 12. UpdateSyncCursor
+// 14. UpdateSyncCursor
 message UpdateSyncCursorRequest {
   SyncCursor cursor = 1;
 }
@@ -237,6 +298,34 @@ message UpdateSyncCursorRequest {
 message UpdateSyncCursorResponse {
   SyncCursor cursor = 1;
   bool success = 2;
+}
+
+// 15. UpdatePresence
+message UpdatePresenceRequest {
+  PresenceStatus status = 1;
+  string custom_status_message = 2;
+}
+
+message UpdatePresenceResponse {
+  UserPresence presence = 1;
+}
+
+// 16. GetPresence
+message GetPresenceRequest {
+  string user_id = 1;
+}
+
+message GetPresenceResponse {
+  UserPresence presence = 1;
+}
+
+// 17. BatchGetPresence
+message BatchGetPresenceRequest {
+  repeated string user_ids = 1;
+}
+
+message BatchGetPresenceResponse {
+  repeated UserPresence presences = 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -257,9 +346,17 @@ service MessagingService {
   rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
   rpc AddParticipant(AddParticipantRequest) returns (AddParticipantResponse);
   rpc RemoveParticipant(RemoveParticipantRequest) returns (RemoveParticipantResponse);
+  rpc LeaveConversation(LeaveConversationRequest) returns (LeaveConversationResponse);
+  rpc UpdateConversationMetadata(UpdateConversationMetadataRequest) returns (UpdateConversationMetadataResponse);
 
   // Device synchronization
   rpc SyncDeviceMessages(SyncDeviceMessagesRequest) returns (SyncDeviceMessagesResponse);
   rpc GetSyncCursor(GetSyncCursorRequest) returns (GetSyncCursorResponse);
   rpc UpdateSyncCursor(UpdateSyncCursorRequest) returns (UpdateSyncCursorResponse);
+
+  // Presence signaling & query (ephemeral operational protocol)
+  rpc UpdatePresence(UpdatePresenceRequest) returns (UpdatePresenceResponse);
+  rpc GetPresence(GetPresenceRequest) returns (GetPresenceResponse);
+  rpc BatchGetPresence(BatchGetPresenceRequest) returns (BatchGetPresenceResponse);
 }
+
