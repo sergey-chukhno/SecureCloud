@@ -1638,3 +1638,18 @@ target_link_libraries(securecloud_messaging_caller_context_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_messaging_caller_context_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Contract Semantics & Delivery Lifecycle Unit Test Suite (MSG-002-T03)
+add_executable(securecloud_messaging_contract_semantics_test
+    messaging/messaging_contract_semantics_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_contract_semantics_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_contract_semantics_test ${SECURECLOUD_TEST_PROPERTIES})

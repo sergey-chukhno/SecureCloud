@@ -3,6 +3,7 @@ add_library(securecloud_messaging_config STATIC
     concurrency/bounded_worker_pool.cpp
     service/messaging_service_impl.cpp
     service/messaging_caller_context.cpp
+    service/delivery_lifecycle.cpp
 )
 
 

@@ -17,6 +17,10 @@ enum MessagePriority {
 }
 
 // Server-side delivery lifecycle states (Design 5.13).
+// Valid transitions:
+//   QUEUED -> DELIVERING -> DELIVERED -> READ
+//   DELIVERING -> RETRY_WAIT -> DELIVERING
+//   QUEUED | RETRY_WAIT -> EXPIRED
 enum DeliveryState {
   DELIVERY_STATE_UNSPECIFIED = 0;
   DELIVERY_STATE_QUEUED = 1;
@@ -25,6 +29,13 @@ enum DeliveryState {
   DELIVERY_STATE_READ = 4;
   DELIVERY_STATE_RETRY_WAIT = 5;
   DELIVERY_STATE_EXPIRED = 6;
+}
+
+// Receipt type classification separating delivery receipts from read receipts (ADR-007, Design 5.13).
+enum ReceiptType {
+  RECEIPT_TYPE_UNSPECIFIED = 0;
+  RECEIPT_TYPE_DELIVERY = 1;
+  RECEIPT_TYPE_READ = 2;
 }
 
 // Conversation topology types (Design 5.3, 5.32).
@@ -126,6 +137,16 @@ message SyncCursor {
   string device_id = 1;
   int64 last_delivered_sequence = 2;
   int64 last_sync_timestamp_unix_ms = 3;
+}
+
+// Structured delivery/read receipt event (ADR-007, Design 5.13, 5.23).
+message DeliveryReceipt {
+  string message_id = 1;           // Canonical UUID
+  string conversation_id = 2;      // Canonical UUID
+  string recipient_user_id = 3;    // Canonical UUID
+  string recipient_device_id = 4;  // Canonical UUID
+  ReceiptType receipt_type = 5;
+  int64 timestamp_unix_ms = 6;
 }
 
 // ---------------------------------------------------------------------------
@@ -279,6 +300,7 @@ message SyncDeviceMessagesResponse {
   repeated MessageEnvelope messages = 2;
   SyncCursor cursor = 3;
   bool has_more = 4;
+  int64 next_sequence = 5;
 }
 
 // 13. GetSyncCursor
