@@ -27,4 +27,6 @@ deploy/dev-pki/
 *.p12
 *.pfx
 
-
+# Walkthrough and review artifacts
+walkthrough-*.md
+*-report.md

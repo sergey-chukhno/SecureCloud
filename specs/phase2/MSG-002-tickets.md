@@ -390,9 +390,10 @@ While MSG-001 established the service foundation, mTLS harness, configuration sy
 
 ## 5. Architectural Invariants & Verification Checklist
 
-- [ ] **No Business Logic**: In MSG-002, all RPCs return deterministic status codes; contract schemas and interface boundaries are finalized without prematurely binding to ScyllaDB logic.
-- [ ] **No Plaintext Invariant**: All messages transport ciphertext within `EncryptedPayload`.
-- [ ] **No REST Semantics in gRPC**: RPC signatures use typed request/response messages, not HTTP verbs or query parameters.
-- [ ] **Opaque Identifiers**: All user, device, conversation, and message IDs are RFC 4122 UUID strings.
-- [ ] **No Global Queue or Ordering**: Ordering is constrained to individual device streams and conversations.
-- [ ] **Contract Ownership Maintained**: Messaging defines the proto; Gateway and Client consume it without redefining data structures.
+- [x] **No Business Logic**: In MSG-002, all RPCs return deterministic status codes; contract schemas and interface boundaries are finalized without prematurely binding to ScyllaDB logic.
+- [x] **No Plaintext Invariant**: All messages transport ciphertext within `EncryptedPayload`.
+- [x] **No REST Semantics in gRPC**: RPC signatures use typed request/response messages, not HTTP verbs or query parameters.
+- [x] **Opaque Identifiers**: All user, device, conversation, and message IDs are RFC 4122 UUID strings.
+- [x] **No Global Queue or Ordering**: Ordering is constrained to individual device streams and conversations.
+- [x] **Contract Ownership Maintained**: Messaging defines the proto; Gateway and Client consume it without redefining data structures.
+
