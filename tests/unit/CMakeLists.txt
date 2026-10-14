@@ -1653,3 +1653,19 @@ target_link_libraries(securecloud_messaging_contract_semantics_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_messaging_contract_semantics_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Error Mapper, Deadlines & Cancellation Unit Test Suite (MSG-002-T04)
+add_executable(securecloud_messaging_error_mapper_test
+    messaging/messaging_error_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_error_mapper_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_error_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+

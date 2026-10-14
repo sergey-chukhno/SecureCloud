@@ -1,6 +1,7 @@
 #include "securecloud/grpc/caller_context.hpp"
 
 #include <deque>
+#include <grpc/support/time.h>
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
 #include <memory>
@@ -25,6 +26,10 @@ class ServerContextTestSpouse {
     void set_auth_context(std::shared_ptr<const ::grpc::AuthContext> auth_context) {
         ctx_->auth_context_ = std::move(auth_context);
     }
+
+    void set_deadline(gpr_timespec deadline) { ctx_->deadline_ = deadline; }
+
+    void set_cancelled(bool cancelled = true) { ctx_->marked_cancelled_.store(cancelled, std::memory_order_release); }
 
   private:
     ::grpc::ServerContext* ctx_;
@@ -247,6 +252,82 @@ TEST(CallerContextTest, ExtractCallerContextCorrelationIdPreferredOverRequestId)
 
     CallerContext ctx = extract_caller_context(&server_ctx);
     EXPECT_EQ(ctx.correlation_id, "preferred-correlation-id");
+}
+
+// ============================================================================
+// Deadline and Cancellation Check Tests
+// ============================================================================
+
+constexpr int64_t k_test_offset_seconds = 60;
+
+TEST(CallerContextDeadlineTest, NullContextReturnsOk) {
+    auto status = check_deadline_and_cancellation(nullptr);
+    EXPECT_TRUE(status.ok());
+
+    ::grpc::Status out_status;
+    bool triggered = check_deadline_and_cancellation(nullptr, out_status);
+    EXPECT_FALSE(triggered);
+    EXPECT_TRUE(out_status.ok());
+}
+
+TEST(CallerContextDeadlineTest, ActiveContextWithinDeadlineReturnsOk) {
+    ::grpc::ServerContext server_ctx;
+    ::grpc::testing::ServerContextTestSpouse spouse(&server_ctx);
+
+    const gpr_timespec future_dl =
+        gpr_time_add(gpr_now(GPR_CLOCK_REALTIME), gpr_time_from_seconds(k_test_offset_seconds, GPR_TIMESPAN));
+    spouse.set_deadline(future_dl);
+
+    auto status = check_deadline_and_cancellation(&server_ctx);
+    EXPECT_TRUE(status.ok());
+
+    ::grpc::Status out_status;
+    bool triggered = check_deadline_and_cancellation(&server_ctx, out_status);
+    EXPECT_FALSE(triggered);
+    EXPECT_TRUE(out_status.ok());
+}
+
+TEST(CallerContextDeadlineTest, DefaultContextWithoutDeadlineReturnsOk) {
+    ::grpc::ServerContext server_ctx;
+
+    auto status = check_deadline_and_cancellation(&server_ctx);
+    EXPECT_TRUE(status.ok());
+
+    ::grpc::Status out_status;
+    bool triggered = check_deadline_and_cancellation(&server_ctx, out_status);
+    EXPECT_FALSE(triggered);
+    EXPECT_TRUE(out_status.ok());
+}
+
+TEST(CallerContextDeadlineTest, ExpiredDeadlineReturnsDeadlineExceeded) {
+    ::grpc::ServerContext server_ctx;
+    ::grpc::testing::ServerContextTestSpouse spouse(&server_ctx);
+
+    const gpr_timespec past_dl =
+        gpr_time_sub(gpr_now(GPR_CLOCK_REALTIME), gpr_time_from_seconds(k_test_offset_seconds, GPR_TIMESPAN));
+    spouse.set_deadline(past_dl);
+
+    auto status = check_deadline_and_cancellation(&server_ctx);
+    EXPECT_EQ(status.error_code(), ::grpc::StatusCode::DEADLINE_EXCEEDED);
+
+    ::grpc::Status out_status;
+    bool triggered = check_deadline_and_cancellation(&server_ctx, out_status);
+    EXPECT_TRUE(triggered);
+    EXPECT_EQ(out_status.error_code(), ::grpc::StatusCode::DEADLINE_EXCEEDED);
+}
+
+TEST(CallerContextDeadlineTest, CancelledContextReturnsCancelled) {
+    ::grpc::ServerContext server_ctx;
+    ::grpc::testing::ServerContextTestSpouse spouse(&server_ctx);
+    spouse.set_cancelled(true);
+
+    auto status = check_deadline_and_cancellation(&server_ctx);
+    EXPECT_EQ(status.error_code(), ::grpc::StatusCode::CANCELLED);
+
+    ::grpc::Status out_status;
+    bool triggered = check_deadline_and_cancellation(&server_ctx, out_status);
+    EXPECT_TRUE(triggered);
+    EXPECT_EQ(out_status.error_code(), ::grpc::StatusCode::CANCELLED);
 }
 
 } // namespace

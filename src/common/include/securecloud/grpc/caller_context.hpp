@@ -37,4 +37,13 @@ struct CallerContext {
 [[nodiscard]] bool is_authorized_service_peer(const ::grpc::AuthContext* auth_context);
 [[nodiscard]] bool is_authorized_service_peer(const ::grpc::ServerContext* context);
 
+/// Checks if the server context has been cancelled by the client or if its deadline has expired.
+/// Returns StatusCode::CANCELLED if cancelled, StatusCode::DEADLINE_EXCEEDED if deadline expired,
+/// or Status::OK if the call remains active. If context is null, returns Status::OK.
+[[nodiscard]] ::grpc::Status check_deadline_and_cancellation(const ::grpc::ServerContext* context);
+
+/// Overload populating out_status and returning true if cancellation or deadline expiration was detected.
+/// Returns false if active (with out_status set to Status::OK).
+[[nodiscard]] bool check_deadline_and_cancellation(const ::grpc::ServerContext* context, ::grpc::Status& out_status);
+
 } // namespace securecloud::common::rpc

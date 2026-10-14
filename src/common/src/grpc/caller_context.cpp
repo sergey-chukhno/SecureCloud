@@ -3,6 +3,7 @@
 #include "securecloud/security/mtls_config.hpp"
 
 #include <cctype>
+#include <grpc/support/time.h>
 
 namespace securecloud::common::rpc {
 
@@ -115,6 +116,29 @@ CallerContext extract_caller_context(const ::grpc::ServerContext* context) {
     result.peer_identity = extract_peer_identity(context->auth_context().get());
 
     return result;
+}
+
+::grpc::Status check_deadline_and_cancellation(const ::grpc::ServerContext* context) {
+    if (!context) {
+        return ::grpc::Status::OK;
+    }
+
+    if (context->IsCancelled()) {
+        return {::grpc::StatusCode::CANCELLED, "RPC call cancelled by client"};
+    }
+
+    const gpr_timespec dl = context->raw_deadline();
+    if (dl.clock_type != GPR_TIMESPAN && gpr_time_cmp(dl, gpr_inf_future(dl.clock_type)) != 0 &&
+        gpr_time_cmp(dl, gpr_now(dl.clock_type)) <= 0) {
+        return {::grpc::StatusCode::DEADLINE_EXCEEDED, "RPC deadline exceeded"};
+    }
+
+    return ::grpc::Status::OK;
+}
+
+bool check_deadline_and_cancellation(const ::grpc::ServerContext* context, ::grpc::Status& out_status) {
+    out_status = check_deadline_and_cancellation(context);
+    return !out_status.ok();
 }
 
 } // namespace securecloud::common::rpc
