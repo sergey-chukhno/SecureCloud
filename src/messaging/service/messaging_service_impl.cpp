@@ -7,6 +7,7 @@
 #undef GetMessage
 #endif
 
+#include "securecloud/grpc/caller_context.hpp"
 #include "securecloud/security/mtls_config.hpp"
 
 #include <iostream>
@@ -178,16 +179,7 @@ std::string MessagingServiceImpl::extract_correlation_id(const ::grpc::ServerCon
     if (!context) {
         return "";
     }
-    const auto& metadata = context->client_metadata();
-    auto it = metadata.find("x-correlation-id");
-    if (it != metadata.end()) {
-        return {it->second.data(), it->second.size()};
-    }
-    it = metadata.find("x-request-id");
-    if (it != metadata.end()) {
-        return {it->second.data(), it->second.size()};
-    }
-    return "";
+    return securecloud::common::rpc::extract_caller_context(context).correlation_id;
 }
 
 std::string MessagingServiceImpl::extract_peer_identity(const ::grpc::ServerContext* context) {
@@ -198,28 +190,15 @@ std::string MessagingServiceImpl::extract_peer_identity(const ::grpc::ServerCont
 }
 
 std::string MessagingServiceImpl::extract_peer_identity(const ::grpc::AuthContext* auth_context) {
-    if (!auth_context || !auth_context->IsPeerAuthenticated()) {
-        return "anonymous";
-    }
-    auto identity = securecloud::common::security::extract_peer_service_identity(*auth_context);
-    return identity.value_or("unknown_peer");
+    return securecloud::common::rpc::extract_peer_identity(auth_context);
 }
 
 bool MessagingServiceImpl::is_authorized_peer(const ::grpc::ServerContext* context) {
-    if (!context) {
-        return false;
-    }
-    return is_authorized_peer(context->auth_context().get());
+    return securecloud::common::rpc::is_authorized_service_peer(context);
 }
 
 bool MessagingServiceImpl::is_authorized_peer(const ::grpc::AuthContext* auth_context) {
-    if (!auth_context || !auth_context->IsPeerAuthenticated()) {
-        return false;
-    }
-    return securecloud::common::security::verify_peer_service_identity(*auth_context, "gateway") ||
-           securecloud::common::security::verify_peer_service_identity(*auth_context, "auth") ||
-           securecloud::common::security::verify_peer_service_identity(*auth_context, "messaging") ||
-           securecloud::common::security::verify_peer_service_identity(*auth_context, "files");
+    return securecloud::common::rpc::is_authorized_service_peer(auth_context);
 }
 
 } // namespace securecloud::messaging::service

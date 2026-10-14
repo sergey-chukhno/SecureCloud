@@ -2,7 +2,9 @@ add_library(securecloud_messaging_config STATIC
     messaging_config.cpp
     concurrency/bounded_worker_pool.cpp
     service/messaging_service_impl.cpp
+    service/messaging_caller_context.cpp
 )
+
 
 add_library(securecloud::messaging_config ALIAS securecloud_messaging_config)
 add_library(securecloud::messaging ALIAS securecloud_messaging_config)

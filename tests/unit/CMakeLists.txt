@@ -1610,3 +1610,31 @@ target_link_libraries(securecloud_messaging_service_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_messaging_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Common Caller Context & Canonical UUID Unit Test Suite (MSG-002-T02)
+add_executable(securecloud_caller_context_test
+    common/caller_context_test.cpp
+)
+
+target_link_libraries(securecloud_caller_context_test PRIVATE
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_caller_context_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Caller Context & Idempotency Token Unit Test Suite (MSG-002-T02)
+add_executable(securecloud_messaging_caller_context_test
+    messaging/messaging_caller_context_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_caller_context_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_caller_context_test ${SECURECLOUD_TEST_PROPERTIES})

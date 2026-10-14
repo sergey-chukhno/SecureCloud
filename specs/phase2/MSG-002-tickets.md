@@ -135,51 +135,58 @@ While MSG-001 established the service foundation, mTLS harness, configuration sy
 ### MSG-002-T02 — Identifier, Idempotency & Metadata Context Specification
 
 1. **Ticket ID**: `MSG-002-T02`
-2. **Title**: Canonical Identifiers, Idempotency Token Semantics & gRPC Metadata Context Contract
-3. **Objective**: Formalize the metadata propagation contract between Gateway and Messaging Service, specify canonical UUID format validation, and define idempotency token collision handling rules.
-4. **Architectural Purpose**: Establishes end-to-end trace correlation and deduplication guarantees across distributed services (**ADR-004**, **ADR-007**, **ADR-009**), preventing duplicate message injection during network retries.
+2. **Title**: Canonical Identifiers, Idempotency Token Semantics & gRPC Metadata Context Contract (Two-Tier Model)
+3. **Objective**: Formalize the metadata propagation contract between Gateway and backend services using a Two-Tier model (`src/common` shared core + `src/messaging` domain extension), specify canonical RFC 4122 UUID validation, and define idempotency token collision handling rules.
+4. **Architectural Purpose**: Establishes end-to-end trace correlation and deduplication guarantees across distributed services (**ADR-004**, **ADR-007**, **ADR-009**), preventing duplicate message injection during network retries while providing a reusable caller context foundation for Files and Audit.
 5. **Scope**:
-   - Define authoritative gRPC metadata headers expected on internal mTLS channels:
-     - `x-correlation-id`: Canonical RFC 4122 UUIDv7 string for distributed call tracing.
-     - `x-user-id`: Authenticated caller user UUIDv4/v7 extracted by Gateway from JWT.
-     - `x-device-id`: Authenticated caller device UUIDv4/v7.
-     - `x-idempotency-token`: Client-supplied idempotency key (16 to 64 ASCII characters).
+   - **Tier 1 (Shared Core in `src/common`)**:
+     - Define canonical gRPC metadata headers in `src/common/include/securecloud/grpc/caller_context.hpp`:
+       - `k_header_correlation_id = "x-correlation-id"`
+       - `k_header_request_id = "x-request-id"` (fallback)
+       - `k_header_user_id = "x-user-id"`
+       - `k_header_device_id = "x-device-id"`
+     - Implement canonical RFC 4122 UUID syntax validation (`is_valid_uuid(std::string_view)`).
+     - Define `securecloud::common::rpc::CallerContext` (`user_id`, `device_id`, `correlation_id`, `peer_identity`) under namespace `rpc` (avoids shadowing root `::grpc`).
+     - Implement `extract_caller_context(const ::grpc::ServerContext* context)`.
+     - Implement `is_authorized_service_peer(std::string_view peer_identity)`.
+   - **Tier 2 (Domain Extension in `src/messaging`)**:
+     - Define `k_header_idempotency_token = "x-idempotency-token"`.
+     - Implement client idempotency token format validation (`is_valid_idempotency_token(std::string_view)` for `[a-zA-Z0-9_-]{16,64}`).
+     - Define `securecloud::messaging::service::MessagingCallerContext` wrapping `common::rpc::CallerContext` and adding `idempotency_token`.
+     - Define `enum class ContextRequirement : uint32_t` (`kRequireUserId`, `kRequireDeviceId`, `kRequireCorrelationId`, `kRequireIdempotency`, `kRequireAuthorizedPeer`).
+     - Implement `extract_messaging_caller_context(...)` and `validate_messaging_caller_context(...)`.
    - In `src/messaging/service/messaging_service_impl.hpp` and `.cpp`:
-     - Implement metadata extraction and validation helpers:
-       - `extract_caller_context(const ::grpc::ServerContext* context, CallerContext& out)`
-       - Validate presence and non-emptiness of caller identity when handling protected RPCs.
-       - Implement canonical UUID syntax validation helper (`is_valid_uuid(std::string_view)`).
-     - Define `CallerContext` structure:
-       ```cpp
-       struct CallerContext {
-           std::string user_id;
-           std::string device_id;
-           std::string correlation_id;
-           std::string idempotency_token;
-           std::string peer_identity; // e.g. "gateway"
-       };
-       ```
+     - Refactor `extract_correlation_id` and `extract_peer_identity` to delegate to the new context engine.
    - Unit tests verifying:
      - Extraction of all headers from gRPC `client_metadata`.
      - Rejection of invalid UUID strings or malformed idempotency tokens.
      - Fallback handling when optional idempotency tokens are omitted.
+     - Enforcement of context requirement bitmasks.
 6. **Explicit Out-of-Scope**: Distributed cache/ScyllaDB storage of idempotency tokens (deferred to MSG-004).
 7. **Dependencies**: `MSG-002-T01`. Downstream `MSG-002-T04`.
-8. **Exact Repository Starting Point**: `src/messaging/service/messaging_service_impl.hpp|cpp`.
+8. **Exact Repository Starting Point**: `src/common/`, `src/messaging/service/messaging_service_impl.hpp|cpp`.
 9. **Files/Directories to Inspect**:
    - `docs/design/messaging-design.md` (Sections 5.7, 5.37)
    - `src/common/include/securecloud/security/mtls_config.hpp`
 10. **Files/Directories to Create**:
-    - `src/messaging/service/caller_context.hpp` (or define within `messaging_service_impl.hpp`)
+    - `src/common/include/securecloud/grpc/caller_context.hpp`
+    - `src/common/src/grpc/caller_context.cpp`
+    - `src/messaging/service/messaging_caller_context.hpp`
+    - `src/messaging/service/messaging_caller_context.cpp`
+    - `tests/unit/common/caller_context_test.cpp`
+    - `tests/unit/messaging/messaging_caller_context_test.cpp`
 11. **Files/Directories That May Be Modified**:
+    - `src/common/CMakeLists.txt`
+    - `src/messaging/CMakeLists.txt`
     - `src/messaging/service/messaging_service_impl.hpp`
     - `src/messaging/service/messaging_service_impl.cpp`
-    - `tests/unit/messaging/messaging_service_test.cpp`
+    - `tests/unit/CMakeLists.txt`
 12. **Files/Directories That MUST NOT Be Modified**:
     - Gateway proxy handlers or Auth service sources.
 13. **Detailed Implementation Requirements**:
     - Zero plain text logging: metadata logs must never output payload bytes or user-identifying credentials.
     - Idempotency token format: alphanumeric plus hyphen and underscore (`[a-zA-Z0-9_-]{16,64}`).
+
 
 ---
 

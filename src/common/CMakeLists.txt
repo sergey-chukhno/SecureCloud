@@ -9,7 +9,9 @@ add_library(securecloud_common STATIC
     src/health/health_status_manager.cpp
     src/health/health_service_impl.cpp
     src/health/transport_probe.cpp
+    src/grpc/caller_context.cpp
 )
+
 
 add_library(securecloud::common ALIAS securecloud_common)
 
