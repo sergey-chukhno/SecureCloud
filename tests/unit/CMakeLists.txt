@@ -1729,3 +1729,18 @@ target_link_libraries(securecloud_conversation_authorization_service_test PRIVAT
 
 gtest_discover_tests(securecloud_conversation_authorization_service_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Conversation Domain Service Unit Test Suite (MSG-003-T04)
+add_executable(securecloud_conversation_service_test
+    messaging/conversation_service_test.cpp
+)
+
+target_link_libraries(securecloud_conversation_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_conversation_service_test ${SECURECLOUD_TEST_PROPERTIES})
+

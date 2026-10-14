@@ -9,6 +9,7 @@ add_library(securecloud_messaging_config STATIC
     repository/in_memory_conversation_repository.cpp
     repository/in_memory_membership_repository.cpp
     service/conversation_authorization_service.cpp
+    service/conversation_service.cpp
 )
 
 

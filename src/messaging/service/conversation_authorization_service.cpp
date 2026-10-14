@@ -91,8 +91,7 @@ AuthorizationResult ConversationAuthorizationService::can_send_message(const Mes
 // ============================================================================
 
 AuthorizationResult ConversationAuthorizationService::can_add_participant(const domain::UserId& caller,
-                                                                          const domain::ConversationId& conv_id,
-                                                                          const domain::UserId& target_user) const {
+                                                                          const domain::ConversationId& conv_id) const {
     auto conv = conversation_repo_.find_conversation_by_id(conv_id);
     if (!conv) {
         return AuthorizationResult::denied(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND,
@@ -119,6 +118,27 @@ AuthorizationResult ConversationAuthorizationService::can_add_participant(const 
     if (caller_part->role != domain::ParticipantRole::Admin) {
         return AuthorizationResult::denied(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
                                            "Only conversation admins can add participants");
+    }
+
+    return AuthorizationResult::ok();
+}
+
+AuthorizationResult ConversationAuthorizationService::can_add_participant(const MessagingCallerContext& caller,
+                                                                          const domain::ConversationId& conv_id) const {
+    auto caller_id = parse_caller_user_id(caller);
+    if (!caller_id) {
+        return AuthorizationResult::denied(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
+                                           "Invalid or missing caller user ID in context");
+    }
+    return can_add_participant(*caller_id, conv_id);
+}
+
+AuthorizationResult ConversationAuthorizationService::can_add_participant(const domain::UserId& caller,
+                                                                          const domain::ConversationId& conv_id,
+                                                                          const domain::UserId& target_user) const {
+    auto caller_auth = can_add_participant(caller, conv_id);
+    if (!caller_auth) {
+        return caller_auth;
     }
 
     auto target_part = membership_repo_.find_participant(conv_id, target_user);

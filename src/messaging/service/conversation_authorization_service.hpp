@@ -52,6 +52,12 @@ class ConversationAuthorizationService {
     [[nodiscard]] AuthorizationResult can_send_message(const MessagingCallerContext& caller,
                                                        const domain::ConversationId& conv_id) const;
 
+    /// Checks if caller is authorized to add participants to the conversation (caller authority check).
+    [[nodiscard]] AuthorizationResult can_add_participant(const domain::UserId& caller,
+                                                          const domain::ConversationId& conv_id) const;
+    [[nodiscard]] AuthorizationResult can_add_participant(const MessagingCallerContext& caller,
+                                                          const domain::ConversationId& conv_id) const;
+
     /// Checks if caller is authorized to add a new participant to the conversation.
     [[nodiscard]] AuthorizationResult can_add_participant(const domain::UserId& caller,
                                                           const domain::ConversationId& conv_id,
