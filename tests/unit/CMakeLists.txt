@@ -1669,3 +1669,19 @@ target_link_libraries(securecloud_messaging_error_mapper_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_error_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Typed MessagingServiceClient Test (MSG-002-T05)
+add_executable(securecloud_messaging_service_client_test
+    gateway/messaging_service_client_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_service_client_test PRIVATE
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_service_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
