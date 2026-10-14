@@ -19,6 +19,8 @@
 #undef GetMessage
 #endif
 
+#include "service/conversation_service.hpp"
+
 #include <grpcpp/grpcpp.h>
 #include <memory>
 #include <string>
@@ -26,14 +28,14 @@
 namespace securecloud::messaging::service {
 
 /// gRPC service implementation for securecloud.messaging.v1.MessagingService (ADR-004).
-/// In MSG-001 foundation, all RPC methods return deterministic StatusCode::UNIMPLEMENTED.
 class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingService::Service {
   public:
     static constexpr const char* k_unimplemented_message = "RPC not implemented in MSG-001 foundation";
 
     explicit MessagingServiceImpl(std::shared_ptr<concurrency::BoundedWorkerPool> submission_pool = nullptr,
                                   std::shared_ptr<concurrency::BoundedWorkerPool> delivery_pool = nullptr,
-                                  std::shared_ptr<concurrency::BoundedWorkerPool> sync_pool = nullptr);
+                                  std::shared_ptr<concurrency::BoundedWorkerPool> sync_pool = nullptr,
+                                  std::shared_ptr<ConversationService> conversation_service = nullptr);
     ~MessagingServiceImpl() override = default;
 
     MessagingServiceImpl(const MessagingServiceImpl&) = delete;
@@ -132,11 +134,15 @@ class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingS
         return delivery_pool_;
     }
     [[nodiscard]] std::shared_ptr<concurrency::BoundedWorkerPool> sync_pool() const noexcept { return sync_pool_; }
+    [[nodiscard]] std::shared_ptr<ConversationService> conversation_service() const noexcept {
+        return conversation_service_;
+    }
 
   private:
     std::shared_ptr<concurrency::BoundedWorkerPool> submission_pool_;
     std::shared_ptr<concurrency::BoundedWorkerPool> delivery_pool_;
     std::shared_ptr<concurrency::BoundedWorkerPool> sync_pool_;
+    std::shared_ptr<ConversationService> conversation_service_;
 };
 
 } // namespace securecloud::messaging::service
