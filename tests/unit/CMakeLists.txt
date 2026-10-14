@@ -1567,3 +1567,46 @@ target_link_libraries(securecloud_files_health_evaluator_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_files_health_evaluator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Service Configuration Unit Test Suite (MSG-001-T02)
+add_executable(securecloud_messaging_config_test
+    messaging/messaging_config_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_config_test PRIVATE
+    securecloud::messaging_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_config_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Bounded Worker Pool Unit Test Suite (MSG-001-T03)
+add_executable(securecloud_bounded_worker_pool_test
+    messaging/bounded_worker_pool_test.cpp
+)
+
+target_link_libraries(securecloud_bounded_worker_pool_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_bounded_worker_pool_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Service Implementation Unit Test Suite (MSG-001-T04)
+add_executable(securecloud_messaging_service_test
+    messaging/messaging_service_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_service_test ${SECURECLOUD_TEST_PROPERTIES})

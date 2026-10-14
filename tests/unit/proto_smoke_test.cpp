@@ -4,6 +4,8 @@
 #include "securecloud/common/v1/health.pb.h"
 #include "securecloud/files/v1/files.grpc.pb.h"
 #include "securecloud/files/v1/files.pb.h"
+#include "securecloud/messaging/v1/messaging.grpc.pb.h"
+#include "securecloud/messaging/v1/messaging.pb.h"
 
 #include <gtest/gtest.h>
 #include <string>
@@ -63,6 +65,8 @@ TEST(ProtoSmokeTest, AuthServiceStubTypeLinkage) {
 namespace {
 constexpr uint64_t k_test_encrypted_size = 10485760;
 constexpr uint32_t k_test_expected_chunks = 3;
+constexpr int64_t k_test_expires_at_unix_ms = 1760000000000LL;
+constexpr int64_t k_test_accepted_at_unix_ms = 1750000000000LL;
 } // namespace
 
 TEST(ProtoSmokeTest, FilesMessageConstructionAndSerialization) {
@@ -103,4 +107,56 @@ TEST(ProtoSmokeTest, FilesServiceStubTypeLinkage) {
         (std::is_same_v<securecloud::files::v1::FilesService::Service, securecloud::files::v1::FilesService::Service>));
     EXPECT_TRUE(
         (std::is_same_v<securecloud::files::v1::FilesService::Stub, securecloud::files::v1::FilesService::Stub>));
+}
+
+TEST(ProtoSmokeTest, MessagingMessageConstructionAndSerialization) {
+    securecloud::messaging::v1::SendMessageRequest request;
+    request.set_conversation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36010");
+    request.set_sender_device_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36011");
+    request.set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_URGENT);
+    request.set_client_idempotency_token("idem-token-12345");
+    request.set_expires_at_unix_ms(k_test_expires_at_unix_ms);
+
+    auto* target = request.add_delivery_targets();
+    target->set_recipient_user_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36012");
+    target->set_recipient_device_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36013");
+    target->set_state(securecloud::messaging::v1::DELIVERY_STATE_QUEUED);
+
+    auto* payload = target->mutable_encrypted_payload();
+    payload->set_ciphertext_blob("test_ciphertext_blob");
+    payload->set_ephemeral_public_key("test_ephemeral_key");
+    payload->set_initialization_vector("test_iv_12bytes");
+    payload->set_auth_tag("test_auth_tag16b");
+    payload->set_algorithm("AES-256-GCM");
+
+    EXPECT_EQ(request.conversation_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36010");
+    EXPECT_EQ(request.priority(), securecloud::messaging::v1::MESSAGE_PRIORITY_URGENT);
+    EXPECT_EQ(request.delivery_targets_size(), 1);
+
+    std::string serialized;
+    ASSERT_TRUE(request.SerializeToString(&serialized));
+    EXPECT_FALSE(serialized.empty());
+
+    securecloud::messaging::v1::SendMessageRequest restored;
+    ASSERT_TRUE(restored.ParseFromString(serialized));
+    EXPECT_EQ(restored.conversation_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36010");
+    EXPECT_EQ(restored.priority(), securecloud::messaging::v1::MESSAGE_PRIORITY_URGENT);
+    ASSERT_EQ(restored.delivery_targets_size(), 1);
+    EXPECT_EQ(restored.delivery_targets(0).recipient_device_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36013");
+    EXPECT_EQ(restored.delivery_targets(0).encrypted_payload().ciphertext_blob(), "test_ciphertext_blob");
+
+    securecloud::messaging::v1::SendMessageResponse response;
+    response.set_message_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36099");
+    response.set_conversation_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36010");
+    response.set_accepted_at_unix_ms(k_test_accepted_at_unix_ms);
+    response.set_initial_state(securecloud::messaging::v1::DELIVERY_STATE_QUEUED);
+    response.set_target_count(1);
+    EXPECT_EQ(response.initial_state(), securecloud::messaging::v1::DELIVERY_STATE_QUEUED);
+}
+
+TEST(ProtoSmokeTest, MessagingServiceStubTypeLinkage) {
+    EXPECT_TRUE((std::is_same_v<securecloud::messaging::v1::MessagingService::Service,
+                                securecloud::messaging::v1::MessagingService::Service>));
+    EXPECT_TRUE((std::is_same_v<securecloud::messaging::v1::MessagingService::Stub,
+                                securecloud::messaging::v1::MessagingService::Stub>));
 }
