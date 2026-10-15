@@ -1926,6 +1926,22 @@ target_link_libraries(securecloud_sequence_allocator_test PRIVATE
 
 gtest_discover_tests(securecloud_sequence_allocator_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Idempotency Guard & Conflict Resolution Unit Test Suite (MSG-005-T03)
+add_executable(securecloud_idempotency_guard_test
+    messaging/idempotency_guard_test.cpp
+)
+
+target_link_libraries(securecloud_idempotency_guard_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_idempotency_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 
 
 

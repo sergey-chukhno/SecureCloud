@@ -128,6 +128,7 @@ CREATE TABLE IF NOT EXISTS securecloud_messaging.message_submission_by_idempoten
     message_sequence bigint,
     submission_status text,
     created_at timestamp,
+    request_fingerprint text,
     PRIMARY KEY ((sender_device_id), idempotency_key)
 );
 

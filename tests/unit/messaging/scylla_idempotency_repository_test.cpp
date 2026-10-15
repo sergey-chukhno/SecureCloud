@@ -35,6 +35,7 @@ TEST(ScyllaIdempotencyRepositoryTest, SaveAndFindSubmission) {
     record.message_sequence = 77;
     record.submission_status = SubmissionStatus::Committed;
     record.created_at = now;
+    record.request_fingerprint = "fp-sha256-test-123456";
 
     // 1. Save submission
     repo.save_submission(record);
@@ -44,11 +45,11 @@ TEST(ScyllaIdempotencyRepositoryTest, SaveAndFindSubmission) {
     // 2. Configure mock response for find_submission
     int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
     db::ScyllaRow row({"sender_device_id", "idempotency_key", "message_id", "conversation_id", "message_sequence",
-                       "submission_status", "created_at"},
+                       "submission_status", "created_at", "request_fingerprint"},
                       {db::ScyllaValue(dev_id.str()), db::ScyllaValue("idem-key-abc-123"),
                        db::ScyllaValue(msg_id.to_string()), db::ScyllaValue(conv_id.to_string()),
-                       db::ScyllaValue(static_cast<int64_t>(77)), db::ScyllaValue("COMMITTED"),
-                       db::ScyllaValue(now_ms)});
+                       db::ScyllaValue(static_cast<int64_t>(77)), db::ScyllaValue("COMMITTED"), db::ScyllaValue(now_ms),
+                       db::ScyllaValue("fp-sha256-test-123456")});
 
     mock->set_prepared_result(db::PreparedStatementId("idem_repo_find_submission"), db::ScyllaQueryResult({row}));
 
@@ -60,6 +61,7 @@ TEST(ScyllaIdempotencyRepositoryTest, SaveAndFindSubmission) {
     EXPECT_EQ(found->conversation_id, conv_id);
     EXPECT_EQ(found->message_sequence, 77U);
     EXPECT_EQ(found->submission_status, SubmissionStatus::Committed);
+    EXPECT_EQ(found->request_fingerprint, "fp-sha256-test-123456");
 
     // 3. Not found returns nullopt
     mock->set_prepared_result(db::PreparedStatementId("idem_repo_find_submission"), db::ScyllaQueryResult{});

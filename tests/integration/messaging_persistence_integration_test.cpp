@@ -272,7 +272,8 @@ TEST_F(MessagingPersistenceHermeticPipelineTest, SyncCursorAndIdempotencySubmiss
     sync_repo_->upsert_sync_cursor(cursor);
 
     // 2. Record idempotent submission
-    IdempotencyRecord rec{dev, "idem-key-777", MessageId::generate_v7(), conv, 1501, SubmissionStatus::Committed, now};
+    IdempotencyRecord rec{dev, "idem-key-777", MessageId::generate_v7(), conv, 1501, SubmissionStatus::Committed,
+                          now, "fp-777"};
     idempotency_repo_->save_submission(rec);
 
     EXPECT_EQ(mock_session_->get_executed_prepared().size(), 2U);

@@ -110,6 +110,10 @@ std::vector<std::string> ScyllaRow::get_string_list(std::string_view column_name
     return get(column_name).as_string_list();
 }
 
+bool ScyllaRow::has_column(std::string_view column_name) const noexcept {
+    return name_to_index_.find(std::string(column_name)) != name_to_index_.end();
+}
+
 const ScyllaRow& ScyllaQueryResult::front() const {
     if (rows_.empty()) {
         throw std::out_of_range("Cannot call front() on empty ScyllaQueryResult");
