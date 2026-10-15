@@ -1762,4 +1762,123 @@ target_link_libraries(securecloud_gateway_conversation_routing_test PRIVATE
 
 gtest_discover_tests(securecloud_gateway_conversation_routing_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# ScyllaDB Migration Runner Test Suite (MSG-004-T01)
+add_executable(securecloud_scylla_migration_runner_test
+    messaging/scylla_migration_runner_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_migration_runner_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_migration_runner_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# ScyllaDB Client Session & Connection Pool Test Suite (MSG-004-T02)
+add_executable(securecloud_scylla_session_test
+    messaging/scylla_session_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_session_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_session_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# ScyllaDB Conversation & Membership Repository Test Suite (MSG-004-T03)
+add_executable(securecloud_scylla_conversation_repository_test
+    messaging/scylla_conversation_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_conversation_repository_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_conversation_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Message Bucket Calculation & Validation Test Suite (MSG-004-T04)
+add_executable(securecloud_message_bucket_test
+    messaging/message_bucket_test.cpp
+)
+
+target_link_libraries(securecloud_message_bucket_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_message_bucket_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# ScyllaDB Message & Outbox Repository Test Suite (MSG-004-T04)
+add_executable(securecloud_scylla_message_repository_test
+    messaging/scylla_message_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_message_repository_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_message_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# ScyllaDB Delivery State Repository Test Suite (MSG-004-T05)
+add_executable(securecloud_scylla_delivery_repository_test
+    messaging/scylla_delivery_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_delivery_repository_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_delivery_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# ScyllaDB Sync Cursor Repository Test Suite (MSG-004-T05)
+add_executable(securecloud_scylla_sync_cursor_repository_test
+    messaging/scylla_sync_cursor_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_sync_cursor_repository_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_sync_cursor_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# ScyllaDB Idempotency Repository Test Suite (MSG-004-T05)
+add_executable(securecloud_scylla_idempotency_repository_test
+    messaging/scylla_idempotency_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_idempotency_repository_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_idempotency_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
