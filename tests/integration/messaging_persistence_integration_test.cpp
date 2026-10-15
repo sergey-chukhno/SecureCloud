@@ -83,7 +83,7 @@ bool is_scylla_reachable(const std::string& host = "127.0.0.1", uint16_t port = 
     DWORD tv = static_cast<DWORD>(timeout_ms);
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tv), sizeof(tv));
-    struct sockaddr_in addr{};
+    sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
@@ -95,12 +95,12 @@ bool is_scylla_reachable(const std::string& host = "127.0.0.1", uint16_t port = 
     if (sock < 0) {
         return false;
     }
-    struct timeval tv{};
+    timeval tv{};
     tv.tv_sec = timeout_ms / 1000;
     tv.tv_usec = (timeout_ms % 1000) * 1000;
     setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
-    struct sockaddr_in addr{};
+    sockaddr_in addr{};
     addr.sin_family = AF_INET;
     addr.sin_port = htons(port);
     inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
