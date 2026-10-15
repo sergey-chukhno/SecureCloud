@@ -1807,4 +1807,33 @@ target_link_libraries(securecloud_scylla_conversation_repository_test PRIVATE
 
 gtest_discover_tests(securecloud_scylla_conversation_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Message Bucket Calculation & Validation Test Suite (MSG-004-T04)
+add_executable(securecloud_message_bucket_test
+    messaging/message_bucket_test.cpp
+)
+
+target_link_libraries(securecloud_message_bucket_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_message_bucket_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# ScyllaDB Message & Outbox Repository Test Suite (MSG-004-T04)
+add_executable(securecloud_scylla_message_repository_test
+    messaging/scylla_message_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_message_repository_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_message_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
 

@@ -6,10 +6,13 @@ add_library(securecloud_messaging_config STATIC
     service/delivery_lifecycle.cpp
     service/messaging_error_mapper.cpp
     domain/conversation_lifecycle.cpp
+    domain/message_bucket.cpp
     repository/in_memory_conversation_repository.cpp
     repository/in_memory_membership_repository.cpp
     repository/scylla_conversation_repository.cpp
     repository/scylla_membership_repository.cpp
+    repository/scylla_message_repository.cpp
+    repository/scylla_outbox_repository.cpp
     service/conversation_authorization_service.cpp
     service/conversation_service.cpp
     db/migration_runner.cpp
