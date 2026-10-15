@@ -56,6 +56,7 @@ struct IdempotencyRecord {
     MessageSequence message_sequence{0};
     SubmissionStatus submission_status{SubmissionStatus::Processing};
     std::chrono::system_clock::time_point created_at;
+    std::string request_fingerprint{};
 
     auto operator<=>(const IdempotencyRecord& other) const noexcept = default;
     bool operator==(const IdempotencyRecord& other) const noexcept = default;

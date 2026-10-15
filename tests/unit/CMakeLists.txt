@@ -1881,4 +1881,35 @@ target_link_libraries(securecloud_scylla_idempotency_repository_test PRIVATE
 
 gtest_discover_tests(securecloud_scylla_idempotency_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Submission Payload Fingerprinting Unit Test Suite (MSG-005-T01)
+add_executable(securecloud_submission_fingerprint_test
+    messaging/submission_fingerprint_test.cpp
+)
+
+target_link_libraries(securecloud_submission_fingerprint_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_submission_fingerprint_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Message Submission Validator Unit Test Suite (MSG-005-T01)
+add_executable(securecloud_submission_validator_test
+    messaging/submission_validator_test.cpp
+)
+
+target_link_libraries(securecloud_submission_validator_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_submission_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 
