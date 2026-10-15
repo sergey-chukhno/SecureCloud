@@ -1836,4 +1836,49 @@ target_link_libraries(securecloud_scylla_message_repository_test PRIVATE
 
 gtest_discover_tests(securecloud_scylla_message_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# ScyllaDB Delivery State Repository Test Suite (MSG-004-T05)
+add_executable(securecloud_scylla_delivery_repository_test
+    messaging/scylla_delivery_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_delivery_repository_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_delivery_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# ScyllaDB Sync Cursor Repository Test Suite (MSG-004-T05)
+add_executable(securecloud_scylla_sync_cursor_repository_test
+    messaging/scylla_sync_cursor_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_sync_cursor_repository_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_sync_cursor_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# ScyllaDB Idempotency Repository Test Suite (MSG-004-T05)
+add_executable(securecloud_scylla_idempotency_repository_test
+    messaging/scylla_idempotency_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_idempotency_repository_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_idempotency_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
