@@ -3,6 +3,7 @@
 #include "http/auth/request_context.hpp"
 #include "http/errors/error_mapper.hpp"
 #include "http/proxy/files_proxy_handler.hpp"
+#include "http/proxy/messaging_proxy_handler.hpp"
 #include "http/resilience/bulkhead_manager.hpp"
 #include "securecloud/health/health_status_manager.hpp"
 
@@ -22,8 +23,10 @@ constexpr int k_http_status_service_unavailable = 503;
 GatewayRouteRegistrar::GatewayRouteRegistrar(std::shared_ptr<AuthProxyHandler> auth_proxy,
                                              common::health::HealthStatusManager& health_manager,
                                              std::shared_ptr<BulkheadManager> bulkhead_manager,
-                                             std::shared_ptr<FilesProxyHandler> files_proxy)
-    : auth_proxy_(std::move(auth_proxy)), files_proxy_(std::move(files_proxy)), health_manager_(&health_manager),
+                                             std::shared_ptr<FilesProxyHandler> files_proxy,
+                                             std::shared_ptr<MessagingProxyHandler> messaging_proxy)
+    : auth_proxy_(std::move(auth_proxy)), files_proxy_(std::move(files_proxy)),
+      messaging_proxy_(std::move(messaging_proxy)), health_manager_(&health_manager),
       bulkhead_manager_(bulkhead_manager ? std::move(bulkhead_manager)
                                          : (auth_proxy_ ? auth_proxy_->bulkhead_manager() : nullptr)) {
     if (!auth_proxy_) {
@@ -34,9 +37,11 @@ GatewayRouteRegistrar::GatewayRouteRegistrar(std::shared_ptr<AuthProxyHandler> a
 GatewayRouteRegistrar::GatewayRouteRegistrar(std::shared_ptr<AuthProxyHandler> auth_proxy,
                                              std::shared_ptr<common::health::HealthStatusManager> health_manager,
                                              std::shared_ptr<BulkheadManager> bulkhead_manager,
-                                             std::shared_ptr<FilesProxyHandler> files_proxy)
+                                             std::shared_ptr<FilesProxyHandler> files_proxy,
+                                             std::shared_ptr<MessagingProxyHandler> messaging_proxy)
     : auth_proxy_(std::move(auth_proxy)), files_proxy_(std::move(files_proxy)),
-      health_manager_ptr_(std::move(health_manager)), health_manager_(health_manager_ptr_.get()),
+      messaging_proxy_(std::move(messaging_proxy)), health_manager_ptr_(std::move(health_manager)),
+      health_manager_(health_manager_ptr_.get()),
       bulkhead_manager_(bulkhead_manager ? std::move(bulkhead_manager)
                                          : (auth_proxy_ ? auth_proxy_->bulkhead_manager() : nullptr)) {
     if (!auth_proxy_) {
@@ -53,12 +58,21 @@ void GatewayRouteRegistrar::register_all_routes(Router& router) {
     if (files_proxy_) {
         register_files_routes(router);
     }
+    if (messaging_proxy_) {
+        register_messaging_routes(router);
+    }
     register_stub_routes(router);
 }
 
 void GatewayRouteRegistrar::register_files_routes(Router& router) {
     if (files_proxy_) {
         files_proxy_->register_routes(router);
+    }
+}
+
+void GatewayRouteRegistrar::register_messaging_routes(Router& router) {
+    if (messaging_proxy_) {
+        messaging_proxy_->register_routes(router);
     }
 }
 
@@ -160,7 +174,9 @@ void GatewayRouteRegistrar::register_stub_routes(Router& router) {
     // Messaging microservice stubs (M3 / MSG-005)
     router.post_authenticated("/api/v1/messages/send", messaging_stub);
     router.get_authenticated("/api/v1/messages/inbox", messaging_stub);
-    router.get_authenticated("/api/v1/messages/conversations", messaging_stub);
+    if (!messaging_proxy_) {
+        router.get_authenticated("/api/v1/messages/conversations", messaging_stub);
+    }
 
     // Files microservice stubs (M5 / GW-010)
     if (!files_proxy_) {

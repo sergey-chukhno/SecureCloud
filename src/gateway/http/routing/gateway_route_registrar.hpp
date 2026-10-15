@@ -23,18 +23,21 @@ namespace securecloud::gateway::http {
  */
 class BulkheadManager;
 class FilesProxyHandler;
+class MessagingProxyHandler;
 
 class GatewayRouteRegistrar {
   public:
     GatewayRouteRegistrar(std::shared_ptr<AuthProxyHandler> auth_proxy,
                           common::health::HealthStatusManager& health_manager,
                           std::shared_ptr<BulkheadManager> bulkhead_manager = nullptr,
-                          std::shared_ptr<FilesProxyHandler> files_proxy = nullptr);
+                          std::shared_ptr<FilesProxyHandler> files_proxy = nullptr,
+                          std::shared_ptr<MessagingProxyHandler> messaging_proxy = nullptr);
 
     GatewayRouteRegistrar(std::shared_ptr<AuthProxyHandler> auth_proxy,
                           std::shared_ptr<common::health::HealthStatusManager> health_manager,
                           std::shared_ptr<BulkheadManager> bulkhead_manager = nullptr,
-                          std::shared_ptr<FilesProxyHandler> files_proxy = nullptr);
+                          std::shared_ptr<FilesProxyHandler> files_proxy = nullptr,
+                          std::shared_ptr<MessagingProxyHandler> messaging_proxy = nullptr);
 
     ~GatewayRouteRegistrar() = default;
 
@@ -55,12 +58,16 @@ class GatewayRouteRegistrar {
     /// Registers Files microservice streaming proxy routes
     void register_files_routes(Router& router);
 
+    /// Registers Messaging microservice proxy routes
+    void register_messaging_routes(Router& router);
+
     /// Registers placeholder stub routes for downstream microservices
     void register_stub_routes(Router& router);
 
   private:
     std::shared_ptr<AuthProxyHandler> auth_proxy_;
     std::shared_ptr<FilesProxyHandler> files_proxy_;
+    std::shared_ptr<MessagingProxyHandler> messaging_proxy_;
     std::shared_ptr<common::health::HealthStatusManager> health_manager_ptr_;
     common::health::HealthStatusManager* health_manager_{nullptr};
     std::shared_ptr<BulkheadManager> bulkhead_manager_;

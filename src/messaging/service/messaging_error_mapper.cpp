@@ -78,8 +78,24 @@ v1::MessagingErrorDetail create_error_detail(v1::MessagingErrorCode code, std::s
         }
     }
 
+    ::grpc::StatusCode status_code = to_grpc_status_code(code);
+    if (status_code == ::grpc::StatusCode::INTERNAL && !reason.empty()) {
+        std::string lower;
+        lower.reserve(reason.size());
+        for (char c : reason) {
+            lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
+        if (lower.find("direct conversation") != std::string::npos || lower.find("closed") != std::string::npos ||
+            lower.find("inactive") != std::string::npos || lower.find("already an active") != std::string::npos) {
+            status_code = ::grpc::StatusCode::FAILED_PRECONDITION;
+        } else if (lower.find("admin") != std::string::npos || lower.find("permission") != std::string::npos ||
+                   lower.find("not allowed") != std::string::npos) {
+            status_code = ::grpc::StatusCode::PERMISSION_DENIED;
+        }
+    }
+
     std::string message = reason.empty() ? std::string(default_error_reason(code)) : std::string(reason);
-    return {to_grpc_status_code(code), std::move(message)};
+    return {status_code, std::move(message)};
 }
 
 std::optional<v1::MessagingErrorDetail>
