@@ -2,7 +2,7 @@
 
 #include "repository/conversation_repository_interface.hpp"
 
-#include <shared_mutex>
+#include <mutex>
 #include <unordered_map>
 
 namespace securecloud::messaging::repository {
@@ -32,7 +32,7 @@ class InMemoryConversationRepository final : public IConversationRepository {
     void clear();
 
   private:
-    mutable std::shared_mutex mutex_;
+    mutable std::mutex mutex_;
     std::unordered_map<domain::ConversationId, domain::ConversationEntity> conversations_;
     std::unordered_map<domain::DirectPair, domain::ConversationId> direct_pairs_;
     std::unordered_map<domain::ConversationId, domain::GroupMetadataEntity> group_metadata_;

@@ -4,7 +4,7 @@
 
 #include <algorithm>
 #include <map>
-#include <shared_mutex>
+#include <mutex>
 #include <unordered_map>
 
 namespace securecloud::messaging::repository {
@@ -55,7 +55,7 @@ class InMemoryMembershipRepository final : public IMembershipRepository {
         }
     };
 
-    mutable std::shared_mutex mutex_;
+    mutable std::mutex mutex_;
     std::unordered_map<ParticipantKey, domain::ConversationParticipantEntity, ParticipantKeyHash> participants_;
     // user_id -> map<activity_at DESC, conversation_id> for deterministic pagination
     std::unordered_map<domain::UserId, std::vector<UserConversationSummary>> user_inboxes_;

@@ -10,8 +10,8 @@
 #include "securecloud/messaging/v1/messaging.pb.h"
 #include "service/conversation_authorization_service.hpp"
 
+#include <mutex>
 #include <optional>
-#include <shared_mutex>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -116,7 +116,7 @@ class ConversationService {
     repository::IMembershipRepository& membership_repo_;
     ConversationAuthorizationService& auth_service_;
 
-    mutable std::shared_mutex outbox_mutex_;
+    mutable std::mutex outbox_mutex_;
     std::vector<domain::ConversationOutboxEvent> outbox_events_;
 
     void record_outbox_event(const domain::ConversationId& conv_id, domain::ConversationOutboxEventType type,

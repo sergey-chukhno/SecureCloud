@@ -5,20 +5,20 @@
 namespace securecloud::messaging::repository {
 
 void InMemoryMembershipRepository::add_participant(const domain::ConversationParticipantEntity& participant) {
-    std::unique_lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     ParticipantKey key{participant.conversation_id, participant.user_id};
     participants_[key] = participant;
 }
 
 void InMemoryMembershipRepository::update_participant(const domain::ConversationParticipantEntity& participant) {
-    std::unique_lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     ParticipantKey key{participant.conversation_id, participant.user_id};
     participants_[key] = participant;
 }
 
 std::optional<domain::ConversationParticipantEntity>
 InMemoryMembershipRepository::find_participant(const domain::ConversationId& conv_id, const domain::UserId& user_id) {
-    std::shared_lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     ParticipantKey key{conv_id, user_id};
     auto it = participants_.find(key);
     if (it != participants_.end()) {
@@ -29,7 +29,7 @@ InMemoryMembershipRepository::find_participant(const domain::ConversationId& con
 
 std::vector<domain::ConversationParticipantEntity>
 InMemoryMembershipRepository::list_participants(const domain::ConversationId& conv_id) {
-    std::shared_lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     std::vector<domain::ConversationParticipantEntity> result;
     for (const auto& [key, participant] : participants_) {
         if (key.conv_id == conv_id) {
@@ -41,7 +41,7 @@ InMemoryMembershipRepository::list_participants(const domain::ConversationId& co
 
 std::vector<domain::ConversationParticipantEntity>
 InMemoryMembershipRepository::list_active_participants(const domain::ConversationId& conv_id) {
-    std::shared_lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     std::vector<domain::ConversationParticipantEntity> result;
     for (const auto& [key, participant] : participants_) {
         if (key.conv_id == conv_id && participant.status == domain::MembershipStatus::Active) {
@@ -56,7 +56,7 @@ void InMemoryMembershipRepository::touch_user_conversation(const domain::UserId&
                                                            domain::ConversationType type,
                                                            domain::MembershipStatus status,
                                                            std::chrono::system_clock::time_point activity_at) {
-    std::unique_lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     auto& inbox = user_inboxes_[user_id];
 
     // Remove existing entry for conv_id if present
@@ -84,7 +84,7 @@ void InMemoryMembershipRepository::touch_user_conversation(const domain::UserId&
 UserConversationsPage
 InMemoryMembershipRepository::list_user_conversations(const domain::UserId& user_id, int limit,
                                                       const std::optional<std::string>& page_token) {
-    std::shared_lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     UserConversationsPage page;
 
     auto it = user_inboxes_.find(user_id);
@@ -123,7 +123,7 @@ InMemoryMembershipRepository::list_user_conversations(const domain::UserId& user
 }
 
 void InMemoryMembershipRepository::clear() {
-    std::unique_lock lock(mutex_);
+    std::lock_guard<std::mutex> lock(mutex_);
     participants_.clear();
     user_inboxes_.clear();
 }

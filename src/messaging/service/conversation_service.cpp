@@ -364,18 +364,18 @@ ConversationService::list_user_conversations(const domain::UserId& caller, int l
 // ============================================================================
 
 std::vector<domain::ConversationOutboxEvent> ConversationService::get_outbox_events() const {
-    std::shared_lock lock(outbox_mutex_);
+    std::lock_guard<std::mutex> lock(outbox_mutex_);
     return outbox_events_;
 }
 
 void ConversationService::clear_outbox_events() {
-    std::unique_lock lock(outbox_mutex_);
+    std::lock_guard<std::mutex> lock(outbox_mutex_);
     outbox_events_.clear();
 }
 
 void ConversationService::record_outbox_event(const domain::ConversationId& conv_id,
                                               domain::ConversationOutboxEventType type, std::string payload_json) {
-    std::unique_lock lock(outbox_mutex_);
+    std::lock_guard<std::mutex> lock(outbox_mutex_);
     outbox_events_.push_back({
         .event_id = domain::ConversationId::generate_v7().to_string(),
         .conversation_id = conv_id,
