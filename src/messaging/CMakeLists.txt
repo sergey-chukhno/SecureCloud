@@ -11,6 +11,11 @@ add_library(securecloud_messaging_config STATIC
     service/conversation_authorization_service.cpp
     service/conversation_service.cpp
     db/migration_runner.cpp
+    db/scylla_types.cpp
+    db/scylla_error_mapper.cpp
+    db/mock_scylla_session.cpp
+    db/scylla_session.cpp
+    db/scylla_session_pool.cpp
 )
 
 

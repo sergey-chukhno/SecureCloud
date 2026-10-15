@@ -1777,4 +1777,19 @@ target_link_libraries(securecloud_scylla_migration_runner_test PRIVATE
 
 gtest_discover_tests(securecloud_scylla_migration_runner_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# ScyllaDB Client Session & Connection Pool Test Suite (MSG-004-T02)
+add_executable(securecloud_scylla_session_test
+    messaging/scylla_session_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_session_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_session_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
