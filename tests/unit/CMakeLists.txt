@@ -1941,6 +1941,22 @@ target_link_libraries(securecloud_idempotency_guard_test PRIVATE
 
 gtest_discover_tests(securecloud_idempotency_guard_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Message Submission Application Service Unit Test Suite (MSG-005-T04)
+add_executable(securecloud_message_submission_service_test
+    messaging/message_submission_service_test.cpp
+)
+
+target_link_libraries(securecloud_message_submission_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_message_submission_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 
 
 
