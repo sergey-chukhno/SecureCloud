@@ -9,6 +9,8 @@ add_library(securecloud_messaging_config STATIC
     domain/message_bucket.cpp
     domain/submission_fingerprint.cpp
     service/submission_validator.cpp
+    service/in_memory_sequence_allocator.cpp
+    service/conversation_sequence_allocator.cpp
     repository/in_memory_conversation_repository.cpp
     repository/in_memory_membership_repository.cpp
     repository/scylla_conversation_repository.cpp

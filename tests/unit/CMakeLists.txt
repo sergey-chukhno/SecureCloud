@@ -1911,5 +1911,21 @@ target_link_libraries(securecloud_submission_validator_test PRIVATE
 
 gtest_discover_tests(securecloud_submission_validator_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Sequence Allocator & Partition Rollover Unit Test Suite (MSG-005-T02)
+add_executable(securecloud_sequence_allocator_test
+    messaging/sequence_allocator_test.cpp
+)
+
+target_link_libraries(securecloud_sequence_allocator_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_sequence_allocator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 
 
