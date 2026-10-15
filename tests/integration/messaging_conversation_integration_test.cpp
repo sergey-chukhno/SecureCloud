@@ -29,11 +29,35 @@
 #include "service/conversation_service.hpp"
 #include "service/messaging_service_impl.hpp"
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+// clang-format off
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+// clang-format on
+
 #ifdef SendMessage
 #undef SendMessage
 #endif
 #ifdef GetMessage
 #undef GetMessage
+#endif
+
+inline void ensure_integration_winsock() noexcept {
+    static const bool initialized = []() noexcept {
+        WSADATA wsa{};
+        return ::WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+    }();
+    (void)initialized;
+}
+#else
+inline void ensure_integration_winsock() noexcept {}
 #endif
 
 #include <chrono>
@@ -89,6 +113,8 @@ class MessagingConversationIntegrationTest : public ::testing::Test {
     }
 
     void SetUp() override {
+        ensure_integration_winsock();
+
         auto pki_root = find_pki_root();
         ca_path_ = pki_root / "ca" / "ca.crt";
         messaging_cert_path_ = pki_root / "services" / "messaging" / "messaging.crt";
@@ -170,8 +196,13 @@ class MessagingConversationIntegrationTest : public ::testing::Test {
     }
 
     void stop_server() {
+        proxy_handler_.reset();
+        gateway_client_.reset();
+        grpc_stub_.reset();
+        channel_.reset();
         if (server_) {
             server_->Shutdown(std::chrono::system_clock::now() + k_server_shutdown_timeout);
+            server_->Wait();
             server_.reset();
         }
     }
