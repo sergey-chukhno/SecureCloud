@@ -611,4 +611,24 @@ endif()
 
 gtest_discover_tests(securecloud_messaging_conversation_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Messaging ScyllaDB Persistence Integration Test Suite (MSG-004-T06)
+add_executable(securecloud_messaging_persistence_integration_test
+    messaging_persistence_integration_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_persistence_integration_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_messaging_persistence_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_messaging_persistence_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
 

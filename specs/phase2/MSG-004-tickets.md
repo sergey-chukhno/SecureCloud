@@ -600,13 +600,13 @@ CREATE TABLE IF NOT EXISTS securecloud_messaging.messaging_outbox_events (
 
 ## 7. Architectural Invariants & Verification Checklist
 
-- [ ] **Authoritative ScyllaDB Ownership**: Messaging exclusively owns the `securecloud_messaging` keyspace; no other service accesses ScyllaDB directly (ADR-005, ADR-006).
-- [ ] **No Global Delivery Queue**: Delivery state is partitioned by recipient `DeviceId` and bucket; there is no shared global queue table.
-- [ ] **Monthly Time-Bucketed Partitions**: Message partitions are bounded using monthly UTC buckets (`YYYYMM`) preventing unbounded partition growth (ADR-007, ADR-010).
-- [ ] **Canonical Sequence Order**: Messages are clustered by `message_sequence ASC`; client timestamps never dictate ordering.
-- [ ] **Separation of Repository Interfaces**: Repositories expose abstract C++ domain interfaces (`IConversationRepository`, `IMembershipRepository`, `IMessageRepository`, `IDeliveryStateRepository`, `ISyncCursorRepository`); domain logic is insulated from ScyllaDB specifics.
-- [ ] **Prepared Statements Everywhere**: All query execution uses parameterized prepared statements to prevent injection and avoid re-parsing overhead.
-- [ ] **Idempotent Submission Deduplication**: Submission records preserve message identity across network retry boundaries.
-- [ ] **Transient Presence Decoupled**: Ephemeral presence heartbeats are never persisted into durable delivery state tables.
-- [ ] **Ciphertext Envelope Opacity**: Message content remains opaque encrypted ciphertext; zero private key material is stored (ADR-008).
-- [ ] **No In-Memory Authority**: In-memory queues are ephemeral; all state required for delivery recovery is durably persisted in ScyllaDB.
+- [x] **Authoritative ScyllaDB Ownership**: Messaging exclusively owns the `securecloud_messaging` keyspace; no other service accesses ScyllaDB directly (ADR-005, ADR-006).
+- [x] **No Global Delivery Queue**: Delivery state is partitioned by recipient `DeviceId` and bucket; there is no shared global queue table.
+- [x] **Monthly Time-Bucketed Partitions**: Message partitions are bounded using monthly UTC buckets (`YYYYMM`) preventing unbounded partition growth (ADR-007, ADR-010).
+- [x] **Canonical Sequence Order**: Messages are clustered by `message_sequence ASC`; client timestamps never dictate ordering.
+- [x] **Separation of Repository Interfaces**: Repositories expose abstract C++ domain interfaces (`IConversationRepository`, `IMembershipRepository`, `IMessageRepository`, `IDeliveryStateRepository`, `ISyncCursorRepository`); domain logic is insulated from ScyllaDB specifics.
+- [x] **Prepared Statements Everywhere**: All query execution uses parameterized prepared statements to prevent injection and avoid re-parsing overhead.
+- [x] **Idempotent Submission Deduplication**: Submission records preserve message identity across network retry boundaries.
+- [x] **Transient Presence Decoupled**: Ephemeral presence heartbeats are never persisted into durable delivery state tables.
+- [x] **Ciphertext Envelope Opacity**: Message content remains opaque encrypted ciphertext; zero private key material is stored (ADR-008).
+- [x] **No In-Memory Authority**: In-memory queues are ephemeral; all state required for delivery recovery is durably persisted in ScyllaDB.
