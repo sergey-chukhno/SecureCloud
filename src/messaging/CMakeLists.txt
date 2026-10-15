@@ -10,6 +10,7 @@ add_library(securecloud_messaging_config STATIC
     repository/in_memory_membership_repository.cpp
     service/conversation_authorization_service.cpp
     service/conversation_service.cpp
+    db/migration_runner.cpp
 )
 
 
@@ -24,6 +25,7 @@ target_include_directories(securecloud_messaging_config PUBLIC
 target_link_libraries(securecloud_messaging_config PUBLIC
     securecloud::common
     securecloud_proto
+    OpenSSL::Crypto
     securecloud::compiler_flags
 )
 

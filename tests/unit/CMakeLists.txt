@@ -1762,4 +1762,19 @@ target_link_libraries(securecloud_gateway_conversation_routing_test PRIVATE
 
 gtest_discover_tests(securecloud_gateway_conversation_routing_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# ScyllaDB Migration Runner Test Suite (MSG-004-T01)
+add_executable(securecloud_scylla_migration_runner_test
+    messaging/scylla_migration_runner_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_migration_runner_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_migration_runner_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
