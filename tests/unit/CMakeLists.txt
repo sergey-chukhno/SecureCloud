@@ -1956,6 +1956,40 @@ target_link_libraries(securecloud_message_submission_service_test PRIVATE
 
 gtest_discover_tests(securecloud_message_submission_service_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# gRPC SendMessage Handler Unit Test Suite (MSG-005-T05)
+add_executable(securecloud_messaging_service_submission_test
+    messaging/messaging_service_submission_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_service_submission_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_service_submission_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Messaging Proxy Handler Unit Test Suite (MSG-005-T05)
+add_executable(securecloud_messaging_proxy_handler_test
+    gateway/messaging_proxy_handler_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_proxy_handler_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_proxy_handler_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 
 
 

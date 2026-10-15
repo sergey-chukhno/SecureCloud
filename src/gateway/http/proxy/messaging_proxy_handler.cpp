@@ -92,14 +92,30 @@ void MessagingProxyHandler::write_grpc_error(httplib::Response& res, const grpc:
         code = "SERVICE_UNAVAILABLE";
         break;
     default:
-        http_status = 500;
-        code = "DOWNSTREAM_ERROR";
+        if (error.grpc_code == ::grpc::StatusCode::ALREADY_EXISTS) {
+            http_status = 409;
+            code = "CONFLICT";
+        } else if (error.grpc_code == ::grpc::StatusCode::RESOURCE_EXHAUSTED) {
+            http_status = 429;
+            code = "RESOURCE_EXHAUSTED";
+        } else {
+            http_status = 500;
+            code = "DOWNSTREAM_ERROR";
+        }
         break;
     }
     ErrorMapper::write_error(res, http_status, code, error.message, request_id);
 }
 
 void MessagingProxyHandler::register_routes(Router& router) {
+    router.post_authenticated("/api/v1/messages", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_send_message(req, res, ctx);
+    });
+
+    router.post_authenticated("/api/v1/messages/send", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_send_message(req, res, ctx);
+    });
+
     router.post_authenticated("/api/v1/conversations", [this](const auto& req, auto& res, const auto& ctx) {
         handle_create_conversation(req, res, ctx);
     });
@@ -586,6 +602,126 @@ void MessagingProxyHandler::handle_update_metadata(const httplib::Request& req, 
     response_body["conversation"] = conversation_metadata_to_json(result.value().conversation());
 
     res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// 8. handle_send_message
+// ============================================================================
+
+void MessagingProxyHandler::handle_send_message(const httplib::Request& req, httplib::Response& res,
+                                                const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    nlohmann::json body;
+    try {
+        body = nlohmann::json::parse(req.body);
+    } catch (const std::exception&) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid JSON body", request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::SendMessageRequest grpc_req;
+    grpc_req.set_conversation_id(body.value("conversation_id", ""));
+    grpc_req.set_sender_device_id(body.value("sender_device_id", ctx.device_id()));
+
+    std::string idempotency_token;
+    if (body.contains("idempotency_token") && body["idempotency_token"].is_string()) {
+        idempotency_token = body["idempotency_token"].get<std::string>();
+    } else if (body.contains("client_idempotency_token") && body["client_idempotency_token"].is_string()) {
+        idempotency_token = body["client_idempotency_token"].get<std::string>();
+    } else if (req.has_header("X-Idempotency-Token")) {
+        idempotency_token = req.get_header_value("X-Idempotency-Token");
+    } else if (req.has_header("x-idempotency-token")) {
+        idempotency_token = req.get_header_value("x-idempotency-token");
+    }
+    grpc_req.set_client_idempotency_token(idempotency_token);
+
+    if (body.contains("priority")) {
+        if (body["priority"].is_string()) {
+            std::string p = body["priority"].get<std::string>();
+            if (p == "urgent") {
+                grpc_req.set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_URGENT);
+            } else if (p == "emergency") {
+                grpc_req.set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_EMERGENCY);
+            } else {
+                grpc_req.set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_NORMAL);
+            }
+        } else if (body["priority"].is_number_integer()) {
+            grpc_req.set_priority(
+                static_cast<securecloud::messaging::v1::MessagePriority>(body["priority"].get<int>()));
+        }
+    } else {
+        grpc_req.set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_NORMAL);
+    }
+
+    if (body.contains("expires_at_unix_ms") && body["expires_at_unix_ms"].is_number_integer()) {
+        grpc_req.set_expires_at_unix_ms(body["expires_at_unix_ms"].get<int64_t>());
+    }
+
+    if (body.contains("delivery_targets") && body["delivery_targets"].is_array()) {
+        for (const auto& dt_json : body["delivery_targets"]) {
+            if (!dt_json.is_object()) {
+                continue;
+            }
+            auto* target = grpc_req.add_delivery_targets();
+            target->set_recipient_user_id(dt_json.value("recipient_user_id", ""));
+            target->set_recipient_device_id(dt_json.value("recipient_device_id", ""));
+
+            if (dt_json.contains("encrypted_payload") && dt_json["encrypted_payload"].is_object()) {
+                const auto& ep_json = dt_json["encrypted_payload"];
+                auto* ep = target->mutable_encrypted_payload();
+                ep->set_ciphertext_blob(ep_json.value("ciphertext_blob", ""));
+                ep->set_ephemeral_public_key(ep_json.value("ephemeral_public_key", ""));
+                ep->set_initialization_vector(ep_json.value("initialization_vector", ""));
+                ep->set_auth_tag(ep_json.value("auth_tag", ""));
+                ep->set_algorithm(ep_json.value("algorithm", "XChaCha20-Poly1305"));
+            }
+        }
+    }
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+    if (!idempotency_token.empty()) {
+        call_ctx.add_metadata("x-idempotency-token", idempotency_token);
+    }
+
+    auto result = messaging_client_->send_message(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    nlohmann::json response_body;
+    response_body["message_id"] = result.value().message_id();
+    response_body["conversation_id"] = result.value().conversation_id();
+    response_body["accepted_at_unix_ms"] = result.value().accepted_at_unix_ms();
+    response_body["initial_state"] = "QUEUED";
+    response_body["target_count"] = result.value().target_count();
+
+    res.status = 201;
     res.set_content(response_body.dump(), k_content_type_json);
 }
 
