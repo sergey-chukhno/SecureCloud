@@ -1792,4 +1792,19 @@ target_link_libraries(securecloud_scylla_session_test PRIVATE
 
 gtest_discover_tests(securecloud_scylla_session_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# ScyllaDB Conversation & Membership Repository Test Suite (MSG-004-T03)
+add_executable(securecloud_scylla_conversation_repository_test
+    messaging/scylla_conversation_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_conversation_repository_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_conversation_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
 

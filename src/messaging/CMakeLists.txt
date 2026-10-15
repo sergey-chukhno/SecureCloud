@@ -8,6 +8,8 @@ add_library(securecloud_messaging_config STATIC
     domain/conversation_lifecycle.cpp
     repository/in_memory_conversation_repository.cpp
     repository/in_memory_membership_repository.cpp
+    repository/scylla_conversation_repository.cpp
+    repository/scylla_membership_repository.cpp
     service/conversation_authorization_service.cpp
     service/conversation_service.cpp
     db/migration_runner.cpp
