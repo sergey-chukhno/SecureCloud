@@ -11,8 +11,10 @@
 #include "service/idempotency_guard.hpp"
 #include "service/sequence_allocator_interface.hpp"
 
+#include <array>
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace securecloud::messaging::service {
@@ -66,6 +68,9 @@ class MessageSubmissionService {
     std::shared_ptr<repository::IMessageRepository> message_repo_;
     std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<repository::IOutboxRepository> outbox_repo_;
+
+    static constexpr size_t kNumStripes = 64;
+    std::array<std::mutex, kNumStripes> submission_stripes_;
 };
 
 } // namespace securecloud::messaging::service

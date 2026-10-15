@@ -5,6 +5,7 @@
 
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 namespace securecloud::messaging::service {
@@ -38,11 +39,30 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
         return ServiceResult<MessageSubmissionResponse>::fail(auth_result.error_code, auth_result.reason);
     }
 
+    // Synchronize concurrent submissions with identical idempotency keys (ADR-009, MSG-005-T04)
+    size_t stripe_idx = 0;
+    if (!cmd.client_idempotency_token.empty()) {
+        stripe_idx =
+            std::hash<std::string>{}(cmd.sender_device_id.str() + ":" + cmd.client_idempotency_token) % kNumStripes;
+    }
+    std::lock_guard<std::mutex> lock(submission_stripes_[stripe_idx]);
+
     // 3. Cryptographic Payload Fingerprint Calculation (ADR-008 SHA-256)
     std::string fingerprint = domain::calculate_submission_fingerprint(cmd);
 
     // 4. Client Idempotency Evaluation
     auto idem_result = idempotency_guard_->evaluate_submission(cmd, fingerprint);
+    if (idem_result.action == IdempotencyAction::RetryWait) {
+        // Bounded wait to allow in-flight duplicate submission to commit (MSG-005-T03)
+        for (int retry = 0; retry < 20; ++retry) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            idem_result = idempotency_guard_->evaluate_submission(cmd, fingerprint);
+            if (idem_result.action != IdempotencyAction::RetryWait) {
+                break;
+            }
+        }
+    }
+
     switch (idem_result.action) {
     case IdempotencyAction::ReturnCached: {
         const auto& record = *idem_result.cached_record;

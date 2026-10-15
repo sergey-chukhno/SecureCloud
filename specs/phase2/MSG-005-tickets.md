@@ -375,10 +375,10 @@ Clients operating over unreliable mobile connections (4G/5G/Wi-Fi transitions) f
 
 ## 6. Architectural Invariants Checklist
 
-- [ ] **Critical Durability Boundary**: Message + per-device delivery state + outbox event + idempotency record must be durably committed before acknowledging success.
-- [ ] **No Decryption on Server**: Message envelopes remain opaque ciphertexts (ADR-008); zero plaintext stored or inspected.
-- [ ] **Deterministic Idempotency**: Identical retries return original submission; conflicting payloads with duplicate token are deterministically rejected.
-- [ ] **No Global Delivery Queue**: Delivery records partitioned strictly by recipient `((device_id, delivery_bucket))`; no queue scans.
-- [ ] **No Synchronous Audit Dependency**: Audit logging is asynchronous via outbox events; no cross-service transactions.
-- [ ] **Bounded Concurrency**: All submission tasks routed through bounded worker pools with request deadlines and cancellation checks.
-- [ ] **Zero Regressions**: Cumulative test suite passes 100% across all platforms.
+- [x] **Critical Durability Boundary**: Message + per-device delivery state + outbox event + idempotency record must be durably committed before acknowledging success.
+- [x] **No Decryption on Server**: Message envelopes remain opaque ciphertexts (ADR-008); zero plaintext stored or inspected.
+- [x] **Deterministic Idempotency**: Identical retries return original submission; conflicting payloads with duplicate token are deterministically rejected.
+- [x] **No Global Delivery Queue**: Delivery records partitioned strictly by recipient `((device_id, delivery_bucket))`; no queue scans.
+- [x] **No Synchronous Audit Dependency**: Audit logging is asynchronous via outbox events; no cross-service transactions.
+- [x] **Bounded Concurrency**: All submission tasks routed through bounded worker pools with request deadlines and cancellation checks.
+- [x] **Zero Regressions**: Cumulative test suite passes 100% across all platforms.
