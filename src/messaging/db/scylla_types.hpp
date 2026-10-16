@@ -75,6 +75,7 @@ class ScyllaRow {
 
     [[nodiscard]] std::size_t column_count() const noexcept { return values_.size(); }
     [[nodiscard]] const std::vector<std::string>& column_names() const noexcept { return column_names_; }
+    [[nodiscard]] bool has_column(std::string_view column_name) const noexcept;
 
   private:
     [[nodiscard]] std::size_t find_column_index(std::string_view column_name) const;

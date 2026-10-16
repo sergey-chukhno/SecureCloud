@@ -1881,4 +1881,117 @@ target_link_libraries(securecloud_scylla_idempotency_repository_test PRIVATE
 
 gtest_discover_tests(securecloud_scylla_idempotency_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Submission Payload Fingerprinting Unit Test Suite (MSG-005-T01)
+add_executable(securecloud_submission_fingerprint_test
+    messaging/submission_fingerprint_test.cpp
+)
+
+target_link_libraries(securecloud_submission_fingerprint_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_submission_fingerprint_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Message Submission Validator Unit Test Suite (MSG-005-T01)
+add_executable(securecloud_submission_validator_test
+    messaging/submission_validator_test.cpp
+)
+
+target_link_libraries(securecloud_submission_validator_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_submission_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Sequence Allocator & Partition Rollover Unit Test Suite (MSG-005-T02)
+add_executable(securecloud_sequence_allocator_test
+    messaging/sequence_allocator_test.cpp
+)
+
+target_link_libraries(securecloud_sequence_allocator_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_sequence_allocator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Idempotency Guard & Conflict Resolution Unit Test Suite (MSG-005-T03)
+add_executable(securecloud_idempotency_guard_test
+    messaging/idempotency_guard_test.cpp
+)
+
+target_link_libraries(securecloud_idempotency_guard_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_idempotency_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Message Submission Application Service Unit Test Suite (MSG-005-T04)
+add_executable(securecloud_message_submission_service_test
+    messaging/message_submission_service_test.cpp
+)
+
+target_link_libraries(securecloud_message_submission_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_message_submission_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# gRPC SendMessage Handler Unit Test Suite (MSG-005-T05)
+add_executable(securecloud_messaging_service_submission_test
+    messaging/messaging_service_submission_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_service_submission_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_service_submission_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Messaging Proxy Handler Unit Test Suite (MSG-005-T05)
+add_executable(securecloud_messaging_proxy_handler_test
+    gateway/messaging_proxy_handler_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_proxy_handler_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_proxy_handler_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
+
+
+
+
 

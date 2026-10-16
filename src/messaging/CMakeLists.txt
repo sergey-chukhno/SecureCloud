@@ -7,6 +7,12 @@ add_library(securecloud_messaging_config STATIC
     service/messaging_error_mapper.cpp
     domain/conversation_lifecycle.cpp
     domain/message_bucket.cpp
+    domain/submission_fingerprint.cpp
+    service/submission_validator.cpp
+    service/in_memory_sequence_allocator.cpp
+    service/conversation_sequence_allocator.cpp
+    service/idempotency_guard.cpp
+    service/message_submission_service.cpp
     repository/in_memory_conversation_repository.cpp
     repository/in_memory_membership_repository.cpp
     repository/scylla_conversation_repository.cpp

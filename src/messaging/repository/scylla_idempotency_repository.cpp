@@ -36,6 +36,10 @@ domain::IdempotencyRecord row_to_idempotency_record(const db::ScyllaRow& row) {
 
     record.created_at = from_millis(row.get_timestamp("created_at"));
 
+    if (row.has_column("request_fingerprint") && !row.is_null("request_fingerprint")) {
+        record.request_fingerprint = row.get_string("request_fingerprint");
+    }
+
     return record;
 }
 
@@ -53,7 +57,7 @@ void ScyllaIdempotencyRepository::init_prepared_statements() {
     prep_find_submission_ =
         session_->prepare("idem_repo_find_submission",
                           "SELECT sender_device_id, idempotency_key, message_id, conversation_id, message_sequence, "
-                          "submission_status, created_at "
+                          "submission_status, created_at, request_fingerprint "
                           "FROM securecloud_messaging.message_submission_by_idempotency_key "
                           "WHERE sender_device_id = ? AND idempotency_key = ?;");
 
@@ -61,8 +65,8 @@ void ScyllaIdempotencyRepository::init_prepared_statements() {
         session_->prepare("idem_repo_save_submission",
                           "INSERT INTO securecloud_messaging.message_submission_by_idempotency_key "
                           "(sender_device_id, idempotency_key, message_id, conversation_id, message_sequence, "
-                          "submission_status, created_at) "
-                          "VALUES (?, ?, ?, ?, ?, ?, ?);");
+                          "submission_status, created_at, request_fingerprint) "
+                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?);");
 }
 
 std::optional<domain::IdempotencyRecord>
@@ -93,6 +97,7 @@ void ScyllaIdempotencyRepository::save_submission(const domain::IdempotencyRecor
     params.add_int64(static_cast<int64_t>(record.message_sequence));
     params.add_string(domain::to_string(record.submission_status));
     params.add_timestamp(to_millis(record.created_at));
+    params.add_string(record.request_fingerprint);
 
     session_->execute_prepared(prep_save_submission_, params);
 }

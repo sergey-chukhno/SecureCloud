@@ -10,10 +10,12 @@
 #include "securecloud/grpc/caller_context.hpp"
 #include "securecloud/security/mtls_config.hpp"
 #include "service/conversation_service.hpp"
+#include "service/message_submission_service.hpp"
 #include "service/messaging_caller_context.hpp"
 #include "service/messaging_error_mapper.hpp"
 
 #include <chrono>
+#include <future>
 #include <iostream>
 #include <string_view>
 #include <utility>
@@ -54,17 +56,163 @@ void populate_conversation_metadata(const ConversationDetails& details,
 MessagingServiceImpl::MessagingServiceImpl(std::shared_ptr<concurrency::BoundedWorkerPool> submission_pool,
                                            std::shared_ptr<concurrency::BoundedWorkerPool> delivery_pool,
                                            std::shared_ptr<concurrency::BoundedWorkerPool> sync_pool,
-                                           std::shared_ptr<ConversationService> conversation_service)
+                                           std::shared_ptr<ConversationService> conversation_service,
+                                           std::shared_ptr<MessageSubmissionService> submission_service)
     : submission_pool_(std::move(submission_pool)), delivery_pool_(std::move(delivery_pool)),
-      sync_pool_(std::move(sync_pool)), conversation_service_(std::move(conversation_service)) {}
+      sync_pool_(std::move(sync_pool)), conversation_service_(std::move(conversation_service)),
+      submission_service_(std::move(submission_service)) {}
 
 // --- Message lifecycle RPCs ---
 
 ::grpc::Status MessagingServiceImpl::SendMessage(::grpc::ServerContext* context,
-                                                 const ::securecloud::messaging::v1::SendMessageRequest* /*request*/,
-                                                 ::securecloud::messaging::v1::SendMessageResponse* /*response*/) {
+                                                 const ::securecloud::messaging::v1::SendMessageRequest* request,
+                                                 ::securecloud::messaging::v1::SendMessageResponse* response) {
     log_rpc_invocation("SendMessage", context);
-    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    if (!submission_service_) {
+        return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    }
+    if (!request || !response) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null"};
+    }
+
+    auto cancel_status = check_deadline_and_cancellation(context);
+    if (!cancel_status.ok()) {
+        return cancel_status;
+    }
+
+    auto caller_ctx = extract_messaging_caller_context(context);
+    std::string error_reason;
+    auto val_status = validate_messaging_caller_context(caller_ctx, kRequireUserId, error_reason);
+    if (!val_status.ok()) {
+        return val_status;
+    }
+
+    std::string effective_device_id = caller_ctx.device_id();
+    if (effective_device_id.empty() && !request->sender_device_id().empty()) {
+        effective_device_id = request->sender_device_id();
+    }
+    if (effective_device_id.empty() || !common::rpc::is_valid_uuid(effective_device_id)) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Missing or invalid device ID header (expected RFC 4122 UUID)"};
+    }
+
+    auto caller_id = domain::UserId::from_string(caller_ctx.user_id());
+    if (!caller_id) {
+        return {::grpc::StatusCode::UNAUTHENTICATED, "Missing or invalid user ID header (expected RFC 4122 UUID)"};
+    }
+    domain::DeviceId sender_dev_id(effective_device_id);
+    auto conv_id = domain::ConversationId::from_string(request->conversation_id());
+    if (!conv_id) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND, "Invalid conversation ID format",
+                              caller_ctx.correlation_id(), context);
+    }
+
+    domain::MessageSubmissionCommand cmd;
+    cmd.caller_user_id = *caller_id;
+    cmd.sender_device_id = sender_dev_id;
+    cmd.conversation_id = *conv_id;
+    cmd.client_idempotency_token = !request->client_idempotency_token().empty() ? request->client_idempotency_token()
+                                                                                : caller_ctx.idempotency_token;
+
+    switch (request->priority()) {
+    case v1::MESSAGE_PRIORITY_NORMAL:
+        cmd.priority = domain::MessagePriority::Normal;
+        break;
+    case v1::MESSAGE_PRIORITY_URGENT:
+        cmd.priority = domain::MessagePriority::Urgent;
+        break;
+    case v1::MESSAGE_PRIORITY_EMERGENCY:
+        cmd.priority = domain::MessagePriority::Emergency;
+        break;
+    default:
+        cmd.priority = domain::MessagePriority::Normal;
+        break;
+    }
+
+    if (request->expires_at_unix_ms() > 0) {
+        cmd.expires_at =
+            std::chrono::system_clock::time_point(std::chrono::milliseconds(request->expires_at_unix_ms()));
+    }
+
+    for (const auto& target : request->delivery_targets()) {
+        domain::DeviceDeliveryTarget dt;
+        auto rec_uid = domain::UserId::from_string(target.recipient_user_id());
+        if (!rec_uid || target.recipient_device_id().empty()) {
+            return to_grpc_status(v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+                                  "Invalid recipient user or device ID format", caller_ctx.correlation_id(), context);
+        }
+        dt.recipient_user_id = *rec_uid;
+        dt.recipient_device_id = domain::DeviceId(target.recipient_device_id());
+
+        const auto& ep = target.encrypted_payload();
+        dt.ciphertext_blob = ep.ciphertext_blob();
+        dt.ephemeral_public_key.assign(ep.ephemeral_public_key().begin(), ep.ephemeral_public_key().end());
+        dt.iv.assign(ep.initialization_vector().begin(), ep.initialization_vector().end());
+        dt.auth_tag.assign(ep.auth_tag().begin(), ep.auth_tag().end());
+        dt.algorithm = ep.algorithm().empty() ? "XChaCha20-Poly1305" : ep.algorithm();
+        cmd.delivery_targets.push_back(std::move(dt));
+    }
+
+    struct SubmissionTaskResult {
+        ServiceResult<MessageSubmissionResponse> result;
+        size_t target_count{0};
+    };
+
+    auto run_task = [sub_svc = submission_service_, command = std::move(cmd)]() -> SubmissionTaskResult {
+        size_t t_count = command.delivery_targets.size();
+        return {sub_svc->submit_message(command), t_count};
+    };
+
+    SubmissionTaskResult task_result;
+    if (submission_pool_) {
+        auto promise = std::make_shared<std::promise<SubmissionTaskResult>>();
+        auto future = promise->get_future();
+        bool enqueued = submission_pool_->try_submit([promise, run_task]() {
+            try {
+                promise->set_value(run_task());
+            } catch (const std::exception& ex) {
+                promise->set_value(
+                    {ServiceResult<MessageSubmissionResponse>::fail(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, ex.what()),
+                     0});
+            } catch (...) {
+                promise->set_value({ServiceResult<MessageSubmissionResponse>::fail(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
+                                                                                   "Unknown worker failure"),
+                                    0});
+            }
+        });
+
+        if (!enqueued) {
+            return to_grpc_status(v1::MESSAGING_ERROR_CODE_QUEUE_CAPACITY_EXCEEDED,
+                                  "Submission queue capacity exceeded", caller_ctx.correlation_id(), context);
+        }
+
+        if (context->raw_deadline().tv_sec != 0 || context->raw_deadline().tv_nsec != 0) {
+            auto deadline = context->deadline();
+            if (deadline < std::chrono::system_clock::time_point::max()) {
+                auto wait_res = future.wait_until(deadline);
+                if (wait_res == std::future_status::timeout) {
+                    return {::grpc::StatusCode::DEADLINE_EXCEEDED, "SendMessage deadline exceeded"};
+                }
+            }
+        }
+        task_result = future.get();
+    } else {
+        task_result = run_task();
+    }
+
+    if (!task_result.result) {
+        return to_grpc_status(task_result.result.error_code, task_result.result.error_message,
+                              caller_ctx.correlation_id(), context);
+    }
+
+    response->set_message_id(task_result.result.value.message_id.to_string());
+    response->set_conversation_id(task_result.result.value.conversation_id.to_string());
+    auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(task_result.result.value.accepted_at.time_since_epoch())
+            .count();
+    response->set_accepted_at_unix_ms(ms);
+    response->set_initial_state(task_result.result.value.initial_state);
+    response->set_target_count(static_cast<uint32_t>(task_result.target_count));
+    return ::grpc::Status::OK;
 }
 
 ::grpc::Status MessagingServiceImpl::GetMessages(::grpc::ServerContext* context,
