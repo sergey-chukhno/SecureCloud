@@ -13,6 +13,8 @@ add_library(securecloud_messaging_config STATIC
     service/conversation_sequence_allocator.cpp
     service/idempotency_guard.cpp
     service/protocol_version_policy.cpp
+    service/recipient_device_resolution_service.cpp
+    client/auth_crypto_directory_client.cpp
     service/message_submission_service.cpp
     repository/in_memory_conversation_repository.cpp
     repository/in_memory_membership_repository.cpp

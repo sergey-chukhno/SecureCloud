@@ -2016,3 +2016,17 @@ target_link_libraries(securecloud_protocol_version_policy_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_protocol_version_policy_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Recipient Device Resolution & Target Validation Unit Test Suite (MSG-006-T02)
+add_executable(securecloud_recipient_device_resolution_service_test
+    messaging/recipient_device_resolution_service_test.cpp
+)
+
+target_link_libraries(securecloud_recipient_device_resolution_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_recipient_device_resolution_service_test ${SECURECLOUD_TEST_PROPERTIES})
