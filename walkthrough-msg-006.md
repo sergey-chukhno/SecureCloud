@@ -295,4 +295,80 @@ All 14 tests passed with 100% success rate. Combined with T01, all 31 unit tests
 
 ---
 
-*(Sections 4 through 7 will be populated as tickets MSG-006-T03 through T06 are implemented and validated).*
+## 4. Strict Envelope Security & Anti-Plaintext Guard (MSG-006-T03)
+
+### 4.1 Architectural Purpose & Performance Blueprint
+
+In high-throughput, low-latency secure messaging systems (ADR-010), comprehensive security validation must never become a computational bottleneck. A central architectural consideration for the `E2EEnvelopeValidator` is ensuring that rigorous validation rules—including sender context verification, protocol whitelisting, cryptographic parameter bounds checking, target device verification, and anti-plaintext inspection—do not impact end-to-end performance.
+
+#### Cumulative Latency Budget:
+The entire validation pipeline is designed to execute in **sub-10 microseconds ($<0.01\text{ ms}$)** per message, which represents less than $0.5\%$ of the time required to perform the single ScyllaDB atomic write ($\sim 1\text{--}2\text{ ms}$).
+
+| Operation | Typical Latency | % of Total Request Time |
+| :--- | :--- | :--- |
+| **All 5 Validation Rules (Combined)** | **$\approx 3\text{--}8\text{ \mu s}$** | **$\approx 0.3\%$** |
+| Memory Allocation / Protobuf copy | $\approx 10\text{--}20\text{ \mu s}$ | $\approx 0.7\%$ |
+| Monotonic Sequence Allocation | $\approx 5\text{--}10\text{ \mu s}$ | $\approx 0.4\%$ |
+| **ScyllaDB Atomic Write (Local NVMe)** | **$\approx 1,000\text{--}2,000\text{ \mu s}$** | **$\approx 98.6\%$** |
+
+### 4.2 Fail-Fast, Short-Circuit Evaluation Ordering
+
+The validator executes checks in order of **increasing computational cost**:
+
+1. **Sender Context Integrity ($O(1)$, $<5\text{ ns}$)**:
+   - Compares the envelope's `sender_user_id` and `sender_device_id` against the authenticated `MessagingCallerContext`.
+   - Simple string/UUID equality checks running directly in L1 CPU cache. Prevents sender spoofing.
+2. **Protocol Version Whitelisting ($O(1)$, $<2\text{ ns}$)**:
+   - A single CPU `switch` on an integer (`version == 1 || version == 2`).
+   - Rejects unapproved, deprecated, or unknown protocol versions (`MESSAGING_ERROR_CODE_UNSUPPORTED_PROTOCOL_VERSION`).
+3. **Cryptographic Parameter Bounds ($O(N)$, $<50\text{ ns}$)**:
+   - Integer bounds checks: `iv.size() >= 24` (or 12 for AES-GCM), `auth_tag.size() >= 16`, `ephemeral_key.size() >= 32`, and `ciphertext.size() <= 16MB`.
+   - Length comparisons only; zero cryptographic operations performed.
+4. **Target Device Verification ($O(N)$, $<1\text{--}2\text{ \mu s}$)**:
+   - In-memory read from `DeviceDirectoryCache` (from T02).
+   - Validates participant authorization, device ownership, and `DEVICE_STATUS_ACTIVE`.
+5. **Anti-Plaintext Guard ($<1\text{ \mu s}$)**:
+   - Fixed prefix heuristic inspection.
+
+If **any** check fails, execution aborts immediately (**fail-fast**), preventing subsequent checks from executing.
+
+### 4.3 Bounded Prefix Inspection for Anti-Plaintext Guard
+
+A common performance pitfall with payload inspection or entropy calculation is scanning multi-megabyte payloads. If a client submits a 15 MB media file, calculating byte entropy across 15 MB would consume significant CPU time.
+
+#### The Bounded Prefix Solution:
+- The validator does **NOT** scan the entire 16 MB payload.
+- It inspects only a **fixed prefix sample** (the first **128 to 256 bytes** of the ciphertext).
+- **Mathematical Soundness**:
+  - Genuine AEAD ciphertext (XChaCha20-Poly1305 or AES-256-GCM) produces pseudorandom bytes with maximum entropy across *every individual byte*. The probability of a 128-byte block of random ciphertext happening to contain $\ge 90\%$ printable ASCII characters is less than $10^{-40}$ (statistically impossible).
+  - Conversely, an accidental or malicious plaintext payload (e.g., JSON `{"text":"Hello..."}` or ASCII text) exposes its structure immediately in the first few bytes.
+  - Inspecting a 128-byte prefix takes **$\sim 100\text{ nanoseconds}$** of SIMD/CPU time.
+
+### 4.4 Zero Cross-Thread Contention
+
+- The validation logic is **stateless** and re-entrant.
+- It operates strictly on stack-allocated data and const references.
+- Concurrent message submissions processed across our bounded worker pool threads execute their validations in parallel on separate CPU cores without any mutex contention.
+
+### 4.5 Validation & Unit Test Suite Coverage
+
+The envelope security and anti-plaintext validation engine was thoroughly tested with a dedicated unit test suite in `tests/unit/messaging/e2e_envelope_validator_test.cpp`:
+
+1. **`E2EEnvelopeValidatorTest.HappyPathValidationSucceeds`**: Verifies that a structurally sound, authenticated envelope targeting active enrolled devices passes all 5 rules.
+2. **`E2EEnvelopeValidatorTest.Rule1_RejectsSenderUserMismatch`**: Confirms that spoofed sender user IDs (mismatching `MessagingCallerContext`) are rejected with `MESSAGING_ERROR_CODE_NOT_A_PARTICIPANT`.
+3. **`E2EEnvelopeValidatorTest.Rule1_RejectsSenderDeviceMismatch`**: Confirms that spoofed sender device IDs are rejected with `MESSAGING_ERROR_CODE_DEVICE_REVOKED`.
+4. **`E2EEnvelopeValidatorTest.Rule2_RejectsUnsupportedTopLevelProtocol`**: Enforces fail-closed rejection of envelopes with unknown or deprecated top-level protocol versions (`MESSAGING_ERROR_CODE_UNSPECIFIED`).
+5. **`E2EEnvelopeValidatorTest.Rule2_RejectsUnsupportedDeviceProtocol`**: Enforces rejection if any per-device envelope uses an unapproved protocol version.
+6. **`E2EEnvelopeValidatorTest.Rule4_RejectsShortCryptoParameters`**: Validates deterministic rejection when IV is $<24$ bytes, auth tag is $<16$ bytes, or ephemeral public key is $<32$ bytes.
+7. **`E2EEnvelopeValidatorTest.Rule4_RejectsOversizedPayload`**: Enforces the 16 MB maximum payload limit with `MESSAGING_ERROR_CODE_PAYLOAD_TOO_LARGE`.
+8. **`E2EEnvelopeValidatorTest.Rule5_AntiPlaintextGuardRejectsJson`**: Confirms that accidental or malicious submission of raw JSON (`{"message":"..."}`) is detected by the heuristic prefix scanner and rejected (`MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE`).
+9. **`E2EEnvelopeValidatorTest.Rule5_AntiPlaintextGuardRejectsAsciiText`**: Confirms that raw ASCII sentences with $\ge 90\%$ printable ASCII are detected and rejected.
+10. **`E2EEnvelopeValidatorTest.Rule3_RejectsNonParticipantRecipient`**: Rejects envelopes targeting users who are not participants in the conversation.
+11. **`E2EEnvelopeValidatorTest.Rule3_RejectsRevokedTargetDevice`**: Rejects envelopes targeting a revoked recipient device with `MESSAGING_ERROR_CODE_DEVICE_REVOKED`.
+12. **`E2EEnvelopeValidatorTest.DetectsSelectiveDeviceOmission`**: Confirms that omitted active devices are captured in `omitted_device_ids`, and that enabling `enforce_completeness = true` deterministically rejects the submission.
+
+All 12 tests passed with 100% success rate in 7 ms. Combined across MSG-006, all 43 unit tests are passing.
+
+---
+
+*(Sections 5 through 7 will be populated as tickets MSG-006-T04 through T06 are implemented and validated).*

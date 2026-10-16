@@ -2030,3 +2030,17 @@ target_link_libraries(securecloud_recipient_device_resolution_service_test PRIVA
 )
 
 gtest_discover_tests(securecloud_recipient_device_resolution_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Strict Envelope Security & Anti-Plaintext Guard Unit Test Suite (MSG-006-T03)
+add_executable(securecloud_e2e_envelope_validator_test
+    messaging/e2e_envelope_validator_test.cpp
+)
+
+target_link_libraries(securecloud_e2e_envelope_validator_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_e2e_envelope_validator_test ${SECURECLOUD_TEST_PROPERTIES})
