@@ -365,7 +365,7 @@ class MessagingSubmissionIntegrationTest : public ::testing::Test {
 
         // 1. Direct conversation between Alice and Bob
         direct_conv_id_ = ConversationId::generate_v7();
-        ConversationEntity direct_conv(direct_conv_id_, ConversationType::Direct, alice_user_);
+        ConversationEntity direct_conv{direct_conv_id_, ConversationType::Direct, alice_user_};
         conv_repo_->save_conversation(direct_conv);
 
         auto now = std::chrono::system_clock::now();
@@ -378,7 +378,7 @@ class MessagingSubmissionIntegrationTest : public ::testing::Test {
 
         // 2. Active group conversation with Alice, Bob, Charlie
         active_group_id_ = ConversationId::generate_v7();
-        ConversationEntity active_group(active_group_id_, ConversationType::Group, alice_user_);
+        ConversationEntity active_group{active_group_id_, ConversationType::Group, alice_user_};
         conv_repo_->save_conversation(active_group);
 
         member_repo_->add_participant(
@@ -390,7 +390,7 @@ class MessagingSubmissionIntegrationTest : public ::testing::Test {
 
         // 3. Closed group conversation
         closed_group_id_ = ConversationId::generate_v7();
-        ConversationEntity closed_group(closed_group_id_, ConversationType::Group, alice_user_);
+        ConversationEntity closed_group{closed_group_id_, ConversationType::Group, alice_user_};
         conv_repo_->save_conversation(closed_group);
         conv_repo_->save_group_metadata(GroupMetadataEntity{
             .conversation_id = closed_group_id_,

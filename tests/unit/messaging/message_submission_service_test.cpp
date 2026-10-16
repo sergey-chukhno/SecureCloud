@@ -157,7 +157,7 @@ class MessageSubmissionServiceTest : public ::testing::Test {
         alice_device_ = DeviceId("alice-device-phone");
         bob_device_ = DeviceId("bob-device-tablet");
 
-        ConversationEntity conv(test_conv_id_, ConversationType::Direct, test_alice_);
+        ConversationEntity conv{test_conv_id_, ConversationType::Direct, test_alice_};
         conv_repo_->save_conversation(conv);
 
         auto now = std::chrono::system_clock::now();
