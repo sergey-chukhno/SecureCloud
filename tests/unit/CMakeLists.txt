@@ -1989,9 +1989,30 @@ target_link_libraries(securecloud_messaging_proxy_handler_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_proxy_handler_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# E2E Message Envelope Domain Types Unit Test Suite (MSG-006-T01)
+add_executable(securecloud_envelope_types_test
+    messaging/envelope_types_test.cpp
+)
 
+target_link_libraries(securecloud_envelope_types_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
 
+gtest_discover_tests(securecloud_envelope_types_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Protocol Version & Crypto Policy Unit Test Suite (MSG-006-T01)
+add_executable(securecloud_protocol_version_policy_test
+    messaging/protocol_version_policy_test.cpp
+)
 
+target_link_libraries(securecloud_protocol_version_policy_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
 
-
+gtest_discover_tests(securecloud_protocol_version_policy_test ${SECURECLOUD_TEST_PROPERTIES})
