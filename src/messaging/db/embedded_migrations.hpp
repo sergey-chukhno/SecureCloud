@@ -156,4 +156,14 @@ CREATE TABLE IF NOT EXISTS securecloud_messaging.schema_migrations (
 );
 )CQL";
 
+inline constexpr std::string_view k_v004_per_device_envelope_cql = R"CQL(
+ALTER TABLE securecloud_messaging.pending_deliveries_by_device ADD ciphertext_blob blob;
+ALTER TABLE securecloud_messaging.pending_deliveries_by_device ADD ephemeral_public_key blob;
+ALTER TABLE securecloud_messaging.pending_deliveries_by_device ADD iv blob;
+ALTER TABLE securecloud_messaging.pending_deliveries_by_device ADD auth_tag blob;
+ALTER TABLE securecloud_messaging.pending_deliveries_by_device ADD algorithm text;
+ALTER TABLE securecloud_messaging.pending_deliveries_by_device ADD protocol_version int;
+ALTER TABLE securecloud_messaging.pending_deliveries_by_device ADD one_time_prekey_id text;
+)CQL";
+
 } // namespace securecloud::messaging::db

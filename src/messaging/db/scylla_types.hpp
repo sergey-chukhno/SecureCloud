@@ -71,6 +71,7 @@ class ScyllaRow {
     [[nodiscard]] int64_t get_int64(std::string_view column_name) const;
     [[nodiscard]] int64_t get_timestamp(std::string_view column_name) const;
     [[nodiscard]] bool get_bool(std::string_view column_name) const;
+    [[nodiscard]] const std::vector<uint8_t>& get_blob(std::string_view column_name) const;
     [[nodiscard]] std::vector<std::string> get_string_list(std::string_view column_name) const;
 
     [[nodiscard]] std::size_t column_count() const noexcept { return values_.size(); }

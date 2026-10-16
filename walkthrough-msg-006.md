@@ -371,4 +371,258 @@ All 12 tests passed with 100% success rate in 7 ms. Combined across MSG-006, all
 
 ---
 
-*(Sections 5 through 7 will be populated as tickets MSG-006-T04 through T06 are implemented and validated).*
+## 5. ScyllaDB Per-Device Envelope Persistence Integration (MSG-006-T04)
+
+### 5.1 Architectural Objectives & Schema Design
+
+In strict alignment with **ADR-005 (ScyllaDB Storage Architecture)**, **ADR-007 (Recipient-Device Addressing Model)**, and **ADR-008 (Cryptographic Primitives & Envelope Structure)**, SecureCloud enforces device-oriented fan-out persistence:
+
+1. **Zero Global Delivery Queues**: Message distribution is never serialized through monolithic global queues. Instead, each target device possesses an independent, append-only partitioned delivery queue in ScyllaDB keyed by `((device_id, delivery_bucket))`.
+2. **Per-Recipient-Device Isolation**: Because each physical device participates in its own Double Ratchet and PQXDH key-agreement session with the sender, the encrypted payload (`ciphertext_blob`) and cryptographic ephemeral parameters (`ephemeral_public_key`, `iv`, `auth_tag`, `one_time_prekey_id`) are unique per physical device.
+3. **Zero Plaintext at Rest**: ScyllaDB strictly stores the ciphertext blob as an opaque raw binary `blob`. The database never holds, sees, or logs plaintext message payloads, encryption keys, or ratchet states.
+4. **Backward Compatibility & Non-Disruptive Schema Evolution**: In accordance with enterprise zero-downtime deployment patterns, schema migrations are non-destructive and backward compatible. Pre-existing rows lacking envelope columns can still be fetched and parsed gracefully by the C++ repository without throwing exceptions.
+
+```
+                    +-------------------------------------------------------------+
+                    |             ScyllaDB Node Cluster (Keyspace: securecloud_messaging) |
+                    +-------------------------------------------------------------+
+                                                     |
+                          Partition Key: ((device_id, delivery_bucket))
+                          Clustering Key: accepted_at ASC, message_id ASC
+                                                     |
+               +-------------------------------------+-------------------------------------+
+               |                                                                           |
+               v                                                                           v
+     [Device 1: Alice's Pixel 9 Pro]                                             [Device 2: Bob's iPhone 16]
+     +-----------------------------------+                                       +-----------------------------------+
+     | accepted_at: 2026-10-16T16:00:00Z |                                       | accepted_at: 2026-10-16T16:00:00Z |
+     | message_id: 01928374-uuid-v7      |                                       | message_id: 01928374-uuid-v7      |
+     | delivery_state: 'PENDING'         |                                       | delivery_state: 'PENDING'         |
+     | ciphertext_blob: 0xCAFEBABE...    |                                       | ciphertext_blob: 0xDEADBEEF...    |
+     | ephemeral_public_key: 0x0411...   |                                       | ephemeral_public_key: 0x0422...   |
+     | iv: 0x101112... (12 bytes)        |                                       | iv: 0x909192... (12 bytes)        |
+     | auth_tag: 0xAABBCC... (16 bytes)  |                                       | auth_tag: 0x334455... (16 bytes)  |
+     | algorithm: 'AES-256-GCM'          |                                       | algorithm: 'AES-256-GCM'          |
+     | protocol_version: 1               |                                       | protocol_version: 1               |
+     | one_time_prekey_id: 'otk-99'      |                                       | one_time_prekey_id: 'otk-105'     |
+     +-----------------------------------+                                       +-----------------------------------+
+```
+
+### 5.2 Schema Migration V004
+
+The database schema was evolved via migration script `V004__add_per_device_envelope_columns.cql`, adding 7 dedicated columns to the `pending_deliveries_by_device` table:
+
+```cql
+-- V004__add_per_device_envelope_columns.cql
+-- Extends pending_deliveries_by_device with per-device E2E encrypted envelope columns (ADR-008, MSG-006).
+
+ALTER TABLE securecloud_messaging.pending_deliveries_by_device ADD (
+    ciphertext_blob blob,
+    ephemeral_public_key blob,
+    iv blob,
+    auth_tag blob,
+    algorithm text,
+    protocol_version int,
+    one_time_prekey_id text
+);
+```
+
+#### Migration Runner Registration
+The migration was embedded into `src/messaging/db/embedded_migrations.hpp` and integrated into the deterministic startup sequence in `src/messaging/db/migration_runner.cpp`:
+
+```cpp
+// src/messaging/db/embedded_migrations.hpp
+inline constexpr std::string_view k_v004_per_device_envelope_cql =
+    "ALTER TABLE securecloud_messaging.pending_deliveries_by_device ADD (\n"
+    "    ciphertext_blob blob,\n"
+    "    ephemeral_public_key blob,\n"
+    "    iv blob,\n"
+    "    auth_tag blob,\n"
+    "    algorithm text,\n"
+    "    protocol_version int,\n"
+    "    one_time_prekey_id text\n"
+    ");\n";
+
+// src/messaging/db/migration_runner.cpp
+std::vector<Migration> MigrationRunner::get_standard_migrations() {
+    return {
+        {1, "initial_schema", std::string(k_v001_initial_schema_cql)},
+        {2, "idempotency_store", std::string(k_v002_idempotency_store_cql)},
+        {3, "add_indexes", std::string(k_v003_add_indexes_cql)},
+        {4, "add_per_device_envelope_columns", std::string(k_v004_per_device_envelope_cql)},
+    };
+}
+```
+
+### 5.3 C++ Domain & Repository Implementation
+
+#### 1. Domain Type Extension (`DeviceDeliveryRecord`)
+`src/messaging/domain/delivery_types.hpp` was enhanced to include the 7 envelope fields and provide a zero-copy assignment helper `set_envelope(const PerDeviceEnvelope&)`:
+
+```cpp
+struct DeviceDeliveryRecord {
+    DeviceId device_id;
+    std::string delivery_bucket;
+    std::chrono::system_clock::time_point accepted_at;
+    MessageId message_id;
+    ConversationId conversation_id;
+    MessageSequence message_sequence{0};
+    MessagePriority message_priority{MessagePriority::Normal};
+    DeliveryState delivery_state{DeliveryState::Pending};
+    int32_t attempt_count{0};
+    std::optional<std::chrono::system_clock::time_point> next_retry_at{std::nullopt};
+
+    // E2E Encrypted Envelope fields (ADR-008, MSG-006)
+    std::string ciphertext_blob{};
+    std::vector<uint8_t> ephemeral_public_key{};
+    std::vector<uint8_t> iv{};
+    std::vector<uint8_t> auth_tag{};
+    E2EAlgorithm algorithm{E2EAlgorithm::XChaCha20_Poly1305};
+    E2EProtocolVersion protocol_version{E2EProtocolVersion::V1_Signal_PQXDH_DoubleRatchet};
+    std::optional<std::string> one_time_prekey_id{std::nullopt};
+
+    void set_envelope(const PerDeviceEnvelope& env) {
+        ciphertext_blob = env.ciphertext_blob;
+        ephemeral_public_key = env.ephemeral_public_key;
+        iv = env.iv;
+        auth_tag = env.auth_tag;
+        algorithm = env.algorithm;
+        protocol_version = env.protocol_version;
+        one_time_prekey_id = env.one_time_prekey_id;
+    }
+
+    auto operator<=>(const DeviceDeliveryRecord& other) const noexcept = default;
+    bool operator==(const DeviceDeliveryRecord& other) const noexcept = default;
+};
+```
+
+#### 2. Scylla Types Binary Blob Support (`ScyllaRow::get_blob`)
+`src/messaging/db/scylla_types.hpp|cpp` was extended with `get_blob(std::string_view column_name)` to allow zero-copy retrieval of `std::vector<uint8_t>` from raw CQL blobs:
+
+```cpp
+const std::vector<uint8_t>& ScyllaRow::get_blob(std::string_view column_name) const {
+    const auto& val = get(column_name);
+    return val.as_blob();
+}
+```
+
+#### 3. Repository Prepared Statements & Parameter Binding
+In `src/messaging/repository/scylla_delivery_state_repository.cpp`, the prepared statements `prep_insert_pending_` and `prep_fetch_pending_` were updated to bind and select all 17 columns:
+
+```cpp
+// Prepared Statement Initialization
+prep_insert_pending_ = session_->prepare(
+    "deliv_repo_insert_pending",
+    "INSERT INTO securecloud_messaging.pending_deliveries_by_device "
+    "(device_id, delivery_bucket, accepted_at, message_id, conversation_id, message_sequence, "
+    "message_priority, delivery_state, attempt_count, next_retry_at, "
+    "ciphertext_blob, ephemeral_public_key, iv, auth_tag, algorithm, protocol_version, one_time_prekey_id) "
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+
+prep_fetch_pending_ = session_->prepare(
+    "deliv_repo_fetch_pending",
+    "SELECT device_id, delivery_bucket, accepted_at, message_id, conversation_id, message_sequence, "
+    "message_priority, delivery_state, attempt_count, next_retry_at, "
+    "ciphertext_blob, ephemeral_public_key, iv, auth_tag, algorithm, protocol_version, one_time_prekey_id "
+    "FROM securecloud_messaging.pending_deliveries_by_device "
+    "WHERE device_id = ? AND delivery_bucket = ? "
+    "ORDER BY accepted_at ASC, message_id ASC LIMIT ?;");
+```
+
+#### 4. Defensive Backward Compatibility Mapping
+In `row_to_delivery_record`, all envelope columns are checked defensively with `row.has_column(...) && !row.is_null(...)` before extraction:
+
+```cpp
+DeviceDeliveryRecord row_to_delivery_record(const db::ScyllaRow& row) {
+    DeviceDeliveryRecord record;
+    // ... core fields mapped ...
+
+    if (row.has_column("ciphertext_blob") && !row.is_null("ciphertext_blob")) {
+        const auto& blob = row.get_blob("ciphertext_blob");
+        record.ciphertext_blob.assign(reinterpret_cast<const char*>(blob.data()), blob.size());
+    }
+    if (row.has_column("ephemeral_public_key") && !row.is_null("ephemeral_public_key")) {
+        record.ephemeral_public_key = row.get_blob("ephemeral_public_key");
+    }
+    if (row.has_column("iv") && !row.is_null("iv")) {
+        record.iv = row.get_blob("iv");
+    }
+    if (row.has_column("auth_tag") && !row.is_null("auth_tag")) {
+        record.auth_tag = row.get_blob("auth_tag");
+    }
+    if (row.has_column("algorithm") && !row.is_null("algorithm")) {
+        auto algo_opt = domain::e2e_algorithm_from_string(row.get_string("algorithm"));
+        if (algo_opt) {
+            record.algorithm = *algo_opt;
+        }
+    }
+    if (row.has_column("protocol_version") && !row.is_null("protocol_version")) {
+        auto proto_opt = domain::e2e_protocol_version_from_int(row.get_int("protocol_version"));
+        if (proto_opt) {
+            record.protocol_version = *proto_opt;
+        }
+    }
+    if (row.has_column("one_time_prekey_id") && !row.is_null("one_time_prekey_id")) {
+        record.one_time_prekey_id = row.get_string("one_time_prekey_id");
+    }
+
+    return record;
+}
+```
+
+### 5.4 Test Verification & Regression Protection
+
+A dedicated test suite was implemented in `tests/unit/messaging/scylla_delivery_repository_envelope_test.cpp`, along with verification against the existing suite `tests/unit/messaging/scylla_delivery_repository_test.cpp`:
+
+1. **`ScyllaDeliveryRepositoryEnvelopeTest.SaveAndFetchWithFullPerDeviceEnvelope`**:
+   - Persists a complete `DeviceDeliveryRecord` with `ciphertext_blob`, `ephemeral_public_key`, `iv`, `auth_tag`, `algorithm`, `protocol_version`, and `one_time_prekey_id`.
+   - Inspects the executed prepared statement parameters and confirms that all 17 values are bound at exact positional indices.
+   - Mocks query result with all 17 columns and asserts exact equality across all cryptographic fields upon fetch.
+2. **`ScyllaDeliveryRepositoryEnvelopeTest.SetEnvelopeHelperIntegration`**:
+   - Validates that `DeviceDeliveryRecord::set_envelope(const PerDeviceEnvelope&)` accurately maps all envelope attributes without field truncations or data leaks.
+3. **`ScyllaDeliveryRepositoryEnvelopeTest.FetchLegacyRowWithoutEnvelopeColumns`**:
+   - Returns a legacy 10-column ScyllaDB row (simulating records created prior to migration V004).
+   - Asserts that the row is safely parsed without throwing `std::out_of_range` or schema mismatch exceptions, leaving envelope fields initialized to defaults.
+4. **`ScyllaDeliveryRepositoryEnvelopeTest.FetchRowWithNullEnvelopeColumns`**:
+   - Returns a 17-column row where the 7 envelope columns are explicitly NULL.
+   - Verifies clean handling without invalid memory access.
+5. **`ScyllaDeliveryStateRepositoryTest` (Legacy Suite Regression Check)**:
+   - All 4 existing tests (`RejectsNullSession`, `SaveAndFetchPendingDeliveries`, `UpdateDeviceDeliveryStatus`, `RecipientDeliveryStateLifecycle`) passed seamlessly without modifications.
+
+### 5.5 Test Execution Results
+
+```bash
+$ ./build/dev-debug/tests/unit/securecloud_scylla_delivery_repository_envelope_test
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from ScyllaDeliveryRepositoryEnvelopeTest
+[ RUN      ] ScyllaDeliveryRepositoryEnvelopeTest.SaveAndFetchWithFullPerDeviceEnvelope
+[       OK ] ScyllaDeliveryRepositoryEnvelopeTest.SaveAndFetchWithFullPerDeviceEnvelope (1 ms)
+[ RUN      ] ScyllaDeliveryRepositoryEnvelopeTest.SetEnvelopeHelperIntegration
+[       OK ] ScyllaDeliveryRepositoryEnvelopeTest.SetEnvelopeHelperIntegration (0 ms)
+[ RUN      ] ScyllaDeliveryRepositoryEnvelopeTest.FetchLegacyRowWithoutEnvelopeColumns
+[       OK ] ScyllaDeliveryRepositoryEnvelopeTest.FetchLegacyRowWithoutEnvelopeColumns (0 ms)
+[ RUN      ] ScyllaDeliveryRepositoryEnvelopeTest.FetchRowWithNullEnvelopeColumns
+[       OK ] ScyllaDeliveryRepositoryEnvelopeTest.FetchRowWithNullEnvelopeColumns (0 ms)
+[----------] 4 tests from ScyllaDeliveryRepositoryEnvelopeTest (2 ms total)
+[  PASSED  ] 4 tests.
+
+$ ./build/dev-debug/tests/unit/securecloud_scylla_delivery_repository_test
+[==========] Running 4 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 4 tests from ScyllaDeliveryStateRepositoryTest
+[ RUN      ] ScyllaDeliveryStateRepositoryTest.RejectsNullSession
+[       OK ] ScyllaDeliveryStateRepositoryTest.RejectsNullSession (0 ms)
+[ RUN      ] ScyllaDeliveryStateRepositoryTest.SaveAndFetchPendingDeliveries
+[       OK ] ScyllaDeliveryStateRepositoryTest.SaveAndFetchPendingDeliveries (1 ms)
+[ RUN      ] ScyllaDeliveryStateRepositoryTest.UpdateDeviceDeliveryStatus
+[       OK ] ScyllaDeliveryStateRepositoryTest.UpdateDeviceDeliveryStatus (0 ms)
+[ RUN      ] ScyllaDeliveryStateRepositoryTest.RecipientDeliveryStateLifecycle
+[       OK ] ScyllaDeliveryStateRepositoryTest.RecipientDeliveryStateLifecycle (0 ms)
+[----------] 4 tests from ScyllaDeliveryStateRepositoryTest (2 ms total)
+[  PASSED  ] 4 tests.
+```
+
+---
+
+*(Sections 6 and 7 will be populated as tickets MSG-006-T05 through T06 are implemented and validated).*

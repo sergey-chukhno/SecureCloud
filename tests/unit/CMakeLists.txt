@@ -2044,3 +2044,18 @@ target_link_libraries(securecloud_e2e_envelope_validator_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_e2e_envelope_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# ScyllaDB Delivery Repository Per-Device Envelope Test Suite (MSG-006-T04)
+add_executable(securecloud_scylla_delivery_repository_envelope_test
+    messaging/scylla_delivery_repository_envelope_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_delivery_repository_envelope_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_delivery_repository_envelope_test ${SECURECLOUD_TEST_PROPERTIES})
