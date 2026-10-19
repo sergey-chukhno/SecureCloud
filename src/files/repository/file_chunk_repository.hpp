@@ -15,9 +15,9 @@ namespace securecloud::files {
 
 /// Result of recording an uploaded chunk into persistent storage
 enum class ChunkRecordResult {
-    NewlyInserted,           ///< Chunk was newly recorded and accepted
-    AlreadyExistsIdentical,  ///< Chunk was already recorded with identical hash (idempotent replay)
-    ConflictHashMismatch     ///< Chunk index already recorded but hash differs (integrity violation)
+    NewlyInserted,          ///< Chunk was newly recorded and accepted
+    AlreadyExistsIdentical, ///< Chunk was already recorded with identical hash (idempotent replay)
+    ConflictHashMismatch    ///< Chunk index already recorded but hash differs (integrity violation)
 };
 
 /// Exception thrown when a duplicate chunk index is submitted with a mismatched hash.
@@ -28,7 +28,7 @@ class ChunkIntegrityException : public RepositoryException {
 /// Authoritative repository managing idempotent chunk records for file transfers.
 /// Enforces idempotent replays and SHA-256 integrity verification (Files Design 6.3, 6.18, 6.19).
 class FileChunkRepository {
-public:
+  public:
     explicit FileChunkRepository(std::shared_ptr<db::FilesDbConnectionPool> pool = nullptr);
 
     /// Records a chunk within the provided transaction `tx`.
@@ -62,7 +62,7 @@ public:
     /// Lists all chunks for a transfer ordered by chunk_index ASC (creates autonomous work session).
     [[nodiscard]] std::vector<FileChunkEntity> list_chunks_for_transfer(const std::string& transfer_id);
 
-private:
+  private:
     std::shared_ptr<db::FilesDbConnectionPool> pool_;
 };
 

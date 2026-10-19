@@ -119,8 +119,7 @@ std::string trim_string(std::string_view s) {
 
 } // namespace
 
-MigrationRunner::MigrationRunner(std::shared_ptr<FilesDbConnectionPool> pool)
-    : pool_(std::move(pool)) {}
+MigrationRunner::MigrationRunner(std::shared_ptr<FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
 
 std::string_view MigrationRunner::get_v001_schema_sql() noexcept {
     return k_v001_sql;
@@ -167,35 +166,19 @@ std::vector<std::string> MigrationRunner::split_statements(std::string_view sql)
     return statements;
 }
 
-bool MigrationRunner::validate_schema_ddl_syntax(
-    std::string_view sql, std::vector<std::string>& out_missing_elements) {
+bool MigrationRunner::validate_schema_ddl_syntax(std::string_view sql, std::vector<std::string>& out_missing_elements) {
     out_missing_elements.clear();
 
-    const std::vector<std::string> required_tables = {
-        "files",
-        "file_versions",
-        "encrypted_file_metadata",
-        "file_transfers",
-        "file_chunks",
-        "file_access",
-        "files_outbox"
-    };
+    const std::vector<std::string> required_tables = {"files",          "file_versions", "encrypted_file_metadata",
+                                                      "file_transfers", "file_chunks",   "file_access",
+                                                      "files_outbox"};
 
-    const std::vector<std::string> required_indexes = {
-        "idx_files_owner",
-        "idx_files_conversation",
-        "idx_files_retention",
-        "idx_file_transfers_file",
-        "idx_file_chunks_transfer",
-        "idx_files_outbox_pending"
-    };
+    const std::vector<std::string> required_indexes = {"idx_files_owner",          "idx_files_conversation",
+                                                       "idx_files_retention",      "idx_file_transfers_file",
+                                                       "idx_file_chunks_transfer", "idx_files_outbox_pending"};
 
-    const std::vector<std::string> required_constraints = {
-        "uq_file_version",
-        "uq_transfer_chunk",
-        "uq_file_grantee",
-        "ON DELETE CASCADE"
-    };
+    const std::vector<std::string> required_constraints = {"uq_file_version", "uq_transfer_chunk", "uq_file_grantee",
+                                                           "ON DELETE CASCADE"};
 
     for (const auto& table : required_tables) {
         std::string needle = "CREATE TABLE IF NOT EXISTS " + table;
@@ -238,8 +221,8 @@ MigrationResult MigrationRunner::run_migrations() {
     return result;
 }
 
-bool MigrationRunner::apply_migration(
-    std::string_view version, std::string_view /*description*/, std::string_view sql) {
+bool MigrationRunner::apply_migration(std::string_view version, std::string_view /*description*/,
+                                      std::string_view sql) {
     if (std::find(applied_versions_.begin(), applied_versions_.end(), version) != applied_versions_.end()) {
         return true; // Already applied
     }

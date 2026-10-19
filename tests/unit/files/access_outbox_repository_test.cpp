@@ -6,9 +6,8 @@
 #include "files/repository/file_repository.hpp"
 #include "files/repository/files_outbox_repository.hpp"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
+#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
@@ -16,7 +15,7 @@ namespace securecloud::files {
 namespace {
 
 class AccessOutboxRepositoryTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         // Reset in-memory mock storage before each test case
         pqxx::MockStorage::instance().reset();
@@ -47,9 +46,7 @@ EncryptedFileMetadataEntity make_sample_metadata(std::string file_id) {
     return m;
 }
 
-FileAccessEntity make_sample_grant(std::string access_id,
-                                   std::string file_id,
-                                   std::string grantee_user_id,
+FileAccessEntity make_sample_grant(std::string access_id, std::string file_id, std::string grantee_user_id,
                                    FilePermission permission = FilePermission::Read,
                                    std::string granted_by = "owner-uuid-1") {
     FileAccessEntity a;
@@ -62,8 +59,7 @@ FileAccessEntity make_sample_grant(std::string access_id,
     return a;
 }
 
-FilesOutboxEntity make_sample_event(std::string event_id,
-                                    std::string aggregate_id,
+FilesOutboxEntity make_sample_event(std::string event_id, std::string aggregate_id,
                                     std::string event_type = "FILE_UPLOAD_COMPLETED",
                                     std::string payload = "{\"file_id\":\"f-1\",\"bytes\":1024}") {
     FilesOutboxEntity e;

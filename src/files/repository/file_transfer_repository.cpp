@@ -22,20 +22,10 @@ void FileTransferRepository::create_transfer(const FileTransferEntity& transfer,
         "INSERT INTO file_transfers (transfer_id, file_id, transfer_type, initiator_user_id, initiator_device_id, "
         "status, total_chunks, accepted_chunks, total_bytes, transferred_bytes, created_at, updated_at, expires_at) "
         "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
-        transfer.transfer_id,
-        transfer.file_id,
-        db::to_string(transfer.transfer_type),
-        transfer.initiator_user_id,
-        transfer.initiator_device_id,
-        db::to_string(transfer.status),
-        transfer.total_chunks,
-        transfer.accepted_chunks,
-        transfer.total_bytes,
-        transfer.transferred_bytes,
-        db::to_iso8601(transfer.created_at),
-        db::to_iso8601(transfer.updated_at),
-        db::to_iso8601(transfer.expires_at)
-    );
+        transfer.transfer_id, transfer.file_id, db::to_string(transfer.transfer_type), transfer.initiator_user_id,
+        transfer.initiator_device_id, db::to_string(transfer.status), transfer.total_chunks, transfer.accepted_chunks,
+        transfer.total_bytes, transfer.transferred_bytes, db::to_iso8601(transfer.created_at),
+        db::to_iso8601(transfer.updated_at), db::to_iso8601(transfer.expires_at));
 }
 
 std::optional<FileTransferEntity> FileTransferRepository::find_by_id(const std::string& transfer_id, pqxx::work& tx) {
@@ -47,8 +37,7 @@ std::optional<FileTransferEntity> FileTransferRepository::find_by_id(const std::
         "SELECT transfer_id, file_id, transfer_type, initiator_user_id, initiator_device_id, status, "
         "total_chunks, accepted_chunks, total_bytes, transferred_bytes, created_at, updated_at, expires_at "
         "FROM file_transfers WHERE transfer_id = $1",
-        transfer_id
-    );
+        transfer_id);
 
     if (res.empty()) {
         return std::nullopt;
@@ -68,12 +57,8 @@ bool FileTransferRepository::update_status(const std::string& transfer_id, Trans
     }
 
     auto now_iso = db::to_iso8601(std::chrono::system_clock::now());
-    auto res = tx.exec_params(
-        "UPDATE file_transfers SET status = $1, updated_at = $2 WHERE transfer_id = $3",
-        db::to_string(status),
-        now_iso,
-        transfer_id
-    );
+    auto res = tx.exec_params("UPDATE file_transfers SET status = $1, updated_at = $2 WHERE transfer_id = $3",
+                              db::to_string(status), now_iso, transfer_id);
 
     return res.affected_rows() > 0;
 }
@@ -87,18 +72,16 @@ bool FileTransferRepository::update_status(const std::string& transfer_id, Trans
     return updated;
 }
 
-bool FileTransferRepository::increment_chunk_progress(const std::string& transfer_id, int64_t bytes_added, pqxx::work& tx) {
+bool FileTransferRepository::increment_chunk_progress(const std::string& transfer_id, int64_t bytes_added,
+                                                      pqxx::work& tx) {
     if (transfer_id.empty()) {
         return false;
     }
 
     auto now_iso = db::to_iso8601(std::chrono::system_clock::now());
-    auto res = tx.exec_params(
-        "UPDATE file_transfers SET accepted_chunks = accepted_chunks + 1, transferred_bytes = transferred_bytes + $1, updated_at = $2 WHERE transfer_id = $3",
-        bytes_added,
-        now_iso,
-        transfer_id
-    );
+    auto res = tx.exec_params("UPDATE file_transfers SET accepted_chunks = accepted_chunks + 1, transferred_bytes = "
+                              "transferred_bytes + $1, updated_at = $2 WHERE transfer_id = $3",
+                              bytes_added, now_iso, transfer_id);
 
     return res.affected_rows() > 0;
 }

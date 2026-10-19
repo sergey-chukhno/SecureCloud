@@ -41,20 +41,13 @@ TEST(SchemaMigrationTest, V001FileExistsAndLoads) {
 TEST(SchemaMigrationTest, SchemaContainsAllSevenRequiredTables) {
     std::string_view sql = MigrationRunner::get_v001_schema_sql();
 
-    const std::vector<std::string> expected_tables = {
-        "files",
-        "file_versions",
-        "encrypted_file_metadata",
-        "file_transfers",
-        "file_chunks",
-        "file_access",
-        "files_outbox"
-    };
+    const std::vector<std::string> expected_tables = {"files",          "file_versions", "encrypted_file_metadata",
+                                                      "file_transfers", "file_chunks",   "file_access",
+                                                      "files_outbox"};
 
     for (const auto& table : expected_tables) {
         std::string needle = "CREATE TABLE IF NOT EXISTS " + table;
-        EXPECT_NE(sql.find(needle), std::string_view::npos)
-            << "Schema DDL missing required table: " << table;
+        EXPECT_NE(sql.find(needle), std::string_view::npos) << "Schema DDL missing required table: " << table;
     }
 }
 
@@ -80,7 +73,8 @@ TEST(SchemaMigrationTest, SchemaDefinesAllCascadeForeignKeys) {
 
     EXPECT_NE(sql.find("file_id UUID NOT NULL REFERENCES files(file_id) ON DELETE CASCADE"), std::string_view::npos);
     EXPECT_NE(sql.find("file_id UUID PRIMARY KEY REFERENCES files(file_id) ON DELETE CASCADE"), std::string_view::npos);
-    EXPECT_NE(sql.find("transfer_id UUID NOT NULL REFERENCES file_transfers(transfer_id) ON DELETE CASCADE"), std::string_view::npos);
+    EXPECT_NE(sql.find("transfer_id UUID NOT NULL REFERENCES file_transfers(transfer_id) ON DELETE CASCADE"),
+              std::string_view::npos);
 }
 
 TEST(SchemaMigrationTest, SchemaEnforcesUniqueConstraintsAndIndexes) {
@@ -92,12 +86,22 @@ TEST(SchemaMigrationTest, SchemaEnforcesUniqueConstraintsAndIndexes) {
     EXPECT_NE(sql.find("CONSTRAINT uq_file_grantee UNIQUE(file_id, grantee_user_id)"), std::string_view::npos);
 
     // Indexes
-    EXPECT_NE(sql.find("CREATE INDEX IF NOT EXISTS idx_files_owner ON files(owner_user_id, status)"), std::string_view::npos);
-    EXPECT_NE(sql.find("CREATE INDEX IF NOT EXISTS idx_files_conversation ON files(conversation_id) WHERE conversation_id IS NOT NULL"), std::string_view::npos);
-    EXPECT_NE(sql.find("CREATE INDEX IF NOT EXISTS idx_files_retention ON files(retention_until) WHERE status != 'DELETED'"), std::string_view::npos);
-    EXPECT_NE(sql.find("CREATE INDEX IF NOT EXISTS idx_file_transfers_file ON file_transfers(file_id, status)"), std::string_view::npos);
-    EXPECT_NE(sql.find("CREATE INDEX IF NOT EXISTS idx_file_chunks_transfer ON file_chunks(transfer_id, chunk_index)"), std::string_view::npos);
-    EXPECT_NE(sql.find("CREATE INDEX IF NOT EXISTS idx_files_outbox_pending ON files_outbox(created_at) WHERE status = 'PENDING'"), std::string_view::npos);
+    EXPECT_NE(sql.find("CREATE INDEX IF NOT EXISTS idx_files_owner ON files(owner_user_id, status)"),
+              std::string_view::npos);
+    EXPECT_NE(sql.find("CREATE INDEX IF NOT EXISTS idx_files_conversation ON files(conversation_id) WHERE "
+                       "conversation_id IS NOT NULL"),
+              std::string_view::npos);
+    EXPECT_NE(
+        sql.find("CREATE INDEX IF NOT EXISTS idx_files_retention ON files(retention_until) WHERE status != 'DELETED'"),
+        std::string_view::npos);
+    EXPECT_NE(sql.find("CREATE INDEX IF NOT EXISTS idx_file_transfers_file ON file_transfers(file_id, status)"),
+              std::string_view::npos);
+    EXPECT_NE(sql.find("CREATE INDEX IF NOT EXISTS idx_file_chunks_transfer ON file_chunks(transfer_id, chunk_index)"),
+              std::string_view::npos);
+    EXPECT_NE(
+        sql.find(
+            "CREATE INDEX IF NOT EXISTS idx_files_outbox_pending ON files_outbox(created_at) WHERE status = 'PENDING'"),
+        std::string_view::npos);
 }
 
 TEST(SchemaMigrationTest, StatementSplitterParsesCleanly) {

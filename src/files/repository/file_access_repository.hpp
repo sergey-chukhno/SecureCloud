@@ -16,7 +16,7 @@ namespace securecloud::files {
 /// Authoritative repository managing granular file-level access grants and ownership hierarchy.
 /// Maps 1:1 to the `file_access` PostgreSQL table (Files Design 6.15, 6.18, 6.19).
 class FileAccessRepository {
-public:
+  public:
     explicit FileAccessRepository(std::shared_ptr<db::FilesDbConnectionPool> pool = nullptr);
 
     /// Grants or updates access permissions for a user on a file within transaction `tx`.
@@ -29,15 +29,11 @@ public:
     /// Validates whether a user has the required permission level on a file within transaction `tx`.
     /// Enforces the ownership invariant: file owner is implicitly granted full ADMIN permission.
     /// For non-owners, checks active, unrevoked grants where grant.permission >= required.
-    [[nodiscard]] bool check_access(const std::string& file_id,
-                                    const std::string& user_id,
-                                    FilePermission required,
+    [[nodiscard]] bool check_access(const std::string& file_id, const std::string& user_id, FilePermission required,
                                     pqxx::work& tx);
 
     /// Validates access permissions (creates autonomous work session).
-    [[nodiscard]] bool check_access(const std::string& file_id,
-                                    const std::string& user_id,
-                                    FilePermission required);
+    [[nodiscard]] bool check_access(const std::string& file_id, const std::string& user_id, FilePermission required);
 
     /// Revokes a user's access grant to a file by setting revoked_at = NOW() within transaction `tx`.
     /// Returns true if an active grant was revoked; returns false if no active grant was found.
@@ -53,15 +49,13 @@ public:
     [[nodiscard]] std::vector<FileAccessEntity> list_grantees(const std::string& file_id);
 
     /// Finds a specific access grant by file_id and grantee_user_id within transaction `tx`.
-    [[nodiscard]] std::optional<FileAccessEntity> find_grant(const std::string& file_id,
-                                                            const std::string& user_id,
-                                                            pqxx::work& tx);
+    [[nodiscard]] std::optional<FileAccessEntity> find_grant(const std::string& file_id, const std::string& user_id,
+                                                             pqxx::work& tx);
 
     /// Finds a specific access grant (creates autonomous work session).
-    [[nodiscard]] std::optional<FileAccessEntity> find_grant(const std::string& file_id,
-                                                            const std::string& user_id);
+    [[nodiscard]] std::optional<FileAccessEntity> find_grant(const std::string& file_id, const std::string& user_id);
 
-private:
+  private:
     std::shared_ptr<db::FilesDbConnectionPool> pool_;
 };
 

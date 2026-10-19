@@ -5,9 +5,8 @@
 #include "files/repository/file_repository.hpp"
 #include "files/repository/file_version_repository.hpp"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
+#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
@@ -15,7 +14,7 @@ namespace securecloud::files {
 namespace {
 
 class FileRepositoryTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         // Reset mock in-memory storage before each test
         pqxx::MockStorage::instance().reset();
@@ -182,16 +181,12 @@ TEST_F(FileRepositoryTest, InvalidStateTransitionThrowsException) {
 
     // Attempt invalid transition: AVAILABLE -> UPLOADING
     pqxx::work tx;
-    EXPECT_THROW(
-        repo.update_status("file-invalid-trans", FileStatus::Available, FileStatus::Uploading, tx),
-        InvalidStateTransitionException
-    );
+    EXPECT_THROW(repo.update_status("file-invalid-trans", FileStatus::Available, FileStatus::Uploading, tx),
+                 InvalidStateTransitionException);
 
     // Attempt invalid transition: DELETED -> AVAILABLE
-    EXPECT_THROW(
-        repo.update_status("file-invalid-trans", FileStatus::Deleted, FileStatus::Available, tx),
-        InvalidStateTransitionException
-    );
+    EXPECT_THROW(repo.update_status("file-invalid-trans", FileStatus::Deleted, FileStatus::Available, tx),
+                 InvalidStateTransitionException);
 }
 
 TEST_F(FileRepositoryTest, OptimisticConcurrencyMismatchReturnsFalse) {

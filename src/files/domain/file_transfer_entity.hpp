@@ -7,21 +7,10 @@
 namespace securecloud::files {
 
 /// Authoritative transfer direction
-enum class TransferType {
-    Upload,
-    Download
-};
+enum class TransferType { Upload, Download };
 
 /// Authoritative transfer session lifecycle states
-enum class TransferStatus {
-    Created,
-    Transferring,
-    Finalizing,
-    Completed,
-    Failed,
-    Expired,
-    Cancelled
-};
+enum class TransferStatus { Created, Transferring, Finalizing, Completed, Failed, Expired, Cancelled };
 
 /// Strongly typed C++20 domain entity for resumable upload/download transfer sessions.
 /// Maps 1:1 to the `file_transfers` PostgreSQL table.

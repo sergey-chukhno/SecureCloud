@@ -7,10 +7,7 @@
 namespace securecloud::files {
 
 /// Authoritative status of individual chunk persistence
-enum class ChunkStatus {
-    Received,
-    Committed
-};
+enum class ChunkStatus { Received, Committed };
 
 /// Strongly typed C++20 domain entity for transfer chunk records.
 /// Maps 1:1 to the `file_chunks` PostgreSQL table.

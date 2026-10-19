@@ -80,12 +80,12 @@ std::vector<uint8_t> from_bytea_hex(std::string_view hex_str);
 // --- Test Helper Row Builder ---
 
 class RowBuilder {
-public:
+  public:
     RowBuilder& set(std::string name, std::string value);
     RowBuilder& set_null(std::string name);
     [[nodiscard]] pqxx::row build() const;
 
-private:
+  private:
     std::vector<std::pair<std::string, std::optional<std::string>>> columns_;
 };
 

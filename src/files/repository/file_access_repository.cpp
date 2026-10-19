@@ -4,8 +4,7 @@
 
 namespace securecloud::files {
 
-FileAccessRepository::FileAccessRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
-    : pool_(std::move(pool)) {}
+FileAccessRepository::FileAccessRepository(std::shared_ptr<db::FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
 
 void FileAccessRepository::grant_access(const FileAccessEntity& grant, pqxx::work& tx) {
     if (grant.access_id.empty()) {
@@ -26,24 +25,17 @@ void FileAccessRepository::grant_access(const FileAccessEntity& grant, pqxx::wor
         revoked_str = db::to_iso8601(*grant.revoked_at);
     }
 
-    tx.exec_params(
-        "INSERT INTO file_access (access_id, file_id, grantee_user_id, grantee_device_id, permission, granted_by, granted_at, revoked_at) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
-        "ON CONFLICT (file_id, grantee_user_id) DO UPDATE SET "
-        "permission = EXCLUDED.permission, "
-        "grantee_device_id = EXCLUDED.grantee_device_id, "
-        "granted_by = EXCLUDED.granted_by, "
-        "granted_at = EXCLUDED.granted_at, "
-        "revoked_at = EXCLUDED.revoked_at",
-        grant.access_id,
-        grant.file_id,
-        grant.grantee_user_id,
-        grant.grantee_device_id,
-        db::to_string(grant.permission),
-        grant.granted_by,
-        db::to_iso8601(grant.granted_at),
-        revoked_str
-    );
+    tx.exec_params("INSERT INTO file_access (access_id, file_id, grantee_user_id, grantee_device_id, permission, "
+                   "granted_by, granted_at, revoked_at) "
+                   "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
+                   "ON CONFLICT (file_id, grantee_user_id) DO UPDATE SET "
+                   "permission = EXCLUDED.permission, "
+                   "grantee_device_id = EXCLUDED.grantee_device_id, "
+                   "granted_by = EXCLUDED.granted_by, "
+                   "granted_at = EXCLUDED.granted_at, "
+                   "revoked_at = EXCLUDED.revoked_at",
+                   grant.access_id, grant.file_id, grant.grantee_user_id, grant.grantee_device_id,
+                   db::to_string(grant.permission), grant.granted_by, db::to_iso8601(grant.granted_at), revoked_str);
 }
 
 void FileAccessRepository::grant_access(const FileAccessEntity& grant) {
@@ -52,9 +44,7 @@ void FileAccessRepository::grant_access(const FileAccessEntity& grant) {
     tx.commit();
 }
 
-bool FileAccessRepository::check_access(const std::string& file_id,
-                                        const std::string& user_id,
-                                        FilePermission required,
+bool FileAccessRepository::check_access(const std::string& file_id, const std::string& user_id, FilePermission required,
                                         pqxx::work& tx) {
     if (file_id.empty() || user_id.empty()) {
         return false;
@@ -62,10 +52,7 @@ bool FileAccessRepository::check_access(const std::string& file_id,
 
     // 1. Ownership invariant (ADR-005, Files Design 6.15):
     // The file creator/owner implicitly possesses full ADMIN permission without needing a file_access row.
-    auto owner_res = tx.exec_params(
-        "SELECT owner_user_id FROM files WHERE file_id = $1",
-        file_id
-    );
+    auto owner_res = tx.exec_params("SELECT owner_user_id FROM files WHERE file_id = $1", file_id);
 
     if (owner_res.empty()) {
         return false;
@@ -79,9 +66,7 @@ bool FileAccessRepository::check_access(const std::string& file_id,
     auto grant_res = tx.exec_params(
         "SELECT access_id, file_id, grantee_user_id, grantee_device_id, permission, granted_by, granted_at, revoked_at "
         "FROM file_access WHERE file_id = $1 AND grantee_user_id = $2 AND revoked_at IS NULL",
-        file_id,
-        user_id
-    );
+        file_id, user_id);
 
     if (grant_res.empty()) {
         return false;
@@ -102,8 +87,7 @@ bool FileAccessRepository::check_access(const std::string& file_id,
     return false;
 }
 
-bool FileAccessRepository::check_access(const std::string& file_id,
-                                        const std::string& user_id,
+bool FileAccessRepository::check_access(const std::string& file_id, const std::string& user_id,
                                         FilePermission required) {
     pqxx::work tx;
     return check_access(file_id, user_id, required, tx);
@@ -117,10 +101,7 @@ bool FileAccessRepository::revoke_access(const std::string& file_id, const std::
     auto now_iso = db::to_iso8601(std::chrono::system_clock::now());
     auto res = tx.exec_params(
         "UPDATE file_access SET revoked_at = $1 WHERE file_id = $2 AND grantee_user_id = $3 AND revoked_at IS NULL",
-        now_iso,
-        file_id,
-        user_id
-    );
+        now_iso, file_id, user_id);
 
     return res.affected_rows() > 0;
 }
@@ -142,8 +123,7 @@ std::vector<FileAccessEntity> FileAccessRepository::list_grantees(const std::str
     auto res = tx.exec_params(
         "SELECT access_id, file_id, grantee_user_id, grantee_device_id, permission, granted_by, granted_at, revoked_at "
         "FROM file_access WHERE file_id = $1 AND revoked_at IS NULL ORDER BY granted_at ASC",
-        file_id
-    );
+        file_id);
 
     std::vector<FileAccessEntity> grantees;
     grantees.reserve(res.size());
@@ -158,9 +138,8 @@ std::vector<FileAccessEntity> FileAccessRepository::list_grantees(const std::str
     return list_grantees(file_id, tx);
 }
 
-std::optional<FileAccessEntity> FileAccessRepository::find_grant(const std::string& file_id,
-                                                                const std::string& user_id,
-                                                                pqxx::work& tx) {
+std::optional<FileAccessEntity> FileAccessRepository::find_grant(const std::string& file_id, const std::string& user_id,
+                                                                 pqxx::work& tx) {
     if (file_id.empty() || user_id.empty()) {
         return std::nullopt;
     }
@@ -168,9 +147,7 @@ std::optional<FileAccessEntity> FileAccessRepository::find_grant(const std::stri
     auto res = tx.exec_params(
         "SELECT access_id, file_id, grantee_user_id, grantee_device_id, permission, granted_by, granted_at, revoked_at "
         "FROM file_access WHERE file_id = $1 AND grantee_user_id = $2",
-        file_id,
-        user_id
-    );
+        file_id, user_id);
 
     if (res.empty()) {
         return std::nullopt;
@@ -180,7 +157,7 @@ std::optional<FileAccessEntity> FileAccessRepository::find_grant(const std::stri
 }
 
 std::optional<FileAccessEntity> FileAccessRepository::find_grant(const std::string& file_id,
-                                                                const std::string& user_id) {
+                                                                 const std::string& user_id) {
     pqxx::work tx;
     return find_grant(file_id, user_id, tx);
 }

@@ -19,7 +19,7 @@ namespace securecloud::files {
 /// (ADR-005, Files Design 6.22).
 /// Maps 1:1 to the `files_outbox` PostgreSQL table.
 class FilesOutboxRepository {
-public:
+  public:
     explicit FilesOutboxRepository(std::shared_ptr<db::FilesDbConnectionPool> pool = nullptr);
 
     /// Stages a new audit event into the outbox within transaction `tx`.
@@ -56,7 +56,7 @@ public:
     /// Finds an outbox event by its ID (creates autonomous work session).
     [[nodiscard]] std::optional<FilesOutboxEntity> find_by_id(const std::string& event_id);
 
-private:
+  private:
     std::shared_ptr<db::FilesDbConnectionPool> pool_;
 };
 

@@ -26,7 +26,7 @@ struct MigrationResult {
 /// Schema migration orchestrator for SecureCloud Files service.
 /// Ensures authoritative relational schema baseline (V001) is applied idempotently.
 class MigrationRunner {
-public:
+  public:
     explicit MigrationRunner(std::shared_ptr<FilesDbConnectionPool> pool);
 
     /// Returns the authoritative embedded V001 schema DDL.
@@ -48,7 +48,7 @@ public:
     /// Returns list of versions applied so far in memory or from database.
     [[nodiscard]] std::vector<std::string> get_applied_versions() const;
 
-private:
+  private:
     std::shared_ptr<FilesDbConnectionPool> pool_;
     std::vector<std::string> applied_versions_;
 };

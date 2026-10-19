@@ -8,11 +8,7 @@
 namespace securecloud::files {
 
 /// Authoritative status of transactional outbox events
-enum class OutboxStatus {
-    Pending,
-    Published,
-    Failed
-};
+enum class OutboxStatus { Pending, Published, Failed };
 
 /// Strongly typed C++20 domain entity for transactional outbox audit events.
 /// Enforces the Transactional Outbox Pattern (ADR-005, Files Design 6.22) for

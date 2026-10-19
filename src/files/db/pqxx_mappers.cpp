@@ -38,9 +38,12 @@ void civil_from_days(int64_t days, int& out_y, unsigned& out_m, unsigned& out_d)
 }
 
 int hex_char_to_val(char c) {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
     return -1;
 }
 
@@ -50,109 +53,157 @@ int hex_char_to_val(char c) {
 
 std::string to_string(FileStatus status) {
     switch (status) {
-        case FileStatus::Created: return "CREATED";
-        case FileStatus::Uploading: return "UPLOADING";
-        case FileStatus::Finalizing: return "FINALIZING";
-        case FileStatus::Available: return "AVAILABLE";
-        case FileStatus::Expired: return "EXPIRED";
-        case FileStatus::Deleted: return "DELETED";
-        case FileStatus::Failed: return "FAILED";
+    case FileStatus::Created:
+        return "CREATED";
+    case FileStatus::Uploading:
+        return "UPLOADING";
+    case FileStatus::Finalizing:
+        return "FINALIZING";
+    case FileStatus::Available:
+        return "AVAILABLE";
+    case FileStatus::Expired:
+        return "EXPIRED";
+    case FileStatus::Deleted:
+        return "DELETED";
+    case FileStatus::Failed:
+        return "FAILED";
     }
     throw InvalidEnumException("Unknown FileStatus enum value: " + std::to_string(static_cast<int>(status)));
 }
 
 FileStatus file_status_from_string(std::string_view str) {
-    if (str == "CREATED") return FileStatus::Created;
-    if (str == "UPLOADING") return FileStatus::Uploading;
-    if (str == "FINALIZING") return FileStatus::Finalizing;
-    if (str == "AVAILABLE") return FileStatus::Available;
-    if (str == "EXPIRED") return FileStatus::Expired;
-    if (str == "DELETED") return FileStatus::Deleted;
-    if (str == "FAILED") return FileStatus::Failed;
+    if (str == "CREATED")
+        return FileStatus::Created;
+    if (str == "UPLOADING")
+        return FileStatus::Uploading;
+    if (str == "FINALIZING")
+        return FileStatus::Finalizing;
+    if (str == "AVAILABLE")
+        return FileStatus::Available;
+    if (str == "EXPIRED")
+        return FileStatus::Expired;
+    if (str == "DELETED")
+        return FileStatus::Deleted;
+    if (str == "FAILED")
+        return FileStatus::Failed;
     throw InvalidEnumException("Invalid FileStatus string: " + std::string(str));
 }
 
 std::string to_string(TransferType type) {
     switch (type) {
-        case TransferType::Upload: return "UPLOAD";
-        case TransferType::Download: return "DOWNLOAD";
+    case TransferType::Upload:
+        return "UPLOAD";
+    case TransferType::Download:
+        return "DOWNLOAD";
     }
     throw InvalidEnumException("Unknown TransferType enum value: " + std::to_string(static_cast<int>(type)));
 }
 
 TransferType transfer_type_from_string(std::string_view str) {
-    if (str == "UPLOAD") return TransferType::Upload;
-    if (str == "DOWNLOAD") return TransferType::Download;
+    if (str == "UPLOAD")
+        return TransferType::Upload;
+    if (str == "DOWNLOAD")
+        return TransferType::Download;
     throw InvalidEnumException("Invalid TransferType string: " + std::string(str));
 }
 
 std::string to_string(TransferStatus status) {
     switch (status) {
-        case TransferStatus::Created: return "CREATED";
-        case TransferStatus::Transferring: return "TRANSFERRING";
-        case TransferStatus::Finalizing: return "FINALIZING";
-        case TransferStatus::Completed: return "COMPLETED";
-        case TransferStatus::Failed: return "FAILED";
-        case TransferStatus::Expired: return "EXPIRED";
-        case TransferStatus::Cancelled: return "CANCELLED";
+    case TransferStatus::Created:
+        return "CREATED";
+    case TransferStatus::Transferring:
+        return "TRANSFERRING";
+    case TransferStatus::Finalizing:
+        return "FINALIZING";
+    case TransferStatus::Completed:
+        return "COMPLETED";
+    case TransferStatus::Failed:
+        return "FAILED";
+    case TransferStatus::Expired:
+        return "EXPIRED";
+    case TransferStatus::Cancelled:
+        return "CANCELLED";
     }
     throw InvalidEnumException("Unknown TransferStatus enum value: " + std::to_string(static_cast<int>(status)));
 }
 
 TransferStatus transfer_status_from_string(std::string_view str) {
-    if (str == "CREATED") return TransferStatus::Created;
-    if (str == "TRANSFERRING") return TransferStatus::Transferring;
-    if (str == "FINALIZING") return TransferStatus::Finalizing;
-    if (str == "COMPLETED") return TransferStatus::Completed;
-    if (str == "FAILED") return TransferStatus::Failed;
-    if (str == "EXPIRED") return TransferStatus::Expired;
-    if (str == "CANCELLED") return TransferStatus::Cancelled;
+    if (str == "CREATED")
+        return TransferStatus::Created;
+    if (str == "TRANSFERRING")
+        return TransferStatus::Transferring;
+    if (str == "FINALIZING")
+        return TransferStatus::Finalizing;
+    if (str == "COMPLETED")
+        return TransferStatus::Completed;
+    if (str == "FAILED")
+        return TransferStatus::Failed;
+    if (str == "EXPIRED")
+        return TransferStatus::Expired;
+    if (str == "CANCELLED")
+        return TransferStatus::Cancelled;
     throw InvalidEnumException("Invalid TransferStatus string: " + std::string(str));
 }
 
 std::string to_string(ChunkStatus status) {
     switch (status) {
-        case ChunkStatus::Received: return "RECEIVED";
-        case ChunkStatus::Committed: return "COMMITTED";
+    case ChunkStatus::Received:
+        return "RECEIVED";
+    case ChunkStatus::Committed:
+        return "COMMITTED";
     }
     throw InvalidEnumException("Unknown ChunkStatus enum value: " + std::to_string(static_cast<int>(status)));
 }
 
 ChunkStatus chunk_status_from_string(std::string_view str) {
-    if (str == "RECEIVED") return ChunkStatus::Received;
-    if (str == "COMMITTED") return ChunkStatus::Committed;
+    if (str == "RECEIVED")
+        return ChunkStatus::Received;
+    if (str == "COMMITTED")
+        return ChunkStatus::Committed;
     throw InvalidEnumException("Invalid ChunkStatus string: " + std::string(str));
 }
 
 std::string to_string(FilePermission permission) {
     switch (permission) {
-        case FilePermission::Read: return "READ";
-        case FilePermission::Write: return "WRITE";
-        case FilePermission::Admin: return "ADMIN";
+    case FilePermission::Read:
+        return "READ";
+    case FilePermission::Write:
+        return "WRITE";
+    case FilePermission::Admin:
+        return "ADMIN";
     }
     throw InvalidEnumException("Unknown FilePermission enum value: " + std::to_string(static_cast<int>(permission)));
 }
 
 FilePermission file_permission_from_string(std::string_view str) {
-    if (str == "READ") return FilePermission::Read;
-    if (str == "WRITE") return FilePermission::Write;
-    if (str == "ADMIN") return FilePermission::Admin;
+    if (str == "READ")
+        return FilePermission::Read;
+    if (str == "WRITE")
+        return FilePermission::Write;
+    if (str == "ADMIN")
+        return FilePermission::Admin;
     throw InvalidEnumException("Invalid FilePermission string: " + std::string(str));
 }
 
 std::string to_string(OutboxStatus status) {
     switch (status) {
-        case OutboxStatus::Pending: return "PENDING";
-        case OutboxStatus::Published: return "PUBLISHED";
-        case OutboxStatus::Failed: return "FAILED";
+    case OutboxStatus::Pending:
+        return "PENDING";
+    case OutboxStatus::Published:
+        return "PUBLISHED";
+    case OutboxStatus::Failed:
+        return "FAILED";
     }
     throw InvalidEnumException("Unknown OutboxStatus enum value: " + std::to_string(static_cast<int>(status)));
 }
 
 OutboxStatus outbox_status_from_string(std::string_view str) {
-    if (str == "PENDING") return OutboxStatus::Pending;
-    if (str == "PUBLISHED") return OutboxStatus::Published;
-    if (str == "FAILED") return OutboxStatus::Failed;
+    if (str == "PENDING")
+        return OutboxStatus::Pending;
+    if (str == "PUBLISHED")
+        return OutboxStatus::Published;
+    if (str == "FAILED")
+        return OutboxStatus::Failed;
     throw InvalidEnumException("Invalid OutboxStatus string: " + std::string(str));
 }
 
@@ -187,8 +238,8 @@ std::string to_iso8601(std::chrono::system_clock::time_point tp) {
     if (frac == 0) {
         std::snprintf(buf, sizeof(buf), "%04d-%02u-%02uT%02d:%02d:%02dZ", y, m, d, hour, minute, second);
     } else {
-        std::snprintf(buf, sizeof(buf), "%04d-%02u-%02uT%02d:%02d:%02d.%06lldZ",
-                      y, m, d, hour, minute, second, static_cast<long long>(frac));
+        std::snprintf(buf, sizeof(buf), "%04d-%02u-%02uT%02d:%02d:%02d.%06lldZ", y, m, d, hour, minute, second,
+                      static_cast<long long>(frac));
     }
     return std::string(buf);
 }
