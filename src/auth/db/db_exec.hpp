@@ -19,9 +19,12 @@ inline pqxx::result exec_sql(pqxx::transaction_base& tx, std::string_view query,
 
 #if defined(PQXX_VERSION_MAJOR) && PQXX_VERSION_MAJOR >= 8
     return tx.exec(query, params);
-#else
-    // libpqxx 7.9+ recommends exec(zview, params) over exec_params
+#elif defined(PQXX_VERSION_MAJOR) && defined(PQXX_VERSION_MINOR) && (PQXX_VERSION_MAJOR == 7 && PQXX_VERSION_MINOR >= 9)
+    // libpqxx 7.9+ introduced exec(zview, params) and deprecated exec_params
     return tx.exec(pqxx::zview{query}, params);
+#else
+    // libpqxx < 7.9 (e.g. vcpkg libpqxx 7.7.x / 7.8.x on MSVC) only provides exec_params
+    return tx.exec_params(pqxx::zview{query}, params);
 #endif
 
 #if defined(__GNUC__) || defined(__clang__)
