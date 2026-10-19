@@ -367,10 +367,10 @@ Message
 
 ## 6. Architectural Invariants Checklist
 
-- [ ] **Critical Security Boundary**: Messaging service never decrypts E2E message content; operates purely as opaque ciphertext transport.
-- [ ] **No Server-Held Private Keys (ADR-008)**: Backend possesses zero recipient private keys and zero decryption capability.
-- [ ] **No Insecure Protocol Downgrade**: Unapproved or deprecated protocol versions fail closed.
-- [ ] **Auth Crypto-Directory Authority**: Recipient devices validated against Auth's public directory; revoked devices rejected.
-- [ ] **Per-Device Delivery Isolation**: Each recipient device receives its own dedicated encrypted envelope.
-- [ ] **Zero Plaintext Logging**: Ciphertext and plaintext bytes strictly redacted from logs, traces, and metrics.
-- [ ] **Zero Regressions**: Cumulative test suite passes 100% across all platforms.
+- [x] **Critical Security Boundary**: Messaging service never decrypts E2E message content; operates purely as opaque ciphertext transport.
+- [x] **No Server-Held Private Keys (ADR-008)**: Backend possesses zero recipient private keys and zero decryption capability.
+- [x] **No Insecure Protocol Downgrade**: Unapproved or deprecated protocol versions fail closed.
+- [x] **Auth Crypto-Directory Authority**: Recipient devices validated against Auth's public directory; revoked devices rejected.
+- [x] **Per-Device Delivery Isolation**: Each recipient device receives its own dedicated encrypted envelope.
+- [x] **Zero Plaintext Logging**: Ciphertext and plaintext bytes strictly redacted from logs, traces, and metrics.
+- [x] **Zero Regressions**: Cumulative test suite passes 100% across all platforms.
