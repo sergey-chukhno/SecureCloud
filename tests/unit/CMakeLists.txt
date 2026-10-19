@@ -1567,6 +1567,81 @@ target_link_libraries(securecloud_files_health_evaluator_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_files_health_evaluator_test ${SECURECLOUD_TEST_PROPERTIES})
+# Files Schema Migration Unit Test Suite (FILES-002-T01)
+add_executable(securecloud_files_schema_migration_test
+    files/schema_migration_test.cpp
+)
+
+target_link_libraries(securecloud_files_schema_migration_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_schema_migration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Domain Entities & Type Mappers Unit Test Suite (FILES-002-T02)
+add_executable(securecloud_domain_entities_test
+    files/domain_entities_test.cpp
+)
+
+target_link_libraries(securecloud_domain_entities_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_domain_entities_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files File & Version Repositories Unit Test Suite (FILES-002-T03)
+add_executable(securecloud_file_repository_test
+    files/file_repository_test.cpp
+)
+
+target_link_libraries(securecloud_file_repository_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_file_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Resumable Transfer & Idempotent Chunk Repositories Unit Test Suite (FILES-002-T04)
+add_executable(securecloud_transfer_chunk_repository_test
+    files/transfer_chunk_repository_test.cpp
+)
+
+target_link_libraries(securecloud_transfer_chunk_repository_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_transfer_chunk_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Access Control & Transactional Outbox Repositories Unit Test Suite (FILES-002-T05)
+add_executable(securecloud_access_outbox_repository_test
+    files/access_outbox_repository_test.cpp
+)
+
+target_link_libraries(securecloud_access_outbox_repository_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_access_outbox_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
 # Messaging Service Configuration Unit Test Suite (MSG-001-T02)
 add_executable(securecloud_messaging_config_test
