@@ -39,8 +39,19 @@ class GrpcChannelManager {
     [[nodiscard]] std::shared_ptr<::grpc::Channel> get_files_channel();
     [[nodiscard]] std::shared_ptr<::grpc::Channel> get_audit_channel();
 
+    [[nodiscard]] grpc_connectivity_state get_connection_state(const std::string& service_name,
+                                                               bool try_to_connect = false) noexcept;
+
+    [[nodiscard]] bool is_channel_ready(const std::string& service_name) noexcept;
+    [[nodiscard]] bool is_channel_healthy(const std::string& service_name) noexcept;
+
+    [[nodiscard]] bool wait_for_connected(const std::string& service_name,
+                                          std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) noexcept;
+
     [[nodiscard]] bool check_connectivity(const std::string& service_name,
                                           std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) noexcept;
+
+    bool reconnect(const std::string& service_name) noexcept;
 
     void reset() noexcept;
 

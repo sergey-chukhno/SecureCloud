@@ -1,3 +1,24 @@
+#include "auth/crypto/argon2id_hasher.hpp"
+#include "auth/crypto/mfa_secret_protector.hpp"
+#include "auth/crypto/token_crypto.hpp"
+#include "auth/crypto/totp_engine.hpp"
+#include "auth/db/postgres_connection_pool.hpp"
+#include "auth/repository/device_public_key_repository.hpp"
+#include "auth/repository/device_repository.hpp"
+#include "auth/repository/mfa_repository.hpp"
+#include "auth/repository/refresh_token_repository.hpp"
+#include "auth/repository/session_repository.hpp"
+#include "auth/repository/user_repository.hpp"
+#include "auth/service/audit_event_publisher.hpp"
+#include "auth/service/auth_service_impl.hpp"
+#include "auth/service/credential_verifier.hpp"
+#include "auth/service/crypto_directory_manager.hpp"
+#include "auth/service/device_manager.hpp"
+#include "auth/service/mfa_authenticator_interface.hpp"
+#include "auth/service/mfa_manager.hpp"
+#include "auth/service/prekey_manager.hpp"
+#include "auth/service/session_manager.hpp"
+#include "auth/service/token_manager.hpp"
 #include "auth_config.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
@@ -5,7 +26,6 @@
 #include "securecloud/configuration/validation_error.hpp"
 #include "securecloud/health/health_service_impl.hpp"
 #include "securecloud/health/health_status_manager.hpp"
-#include "securecloud/health/transport_probe.hpp"
 #include "securecloud/security/mtls_config.hpp"
 
 #include <atomic>
@@ -20,12 +40,17 @@
 namespace {
 
 constexpr auto k_poll_interval = std::chrono::milliseconds(100);
+constexpr auto k_db_ping_timeout = std::chrono::milliseconds(250);
+constexpr auto k_grpc_shutdown_timeout = std::chrono::seconds(5);
+constexpr auto k_pool_drain_timeout = std::chrono::seconds(2);
 
 std::atomic<bool> g_shutdown_requested{false};
 
+// Signal handler: Strictly async-signal-safe (relaxed atomic store only).
+// No logging, no mutexes, no dynamic memory allocation, no gRPC calls.
 void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
-        g_shutdown_requested.store(true);
+        g_shutdown_requested.store(true, std::memory_order_relaxed);
     }
 }
 
@@ -62,15 +87,81 @@ int run_service() {
         return 1;
     }
 
+    // Initialize database connection pool
+    auto pool = config.create_database_pool();
+
     std::string server_address = config.common.listen_address();
     securecloud::common::health::HealthStatusManager health_manager(config.common.service_name);
-    health_manager.set_readiness_evaluator(
-        [&config] { return securecloud::common::health::probe_tcp_connectivity(config.db_host, config.db_port); });
+
+    // Bind pool->ping(250ms) to readiness evaluator (fail-closed: catches all exceptions internally)
+    health_manager.set_readiness_evaluator([pool]() noexcept {
+        try {
+            return pool && pool->ping(k_db_ping_timeout);
+        } catch (...) {
+            return false;
+        }
+    });
+
     securecloud::common::health::HealthServiceImpl health_service(config.common.service_name, health_manager);
+
+    // Instantiate wired domain components
+    std::shared_ptr<securecloud::auth::service::CredentialVerifier> verifier;
+    std::shared_ptr<securecloud::auth::service::SessionManager> session_mgr;
+    std::shared_ptr<securecloud::auth::service::TokenManager> token_mgr;
+    std::shared_ptr<securecloud::auth::service::MfaManager> mfa_mgr;
+    std::shared_ptr<securecloud::auth::service::DeviceManager> device_mgr;
+    std::shared_ptr<securecloud::auth::service::CryptoDirectoryManager> crypto_directory_mgr;
+    std::shared_ptr<securecloud::auth::service::PrekeyManager> prekey_mgr;
+    auto audit_publisher = std::make_shared<securecloud::auth::service::AuditEventPublisher>();
+
+    if (pool) {
+        auto user_repo = std::make_shared<securecloud::auth::repository::PostgresUserRepository>(*pool);
+        auto device_repo = std::make_shared<securecloud::auth::repository::PostgresDeviceRepository>(*pool);
+        auto public_key_repo =
+            std::make_shared<securecloud::auth::repository::PostgresDevicePublicKeyRepository>(*pool);
+        auto session_repo = std::make_shared<securecloud::auth::repository::PostgresSessionRepository>(*pool);
+        auto refresh_token_repo =
+            std::make_shared<securecloud::auth::repository::PostgresRefreshTokenRepository>(*pool);
+        auto mfa_repo = std::make_shared<securecloud::auth::repository::PostgresMfaRepository>(*pool);
+        auto hasher = std::make_shared<securecloud::auth::crypto::OpenSslArgon2idHasher>();
+        auto token_signer = std::make_shared<securecloud::auth::crypto::Ed25519TokenSigner>("sc-auth-v1");
+
+        // Resolve 256-bit Key Encryption Key (KEK) for MFA secrets
+        const char* env_kek = std::getenv("SECURECLOUD_AUTH_MFA_KEK");
+        std::string kek_str = (env_kek && std::strlen(env_kek) > 0)
+                                  ? std::string(env_kek)
+                                  : "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        auto secret_protector = std::make_shared<securecloud::auth::crypto::MfaSecretProtector>(kek_str);
+        auto totp_engine = std::make_shared<securecloud::auth::crypto::TotpEngine>();
+        auto authenticator =
+            std::make_shared<securecloud::auth::service::TotpAuthenticator>(totp_engine, secret_protector);
+
+        verifier = std::make_shared<securecloud::auth::service::CredentialVerifier>(user_repo, hasher);
+        session_mgr = std::make_shared<securecloud::auth::service::SessionManager>(
+            session_repo, device_repo, std::chrono::hours(24), audit_publisher);
+        token_mgr = std::make_shared<securecloud::auth::service::TokenManager>(
+            token_signer, refresh_token_repo, session_repo, device_repo, audit_publisher);
+        mfa_mgr = std::make_shared<securecloud::auth::service::MfaManager>(
+            mfa_repo, session_repo, user_repo, authenticator, totp_engine, secret_protector, audit_publisher);
+        device_mgr = std::make_shared<securecloud::auth::service::DeviceManager>(device_repo, public_key_repo,
+                                                                                 session_mgr, audit_publisher);
+        crypto_directory_mgr = std::make_shared<securecloud::auth::service::CryptoDirectoryManager>(
+            device_repo, public_key_repo, audit_publisher);
+        prekey_mgr =
+            std::make_shared<securecloud::auth::service::PrekeyManager>(device_repo, public_key_repo, audit_publisher);
+    }
+
+    // Instantiate AuthServiceImpl wired with domain verifier, session manager, audit publisher, token manager, MFA
+    // manager, device manager, crypto directory manager, and prekey manager
+    securecloud::auth::service::AuthServiceImpl auth_service(verifier, session_mgr, audit_publisher, token_mgr, mfa_mgr,
+                                                             device_mgr, crypto_directory_mgr, prekey_mgr);
 
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);
+
+    // Register both Health and Auth services
     builder.RegisterService(&health_service);
+    builder.RegisterService(&auth_service);
 
     std::unique_ptr<grpc::Server> server = builder.BuildAndStart();
     if (!server) {
@@ -85,13 +176,33 @@ int run_service() {
     std::cout << "[SecureCloud] [" << config.common.service_name << "] mTLS server listening strictly on "
               << server_address << " with service identity 'DNS:" << config.common.service_name << "'\n";
 
-    while (!g_shutdown_requested.load()) {
+    // Main event loop waiting for shutdown signal
+    while (!g_shutdown_requested.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(k_poll_interval);
     }
 
+    std::cout << "[SecureCloud] [" << config.common.service_name
+              << "] Signal received, initiating graceful shutdown...\n";
+
+    // --- Deterministic Bounded Graceful Shutdown Sequence ---
+
+    // Step 1: Set health status to NOT_SERVING (set_shutting_down(true))
     health_manager.set_shutting_down(true);
-    std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down mTLS server...\n";
-    server->Shutdown();
+
+    // Step 2: Bounded gRPC server shutdown with 5s timeout using std::chrono::system_clock
+    const auto grpc_deadline = std::chrono::system_clock::now() + k_grpc_shutdown_timeout;
+    server->Shutdown(grpc_deadline);
+
+    // Step 3: Destroy server instance (avoids deadlock-prone server->Wait() call after bounded Shutdown)
+    server.reset();
+
+    // Step 4: Bounded database pool drain (2s)
+    if (pool) {
+        pool->shutdown(k_pool_drain_timeout);
+    }
+
+    // Step 5: Process termination with exit code 0
+    std::cout << "[SecureCloud] [" << config.common.service_name << "] Graceful shutdown completed successfully.\n";
     return 0;
 }
 

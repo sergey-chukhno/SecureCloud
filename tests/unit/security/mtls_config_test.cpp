@@ -1,7 +1,19 @@
 #include "securecloud/security/mtls_config.hpp"
 
+#include <atomic>
+#include <chrono>
 #include <fstream>
 #include <gtest/gtest.h>
+#include <string>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace securecloud::common::security {
 namespace {
@@ -53,7 +65,15 @@ class TestAuthContext : public grpc::AuthContext {
 class MtlsConfigTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        temp_dir_ = std::filesystem::temp_directory_path() / "securecloud_mtls_unit_test";
+        static std::atomic<uint64_t> counter{0};
+        auto now_ticks = std::chrono::steady_clock::now().time_since_epoch().count();
+        auto unique_id = std::to_string(now_ticks) + "_" + std::to_string(counter.fetch_add(1));
+#ifdef _WIN32
+        unique_id += "_" + std::to_string(::GetCurrentProcessId());
+#else
+        unique_id += "_" + std::to_string(::getpid());
+#endif
+        temp_dir_ = std::filesystem::temp_directory_path() / ("securecloud_mtls_test_" + unique_id);
         std::filesystem::create_directories(temp_dir_);
 
         valid_ca_path_ = temp_dir_ / "ca.crt";
@@ -78,7 +98,10 @@ class MtlsConfigTest : public ::testing::Test {
         write_file(empty_file_path_, "");
     }
 
-    void TearDown() override { std::filesystem::remove_all(temp_dir_); }
+    void TearDown() override {
+        std::error_code ec;
+        std::filesystem::remove_all(temp_dir_, ec);
+    }
 
     static void write_file(const std::filesystem::path& path, std::string_view content) {
         std::ofstream stream(path, std::ios::out | std::ios::binary);

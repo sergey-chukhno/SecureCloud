@@ -12,7 +12,9 @@ vcpkg_installed/
 .cache/
 .vscode/
 .idea/
+.vcpkg_archives/
 *.user
+compile_commands.json
 
 # Development PKI, credentials, environment files, and TLS material
 deploy/dev-pki/
@@ -25,4 +27,6 @@ deploy/dev-pki/
 *.p12
 *.pfx
 
-
+# Walkthrough and review artifacts
+walkthrough-*.md
+*-report.md

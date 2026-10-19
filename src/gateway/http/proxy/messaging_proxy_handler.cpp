@@ -1,0 +1,728 @@
+#include "http/proxy/messaging_proxy_handler.hpp"
+
+#include "http/auth/request_context.hpp"
+#include "http/errors/error_mapper.hpp"
+#include "http/routing/router.hpp"
+
+#include <chrono>
+#include <httplib.h>
+#include <nlohmann/json.hpp>
+#include <utility>
+
+namespace securecloud::gateway::http {
+namespace {
+
+constexpr const char* k_content_type_json = "application/json";
+
+nlohmann::json conversation_metadata_to_json(const securecloud::messaging::v1::ConversationMetadata& meta) {
+    nlohmann::json j;
+    j["conversation_id"] = meta.conversation_id();
+    j["type"] = (meta.type() == securecloud::messaging::v1::CONVERSATION_TYPE_DIRECT) ? "direct" : "group";
+    j["title"] = meta.title();
+    j["creator_user_id"] = meta.creator_user_id();
+    j["created_at_unix_ms"] = meta.created_at_unix_ms();
+    j["participant_user_ids"] = nlohmann::json::array();
+    for (const auto& uid : meta.participant_user_ids()) {
+        j["participant_user_ids"].push_back(uid);
+    }
+    return j;
+}
+
+} // namespace
+
+MessagingProxyHandler::MessagingProxyHandler(std::shared_ptr<grpc::IMessagingClient> messaging_client,
+                                             std::shared_ptr<DeadlineManager> deadline_manager,
+                                             std::shared_ptr<RetryPolicy> retry_policy,
+                                             std::shared_ptr<BulkheadManager> bulkhead_manager,
+                                             std::shared_ptr<CircuitBreaker> circuit_breaker)
+    : messaging_client_(std::move(messaging_client)), deadline_manager_(std::move(deadline_manager)),
+      retry_policy_(std::move(retry_policy)), bulkhead_manager_(std::move(bulkhead_manager)),
+      circuit_breaker_(std::move(circuit_breaker)) {}
+
+std::string MessagingProxyHandler::extract_request_id(const httplib::Request& req) {
+    if (const auto* rc = RequestContext::current()) {
+        return rc->request_id();
+    }
+    if (req.has_header("X-Request-ID")) {
+        return req.get_header_value("X-Request-ID");
+    }
+    if (req.has_header("X-Request-Id")) {
+        return req.get_header_value("X-Request-Id");
+    }
+    if (req.has_header("x-request-id")) {
+        return req.get_header_value("x-request-id");
+    }
+    return "";
+}
+
+std::chrono::milliseconds MessagingProxyHandler::compute_timeout(const httplib::Request& req) const {
+    if (deadline_manager_) {
+        return deadline_manager_->compute_effective_deadline(req, std::chrono::milliseconds(5000));
+    }
+    return std::chrono::milliseconds(5000);
+}
+
+void MessagingProxyHandler::write_grpc_error(httplib::Response& res, const grpc::DependencyError& error,
+                                             const std::string& request_id) const {
+    int http_status = 500;
+    std::string code = "INTERNAL_ERROR";
+    switch (error.kind) {
+    case grpc::DependencyErrorKind::InvalidArgument:
+        http_status = 400;
+        code = "INVALID_ARGUMENT";
+        break;
+    case grpc::DependencyErrorKind::Unauthenticated:
+        http_status = 401;
+        code = "UNAUTHENTICATED";
+        break;
+    case grpc::DependencyErrorKind::PermissionDenied:
+        http_status = 403;
+        code = "PERMISSION_DENIED";
+        break;
+    case grpc::DependencyErrorKind::NotFound:
+        http_status = 404;
+        code = "NOT_FOUND";
+        break;
+    case grpc::DependencyErrorKind::Timeout:
+        http_status = 504;
+        code = "DEADLINE_EXCEEDED";
+        break;
+    case grpc::DependencyErrorKind::ServiceUnavailable:
+        http_status = 503;
+        code = "SERVICE_UNAVAILABLE";
+        break;
+    default:
+        if (error.grpc_code == ::grpc::StatusCode::ALREADY_EXISTS) {
+            http_status = 409;
+            code = "CONFLICT";
+        } else if (error.grpc_code == ::grpc::StatusCode::RESOURCE_EXHAUSTED) {
+            http_status = 429;
+            code = "RESOURCE_EXHAUSTED";
+        } else {
+            http_status = 500;
+            code = "DOWNSTREAM_ERROR";
+        }
+        break;
+    }
+    ErrorMapper::write_error(res, http_status, code, error.message, request_id);
+}
+
+void MessagingProxyHandler::register_routes(Router& router) {
+    router.post_authenticated("/api/v1/messages", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_send_message(req, res, ctx);
+    });
+
+    router.post_authenticated("/api/v1/messages/send", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_send_message(req, res, ctx);
+    });
+
+    router.post_authenticated("/api/v1/conversations", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_create_conversation(req, res, ctx);
+    });
+
+    router.get_authenticated("/api/v1/conversations/:id", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_get_conversation(req, res, ctx);
+    });
+
+    router.get_authenticated("/api/v1/conversations", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_list_conversations(req, res, ctx);
+    });
+
+    router.post_authenticated(
+        "/api/v1/conversations/:id/participants",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_add_participant(req, res, ctx); });
+
+    router.del_authenticated(
+        "/api/v1/conversations/:id/participants/:userId",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_remove_participant(req, res, ctx); });
+
+    router.post_authenticated("/api/v1/conversations/:id/leave", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_leave_conversation(req, res, ctx);
+    });
+
+    router.add_authenticated_route(
+        "PATCH", "/api/v1/conversations/:id/metadata",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_update_metadata(req, res, ctx); });
+}
+
+// ============================================================================
+// 1. handle_create_conversation
+// ============================================================================
+
+void MessagingProxyHandler::handle_create_conversation(const httplib::Request& req, httplib::Response& res,
+                                                       const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    nlohmann::json body;
+    try {
+        body = nlohmann::json::parse(req.body);
+    } catch (const std::exception&) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid JSON body", request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::CreateConversationRequest grpc_req;
+    std::string type_str = body.value("type", "direct");
+    if (type_str == "direct") {
+        grpc_req.set_type(securecloud::messaging::v1::CONVERSATION_TYPE_DIRECT);
+    } else if (type_str == "group") {
+        grpc_req.set_type(securecloud::messaging::v1::CONVERSATION_TYPE_GROUP);
+    } else {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Unsupported conversation type", request_id);
+        return;
+    }
+
+    grpc_req.set_title(body.value("title", ""));
+
+    if (body.contains("participant_user_ids") && body["participant_user_ids"].is_array()) {
+        for (const auto& uid : body["participant_user_ids"]) {
+            if (uid.is_string()) {
+                grpc_req.add_participant_user_ids(uid.get<std::string>());
+            }
+        }
+    } else if (body.contains("recipient_user_id") && body["recipient_user_id"].is_string()) {
+        grpc_req.add_participant_user_ids(body["recipient_user_id"].get<std::string>());
+    }
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    if (req.has_header("X-Idempotency-Token")) {
+        call_ctx.add_metadata("x-idempotency-token", req.get_header_value("X-Idempotency-Token"));
+    } else if (req.has_header("x-idempotency-token")) {
+        call_ctx.add_metadata("x-idempotency-token", req.get_header_value("x-idempotency-token"));
+    }
+
+    auto result = messaging_client_->create_conversation(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    nlohmann::json response_body;
+    response_body["conversation"] = conversation_metadata_to_json(result.value().conversation());
+    res.status = 201;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// 2. handle_get_conversation
+// ============================================================================
+
+void MessagingProxyHandler::handle_get_conversation(const httplib::Request& req, httplib::Response& res,
+                                                    const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string conv_id = Router::get_path_param(req, "id");
+    if (conv_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing conversation ID", request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::GetConversationRequest grpc_req;
+    grpc_req.set_conversation_id(conv_id);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->get_conversation(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    nlohmann::json response_body;
+    response_body["conversation"] = conversation_metadata_to_json(result.value().conversation());
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// 3. handle_list_conversations
+// ============================================================================
+
+void MessagingProxyHandler::handle_list_conversations(const httplib::Request& req, httplib::Response& res,
+                                                      const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::ListConversationsRequest grpc_req;
+    grpc_req.set_user_id(ctx.user_id());
+
+    if (req.has_param("limit")) {
+        try {
+            grpc_req.set_max_results(static_cast<uint32_t>(std::stoul(req.get_param_value("limit"))));
+        } catch (...) {
+        }
+    } else if (req.has_param("max_results")) {
+        try {
+            grpc_req.set_max_results(static_cast<uint32_t>(std::stoul(req.get_param_value("max_results"))));
+        } catch (...) {
+        }
+    }
+
+    if (req.has_param("page_token")) {
+        grpc_req.set_page_token(req.get_param_value("page_token"));
+    }
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->list_conversations(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    nlohmann::json response_body;
+    response_body["conversations"] = nlohmann::json::array();
+    for (const auto& conv : result.value().conversations()) {
+        response_body["conversations"].push_back(conversation_metadata_to_json(conv));
+    }
+    response_body["next_page_token"] = result.value().next_page_token();
+
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// 4. handle_add_participant
+// ============================================================================
+
+void MessagingProxyHandler::handle_add_participant(const httplib::Request& req, httplib::Response& res,
+                                                   const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string conv_id = Router::get_path_param(req, "id");
+    if (conv_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing conversation ID", request_id);
+        return;
+    }
+
+    nlohmann::json body;
+    try {
+        body = nlohmann::json::parse(req.body);
+    } catch (const std::exception&) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid JSON body", request_id);
+        return;
+    }
+
+    std::string participant_user_id = body.value("participant_user_id", body.value("userId", ""));
+    if (participant_user_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing participant user ID", request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::AddParticipantRequest grpc_req;
+    grpc_req.set_conversation_id(conv_id);
+    grpc_req.set_participant_user_id(participant_user_id);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->add_participant(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    nlohmann::json response_body;
+    response_body["conversation_id"] = result.value().conversation_id();
+    response_body["participant_user_id"] = result.value().participant_user_id();
+    response_body["total_participants"] = result.value().total_participants();
+
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// 5. handle_remove_participant
+// ============================================================================
+
+void MessagingProxyHandler::handle_remove_participant(const httplib::Request& req, httplib::Response& res,
+                                                      const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string conv_id = Router::get_path_param(req, "id");
+    std::string user_id = Router::get_path_param(req, "userId");
+
+    if (conv_id.empty() || user_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing conversation ID or user ID parameter",
+                                 request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::RemoveParticipantRequest grpc_req;
+    grpc_req.set_conversation_id(conv_id);
+    grpc_req.set_participant_user_id(user_id);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->remove_participant(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    nlohmann::json response_body;
+    response_body["conversation_id"] = result.value().conversation_id();
+    response_body["participant_user_id"] = result.value().participant_user_id();
+    response_body["total_participants"] = result.value().total_participants();
+
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// 6. handle_leave_conversation
+// ============================================================================
+
+void MessagingProxyHandler::handle_leave_conversation(const httplib::Request& req, httplib::Response& res,
+                                                      const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string conv_id = Router::get_path_param(req, "id");
+    if (conv_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing conversation ID", request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::LeaveConversationRequest grpc_req;
+    grpc_req.set_conversation_id(conv_id);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->leave_conversation(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    nlohmann::json response_body;
+    response_body["conversation_id"] = result.value().conversation_id();
+    response_body["success"] = result.value().success();
+
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// 7. handle_update_metadata
+// ============================================================================
+
+void MessagingProxyHandler::handle_update_metadata(const httplib::Request& req, httplib::Response& res,
+                                                   const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string conv_id = Router::get_path_param(req, "id");
+    if (conv_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing conversation ID", request_id);
+        return;
+    }
+
+    nlohmann::json body;
+    try {
+        body = nlohmann::json::parse(req.body);
+    } catch (const std::exception&) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid JSON body", request_id);
+        return;
+    }
+
+    std::string title = body.value("title", "");
+
+    securecloud::messaging::v1::UpdateConversationMetadataRequest grpc_req;
+    grpc_req.set_conversation_id(conv_id);
+    grpc_req.set_title(title);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->update_conversation_metadata(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    nlohmann::json response_body;
+    response_body["conversation"] = conversation_metadata_to_json(result.value().conversation());
+
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// 8. handle_send_message
+// ============================================================================
+
+void MessagingProxyHandler::handle_send_message(const httplib::Request& req, httplib::Response& res,
+                                                const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    nlohmann::json body;
+    try {
+        body = nlohmann::json::parse(req.body);
+    } catch (const std::exception&) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid JSON body", request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::SendMessageRequest grpc_req;
+    grpc_req.set_conversation_id(body.value("conversation_id", ""));
+    grpc_req.set_sender_device_id(body.value("sender_device_id", ctx.device_id()));
+
+    std::string idempotency_token;
+    if (body.contains("idempotency_token") && body["idempotency_token"].is_string()) {
+        idempotency_token = body["idempotency_token"].get<std::string>();
+    } else if (body.contains("client_idempotency_token") && body["client_idempotency_token"].is_string()) {
+        idempotency_token = body["client_idempotency_token"].get<std::string>();
+    } else if (req.has_header("X-Idempotency-Token")) {
+        idempotency_token = req.get_header_value("X-Idempotency-Token");
+    } else if (req.has_header("x-idempotency-token")) {
+        idempotency_token = req.get_header_value("x-idempotency-token");
+    }
+    grpc_req.set_client_idempotency_token(idempotency_token);
+
+    if (body.contains("priority")) {
+        if (body["priority"].is_string()) {
+            std::string p = body["priority"].get<std::string>();
+            if (p == "urgent") {
+                grpc_req.set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_URGENT);
+            } else if (p == "emergency") {
+                grpc_req.set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_EMERGENCY);
+            } else {
+                grpc_req.set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_NORMAL);
+            }
+        } else if (body["priority"].is_number_integer()) {
+            grpc_req.set_priority(
+                static_cast<securecloud::messaging::v1::MessagePriority>(body["priority"].get<int>()));
+        }
+    } else {
+        grpc_req.set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_NORMAL);
+    }
+
+    if (body.contains("expires_at_unix_ms") && body["expires_at_unix_ms"].is_number_integer()) {
+        grpc_req.set_expires_at_unix_ms(body["expires_at_unix_ms"].get<int64_t>());
+    }
+
+    if (body.contains("delivery_targets") && body["delivery_targets"].is_array()) {
+        for (const auto& dt_json : body["delivery_targets"]) {
+            if (!dt_json.is_object()) {
+                continue;
+            }
+            auto* target = grpc_req.add_delivery_targets();
+            target->set_recipient_user_id(dt_json.value("recipient_user_id", ""));
+            target->set_recipient_device_id(dt_json.value("recipient_device_id", ""));
+
+            if (dt_json.contains("encrypted_payload") && dt_json["encrypted_payload"].is_object()) {
+                const auto& ep_json = dt_json["encrypted_payload"];
+                auto* ep = target->mutable_encrypted_payload();
+                ep->set_ciphertext_blob(ep_json.value("ciphertext_blob", ""));
+                ep->set_ephemeral_public_key(ep_json.value("ephemeral_public_key", ""));
+                ep->set_initialization_vector(ep_json.value("initialization_vector", ""));
+                ep->set_auth_tag(ep_json.value("auth_tag", ""));
+                ep->set_algorithm(ep_json.value("algorithm", "XChaCha20-Poly1305"));
+            }
+        }
+    }
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+    if (!idempotency_token.empty()) {
+        call_ctx.add_metadata("x-idempotency-token", idempotency_token);
+    }
+
+    auto result = messaging_client_->send_message(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    nlohmann::json response_body;
+    response_body["message_id"] = result.value().message_id();
+    response_body["conversation_id"] = result.value().conversation_id();
+    response_body["accepted_at_unix_ms"] = result.value().accepted_at_unix_ms();
+    response_body["initial_state"] = "QUEUED";
+    response_body["target_count"] = result.value().target_count();
+
+    res.status = 201;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+} // namespace securecloud::gateway::http

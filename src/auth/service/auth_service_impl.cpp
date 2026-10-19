@@ -1,0 +1,1699 @@
+#include "auth/service/auth_service_impl.hpp"
+
+#include "securecloud/security/mtls_config.hpp"
+
+#include <chrono>
+#include <iostream>
+#include <string_view>
+
+namespace securecloud::auth::service {
+
+// Temporary stub class definitions to satisfy std::unique_ptr<T> requirements
+// until full controller/manager implementations are added in future tickets.
+class AuthenticationController {};
+
+AuthServiceImpl::AuthServiceImpl(std::shared_ptr<ICredentialVerifier> credential_verifier,
+                                 std::shared_ptr<ISessionManager> session_manager,
+                                 std::shared_ptr<IAuditEventPublisher> audit_publisher,
+                                 std::shared_ptr<ITokenManager> token_manager, std::shared_ptr<IMfaManager> mfa_manager,
+                                 std::shared_ptr<IDeviceManager> device_manager,
+                                 std::shared_ptr<ICryptoDirectoryManager> crypto_directory_manager,
+                                 std::shared_ptr<IPrekeyManager> prekey_manager,
+                                 std::shared_ptr<repository::IUserRepository> user_repository)
+    : credential_verifier_(std::move(credential_verifier)), session_manager_(std::move(session_manager)),
+      audit_publisher_(std::move(audit_publisher)), token_manager_(std::move(token_manager)),
+      mfa_manager_(std::move(mfa_manager)), device_manager_(std::move(device_manager)),
+      crypto_directory_manager_(std::move(crypto_directory_manager)), prekey_manager_(std::move(prekey_manager)),
+      user_repository_(std::move(user_repository)) {}
+
+AuthServiceImpl::~AuthServiceImpl() = default;
+
+domain::AuthenticationLevel AuthServiceImpl::extract_caller_auth_level(const ::grpc::ServerContext* context) const {
+    if (auth_level_override_for_testing_.has_value()) {
+        if (*auth_level_override_for_testing_ ==
+            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED) {
+            return domain::AuthenticationLevel::MfaVerified;
+        }
+        return domain::AuthenticationLevel::PrimaryOnly;
+    }
+    if (!context) {
+        return domain::AuthenticationLevel::PrimaryOnly;
+    }
+    const auto& metadata = context->client_metadata();
+    auto it = metadata.find("x-auth-level");
+    if (it != metadata.end()) {
+        std::string_view val(it->second.data(), it->second.size());
+        if (val == "mfa_verified" || val == "AUTHENTICATION_LEVEL_MFA_VERIFIED" || val == "2") {
+            return domain::AuthenticationLevel::MfaVerified;
+        }
+    }
+    it = metadata.find("x-authentication-level");
+    if (it != metadata.end()) {
+        std::string_view val(it->second.data(), it->second.size());
+        if (val == "mfa_verified" || val == "AUTHENTICATION_LEVEL_MFA_VERIFIED" || val == "2") {
+            return domain::AuthenticationLevel::MfaVerified;
+        }
+    }
+    return domain::AuthenticationLevel::PrimaryOnly;
+}
+
+bool AuthServiceImpl::is_caller_mfa_verified(const ::grpc::ServerContext* context) const {
+    if (auth_level_override_for_testing_.has_value()) {
+        return *auth_level_override_for_testing_ ==
+               securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED;
+    }
+    if (!context) {
+        return false;
+    }
+    const auto& metadata = context->client_metadata();
+    auto it = metadata.find("x-auth-level");
+    if (it != metadata.end()) {
+        std::string_view val(it->second.data(), it->second.size());
+        if (val == "mfa_verified" || val == "AUTHENTICATION_LEVEL_MFA_VERIFIED" || val == "2") {
+            return true;
+        }
+    }
+    it = metadata.find("x-authentication-level");
+    if (it != metadata.end()) {
+        std::string_view val(it->second.data(), it->second.size());
+        if (val == "mfa_verified" || val == "AUTHENTICATION_LEVEL_MFA_VERIFIED" || val == "2") {
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string AuthServiceImpl::extract_client_identity(const ::grpc::ServerContext* context) const {
+    if (!context || !context->auth_context()) {
+        return "anonymous";
+    }
+
+    auto identity = securecloud::common::security::extract_peer_service_identity(*context->auth_context());
+    return identity.value_or("unknown_peer");
+}
+
+std::optional<domain::Uuid> AuthServiceImpl::extract_caller_user_id(const ::grpc::ServerContext* context) const {
+    if (caller_user_id_override_for_testing_.has_value()) {
+        return caller_user_id_override_for_testing_;
+    }
+    if (!context) {
+        return std::nullopt;
+    }
+    const auto& metadata = context->client_metadata();
+    auto it = metadata.find("x-user-id");
+    if (it != metadata.end()) {
+        std::string_view val(it->second.data(), it->second.size());
+        auto uid_res = domain::Uuid::from_string(val);
+        if (uid_res.has_value()) {
+            return *uid_res;
+        }
+    }
+    return std::nullopt;
+}
+
+std::optional<domain::Uuid> AuthServiceImpl::extract_caller_device_id(const ::grpc::ServerContext* context) const {
+    if (caller_device_id_override_for_testing_.has_value()) {
+        return caller_device_id_override_for_testing_;
+    }
+    if (!context) {
+        return std::nullopt;
+    }
+    const auto& metadata = context->client_metadata();
+    auto it = metadata.find("x-device-id");
+    if (it != metadata.end()) {
+        std::string_view val(it->second.data(), it->second.size());
+        auto did_res = domain::Uuid::from_string(val);
+        if (did_res.has_value()) {
+            return *did_res;
+        }
+    }
+    return std::nullopt;
+}
+
+void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc::ServerContext* context,
+                                        const ::grpc::Status& status, std::chrono::microseconds duration) const {
+
+    std::string client_san = extract_client_identity(context);
+
+    std::cout << "[SecureCloud] [auth] RPC=" << rpc_name << " | PeerSAN=" << client_san
+              << " | Status=" << status.error_code() << " | Duration=" << duration.count() << "us\n";
+}
+
+::grpc::Status AuthServiceImpl::Authenticate(::grpc::ServerContext* context,
+                                             const ::securecloud::auth::v1::AuthenticateRequest* request,
+                                             ::securecloud::auth::v1::AuthenticateResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    if (!credential_verifier_ || !session_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Authenticate RPC dependencies not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    std::string client_ip = context ? context->peer() : "unknown";
+
+    // 1. Syntactic / Schema validation of inputs
+    auto id_res = domain::CredentialIdentifier::create(request->credential_identifier());
+    if (!id_res.has_value()) {
+        if (audit_publisher_) {
+            audit_publisher_->publish(domain::AuditEvent::login_failed(request->credential_identifier(),
+                                                                       "Invalid credential identifier format",
+                                                                       std::nullopt, std::nullopt, client_ip));
+        }
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid credential identifier format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    auto pass_res = domain::PasswordCredential::create(request->password());
+    if (!pass_res.has_value()) {
+        if (audit_publisher_) {
+            audit_publisher_->publish(domain::AuditEvent::login_failed(
+                id_res->value(), "Invalid password format or length", std::nullopt, std::nullopt, client_ip));
+        }
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid password format or length");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res.has_value()) {
+        if (audit_publisher_) {
+            audit_publisher_->publish(domain::AuditEvent::login_failed(id_res->value(), "Invalid device UUID format",
+                                                                       std::nullopt, std::nullopt, client_ip));
+        }
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    // 2. Primary Credential Verification
+    auto auth_result = credential_verifier_->verify(*id_res, *pass_res);
+    if (auth_result.status == domain::AuthenticationStatus::InvalidCredentials) {
+        if (audit_publisher_) {
+            audit_publisher_->publish(domain::AuditEvent::login_failed(id_res->value(), "Invalid credentials",
+                                                                       std::nullopt, *dev_id_res, client_ip));
+        }
+        auto status = ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED, "Invalid credentials");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    if (auth_result.status == domain::AuthenticationStatus::AccountDisabled) {
+        std::optional<domain::Uuid> uid =
+            auth_result.user.has_value() ? std::make_optional(auth_result.user->user_id) : std::nullopt;
+        if (audit_publisher_) {
+            audit_publisher_->publish(domain::AuditEvent::account_disabled_attempt(
+                uid, id_res->value(), "Account is disabled", *dev_id_res, client_ip));
+        }
+        auto status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, "Account is disabled");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    if (!auth_result.is_success() || !auth_result.user.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INTERNAL, "Authentication service internal error");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    // 3. Session Establishment
+    const auto& user = auth_result.user.value();
+    auto session_result = session_manager_->establish_session(user, *dev_id_res);
+    if (session_result.status == SessionEstablishmentStatus::DeviceNotFound) {
+        if (audit_publisher_) {
+            audit_publisher_->publish(domain::AuditEvent::login_failed(
+                id_res->value(), "Device not found or not registered to user", user.user_id, *dev_id_res, client_ip));
+        }
+        auto status = ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "Device not found or not registered to user");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    if (session_result.status == SessionEstablishmentStatus::DeviceRevoked) {
+        if (audit_publisher_) {
+            audit_publisher_->publish(domain::AuditEvent::login_failed(id_res->value(), "Device is revoked",
+                                                                       user.user_id, *dev_id_res, client_ip));
+        }
+        auto status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, "Device is revoked");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    if (!session_result.is_success() || !session_result.session.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INTERNAL, "Session establishment internal error");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    // 4. Success Response and Audit Emission
+    const auto& session = session_result.session.value();
+    if (audit_publisher_) {
+        audit_publisher_->publish(domain::AuditEvent::login_succeeded(user.user_id, id_res->value(), *dev_id_res,
+                                                                      session.session_id, client_ip));
+    }
+
+    // Check if MFA is enabled for this user
+    bool mfa_enabled = mfa_manager_ && mfa_manager_->is_mfa_enabled_for_user(user.user_id);
+    if (mfa_enabled) {
+        auto challenge =
+            mfa_manager_->create_challenge(user.user_id, session.session_id, domain::MfaChallengePurpose::Login);
+
+        response->set_session_id(session.session_id.to_string());
+        response->set_user_id(user.user_id.to_string());
+        response->set_authentication_level(securecloud::auth::v1::AUTHENTICATION_LEVEL_PRIMARY);
+        response->set_mfa_required(true);
+        response->set_mfa_challenge_id(challenge.mfa_challenge_id.to_string());
+        response->set_access_token("");
+        response->set_refresh_token("");
+        auto expires_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(challenge.expires_at.time_since_epoch()).count();
+        response->set_expires_at_epoch_ms(expires_ms);
+
+        auto status = ::grpc::Status::OK;
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("Authenticate", context, status, duration);
+        return status;
+    }
+
+    // MFA is NOT enabled: Issue primary-only tokens
+    response->set_session_id(session.session_id.to_string());
+    response->set_user_id(user.user_id.to_string());
+    response->set_authentication_level(securecloud::auth::v1::AUTHENTICATION_LEVEL_PRIMARY);
+    auto expires_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(session.expires_at.time_since_epoch()).count();
+
+    if (token_manager_) {
+        auto tokens = token_manager_->issue_initial_tokens(session);
+        response->set_access_token(tokens.access_token);
+        response->set_refresh_token(tokens.refresh_token.raw_secret());
+        expires_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(tokens.expires_at.time_since_epoch()).count();
+    }
+
+    response->set_expires_at_epoch_ms(expires_ms);
+    response->set_mfa_required(false);
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("Authenticate", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::ValidateSession(::grpc::ServerContext* context,
+                                                const ::securecloud::auth::v1::ValidateSessionRequest* request,
+                                                ::securecloud::auth::v1::ValidateSessionResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Null request or response");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ValidateSession", context, status, duration);
+        return status;
+    }
+
+    if (!session_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "SessionManager dependency is unconfigured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ValidateSession", context, status, duration);
+        return status;
+    }
+
+    auto session_id_res = domain::Uuid::from_string(request->session_id());
+    if (!session_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid session_id UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ValidateSession", context, status, duration);
+        return status;
+    }
+
+    auto result = session_manager_->validate_session(*session_id_res);
+    if (result.is_valid() && result.session.has_value()) {
+        const auto& session = *result.session;
+        response->set_is_valid(true);
+        response->set_user_id(session.user_id.to_string());
+        response->set_device_id(session.device_id.to_string());
+        response->set_authentication_level(session.authentication_level == domain::AuthenticationLevel::MfaVerified
+                                               ? securecloud::auth::v1::AUTHENTICATION_LEVEL_MFA_VERIFIED
+                                               : securecloud::auth::v1::AUTHENTICATION_LEVEL_PRIMARY);
+        auto expires_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(session.expires_at.time_since_epoch()).count();
+        response->set_expires_at_epoch_ms(expires_ms);
+    } else {
+        response->set_is_valid(false);
+    }
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("ValidateSession", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::RevokeSession(::grpc::ServerContext* context,
+                                              const ::securecloud::auth::v1::RevokeSessionRequest* request,
+                                              ::securecloud::auth::v1::RevokeSessionResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Null request or response");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeSession", context, status, duration);
+        return status;
+    }
+
+    if (!session_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "SessionManager dependency is unconfigured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeSession", context, status, duration);
+        return status;
+    }
+
+    auto session_id_res = domain::Uuid::from_string(request->session_id());
+    if (!session_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid session_id UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeSession", context, status, duration);
+        return status;
+    }
+
+    auto result = session_manager_->revoke_session(*session_id_res, request->reason());
+    response->set_revoked(result.is_success());
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("RevokeSession", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::RefreshSession(::grpc::ServerContext* context,
+                                               const ::securecloud::auth::v1::RefreshSessionRequest* request,
+                                               ::securecloud::auth::v1::RefreshSessionResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Null request or response");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RefreshSession", context, status, duration);
+        return status;
+    }
+
+    if (!token_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "TokenManager dependency is unconfigured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RefreshSession", context, status, duration);
+        return status;
+    }
+
+    if (request->refresh_token().empty()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Refresh token must not be empty");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RefreshSession", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RefreshSession", context, status, duration);
+        return status;
+    }
+
+    std::string client_ip = extract_client_identity(context);
+    auto refresh_result = token_manager_->refresh_tokens(request->refresh_token(), *dev_id_res, client_ip);
+
+    ::grpc::Status status = ::grpc::Status::OK;
+    switch (refresh_result.status) {
+    case domain::TokenRefreshStatus::Success: {
+        if (refresh_result.tokens.has_value() && refresh_result.session_id.has_value()) {
+            const auto& tokens = refresh_result.tokens.value();
+            response->set_session_id(refresh_result.session_id->to_string());
+            response->set_access_token(tokens.access_token);
+            response->set_new_refresh_token(tokens.refresh_token.raw_secret());
+            int64_t expires_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(tokens.expires_at.time_since_epoch()).count();
+            response->set_expires_at_epoch_ms(expires_ms);
+            status = ::grpc::Status::OK;
+        } else {
+            status = ::grpc::Status(::grpc::StatusCode::INTERNAL, "Inconsistent token refresh result state");
+        }
+        break;
+    }
+    case domain::TokenRefreshStatus::InvalidToken:
+    case domain::TokenRefreshStatus::ExpiredToken:
+    case domain::TokenRefreshStatus::SessionRevoked: {
+        status = ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED, refresh_result.error_message.empty()
+                                                                         ? "Invalid or expired refresh token"
+                                                                         : refresh_result.error_message);
+        break;
+    }
+    case domain::TokenRefreshStatus::CompromiseDetected: {
+        status = ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED, "Refresh token reuse detected; session revoked");
+        break;
+    }
+    case domain::TokenRefreshStatus::DeviceMismatch: {
+        status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, refresh_result.error_message.empty()
+                                                                           ? "Device mismatch for refresh token"
+                                                                           : refresh_result.error_message);
+        break;
+    }
+    case domain::TokenRefreshStatus::ConcurrencyConflict: {
+        status =
+            ::grpc::Status(::grpc::StatusCode::ABORTED, "Concurrent refresh detected; please retry with current token");
+        break;
+    }
+    case domain::TokenRefreshStatus::DatabaseError:
+    default: {
+        status = ::grpc::Status(::grpc::StatusCode::INTERNAL, refresh_result.error_message.empty()
+                                                                  ? "Internal token refresh error"
+                                                                  : refresh_result.error_message);
+        break;
+    }
+    }
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("RefreshSession", context, status, duration);
+    return status;
+}
+
+#define IMPLEMENT_UNIMPLEMENTED_RPC(MethodName, RequestType, ResponseType)                                      \
+    ::grpc::Status AuthServiceImpl::MethodName(::grpc::ServerContext* context,                                  \
+                                               const ::securecloud::auth::v1::RequestType*,                     \
+                                               ::securecloud::auth::v1::ResponseType*) {                        \
+        auto start = std::chrono::steady_clock::now();                                                          \
+        ::grpc::Status status(::grpc::StatusCode::UNIMPLEMENTED, "RPC " #MethodName " is not implemented yet"); \
+        auto duration =                                                                                         \
+            std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);    \
+        log_rpc_execution(#MethodName, context, status, duration);                                              \
+        return status;                                                                                          \
+    }
+
+#undef IMPLEMENT_UNIMPLEMENTED_RPC
+
+::grpc::Status AuthServiceImpl::GetUser(::grpc::ServerContext* context,
+                                        const ::securecloud::auth::v1::GetUserRequest* request,
+                                        ::securecloud::auth::v1::GetUserResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!user_repository_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "User repository not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetUser", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetUser", context, status, duration);
+        return status;
+    }
+
+    auto user_id_res = domain::Uuid::from_string(request->user_id());
+    if (!user_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid user UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetUser", context, status, duration);
+        return status;
+    }
+
+    auto user_opt = user_repository_->find_by_id(*user_id_res);
+    if (!user_opt.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "User not found");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetUser", context, status, duration);
+        return status;
+    }
+
+    auto* proto_user = response->mutable_user();
+    proto_user->set_user_id(user_opt->user_id.to_string());
+    proto_user->set_credential_identifier(user_opt->credential_identifier);
+    proto_user->set_account_status(user_opt->account_status == domain::AccountStatus::Active
+                                       ? securecloud::auth::v1::AccountStatus::ACCOUNT_STATUS_ACTIVE
+                                       : securecloud::auth::v1::AccountStatus::ACCOUNT_STATUS_DISABLED);
+    proto_user->set_created_at_epoch_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(user_opt->created_at.time_since_epoch()).count());
+    proto_user->set_updated_at_epoch_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(user_opt->updated_at.time_since_epoch()).count());
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("GetUser", context, status, duration);
+    return status;
+}
+
+::grpc::Status
+AuthServiceImpl::GetDeviceCryptoDirectory(::grpc::ServerContext* context,
+                                          const ::securecloud::auth::v1::GetDeviceCryptoDirectoryRequest* request,
+                                          ::securecloud::auth::v1::GetDeviceCryptoDirectoryResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!crypto_directory_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Crypto directory service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetDeviceCryptoDirectory", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetDeviceCryptoDirectory", context, status, duration);
+        return status;
+    }
+
+    auto user_id_res = domain::Uuid::from_string(request->user_id());
+    if (!user_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid user UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetDeviceCryptoDirectory", context, status, duration);
+        return status;
+    }
+
+    std::vector<domain::Uuid> filter_ids;
+    for (const auto& dev_id_str : request->device_ids()) {
+        auto dev_id_res = domain::Uuid::from_string(dev_id_str);
+        if (!dev_id_res.has_value()) {
+            auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format in filter");
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            log_rpc_execution("GetDeviceCryptoDirectory", context, status, duration);
+            return status;
+        }
+        filter_ids.push_back(*dev_id_res);
+    }
+
+    auto dir_result = crypto_directory_manager_->get_device_crypto_directory(*user_id_res, filter_ids);
+    if (!dir_result.is_success()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INTERNAL, dir_result.error_message);
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetDeviceCryptoDirectory", context, status, duration);
+        return status;
+    }
+
+    for (const auto& bundle : dir_result.bundles) {
+        auto* dev_rec = response->add_devices();
+        dev_rec->set_device_id(bundle.device_id.to_string());
+        dev_rec->set_identity_key(bundle.identity_key.data(), bundle.identity_key.size());
+        dev_rec->set_signed_prekey(bundle.signed_prekey.data(), bundle.signed_prekey.size());
+        dev_rec->set_signed_prekey_signature(bundle.signed_prekey_signature.data(),
+                                             bundle.signed_prekey_signature.size());
+        if (bundle.one_time_prekey.has_value()) {
+            dev_rec->set_one_time_prekey(bundle.one_time_prekey->data(), bundle.one_time_prekey->size());
+        }
+        if (bundle.one_time_prekey_id.has_value()) {
+            dev_rec->set_one_time_prekey_id(bundle.one_time_prekey_id->to_string());
+        }
+        switch (bundle.device_status) {
+        case domain::DeviceStatus::Active:
+            dev_rec->set_status(securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+            break;
+        case domain::DeviceStatus::Revoked:
+            dev_rec->set_status(securecloud::auth::v1::DEVICE_STATUS_REVOKED);
+            break;
+        case domain::DeviceStatus::PendingAuthorization:
+            dev_rec->set_status(securecloud::auth::v1::DEVICE_STATUS_PENDING_AUTHORIZATION);
+            break;
+        }
+        dev_rec->set_identity_key_fingerprint(bundle.identity_key_fingerprint);
+        dev_rec->set_signed_prekey_created_at_epoch_ms(
+            std::chrono::duration_cast<std::chrono::milliseconds>(bundle.signed_prekey_created_at.time_since_epoch())
+                .count());
+        dev_rec->set_remaining_one_time_prekeys(bundle.remaining_one_time_prekeys);
+    }
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("GetDeviceCryptoDirectory", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::GetCryptoIdentity(::grpc::ServerContext* context,
+                                                  const ::securecloud::auth::v1::GetCryptoIdentityRequest* request,
+                                                  ::securecloud::auth::v1::GetCryptoIdentityResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!crypto_directory_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Crypto directory service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetCryptoIdentity", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetCryptoIdentity", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetCryptoIdentity", context, status, duration);
+        return status;
+    }
+
+    auto ident_result = crypto_directory_manager_->get_crypto_identity(*dev_id_res);
+    if (ident_result.is_not_found()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "Device not found");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetCryptoIdentity", context, status, duration);
+        return status;
+    }
+
+    if (ident_result.status == CryptoIdentityResult::Status::InternalError) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INTERNAL, ident_result.error_message);
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetCryptoIdentity", context, status, duration);
+        return status;
+    }
+
+    response->set_device_id(ident_result.device_id.to_string());
+    if (device_manager_) {
+        auto dev_opt = device_manager_->get_device(ident_result.device_id);
+        if (dev_opt) {
+            response->set_user_id(dev_opt->user_id.to_string());
+        }
+    }
+
+    if (ident_result.is_revoked()) {
+        response->set_status(securecloud::auth::v1::DEVICE_STATUS_REVOKED);
+        auto status = ::grpc::Status::OK;
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetCryptoIdentity", context, status, duration);
+        return status;
+    }
+
+    if (ident_result.is_pending_authorization()) {
+        response->set_status(securecloud::auth::v1::DEVICE_STATUS_PENDING_AUTHORIZATION);
+        auto status = ::grpc::Status::OK;
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetCryptoIdentity", context, status, duration);
+        return status;
+    }
+
+    response->set_status(securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+    response->set_identity_key(ident_result.identity_key.data(), ident_result.identity_key.size());
+    response->set_identity_key_fingerprint(ident_result.identity_key_fingerprint);
+    if (ident_result.signed_prekey.has_value()) {
+        response->set_signed_prekey(ident_result.signed_prekey->data(), ident_result.signed_prekey->size());
+    }
+    if (ident_result.signed_prekey_signature.has_value()) {
+        response->set_signed_prekey_signature(ident_result.signed_prekey_signature->data(),
+                                              ident_result.signed_prekey_signature->size());
+    }
+    response->set_signed_prekey_created_at_epoch_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(ident_result.signed_prekey_created_at.time_since_epoch())
+            .count());
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("GetCryptoIdentity", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::UpdateCryptoPrekeys(::grpc::ServerContext* context,
+                                                    const ::securecloud::auth::v1::UpdateCryptoPrekeysRequest* request,
+                                                    ::securecloud::auth::v1::UpdateCryptoPrekeysResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!crypto_directory_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Crypto directory service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("UpdateCryptoPrekeys", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("UpdateCryptoPrekeys", context, status, duration);
+        return status;
+    }
+
+    auto caller_user_id = extract_caller_user_id(context);
+    auto caller_device_id = extract_caller_device_id(context);
+    if (!caller_user_id.has_value() || !caller_device_id.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED,
+                                     "Missing or invalid caller identity metadata (x-user-id, x-device-id)");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("UpdateCryptoPrekeys", context, status, duration);
+        return status;
+    }
+
+    auto target_dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!target_dev_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid target device UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("UpdateCryptoPrekeys", context, status, duration);
+        return status;
+    }
+
+    std::span<const uint8_t> new_spk(reinterpret_cast<const uint8_t*>(request->signed_prekey().data()),
+                                     request->signed_prekey().size());
+    std::span<const uint8_t> new_sig(reinterpret_cast<const uint8_t*>(request->signed_prekey_signature().data()),
+                                     request->signed_prekey_signature().size());
+
+    std::vector<std::vector<uint8_t>> new_otks;
+    new_otks.reserve(static_cast<std::size_t>(request->one_time_prekeys_size()));
+    for (const auto& otk_str : request->one_time_prekeys()) {
+        new_otks.emplace_back(otk_str.begin(), otk_str.end());
+    }
+
+    std::string client_ip = extract_client_identity(context);
+    auto update_res = crypto_directory_manager_->update_crypto_prekeys(
+        *caller_user_id, *caller_device_id, *target_dev_id_res, new_spk, new_sig, new_otks, client_ip);
+
+    ::grpc::Status status = ::grpc::Status::OK;
+    switch (update_res.status) {
+    case UpdateCryptoPrekeysResult::Status::Success:
+        response->set_active_one_time_prekey_count(update_res.total_active_one_time_prekeys);
+        response->set_updated_at_epoch_ms(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count());
+        status = ::grpc::Status::OK;
+        break;
+    case UpdateCryptoPrekeysResult::Status::PermissionDenied:
+        status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, update_res.error_message);
+        break;
+    case UpdateCryptoPrekeysResult::Status::NotFound:
+        status = ::grpc::Status(::grpc::StatusCode::NOT_FOUND, update_res.error_message);
+        break;
+    case UpdateCryptoPrekeysResult::Status::InvalidArgument:
+        status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, update_res.error_message);
+        break;
+    case UpdateCryptoPrekeysResult::Status::InternalError:
+        status = ::grpc::Status(::grpc::StatusCode::INTERNAL, update_res.error_message);
+        break;
+    }
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("UpdateCryptoPrekeys", context, status, duration);
+    return status;
+}
+
+::grpc::Status
+AuthServiceImpl::GetPrekeyInventoryStatus(::grpc::ServerContext* context,
+                                          const ::securecloud::auth::v1::GetPrekeyInventoryStatusRequest* request,
+                                          ::securecloud::auth::v1::GetPrekeyInventoryStatusResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!prekey_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Prekey manager service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPrekeyInventoryStatus", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPrekeyInventoryStatus", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res) {
+        auto status =
+            ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device_id format: must be valid UUID");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPrekeyInventoryStatus", context, status, duration);
+        return status;
+    }
+
+    auto inv_res = prekey_manager_->get_inventory_status(*dev_id_res);
+    ::grpc::Status status = ::grpc::Status::OK;
+    switch (inv_res.status) {
+    case PrekeyInventoryStatusResult::Status::Success: {
+        const auto& inv = inv_res.inventory_status;
+        response->set_device_id(inv.device_id.to_string());
+        response->set_active_one_time_prekeys(inv.active_one_time_prekeys);
+        response->set_claimed_one_time_prekeys(inv.claimed_one_time_prekeys);
+        response->set_low_inventory_threshold(inv.low_inventory_threshold);
+        response->set_is_low_inventory(inv.is_low_inventory);
+        response->set_is_exhausted(inv.is_exhausted);
+        if (inv.signed_prekey_created_at.has_value()) {
+            response->set_signed_prekey_created_at_epoch_ms(
+                std::chrono::duration_cast<std::chrono::milliseconds>(inv.signed_prekey_created_at->time_since_epoch())
+                    .count());
+        } else {
+            response->set_signed_prekey_created_at_epoch_ms(0);
+        }
+        response->set_signed_prekey_age_seconds(inv.signed_prekey_age_seconds);
+        response->set_signed_prekey_needs_rotation(inv.signed_prekey_needs_rotation);
+        status = ::grpc::Status::OK;
+        break;
+    }
+    case PrekeyInventoryStatusResult::Status::NotFound:
+        status = ::grpc::Status(::grpc::StatusCode::NOT_FOUND, inv_res.error_message);
+        break;
+    case PrekeyInventoryStatusResult::Status::DeviceRevoked:
+        status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, inv_res.error_message);
+        break;
+    case PrekeyInventoryStatusResult::Status::InternalError:
+        status = ::grpc::Status(::grpc::StatusCode::INTERNAL, inv_res.error_message);
+        break;
+    }
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("GetPrekeyInventoryStatus", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::ClaimPrekeyBundle(::grpc::ServerContext* context,
+                                                  const ::securecloud::auth::v1::ClaimPrekeyBundleRequest* request,
+                                                  ::securecloud::auth::v1::ClaimPrekeyBundleResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!prekey_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Prekey manager service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ClaimPrekeyBundle", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ClaimPrekeyBundle", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res) {
+        auto status =
+            ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device_id format: must be valid UUID");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ClaimPrekeyBundle", context, status, duration);
+        return status;
+    }
+
+    auto claim_res = prekey_manager_->claim_device_prekey_bundle(*dev_id_res);
+    ::grpc::Status status = ::grpc::Status::OK;
+    switch (claim_res.status) {
+    case ClaimPrekeyBundleResult::Status::Success: {
+        auto* bundle = response->mutable_bundle();
+        bundle->set_device_id(claim_res.device_id.to_string());
+        bundle->set_identity_key(claim_res.identity_key.data(), claim_res.identity_key.size());
+        bundle->set_identity_key_fingerprint(claim_res.identity_key_fingerprint);
+        bundle->set_signed_prekey(claim_res.signed_prekey.data(), claim_res.signed_prekey.size());
+        bundle->set_signed_prekey_signature(claim_res.signed_prekey_signature.data(),
+                                            claim_res.signed_prekey_signature.size());
+        bundle->set_signed_prekey_created_at_epoch_ms(
+            std::chrono::duration_cast<std::chrono::milliseconds>(claim_res.signed_prekey_created_at.time_since_epoch())
+                .count());
+        bundle->set_status(securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+
+        if (claim_res.one_time_prekey.has_value()) {
+            bundle->set_one_time_prekey(claim_res.one_time_prekey->data(), claim_res.one_time_prekey->size());
+        }
+        if (claim_res.one_time_prekey_id.has_value()) {
+            bundle->set_one_time_prekey_id(claim_res.one_time_prekey_id->to_string());
+        }
+
+        switch (claim_res.exhaustion_state) {
+        case domain::PrekeyExhaustionState::InventoryHealthy:
+            response->set_exhaustion_state(
+                securecloud::auth::v1::PrekeyExhaustionState::PREKEY_EXHAUSTION_STATE_HEALTHY);
+            break;
+        case domain::PrekeyExhaustionState::InventoryLow:
+            response->set_exhaustion_state(securecloud::auth::v1::PrekeyExhaustionState::PREKEY_EXHAUSTION_STATE_LOW);
+            break;
+        case domain::PrekeyExhaustionState::InventoryExhausted:
+            response->set_exhaustion_state(
+                securecloud::auth::v1::PrekeyExhaustionState::PREKEY_EXHAUSTION_STATE_EXHAUSTED);
+            break;
+        }
+
+        status = ::grpc::Status::OK;
+        break;
+    }
+    case ClaimPrekeyBundleResult::Status::NotFound:
+        status = ::grpc::Status(::grpc::StatusCode::NOT_FOUND, claim_res.error_message);
+        break;
+    case ClaimPrekeyBundleResult::Status::DeviceRevoked:
+        status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, claim_res.error_message);
+        break;
+    case ClaimPrekeyBundleResult::Status::DeviceNotActive:
+        status = ::grpc::Status(::grpc::StatusCode::FAILED_PRECONDITION, claim_res.error_message);
+        break;
+    case ClaimPrekeyBundleResult::Status::InternalError:
+        status = ::grpc::Status(::grpc::StatusCode::INTERNAL, claim_res.error_message);
+        break;
+    }
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("ClaimPrekeyBundle", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::GetDevice(::grpc::ServerContext* context,
+                                          const ::securecloud::auth::v1::GetDeviceRequest* request,
+                                          ::securecloud::auth::v1::GetDeviceResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!device_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Device service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetDevice", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetDevice", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetDevice", context, status, duration);
+        return status;
+    }
+
+    auto dev_opt = device_manager_->get_device(*dev_id_res);
+    if (!dev_opt.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "Device not found");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetDevice", context, status, duration);
+        return status;
+    }
+
+    auto* proto_dev = response->mutable_device();
+    proto_dev->set_device_id(dev_opt->device_id.to_string());
+    proto_dev->set_user_id(dev_opt->user_id.to_string());
+    switch (dev_opt->device_status) {
+    case domain::DeviceStatus::Active:
+        proto_dev->set_device_status(securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+        break;
+    case domain::DeviceStatus::Revoked:
+        proto_dev->set_device_status(securecloud::auth::v1::DEVICE_STATUS_REVOKED);
+        break;
+    case domain::DeviceStatus::PendingAuthorization:
+        proto_dev->set_device_status(securecloud::auth::v1::DEVICE_STATUS_PENDING_AUTHORIZATION);
+        break;
+    }
+    proto_dev->set_registered_at_epoch_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(dev_opt->registered_at.time_since_epoch()).count());
+    if (dev_opt->revoked_at.has_value()) {
+        proto_dev->set_revoked_at_epoch_ms(
+            std::chrono::duration_cast<std::chrono::milliseconds>(dev_opt->revoked_at->time_since_epoch()).count());
+    }
+    if (dev_opt->revocation_reason.has_value()) {
+        proto_dev->set_revocation_reason(*dev_opt->revocation_reason);
+    }
+    proto_dev->set_last_authenticated_at_epoch_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(dev_opt->last_authenticated_at.time_since_epoch())
+            .count());
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("GetDevice", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::ListUserDevices(::grpc::ServerContext* context,
+                                                const ::securecloud::auth::v1::ListUserDevicesRequest* request,
+                                                ::securecloud::auth::v1::ListUserDevicesResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!device_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Device service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ListUserDevices", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ListUserDevices", context, status, duration);
+        return status;
+    }
+
+    auto user_id_res = domain::Uuid::from_string(request->user_id());
+    if (!user_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid user UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ListUserDevices", context, status, duration);
+        return status;
+    }
+
+    auto devices = device_manager_->list_user_devices(*user_id_res, request->include_revoked());
+    for (const auto& dev : devices) {
+        auto* proto_dev = response->add_devices();
+        proto_dev->set_device_id(dev.device_id.to_string());
+        proto_dev->set_user_id(dev.user_id.to_string());
+        switch (dev.device_status) {
+        case domain::DeviceStatus::Active:
+            proto_dev->set_device_status(securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+            break;
+        case domain::DeviceStatus::Revoked:
+            proto_dev->set_device_status(securecloud::auth::v1::DEVICE_STATUS_REVOKED);
+            break;
+        case domain::DeviceStatus::PendingAuthorization:
+            proto_dev->set_device_status(securecloud::auth::v1::DEVICE_STATUS_PENDING_AUTHORIZATION);
+            break;
+        }
+        proto_dev->set_registered_at_epoch_ms(
+            std::chrono::duration_cast<std::chrono::milliseconds>(dev.registered_at.time_since_epoch()).count());
+        if (dev.revoked_at.has_value()) {
+            proto_dev->set_revoked_at_epoch_ms(
+                std::chrono::duration_cast<std::chrono::milliseconds>(dev.revoked_at->time_since_epoch()).count());
+        }
+        if (dev.revocation_reason.has_value()) {
+            proto_dev->set_revocation_reason(*dev.revocation_reason);
+        }
+        proto_dev->set_last_authenticated_at_epoch_ms(
+            std::chrono::duration_cast<std::chrono::milliseconds>(dev.last_authenticated_at.time_since_epoch())
+                .count());
+    }
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("ListUserDevices", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::RegisterDevice(::grpc::ServerContext* context,
+                                               const ::securecloud::auth::v1::RegisterDeviceRequest* request,
+                                               ::securecloud::auth::v1::RegisterDeviceResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!device_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Device service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RegisterDevice", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RegisterDevice", context, status, duration);
+        return status;
+    }
+
+    auto user_id_res = domain::Uuid::from_string(request->user_id());
+    if (!user_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid user UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RegisterDevice", context, status, duration);
+        return status;
+    }
+
+    std::span<const uint8_t> id_key(reinterpret_cast<const uint8_t*>(request->identity_key().data()),
+                                    request->identity_key().size());
+    std::span<const uint8_t> spk(reinterpret_cast<const uint8_t*>(request->signed_prekey().data()),
+                                 request->signed_prekey().size());
+    std::span<const uint8_t> sig(reinterpret_cast<const uint8_t*>(request->signed_prekey_signature().data()),
+                                 request->signed_prekey_signature().size());
+
+    std::vector<std::vector<uint8_t>> otks;
+    otks.reserve(static_cast<std::size_t>(request->one_time_prekeys_size()));
+    for (const auto& otk_bytes : request->one_time_prekeys()) {
+        otks.emplace_back(otk_bytes.begin(), otk_bytes.end());
+    }
+
+    domain::AuthenticationLevel caller_auth_level = extract_caller_auth_level(context);
+    std::string client_ip = context ? context->peer() : "unknown";
+
+    auto enroll_res =
+        device_manager_->enroll_device(*user_id_res, id_key, spk, sig, otks, caller_auth_level, client_ip);
+
+    if (!enroll_res.success) {
+        auto status =
+            ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT,
+                           enroll_res.error_message.empty() ? "Device enrollment failed" : enroll_res.error_message);
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RegisterDevice", context, status, duration);
+        return status;
+    }
+
+    response->set_device_id(enroll_res.device_id.to_string());
+    switch (enroll_res.status) {
+    case domain::DeviceStatus::Active:
+        response->set_status(securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+        break;
+    case domain::DeviceStatus::PendingAuthorization:
+        response->set_status(securecloud::auth::v1::DEVICE_STATUS_PENDING_AUTHORIZATION);
+        break;
+    case domain::DeviceStatus::Revoked:
+        response->set_status(securecloud::auth::v1::DEVICE_STATUS_REVOKED);
+        break;
+    }
+    response->set_registered_at_epoch_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
+
+    if (!enroll_res.pairing_code.empty()) {
+        response->set_pairing_code(enroll_res.pairing_code);
+        response->set_pairing_code_expires_at_epoch_ms(
+            std::chrono::duration_cast<std::chrono::milliseconds>(enroll_res.pairing_code_expires_at.time_since_epoch())
+                .count());
+    }
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("RegisterDevice", context, status, duration);
+    return status;
+}
+
+::grpc::Status
+AuthServiceImpl::InitiateDevicePairing(::grpc::ServerContext* context,
+                                       const ::securecloud::auth::v1::InitiateDevicePairingRequest* request,
+                                       ::securecloud::auth::v1::InitiateDevicePairingResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!device_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Device service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("InitiateDevicePairing", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("InitiateDevicePairing", context, status, duration);
+        return status;
+    }
+
+    auto user_id_res = domain::Uuid::from_string(request->user_id());
+    if (!user_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid user UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("InitiateDevicePairing", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("InitiateDevicePairing", context, status, duration);
+        return status;
+    }
+
+    std::string client_ip = context ? context->peer() : "unknown";
+    auto challenge_opt = device_manager_->initiate_device_pairing(*user_id_res, *dev_id_res, client_ip);
+
+    if (!challenge_opt.has_value()) {
+        auto status =
+            ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "Device not found or not in pending authorization state");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("InitiateDevicePairing", context, status, duration);
+        return status;
+    }
+
+    response->set_pairing_code(challenge_opt->pairing_code);
+    response->set_expires_at_epoch_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(challenge_opt->expires_at.time_since_epoch()).count());
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("InitiateDevicePairing", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::AuthorizeDevice(::grpc::ServerContext* context,
+                                                const ::securecloud::auth::v1::AuthorizeDeviceRequest* request,
+                                                ::securecloud::auth::v1::AuthorizeDeviceResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!device_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "Device service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("AuthorizeDevice", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("AuthorizeDevice", context, status, duration);
+        return status;
+    }
+
+    auto user_id_res = domain::Uuid::from_string(request->user_id());
+    if (!user_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid user UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("AuthorizeDevice", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("AuthorizeDevice", context, status, duration);
+        return status;
+    }
+
+    domain::AuthenticationLevel caller_auth_level = extract_caller_auth_level(context);
+    std::string client_ip = context ? context->peer() : "unknown";
+
+    try {
+        auto auth_res = device_manager_->authorize_device(*user_id_res, *dev_id_res, request->pairing_code(),
+                                                          caller_auth_level, client_ip);
+
+        if (!auth_res.success) {
+            ::grpc::StatusCode code =
+                auth_res.is_locked_out ? ::grpc::StatusCode::PERMISSION_DENIED : ::grpc::StatusCode::UNAUTHENTICATED;
+            auto status = ::grpc::Status(code, auth_res.error_message.empty() ? "Device authorization failed"
+                                                                              : auth_res.error_message);
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            log_rpc_execution("AuthorizeDevice", context, status, duration);
+            return status;
+        }
+
+        response->set_authorized(true);
+        switch (auth_res.status) {
+        case domain::DeviceStatus::Active:
+            response->set_status(securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+            break;
+        case domain::DeviceStatus::PendingAuthorization:
+            response->set_status(securecloud::auth::v1::DEVICE_STATUS_PENDING_AUTHORIZATION);
+            break;
+        case domain::DeviceStatus::Revoked:
+            response->set_status(securecloud::auth::v1::DEVICE_STATUS_REVOKED);
+            break;
+        }
+        response->set_authorized_at_epoch_ms(
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count());
+
+        auto status = ::grpc::Status::OK;
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("AuthorizeDevice", context, status, duration);
+        return status;
+    } catch (const std::exception& ex) {
+        auto status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("AuthorizeDevice", context, status, duration);
+        return status;
+    }
+}
+
+::grpc::Status AuthServiceImpl::RevokeDevice(::grpc::ServerContext* context,
+                                             const ::securecloud::auth::v1::RevokeDeviceRequest* request,
+                                             ::securecloud::auth::v1::RevokeDeviceResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!device_manager_ && !session_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNIMPLEMENTED, "RPC RevokeDevice is not implemented yet");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeDevice", context, status, duration);
+        return status;
+    }
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeDevice", context, status, duration);
+        return status;
+    }
+
+    if (!is_caller_mfa_verified(context)) {
+        auto status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED,
+                                     "Operation requires multi-factor authentication (MFA_VERIFIED)");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeDevice", context, status, duration);
+        return status;
+    }
+
+    auto dev_id_res = domain::Uuid::from_string(request->device_id());
+    if (!dev_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("RevokeDevice", context, status, duration);
+        return status;
+    }
+
+    if (device_manager_) {
+        auto user_id_res = domain::Uuid::from_string(request->user_id());
+        domain::Uuid uid = user_id_res.value_or(domain::Uuid{});
+        std::string client_ip = context ? context->peer() : "unknown";
+
+        auto revoke_res = device_manager_->revoke_device(uid, *dev_id_res, request->reason(),
+                                                         domain::AuthenticationLevel::MfaVerified, client_ip);
+        if (!revoke_res.success) {
+            ::grpc::StatusCode code =
+                revoke_res.is_not_found ? ::grpc::StatusCode::NOT_FOUND : ::grpc::StatusCode::PERMISSION_DENIED;
+            auto status = ::grpc::Status(code, revoke_res.error_message.empty() ? "Device revocation failed"
+                                                                                : revoke_res.error_message);
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            log_rpc_execution("RevokeDevice", context, status, duration);
+            return status;
+        }
+    } else if (session_manager_) {
+        session_manager_->revoke_all_device_sessions(*dev_id_res,
+                                                     request->reason().empty() ? "Device revoked" : request->reason());
+    }
+
+    response->set_revoked(true);
+    response->set_revoked_at_epoch_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("RevokeDevice", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::VerifyMfaChallenge(::grpc::ServerContext* context,
+                                                   const ::securecloud::auth::v1::VerifyMfaChallengeRequest* request,
+                                                   ::securecloud::auth::v1::VerifyMfaChallengeResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("VerifyMfaChallenge", context, status, duration);
+        return status;
+    }
+
+    if (request->code().empty()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Verification code cannot be empty");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("VerifyMfaChallenge", context, status, duration);
+        return status;
+    }
+
+    auto ch_id_res = domain::Uuid::from_string(request->challenge_id());
+    if (!ch_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid challenge UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("VerifyMfaChallenge", context, status, duration);
+        return status;
+    }
+
+    if (!mfa_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNAVAILABLE, "MFA service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("VerifyMfaChallenge", context, status, duration);
+        return status;
+    }
+
+    std::string client_ip = extract_client_identity(context);
+    auto ver_result = mfa_manager_->verify_challenge(*ch_id_res, request->code(), client_ip);
+
+    if (ver_result.status == domain::MfaChallengeVerificationStatus::Success) {
+        if (!ver_result.session_id.has_value()) {
+            auto status = ::grpc::Status(::grpc::StatusCode::INTERNAL, "Session ID missing from verification result");
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            log_rpc_execution("VerifyMfaChallenge", context, status, duration);
+            return status;
+        }
+
+        if (!session_manager_) {
+            auto status = ::grpc::Status(::grpc::StatusCode::INTERNAL, "Session manager not configured");
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            log_rpc_execution("VerifyMfaChallenge", context, status, duration);
+            return status;
+        }
+
+        auto session_val = session_manager_->validate_session(*ver_result.session_id);
+        if (!session_val.is_valid() || !session_val.session.has_value()) {
+            auto status =
+                ::grpc::Status(::grpc::StatusCode::INTERNAL, "Session not found or invalid after MFA verification");
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            log_rpc_execution("VerifyMfaChallenge", context, status, duration);
+            return status;
+        }
+
+        const auto& session = *session_val.session;
+        response->set_session_id(session.session_id.to_string());
+        response->set_authentication_level(securecloud::auth::v1::AUTHENTICATION_LEVEL_MFA_VERIFIED);
+
+        auto expires_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(session.expires_at.time_since_epoch()).count();
+
+        if (token_manager_) {
+            auto tokens = token_manager_->issue_initial_tokens(session);
+            response->set_access_token(tokens.access_token);
+            response->set_refresh_token(tokens.refresh_token.raw_secret());
+            expires_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(tokens.expires_at.time_since_epoch()).count();
+        }
+
+        response->set_expires_at_epoch_ms(expires_ms);
+
+        auto status = ::grpc::Status::OK;
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("VerifyMfaChallenge", context, status, duration);
+        return status;
+    }
+
+    ::grpc::Status status;
+    if (ver_result.status == domain::MfaChallengeVerificationStatus::ExpiredChallenge) {
+        status =
+            ::grpc::Status(::grpc::StatusCode::DEADLINE_EXCEEDED,
+                           ver_result.error_message.empty() ? "MFA challenge has expired" : ver_result.error_message);
+    } else if (ver_result.status == domain::MfaChallengeVerificationStatus::MaxAttemptsExceeded ||
+               ver_result.status == domain::MfaChallengeVerificationStatus::ChallengeFailed) {
+        status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, ver_result.error_message.empty()
+                                                                           ? "Max verification attempts exceeded"
+                                                                           : ver_result.error_message);
+    } else {
+        status =
+            ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED,
+                           ver_result.error_message.empty() ? "Invalid verification code" : ver_result.error_message);
+    }
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("VerifyMfaChallenge", context, status, duration);
+    return status;
+}
+
+::grpc::Status
+AuthServiceImpl::InitiateMfaEnrollment(::grpc::ServerContext* context,
+                                       const ::securecloud::auth::v1::InitiateMfaEnrollmentRequest* request,
+                                       ::securecloud::auth::v1::InitiateMfaEnrollmentResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("InitiateMfaEnrollment", context, status, duration);
+        return status;
+    }
+
+    auto user_id_res = domain::Uuid::from_string(request->user_id());
+    if (!user_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid user UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("InitiateMfaEnrollment", context, status, duration);
+        return status;
+    }
+
+    if (!mfa_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNAVAILABLE, "MFA service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("InitiateMfaEnrollment", context, status, duration);
+        return status;
+    }
+
+    try {
+        std::string issuer = request->issuer().empty() ? "SecureCloud" : request->issuer();
+        auto result = mfa_manager_->initiate_enrollment(*user_id_res, issuer, request->account_name());
+        response->set_mfa_configuration_id(result.mfa_configuration_id.to_string());
+        response->set_secret(result.base32_secret.raw_secret());
+        response->set_otpauth_uri(result.otpauth_uri);
+
+        auto status = ::grpc::Status::OK;
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("InitiateMfaEnrollment", context, status, duration);
+        return status;
+    } catch (const std::exception& ex) {
+        auto status = ::grpc::Status(::grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("InitiateMfaEnrollment", context, status, duration);
+        return status;
+    }
+}
+
+::grpc::Status
+AuthServiceImpl::ConfirmMfaEnrollment(::grpc::ServerContext* context,
+                                      const ::securecloud::auth::v1::ConfirmMfaEnrollmentRequest* request,
+                                      ::securecloud::auth::v1::ConfirmMfaEnrollmentResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ConfirmMfaEnrollment", context, status, duration);
+        return status;
+    }
+
+    auto user_id_res = domain::Uuid::from_string(request->user_id());
+    if (!user_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid user UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ConfirmMfaEnrollment", context, status, duration);
+        return status;
+    }
+
+    if (request->code().empty()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Verification code cannot be empty");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ConfirmMfaEnrollment", context, status, duration);
+        return status;
+    }
+
+    if (!mfa_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNAVAILABLE, "MFA service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ConfirmMfaEnrollment", context, status, duration);
+        return status;
+    }
+
+    std::string client_ip = extract_client_identity(context);
+    auto result = mfa_manager_->confirm_enrollment(*user_id_res, request->code(), client_ip);
+
+    if (result.is_success()) {
+        response->set_success(true);
+        for (const auto& code : result.recovery_codes) {
+            response->add_recovery_codes(code);
+        }
+        auto status = ::grpc::Status::OK;
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("ConfirmMfaEnrollment", context, status, duration);
+        return status;
+    }
+
+    auto status = ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED,
+                                 result.error_message.empty() ? "Invalid verification code" : result.error_message);
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("ConfirmMfaEnrollment", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::DisableMfa(::grpc::ServerContext* context,
+                                           const ::securecloud::auth::v1::DisableMfaRequest* request,
+                                           ::securecloud::auth::v1::DisableMfaResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("DisableMfa", context, status, duration);
+        return status;
+    }
+
+    if (!is_caller_mfa_verified(context)) {
+        auto status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED,
+                                     "Operation requires multi-factor authentication (MFA_VERIFIED)");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("DisableMfa", context, status, duration);
+        return status;
+    }
+
+    auto user_id_res = domain::Uuid::from_string(request->user_id());
+    if (!user_id_res.has_value()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid user UUID format");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("DisableMfa", context, status, duration);
+        return status;
+    }
+
+    if (request->code().empty()) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Verification code cannot be empty");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("DisableMfa", context, status, duration);
+        return status;
+    }
+
+    if (!mfa_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::UNAVAILABLE, "MFA service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("DisableMfa", context, status, duration);
+        return status;
+    }
+
+    std::string client_ip = extract_client_identity(context);
+    bool disabled = mfa_manager_->disable_mfa(*user_id_res, request->code(), client_ip);
+
+    if (disabled) {
+        response->set_success(true);
+        auto status = ::grpc::Status::OK;
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("DisableMfa", context, status, duration);
+        return status;
+    }
+
+    auto status = ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED, "Invalid code or recovery code to disable MFA");
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("DisableMfa", context, status, duration);
+    return status;
+}
+
+::grpc::Status AuthServiceImpl::GetPublicSigningKey(::grpc::ServerContext* context,
+                                                    const ::securecloud::auth::v1::GetPublicSigningKeyRequest* request,
+                                                    ::securecloud::auth::v1::GetPublicSigningKeyResponse* response) {
+    auto start = std::chrono::steady_clock::now();
+
+    if (!request || !response) {
+        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPublicSigningKey", context, status, duration);
+        return status;
+    }
+
+    if (!token_manager_) {
+        auto status = ::grpc::Status(::grpc::StatusCode::FAILED_PRECONDITION, "Token service not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPublicSigningKey", context, status, duration);
+        return status;
+    }
+
+    auto signer = token_manager_->signer();
+    if (!signer) {
+        auto status = ::grpc::Status(::grpc::StatusCode::FAILED_PRECONDITION, "Token signer not configured");
+        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+        log_rpc_execution("GetPublicSigningKey", context, status, duration);
+        return status;
+    }
+
+    response->set_key_id(signer->get_key_id());
+    response->set_algorithm("Ed25519");
+    const auto raw_key = signer->get_public_key_raw();
+    response->set_public_key_raw(raw_key.data(), raw_key.size());
+    response->set_public_key_pem(signer->get_public_key_pem());
+
+    auto status = ::grpc::Status::OK;
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+    log_rpc_execution("GetPublicSigningKey", context, status, duration);
+    return status;
+}
+
+} // namespace securecloud::auth::service

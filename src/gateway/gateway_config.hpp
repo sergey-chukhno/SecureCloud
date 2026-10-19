@@ -31,7 +31,50 @@ struct GatewayResourceLimitsConfig {
     size_t max_concurrent_connections{1024};
 };
 
+/// Typed configuration model for Gateway downstream service deadlines (ADR-009, GW-008-T02).
+struct GatewayServiceDeadlinesConfig {
+    uint32_t auth_timeout_ms{1000};           // 1 s default (Auth simple requests)
+    uint32_t messaging_timeout_ms{2000};      // 2 s default (Messaging commands & queries)
+    uint32_t files_metadata_timeout_ms{2000}; // 2 s default (Files metadata operations)
+    uint32_t audit_timeout_ms{1000};          // 1 s default (Audit operations)
+    uint32_t max_request_deadline_ms{10000};  // 10 s default upper clamp
+    uint32_t min_request_deadline_ms{50};     // 50 ms minimum viable deadline floor
+};
+
+/// Typed configuration model for Gateway workload bulkhead concurrency partitioning (ADR-009 Section 9, GW-009-T01).
+struct GatewayBulkheadConfig {
+    uint32_t auth_max_concurrent{100};
+    uint32_t messaging_max_concurrent{200};
+    uint32_t files_max_concurrent{50};
+    uint32_t emergency_reserved_slots{10}; // Reserved perimeter capacity for health/ops probes
+};
+
+/// Typed configuration model for Gateway token-bucket rate limiting (ADR-009, ADR-010, GW-009-T02).
+struct GatewayRateLimitingConfig {
+    bool enabled{true};
+    double refill_rate_per_sec{50.0};
+    uint32_t burst_capacity{100};
+    size_t max_tracked_clients{10000};
+    std::chrono::seconds client_ttl{300};
+};
+
+/// Typed configuration model for Gateway downstream circuit breaking (ADR-009, GW-009-T03).
+struct GatewayCircuitBreakerConfig {
+    bool enabled{true};
+    uint32_t failure_threshold{5};      // 5 consecutive failures trips breaker
+    uint32_t recovery_timeout_ms{5000}; // 5s recovery window before HALF_OPEN
+    uint32_t half_open_probe_count{1};  // 1 probe request in HALF_OPEN
+};
+
+/// Typed configuration model for Gateway bounded streaming & backpressure (ADR-010, GW-010-T02).
+struct GatewayStreamingConfig {
+    size_t max_chunk_size_bytes{4194304};    // 4 MiB default
+    size_t max_stream_buffer_bytes{8388608}; // 8 MiB default (2 chunks)
+    uint32_t idle_timeout_ms{30000};         // 30 s default
+};
+
 /// Typed configuration model for Gateway service (GW-001, GW-002).
+
 /// Holds HTTP server runtime settings, TLS parameters, resource limits, downstream microservice endpoints,
 /// and common gRPC/mTLS service parameters.
 /// Strictly excludes database or object storage configuration (ADR-005, Gateway Design 3.1).
@@ -49,11 +92,31 @@ struct GatewayConfig {
     GatewayTlsConfig tls;
     GatewayResourceLimitsConfig limits;
 
+    // Service Deadlines & Timeout Budgets (GW-008-T02)
+    GatewayServiceDeadlinesConfig deadlines;
+
+    // Workload Bulkheads (GW-009-T01)
+    GatewayBulkheadConfig bulkhead;
+
+    // Token-Bucket Rate Limiting (GW-009-T02)
+    GatewayRateLimitingConfig rate_limiting;
+
+    // Downstream Circuit Breaker Engine (GW-009-T03)
+    GatewayCircuitBreakerConfig circuit_breaker;
+
+    // Streaming & Backpressure Engine (GW-010-T02)
+    GatewayStreamingConfig streaming;
+
     // Downstream Microservice Endpoints
     std::string auth_endpoint{"auth:50052"};
     std::string messaging_endpoint{"messaging:50053"};
     std::string files_endpoint{"files:50054"};
     std::string audit_endpoint{"audit:50055"};
+
+    // Token Verification & Key Distribution Settings (AUTH-010-T01)
+    std::string token_verification_mode{"remote_rpc"}; // "remote_rpc" or "local"
+    std::string auth_public_key_pem;
+    std::string auth_public_key_path;
 
     // Peer Probe Settings
     std::string peer_probe_target;

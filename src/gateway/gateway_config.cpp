@@ -383,6 +383,251 @@ void load_limits_config(GatewayConfig& config, const common::configuration::Conf
     }
 }
 
+void load_deadlines_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                           common::configuration::ValidationResult& out_errors) {
+    constexpr uint32_t k_min_timeout_val = 1;
+    constexpr uint32_t k_max_upper_bound_timeout_val = 300000;
+
+    auto max_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_MAX_MS");
+    if (max_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_MAX_MS", max_to.value(), config.deadlines.max_request_deadline_ms,
+                     out_errors, k_min_timeout_val, k_max_upper_bound_timeout_val);
+    } else {
+        config.deadlines.max_request_deadline_ms = 10000;
+    }
+
+    auto min_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_MIN_MS");
+    if (min_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_MIN_MS", min_to.value(), config.deadlines.min_request_deadline_ms,
+                     out_errors, k_min_timeout_val, config.deadlines.max_request_deadline_ms);
+    } else {
+        config.deadlines.min_request_deadline_ms = 50;
+    }
+
+    auto auth_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_AUTH_MS");
+    if (auth_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_AUTH_MS", auth_to.value(), config.deadlines.auth_timeout_ms,
+                     out_errors, k_min_timeout_val, config.deadlines.max_request_deadline_ms);
+    } else {
+        config.deadlines.auth_timeout_ms = 1000;
+    }
+
+    auto msg_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_MESSAGING_MS");
+    if (msg_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_MESSAGING_MS", msg_to.value(), config.deadlines.messaging_timeout_ms,
+                     out_errors, k_min_timeout_val, config.deadlines.max_request_deadline_ms);
+    } else {
+        config.deadlines.messaging_timeout_ms = 2000;
+    }
+
+    auto files_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_FILES_MS");
+    if (files_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_FILES_MS", files_to.value(),
+                     config.deadlines.files_metadata_timeout_ms, out_errors, k_min_timeout_val,
+                     config.deadlines.max_request_deadline_ms);
+    } else {
+        config.deadlines.files_metadata_timeout_ms = 2000;
+    }
+
+    auto audit_to = source.get("SECURECLOUD_GATEWAY_TIMEOUT_AUDIT_MS");
+    if (audit_to.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_TIMEOUT_AUDIT_MS", audit_to.value(), config.deadlines.audit_timeout_ms,
+                     out_errors, k_min_timeout_val, config.deadlines.max_request_deadline_ms);
+    } else {
+        config.deadlines.audit_timeout_ms = 1000;
+    }
+}
+
+void load_bulkhead_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                          common::configuration::ValidationResult& out_errors) {
+    constexpr uint32_t k_min_bulkhead_val = 1;
+    constexpr uint32_t k_max_bulkhead_val = 100000;
+
+    auto auth_max = source.get("SECURECLOUD_GATEWAY_BULKHEAD_AUTH_MAX");
+    if (auth_max.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_BULKHEAD_AUTH_MAX", auth_max.value(), config.bulkhead.auth_max_concurrent,
+                     out_errors, k_min_bulkhead_val, k_max_bulkhead_val);
+    } else {
+        config.bulkhead.auth_max_concurrent = 100;
+    }
+
+    auto msg_max = source.get("SECURECLOUD_GATEWAY_BULKHEAD_MESSAGING_MAX");
+    if (msg_max.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_BULKHEAD_MESSAGING_MAX", msg_max.value(),
+                     config.bulkhead.messaging_max_concurrent, out_errors, k_min_bulkhead_val, k_max_bulkhead_val);
+    } else {
+        config.bulkhead.messaging_max_concurrent = 200;
+    }
+
+    auto files_max = source.get("SECURECLOUD_GATEWAY_BULKHEAD_FILES_MAX");
+    if (files_max.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_BULKHEAD_FILES_MAX", files_max.value(), config.bulkhead.files_max_concurrent,
+                     out_errors, k_min_bulkhead_val, k_max_bulkhead_val);
+    } else {
+        config.bulkhead.files_max_concurrent = 50;
+    }
+
+    auto emg_slots = source.get("SECURECLOUD_GATEWAY_BULKHEAD_EMERGENCY_RESERVED");
+    if (!emg_slots.has_value()) {
+        emg_slots = source.get("SECURECLOUD_GATEWAY_BULKHEAD_EMERGENCY_MAX");
+    }
+    if (emg_slots.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_BULKHEAD_EMERGENCY_RESERVED", emg_slots.value(),
+                     config.bulkhead.emergency_reserved_slots, out_errors, k_min_bulkhead_val, k_max_bulkhead_val);
+    } else {
+        config.bulkhead.emergency_reserved_slots = 10;
+    }
+}
+
+void load_rate_limiting_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                               common::configuration::ValidationResult& out_errors) {
+    auto enabled_str = source.get("SECURECLOUD_GATEWAY_RATE_LIMIT_ENABLED");
+    if (enabled_str.has_value()) {
+        std::string val = enabled_str.value();
+        for (auto& c : val) {
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        }
+        if (val == "true" || val == "1" || val == "yes" || val == "on") {
+            config.rate_limiting.enabled = true;
+        } else if (val == "false" || val == "0" || val == "no" || val == "off") {
+            config.rate_limiting.enabled = false;
+        } else {
+            out_errors.add_error("SECURECLOUD_GATEWAY_RATE_LIMIT_ENABLED",
+                                 "Invalid boolean value: " + enabled_str.value());
+        }
+    } else {
+        config.rate_limiting.enabled = true;
+    }
+
+    auto refill_str = source.get("SECURECLOUD_GATEWAY_RATE_LIMIT_REFILL_RATE");
+    if (refill_str.has_value()) {
+        try {
+            size_t pos = 0;
+            double v = std::stod(refill_str.value(), &pos);
+            if (pos != refill_str.value().size() || std::isnan(v) || std::isinf(v) || v < 0.1 || v > 100000.0) {
+                out_errors.add_error("SECURECLOUD_GATEWAY_RATE_LIMIT_REFILL_RATE",
+                                     "Value out of bounds [0.1, 100000.0]: " + refill_str.value());
+            } else {
+                config.rate_limiting.refill_rate_per_sec = v;
+            }
+        } catch (...) {
+            out_errors.add_error("SECURECLOUD_GATEWAY_RATE_LIMIT_REFILL_RATE",
+                                 "Invalid double value: " + refill_str.value());
+        }
+    } else {
+        config.rate_limiting.refill_rate_per_sec = 50.0;
+    }
+
+    auto burst_str = source.get("SECURECLOUD_GATEWAY_RATE_LIMIT_BURST");
+    if (burst_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_RATE_LIMIT_BURST", burst_str.value(), config.rate_limiting.burst_capacity,
+                     out_errors, 1, 100000);
+    } else {
+        config.rate_limiting.burst_capacity = 100;
+    }
+
+    auto max_clients_str = source.get("SECURECLOUD_GATEWAY_RATE_LIMIT_MAX_CLIENTS");
+    if (max_clients_str.has_value()) {
+        uint32_t val = 10000;
+        parse_uint32("SECURECLOUD_GATEWAY_RATE_LIMIT_MAX_CLIENTS", max_clients_str.value(), val, out_errors, 10,
+                     500000);
+        config.rate_limiting.max_tracked_clients = val;
+    } else {
+        config.rate_limiting.max_tracked_clients = 10000;
+    }
+
+    auto ttl_str = source.get("SECURECLOUD_GATEWAY_RATE_LIMIT_CLIENT_TTL_SEC");
+    if (ttl_str.has_value()) {
+        uint32_t val = 300;
+        parse_uint32("SECURECLOUD_GATEWAY_RATE_LIMIT_CLIENT_TTL_SEC", ttl_str.value(), val, out_errors, 1, 86400);
+        config.rate_limiting.client_ttl = std::chrono::seconds(val);
+    } else {
+        config.rate_limiting.client_ttl = std::chrono::seconds(300);
+    }
+}
+
+void load_circuit_breaker_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                                 common::configuration::ValidationResult& out_errors) {
+    auto enabled_str = source.get("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_ENABLED");
+    if (enabled_str.has_value()) {
+        if (enabled_str.value() == "true" || enabled_str.value() == "1") {
+            config.circuit_breaker.enabled = true;
+        } else if (enabled_str.value() == "false" || enabled_str.value() == "0") {
+            config.circuit_breaker.enabled = false;
+        } else {
+            out_errors.add_error("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_ENABLED",
+                                 "Invalid boolean value: " + enabled_str.value());
+        }
+    } else {
+        config.circuit_breaker.enabled = true;
+    }
+
+    auto threshold_str = source.get("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_FAILURE_THRESHOLD");
+    if (threshold_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_FAILURE_THRESHOLD", threshold_str.value(),
+                     config.circuit_breaker.failure_threshold, out_errors, 1, 100);
+    } else {
+        config.circuit_breaker.failure_threshold = 5;
+    }
+
+    auto timeout_str = source.get("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_RECOVERY_TIMEOUT_MS");
+    if (timeout_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_RECOVERY_TIMEOUT_MS", timeout_str.value(),
+                     config.circuit_breaker.recovery_timeout_ms, out_errors, 100, 300000);
+    } else {
+        config.circuit_breaker.recovery_timeout_ms = 5000;
+    }
+
+    auto probes_str = source.get("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_HALF_OPEN_PROBES");
+    if (probes_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_CIRCUIT_BREAKER_HALF_OPEN_PROBES", probes_str.value(),
+                     config.circuit_breaker.half_open_probe_count, out_errors, 1, 10);
+    } else {
+        config.circuit_breaker.half_open_probe_count = 1;
+    }
+}
+
+void load_streaming_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                           common::configuration::ValidationResult& out_errors) {
+    auto chunk_str = source.get("SECURECLOUD_GATEWAY_STREAM_MAX_CHUNK_BYTES");
+    if (!chunk_str.has_value()) {
+        chunk_str = source.get("SECURECLOUD_GW_STREAM_MAX_CHUNK_BYTES");
+    }
+    if (chunk_str.has_value()) {
+        parse_size_t("SECURECLOUD_GATEWAY_STREAM_MAX_CHUNK_BYTES", chunk_str.value(),
+                     config.streaming.max_chunk_size_bytes, out_errors, 65536, 67108864);
+    } else {
+        config.streaming.max_chunk_size_bytes = 4194304;
+    }
+
+    auto buf_str = source.get("SECURECLOUD_GATEWAY_STREAM_MAX_BUFFER_BYTES");
+    if (!buf_str.has_value()) {
+        buf_str = source.get("SECURECLOUD_GW_STREAM_MAX_BUFFER_BYTES");
+    }
+    if (buf_str.has_value()) {
+        parse_size_t("SECURECLOUD_GATEWAY_STREAM_MAX_BUFFER_BYTES", buf_str.value(),
+                     config.streaming.max_stream_buffer_bytes, out_errors, 65536, 268435456);
+    } else {
+        config.streaming.max_stream_buffer_bytes = 8388608;
+    }
+
+    auto idle_str = source.get("SECURECLOUD_GATEWAY_STREAM_IDLE_TIMEOUT_MS");
+    if (!idle_str.has_value()) {
+        idle_str = source.get("SECURECLOUD_GW_STREAM_IDLE_TIMEOUT_MS");
+    }
+    if (idle_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_STREAM_IDLE_TIMEOUT_MS", idle_str.value(), config.streaming.idle_timeout_ms,
+                     out_errors, 1000, 300000);
+    } else {
+        config.streaming.idle_timeout_ms = 30000;
+    }
+
+    if (config.streaming.max_stream_buffer_bytes < config.streaming.max_chunk_size_bytes) {
+        out_errors.add_error("SECURECLOUD_GATEWAY_STREAM_MAX_BUFFER_BYTES",
+                             "max_stream_buffer_bytes must be greater than or equal to max_chunk_size_bytes");
+    }
+}
+
 void load_downstream_endpoints(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
                                common::configuration::ValidationResult& out_errors) {
     parse_endpoint("SECURECLOUD_GATEWAY_AUTH_ENDPOINT", source.get("SECURECLOUD_GATEWAY_AUTH_ENDPOINT"),
@@ -393,6 +638,33 @@ void load_downstream_endpoints(GatewayConfig& config, const common::configuratio
                    config.files_endpoint, out_errors);
     parse_endpoint("SECURECLOUD_GATEWAY_AUDIT_ENDPOINT", source.get("SECURECLOUD_GATEWAY_AUDIT_ENDPOINT"),
                    config.audit_endpoint, out_errors);
+}
+
+void load_token_verification_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                                    common::configuration::ValidationResult& out_errors, bool validate_file_paths) {
+    if (auto mode_opt = source.get("SECURECLOUD_GATEWAY_TOKEN_VERIFICATION_MODE"); mode_opt.has_value()) {
+        std::string mode = *mode_opt;
+        if (mode == "local" || mode == "remote_rpc") {
+            config.token_verification_mode = mode;
+        } else {
+            out_errors.add_error("SECURECLOUD_GATEWAY_TOKEN_VERIFICATION_MODE",
+                                 "invalid token verification mode: '" + mode + "'; must be 'local' or 'remote_rpc'");
+        }
+    }
+
+    if (auto pem_opt = source.get("SECURECLOUD_GATEWAY_AUTH_PUBLIC_KEY_PEM"); pem_opt.has_value()) {
+        config.auth_public_key_pem = *pem_opt;
+    }
+
+    if (auto path_opt = source.get("SECURECLOUD_GATEWAY_AUTH_PUBLIC_KEY_PATH"); path_opt.has_value()) {
+        config.auth_public_key_path = *path_opt;
+        if (validate_file_paths && !config.auth_public_key_path.empty()) {
+            if (!std::filesystem::exists(std::filesystem::path(config.auth_public_key_path))) {
+                out_errors.add_error("SECURECLOUD_GATEWAY_AUTH_PUBLIC_KEY_PATH",
+                                     "public key file does not exist on disk: '" + config.auth_public_key_path + "'");
+            }
+        }
+    }
 }
 
 } // namespace
@@ -438,7 +710,13 @@ GatewayConfig GatewayConfig::load(const common::configuration::ConfigurationSour
     load_http_config(config, source, out_errors);
     load_tls_config(config, source, out_errors, validate_file_paths);
     load_limits_config(config, source, out_errors);
+    load_deadlines_config(config, source, out_errors);
+    load_bulkhead_config(config, source, out_errors);
+    load_rate_limiting_config(config, source, out_errors);
+    load_circuit_breaker_config(config, source, out_errors);
+    load_streaming_config(config, source, out_errors);
     load_downstream_endpoints(config, source, out_errors);
+    load_token_verification_config(config, source, out_errors, validate_file_paths);
 
     config.peer_probe_target = source.get("SECURECLOUD_GATEWAY_PEER_PROBE_TARGET")
                                    .value_or(source.get("SECURECLOUD_PEER_PROBE_TARGET").value_or(""));
