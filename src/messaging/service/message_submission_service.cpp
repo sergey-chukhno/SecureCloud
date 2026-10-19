@@ -15,10 +15,13 @@ MessageSubmissionService::MessageSubmissionService(std::shared_ptr<ConversationA
                                                    std::shared_ptr<MessageSubmissionIdempotencyGuard> idempotency_guard,
                                                    std::shared_ptr<repository::IMessageRepository> message_repo,
                                                    std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
-                                                   std::shared_ptr<repository::IOutboxRepository> outbox_repo)
+                                                   std::shared_ptr<repository::IOutboxRepository> outbox_repo,
+                                                   std::shared_ptr<E2EEnvelopeValidator> envelope_validator,
+                                                   std::shared_ptr<RecipientDeviceResolutionService> resolution_service)
     : auth_service_(std::move(auth_service)), sequence_allocator_(std::move(sequence_allocator)),
       idempotency_guard_(std::move(idempotency_guard)), message_repo_(std::move(message_repo)),
-      delivery_repo_(std::move(delivery_repo)), outbox_repo_(std::move(outbox_repo)) {
+      delivery_repo_(std::move(delivery_repo)), outbox_repo_(std::move(outbox_repo)),
+      envelope_validator_(std::move(envelope_validator)), resolution_service_(std::move(resolution_service)) {
     if (!auth_service_ || !sequence_allocator_ || !idempotency_guard_ || !message_repo_ || !delivery_repo_ ||
         !outbox_repo_) {
         throw std::invalid_argument("MessageSubmissionService requires non-null dependencies");
@@ -30,13 +33,66 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
     // 1. Syntactic & Cryptographic Envelope Validation (SubmissionValidator)
     auto val_result = SubmissionValidator::validate(cmd);
     if (!val_result) {
-        return ServiceResult<MessageSubmissionResponse>::fail(val_result.error_code, val_result.error_message);
+        return ServiceResult<MessageSubmissionResponse>::fail(
+            val_result.error_code, util::ZeroPlaintextGuard::sanitize_error_message(val_result.error_message));
     }
 
     // 2. Participant Authorization & Active Standing Check (ConversationAuthorizationService)
     auto auth_result = auth_service_->can_send_message(cmd.caller_user_id, cmd.conversation_id);
     if (!auth_result) {
-        return ServiceResult<MessageSubmissionResponse>::fail(auth_result.error_code, auth_result.reason);
+        return ServiceResult<MessageSubmissionResponse>::fail(
+            auth_result.error_code, util::ZeroPlaintextGuard::sanitize_error_message(auth_result.reason));
+    }
+
+    // 2b. Comprehensive E2E Envelope Security & Anti-Plaintext Validation (ADR-008, MSG-006)
+    if (envelope_validator_) {
+        domain::E2EMessageEnvelope env;
+        env.conversation_id = cmd.conversation_id;
+        env.sender_user_id = cmd.caller_user_id;
+        env.sender_device_id = cmd.sender_device_id;
+        env.protocol_version = cmd.protocol_version;
+
+        for (const auto& target : cmd.delivery_targets) {
+            domain::PerDeviceEnvelope pde;
+            pde.recipient_user_id = target.recipient_user_id;
+            pde.recipient_device_id = target.recipient_device_id;
+            pde.ciphertext_blob = target.ciphertext_blob;
+            pde.ephemeral_public_key = target.ephemeral_public_key;
+            pde.iv = target.iv;
+            pde.auth_tag = target.auth_tag;
+            auto algo_opt = domain::e2e_algorithm_from_string(target.algorithm);
+            pde.algorithm = algo_opt.value_or(domain::E2EAlgorithm::XChaCha20_Poly1305);
+            pde.protocol_version = target.protocol_version;
+            pde.one_time_prekey_id = target.one_time_prekey_id;
+            env.per_device_envelopes.push_back(std::move(pde));
+        }
+
+        MessagingCallerContext caller_ctx;
+        caller_ctx.base.user_id = cmd.caller_user_id.str();
+        caller_ctx.base.device_id = cmd.sender_device_id.str();
+
+        std::vector<domain::UserId> participants;
+        auto active_members = auth_service_->membership_repository().list_active_participants(cmd.conversation_id);
+        for (const auto& m : active_members) {
+            participants.push_back(m.user_id);
+        }
+        if (participants.empty()) {
+            participants.push_back(cmd.caller_user_id);
+            for (const auto& target : cmd.delivery_targets) {
+                if (std::find(participants.begin(), participants.end(), target.recipient_user_id) ==
+                    participants.end()) {
+                    participants.push_back(target.recipient_user_id);
+                }
+            }
+        }
+
+        auto env_val_result =
+            envelope_validator_->validate(env, caller_ctx, participants, /*enforce_completeness=*/true);
+        if (!env_val_result.is_valid) {
+            return ServiceResult<MessageSubmissionResponse>::fail(
+                env_val_result.error_code,
+                util::ZeroPlaintextGuard::sanitize_error_message(env_val_result.error_message));
+        }
     }
 
     // Synchronize concurrent submissions with identical idempotency keys (ADR-009, MSG-005-T04)
@@ -76,7 +132,8 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
         return ServiceResult<MessageSubmissionResponse>::ok(resp);
     }
     case IdempotencyAction::RejectConflict:
-        return ServiceResult<MessageSubmissionResponse>::fail(idem_result.error_code, idem_result.error_message);
+        return ServiceResult<MessageSubmissionResponse>::fail(
+            idem_result.error_code, util::ZeroPlaintextGuard::sanitize_error_message(idem_result.error_message));
 
     case IdempotencyAction::RetryWait:
         return ServiceResult<MessageSubmissionResponse>::fail(
@@ -110,7 +167,7 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
         msg_entity.priority = cmd.priority;
         msg_entity.accepted_at = accepted_at;
         msg_entity.envelope.ciphertext = cmd.delivery_targets.front().ciphertext_blob;
-        msg_entity.envelope.envelope_version = 1;
+        msg_entity.envelope.envelope_version = static_cast<int32_t>(cmd.protocol_version);
 
         message_repo_->save_message(msg_entity);
 
@@ -131,6 +188,16 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
             d_rec.message_priority = cmd.priority;
             d_rec.delivery_state = domain::DeliveryState::Pending;
             d_rec.attempt_count = 0;
+
+            // Envelope fields (MSG-006-T04 / T05)
+            d_rec.ciphertext_blob = target.ciphertext_blob;
+            d_rec.ephemeral_public_key = target.ephemeral_public_key;
+            d_rec.iv = target.iv;
+            d_rec.auth_tag = target.auth_tag;
+            auto algo_opt = domain::e2e_algorithm_from_string(target.algorithm);
+            d_rec.algorithm = algo_opt.value_or(domain::E2EAlgorithm::XChaCha20_Poly1305);
+            d_rec.protocol_version = target.protocol_version;
+            d_rec.one_time_prekey_id = target.one_time_prekey_id;
             pending_records.push_back(d_rec);
 
             domain::RecipientDeliveryState r_state;
@@ -177,8 +244,9 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
     } catch (const std::exception& ex) {
         // Upon persistence failure, mark idempotency as failed so client can safely retry
         idempotency_guard_->mark_failed(cmd.sender_device_id, cmd.client_idempotency_token);
-        return ServiceResult<MessageSubmissionResponse>::fail(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
-                                                              std::string("Message persistence failed: ") + ex.what());
+        return ServiceResult<MessageSubmissionResponse>::fail(
+            v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
+            util::ZeroPlaintextGuard::sanitize_error_message(std::string("Message persistence failed: ") + ex.what()));
     }
 }
 

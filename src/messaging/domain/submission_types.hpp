@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/conversation_types.hpp"
+#include "domain/envelope_types.hpp"
 #include "domain/message_types.hpp"
 #include "securecloud/messaging/v1/messaging.pb.h"
 
@@ -22,6 +23,8 @@ struct DeviceDeliveryTarget {
     std::vector<uint8_t> iv;
     std::vector<uint8_t> auth_tag;
     std::string algorithm{"XChaCha20-Poly1305"};
+    E2EProtocolVersion protocol_version{E2EProtocolVersion::V1_Signal_PQXDH_DoubleRatchet};
+    std::optional<std::string> one_time_prekey_id{std::nullopt};
 
     auto operator<=>(const DeviceDeliveryTarget& other) const noexcept = default;
     bool operator==(const DeviceDeliveryTarget& other) const noexcept = default;
@@ -35,6 +38,7 @@ struct MessageSubmissionCommand {
     std::string client_idempotency_token;
     MessagePriority priority{MessagePriority::Normal};
     std::optional<std::chrono::system_clock::time_point> expires_at{std::nullopt};
+    E2EProtocolVersion protocol_version{E2EProtocolVersion::V1_Signal_PQXDH_DoubleRatchet};
     std::vector<DeviceDeliveryTarget> delivery_targets;
 
     auto operator<=>(const MessageSubmissionCommand& other) const noexcept = default;

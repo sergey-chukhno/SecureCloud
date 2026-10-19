@@ -2059,3 +2059,32 @@ target_link_libraries(securecloud_scylla_delivery_repository_envelope_test PRIVA
 )
 
 gtest_discover_tests(securecloud_scylla_delivery_repository_envelope_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Zero-Plaintext Guard Test Suite (MSG-006-T05)
+add_executable(securecloud_zero_plaintext_guard_test
+    messaging/zero_plaintext_guard_test.cpp
+)
+
+target_link_libraries(securecloud_zero_plaintext_guard_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_zero_plaintext_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Message Submission Service Envelope Integration Test Suite (MSG-006-T05)
+add_executable(securecloud_message_submission_envelope_integration_test
+    messaging/message_submission_envelope_integration_test.cpp
+)
+
+target_link_libraries(securecloud_message_submission_envelope_integration_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_message_submission_envelope_integration_test ${SECURECLOUD_TEST_PROPERTIES})

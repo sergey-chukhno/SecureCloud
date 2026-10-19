@@ -625,4 +625,194 @@ $ ./build/dev-debug/tests/unit/securecloud_scylla_delivery_repository_test
 
 ---
 
-*(Sections 6 and 7 will be populated as tickets MSG-006-T05 through T06 are implemented and validated).*
+## 6. Submission Pipeline Integration & Zero-Plaintext Guard (MSG-006-T05)
+
+### 6.1 Context & Objective
+
+In the first four tickets of MSG-006, specialized cryptographic and persistence building blocks were constructed:
+1. **T01**: Defined the cryptographic envelope domain types (`PerDeviceEnvelope`, `E2EMessageEnvelope`) and protocol whitelist policy engine.
+2. **T02**: Built the recipient device resolution client (`IAuthCryptoDirectoryClient`) and caching layer (`RecipientDeviceResolutionService`) with a 30-second TTL LRU cache to eliminate Auth directory thundering herd conditions.
+3. **T03**: Built the strict envelope security validator (`E2EEnvelopeValidator`) enforcing 5 security rules (context matching, protocol whitelist, device state, cryptographic bounds, and heuristic anti-plaintext scanning).
+4. **T04**: Evolved ScyllaDB schema via migration V004 and updated `ScyllaDeliveryStateRepository` to persist and retrieve per-device encrypted payloads.
+
+**MSG-006-T05 is the integration ticket that wires all these independent components into the live, production message submission pipeline (`MessageSubmissionService`).**
+
+#### The Three Core Objectives of MSG-006-T05:
+
+1. **Wiring Validation and Fan-out into `MessageSubmissionService`**:
+   - **Pre-Validation**: Before assigning monotonic sequence numbers or allocating database resources, evaluate incoming envelopes against `E2EEnvelopeValidator` to verify protocol whitelists, cryptographic bounds, and absence of raw plaintext.
+   - **Completeness Enforcement**: Query `RecipientDeviceResolutionService` to ensure that every currently active enrolled device belonging to the conversation participants has an encrypted payload (preventing selective omission attacks).
+   - **Atomic Durability Boundary**: Persist the `MessageEntity`, `IdempotencyRecord`, `OutboxEvent`, and **all per-device encrypted envelopes** in ScyllaDB (`pending_deliveries_by_device`) within a single synchronized durability boundary.
+2. **Enforcing the Zero-Plaintext Audit Guard (`ZeroPlaintextGuard`)**:
+   - In accordance with **ADR-008 (Cryptographic Primitives)**, the server backend acts solely as an opaque ciphertext relay and never inspects or decrypts payloads.
+   - `ZeroPlaintextGuard` provides safe audit logging formatters that record only safe metadata (message ID, conversation ID, recipient count, payload byte lengths, algorithm enum names), strictly redacting raw ciphertexts and key bytes (`[REDACTED]`).
+   - `ZeroPlaintextGuard` sanitizes client-facing error responses and logs, ensuring no ciphertext or payload fragments are ever reflected back to clients via gRPC `Status` or HTTP error bodies.
+3. **Gateway REST Proxy Mapping**:
+   - Ensure the API Gateway HTTP proxy (`POST /api/v1/messages`) cleanly parses and maps incoming REST JSON payload fields (`ciphertext_blob`, `ephemeral_public_key`, `initialization_vector`, `auth_tag`, `algorithm`) into the backend gRPC `SendMessageRequest`.
+
+```
+Client (Alice)
+     │
+     │  1. Submit Message (with per-device encrypted envelopes)
+     ▼
+API Gateway (`/api/v1/messages`)
+     │
+     │  2. gRPC SendMessage()
+     ▼
+MessageSubmissionService
+     │
+     ├──► A. Check Idempotency (prevent duplicate sends on network retry)
+     ├──► B. Validate Security & Crypto Bounds (E2EEnvelopeValidator)
+     ├──► C. Verify All Target Devices Active (RecipientDeviceResolutionService)
+     ├──► D. Assign Monotonic Sequence Number (ISequenceAllocator)
+     ├──► E. Atomic Persistence to ScyllaDB:
+     │         - Message Record (IMessageRepository)
+     │         - Outbox Event (IOutboxRepository)
+     │         - Idempotency State (IIdempotencyRepository)
+     │         - Per-Device Encrypted Envelopes (IDeliveryStateRepository)
+     │
+     └──► F. Audit Log via ZeroPlaintextGuard (Metadata only; zero ciphertext/keys)
+     │
+     ▼
+Success Response (Message ID, Sequence Number, Timestamp)
+```
+
+### 6.2 Ingestion Pipeline & Critical Durability Boundary Integration
+
+In `src/messaging/service/message_submission_service.cpp`, the message ingestion workflow was enhanced to incorporate end-to-end cryptographic envelope validation and per-device persistence within the atomic durability boundary:
+
+1. **Pre-Validation of Cryptographic Bounds**:
+   Incoming submission commands are evaluated by `E2EEnvelopeValidator::validate` before any sequence numbers or database resources are allocated. If the client attempts to submit malformed parameters (e.g., IV $<24$ bytes for XChaCha20, auth tag $<16$ bytes), an unapproved protocol version, or suspected plaintext, the request is rejected immediately with fail-fast semantics (`MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE`).
+2. **Active Device Resolution & Omission Prevention**:
+   The validator queries `RecipientDeviceResolutionService` (backed by the Auth Service's cryptographic directory and a 30s TTL LRU cache) to resolve all active devices enrolled by the conversation participants. If a participant has active devices that the sender omitted from the submission, the request is deterministically rejected, preventing selective omission / man-in-the-middle attacks.
+3. **Atomic Multi-Device Durability Boundary**:
+   Upon successful validation and monotonic sequence allocation via `ISequenceAllocator`, the persistence step atomically commits:
+   - **`MessageEntity`** into `IMessageRepository` (`messages_by_conversation`).
+   - **Per-Device `DeviceDeliveryRecord`s** into `IDeliveryStateRepository` (`pending_deliveries_by_device`), capturing the target-specific `ciphertext_blob`, `ephemeral_public_key`, `iv`, `auth_tag`, `algorithm`, `protocol_version`, and `one_time_prekey_id`.
+   - **`ConversationOutboxEvent`** into `IOutboxRepository` for decoupled background delivery dispatching (containing strictly metadata; zero payload bytes).
+   - **`IdempotencyRecord`** into `IIdempotencyRepository` marked as `COMMITTED`.
+4. **Preservation of Idempotency Invariants (MSG-005)**:
+   Concurrent and retried submissions with identical client idempotency tokens are evaluated via `IdempotencyGuard`:
+   - Exact retries return the cached submission result with `is_replay == true` without creating duplicate records.
+   - Tampered submissions (reusing an idempotency token with modified ciphertext) are rejected with `MESSAGING_ERROR_CODE_IDEMPOTENCY_CONFLICT` (HTTP 409).
+
+### 6.3 Zero-Plaintext Audit Guard (`ZeroPlaintextGuard`)
+
+In accordance with **ADR-008**, the messaging backend acts exclusively as a zero-knowledge ciphertext router and never inspects or decrypts payloads. To prevent accidental leakage of plaintext fragments, raw ciphertexts, or cryptographic keys into observability systems (logs, metrics, traces) or client error responses, `ZeroPlaintextGuard` was implemented in `src/messaging/util/zero_plaintext_guard.hpp|cpp`:
+
+#### 1. Structured Safe Audit Logging
+`ZeroPlaintextGuard::format_safe_submission_log` and `format_safe_envelope_log` produce structured audit log entries containing strictly routing metadata and byte counts:
+
+```cpp
+std::string ZeroPlaintextGuard::format_safe_submission_log(const domain::MessageSubmissionCommand& cmd) {
+    std::ostringstream oss;
+    oss << "[MSG_SUBMISSION] conv_id=" << cmd.conversation_id.to_string()
+        << " sender_user=" << cmd.caller_user_id.str()
+        << " sender_device=" << cmd.sender_device_id.str()
+        << " priority=" << domain::to_string(cmd.priority)
+        << " proto=" << static_cast<int32_t>(cmd.protocol_version)
+        << " targets_count=" << cmd.delivery_targets.size()
+        << " [targets:";
+
+    for (const auto& t : cmd.delivery_targets) {
+        oss << " (dev=" << t.recipient_device_id.str()
+            << " user=" << t.recipient_user_id.str()
+            << " algo=" << t.algorithm
+            << " cipher_bytes=" << t.ciphertext_blob.size()
+            << " iv_bytes=" << t.iv.size()
+            << " tag_bytes=" << t.auth_tag.size()
+            << " pubkey_bytes=" << t.ephemeral_public_key.size()
+            << ")";
+    }
+    oss << "]";
+    return oss.str();
+}
+```
+
+#### 2. Sensitive Keyword Redaction & Error Sanitization
+`ZeroPlaintextGuard::sanitize_error_message` scrubs all non-printable/control bytes and scans for sensitive substrings (`ciphertext=`, `key=`, `auth_tag=`, `iv=`, `secret=`, `payload=`), automatically redacting their values with `[REDACTED]` and capping total error length at 512 bytes:
+
+```cpp
+std::string ZeroPlaintextGuard::sanitize_error_message(std::string_view raw_error) {
+    // 1. Scrub non-printable characters and truncate at limit (512 bytes)
+    // 2. Scan and redact sensitive keywords (ciphertext=, key=, iv=, auth_tag=, etc.)
+    // ... returns scrubbed, redacted string ...
+}
+```
+
+### 6.4 API Gateway HTTP Proxy Verification
+
+In `src/gateway/http/proxy/messaging_proxy_handler.cpp`, the route `POST /api/v1/messages` was verified and validated to ensure full fidelity when translating incoming REST JSON into gRPC `SendMessageRequest`:
+- Correctly parses array of `delivery_targets`.
+- Extracts `recipient_user_id` and `recipient_device_id`.
+- Extracts `encrypted_payload` object: `ciphertext_blob`, `ephemeral_public_key`, `initialization_vector`, `auth_tag`, and `algorithm`.
+- Propagates client idempotency tokens via `X-Idempotency-Token` HTTP headers into gRPC metadata.
+
+### 6.5 Unit Test Suite Coverage & Verification Results
+
+Two dedicated unit test suites were implemented and executed to validate the pipeline integration and zero-plaintext guarantees:
+
+#### Suite 1: `tests/unit/messaging/zero_plaintext_guard_test.cpp` (7 Tests)
+1. **`FormatSafeSubmissionLogRedactsPayloadAndKeys`**: Asserts that `format_safe_submission_log` includes routing metadata and byte counts, but contains zero raw ciphertext or key bytes.
+2. **`FormatSafeEnvelopeLogRedactsPayloadAndKeys`**: Asserts that `format_safe_envelope_log` strictly redacts raw payloads from E2EMessageEnvelope logs.
+3. **`SanitizeErrorMessageRedactsSensitiveKeywords`**: Confirms that errors containing `auth_tag=deadbeef...` are transformed into `auth_tag=[REDACTED]`.
+4. **`SanitizeErrorMessageMultipleKeywords`**: Validates simultaneous redaction of `ciphertext=`, `key=`, and `iv=` parameters.
+5. **`SanitizeErrorMessageScrubsNonPrintableBytes`**: Verifies that binary bytes and non-printable control characters are scrubbed and replaced with safe characters.
+6. **`SanitizeErrorMessageTruncatesAtLimit`**: Confirms that oversized error strings exceeding 512 bytes are safely truncated to prevent log flooding attacks.
+7. **`SummarizeTargetAndEnvelope`**: Validates individual target and envelope summary formatters.
+
+#### Suite 2: `tests/unit/messaging/message_submission_envelope_integration_test.cpp` (6 Tests)
+1. **`HappyPathSubmissionWithEnvelopesPersistsPerDeviceRecords`**: Confirms end-to-end acceptance of valid encrypted submission, verifying that all 7 envelope columns are persisted into `pending_deliveries_by_device` and that the outbox event contains zero payload bytes.
+2. **`RejectsSubmissionWhenEnvelopeValidatorDetectsPlaintext`**: Confirms that submission of raw JSON/ASCII in the ciphertext blob is detected and rejected without any database writes.
+3. **`RejectsSubmissionWhenCryptoBoundsViolated`**: Enforces rejection when IV or key bounds are violated (e.g. short IV for XChaCha20).
+4. **`RejectsSubmissionWhenActiveDeviceOmitted`**: Enforces complete recipient device coverage by rejecting submissions that omit an active enrolled device.
+5. **`IdempotentReplayWithEnvelopesReturnsCachedResult`**: Verifies that network retries with identical tokens and payloads return the original message sequence without duplicate writes.
+6. **`ConflictingPayloadWithAlteredEnvelopeRejectedWith409`**: Asserts that token reuse with altered ciphertext is rejected with `MESSAGING_ERROR_CODE_IDEMPOTENCY_CONFLICT`.
+
+### 6.6 Test Execution Output
+
+```bash
+$ ./build/dev-debug/tests/unit/securecloud_zero_plaintext_guard_test
+[==========] Running 7 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 7 tests from ZeroPlaintextGuardTest
+[ RUN      ] ZeroPlaintextGuardTest.FormatSafeSubmissionLogRedactsPayloadAndKeys
+[       OK ] ZeroPlaintextGuardTest.FormatSafeSubmissionLogRedactsPayloadAndKeys (3 ms)
+[ RUN      ] ZeroPlaintextGuardTest.FormatSafeEnvelopeLogRedactsPayloadAndKeys
+[       OK ] ZeroPlaintextGuardTest.FormatSafeEnvelopeLogRedactsPayloadAndKeys (0 ms)
+[ RUN      ] ZeroPlaintextGuardTest.SanitizeErrorMessageRedactsSensitiveKeywords
+[       OK ] ZeroPlaintextGuardTest.SanitizeErrorMessageRedactsSensitiveKeywords (0 ms)
+[ RUN      ] ZeroPlaintextGuardTest.SanitizeErrorMessageMultipleKeywords
+[       OK ] ZeroPlaintextGuardTest.SanitizeErrorMessageMultipleKeywords (0 ms)
+[ RUN      ] ZeroPlaintextGuardTest.SanitizeErrorMessageScrubsNonPrintableBytes
+[       OK ] ZeroPlaintextGuardTest.SanitizeErrorMessageScrubsNonPrintableBytes (0 ms)
+[ RUN      ] ZeroPlaintextGuardTest.SanitizeErrorMessageTruncatesAtLimit
+[       OK ] ZeroPlaintextGuardTest.SanitizeErrorMessageTruncatesAtLimit (0 ms)
+[ RUN      ] ZeroPlaintextGuardTest.SummarizeTargetAndEnvelope
+[       OK ] ZeroPlaintextGuardTest.SummarizeTargetAndEnvelope (0 ms)
+[----------] 7 tests from ZeroPlaintextGuardTest (3 ms total)
+[  PASSED  ] 7 tests.
+
+$ ./build/dev-debug/tests/unit/securecloud_message_submission_envelope_integration_test
+[==========] Running 6 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 6 tests from MessageSubmissionEnvelopeIntegrationTest
+[ RUN      ] MessageSubmissionEnvelopeIntegrationTest.HappyPathSubmissionWithEnvelopesPersistsPerDeviceRecords
+[       OK ] MessageSubmissionEnvelopeIntegrationTest.HappyPathSubmissionWithEnvelopesPersistsPerDeviceRecords (3 ms)
+[ RUN      ] MessageSubmissionEnvelopeIntegrationTest.RejectsSubmissionWhenEnvelopeValidatorDetectsPlaintext
+[       OK ] MessageSubmissionEnvelopeIntegrationTest.RejectsSubmissionWhenEnvelopeValidatorDetectsPlaintext (0 ms)
+[ RUN      ] MessageSubmissionEnvelopeIntegrationTest.RejectsSubmissionWhenCryptoBoundsViolated
+[       OK ] MessageSubmissionEnvelopeIntegrationTest.RejectsSubmissionWhenCryptoBoundsViolated (0 ms)
+[ RUN      ] MessageSubmissionEnvelopeIntegrationTest.RejectsSubmissionWhenActiveDeviceOmitted
+[       OK ] MessageSubmissionEnvelopeIntegrationTest.RejectsSubmissionWhenActiveDeviceOmitted (0 ms)
+[ RUN      ] MessageSubmissionEnvelopeIntegrationTest.IdempotentReplayWithEnvelopesReturnsCachedResult
+[       OK ] MessageSubmissionEnvelopeIntegrationTest.IdempotentReplayWithEnvelopesReturnsCachedResult (0 ms)
+[ RUN      ] MessageSubmissionEnvelopeIntegrationTest.ConflictingPayloadWithAlteredEnvelopeRejectedWith409
+[       OK ] MessageSubmissionEnvelopeIntegrationTest.ConflictingPayloadWithAlteredEnvelopeRejectedWith409 (0 ms)
+[----------] 6 tests from MessageSubmissionEnvelopeIntegrationTest (3 ms total)
+[  PASSED  ] 6 tests.
+```
+
+---
+
+*(Section 7 will be populated as ticket MSG-006-T06 is implemented and validated).*

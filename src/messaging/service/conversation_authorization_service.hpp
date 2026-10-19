@@ -92,6 +92,8 @@ class ConversationAuthorizationService {
     [[nodiscard]] AuthorizationResult can_close_conversation(const MessagingCallerContext& caller,
                                                              const domain::ConversationId& conv_id) const;
 
+    [[nodiscard]] repository::IMembershipRepository& membership_repository() const noexcept { return membership_repo_; }
+
   private:
     repository::IConversationRepository& conversation_repo_;
     repository::IMembershipRepository& membership_repo_;
