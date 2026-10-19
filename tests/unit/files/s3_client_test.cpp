@@ -13,18 +13,20 @@ namespace {
 /// Mock HTTP transport for unit testing S3Client requests and SigV4 verification
 class MockHttpTransport : public IHttpTransport {
   public:
-    explicit MockHttpTransport(int status_code = 200, std::string body = "")
-        : status_code_(status_code), body_(std::move(body)) {}
+    explicit MockHttpTransport(int status_code = 200, std::string body = "",
+                               std::map<std::string, std::string> headers = {})
+        : status_code_(status_code), body_(std::move(body)), headers_(std::move(headers)) {}
 
     HttpResponse execute(const HttpRequest& req) override {
         last_request_ = req;
         execution_count_++;
-        return HttpResponse{status_code_, "Mock Status", {}, body_};
+        return HttpResponse{status_code_, "Mock Status", headers_, body_};
     }
 
-    void set_response(int status_code, std::string body = "") {
+    void set_response(int status_code, std::string body = "", std::map<std::string, std::string> headers = {}) {
         status_code_ = status_code;
         body_ = std::move(body);
+        headers_ = std::move(headers);
     }
 
     [[nodiscard]] const HttpRequest& last_request() const noexcept { return last_request_; }
@@ -34,6 +36,7 @@ class MockHttpTransport : public IHttpTransport {
   private:
     int status_code_{200};
     std::string body_;
+    std::map<std::string, std::string> headers_;
     HttpRequest last_request_;
     size_t execution_count_{0};
 };
@@ -250,6 +253,162 @@ TEST(S3ClientTest, ObjectExistsConnectionFailureThrowsConnectionException) {
     S3Client client(cfg, mock_transport);
 
     EXPECT_THROW((void)client.object_exists("chunk-0"), S3ConnectionException);
+}
+
+TEST(S3ClientTest, PutObjectSuccessAndHeaders) {
+    auto mock_transport = std::make_shared<MockHttpTransport>(200);
+
+    S3ClientConfig cfg;
+    cfg.endpoint = "http://minio:9000";
+    cfg.bucket = "securecloud-files-encrypted";
+    cfg.access_key = "minio_admin";
+    cfg.secret_key = common::configuration::SecretString("minio_secret");
+
+    S3Client client(cfg, mock_transport);
+
+    const std::string ciphertext = "\x01\x02\x03\x04\x05\x06\x07\x08";
+    const std::string expected_hash = SigV4Signer::sha256_hex(ciphertext);
+
+    EXPECT_TRUE(client.put_object("chunks/transfer-1/0", ciphertext, "application/octet-stream", expected_hash));
+    EXPECT_EQ(mock_transport->execution_count(), 1);
+
+    const auto& req = mock_transport->last_request();
+    EXPECT_EQ(req.method, "PUT");
+    EXPECT_EQ(req.path, "/securecloud-files-encrypted/chunks/transfer-1/0");
+    EXPECT_EQ(req.body, ciphertext);
+
+    ASSERT_TRUE(req.headers.find("content-type") != req.headers.end());
+    EXPECT_EQ(req.headers.at("content-type"), "application/octet-stream");
+
+    ASSERT_TRUE(req.headers.find("content-length") != req.headers.end());
+    EXPECT_EQ(req.headers.at("content-length"), std::to_string(ciphertext.size()));
+
+    ASSERT_TRUE(req.headers.find("x-amz-content-sha256") != req.headers.end());
+    EXPECT_EQ(req.headers.at("x-amz-content-sha256"), expected_hash);
+
+    ASSERT_TRUE(req.headers.find("authorization") != req.headers.end());
+    EXPECT_TRUE(req.headers.at("authorization").starts_with("AWS4-HMAC-SHA256"));
+}
+
+TEST(S3ClientTest, GetObjectFullAndRange) {
+    std::map<std::string, std::string> headers = {
+        {"etag", "\"abcdef123456\""},
+        {"content-type", "application/octet-stream"},
+        {"content-length", "10"}
+    };
+    auto mock_transport = std::make_shared<MockHttpTransport>(200, "0123456789", headers);
+
+    S3ClientConfig cfg;
+    cfg.endpoint = "http://minio:9000";
+    cfg.bucket = "securecloud-files-encrypted";
+    cfg.access_key = "minio_admin";
+    cfg.secret_key = common::configuration::SecretString("minio_secret");
+
+    S3Client client(cfg, mock_transport);
+
+    // Full GET
+    auto res = client.get_object("objects/file-1/1");
+    EXPECT_EQ(res.status_code, 200);
+    EXPECT_EQ(res.body, "0123456789");
+    EXPECT_EQ(res.content_length, 10);
+    EXPECT_EQ(res.etag, "abcdef123456");
+    EXPECT_EQ(res.content_type, "application/octet-stream");
+    EXPECT_EQ(mock_transport->last_request().method, "GET");
+    EXPECT_EQ(mock_transport->last_request().path, "/securecloud-files-encrypted/objects/file-1/1");
+    EXPECT_TRUE(mock_transport->last_request().headers.find("range") == mock_transport->last_request().headers.end());
+
+    // Range GET
+    ByteRange range{.start_byte = 0, .end_byte = 4};
+    mock_transport->set_response(206, "01234", {{"etag", "\"range-etag\""}, {"content-length", "5"}});
+    auto range_res = client.get_object("objects/file-1/1", range);
+    EXPECT_EQ(range_res.status_code, 206);
+    EXPECT_EQ(range_res.body, "01234");
+    EXPECT_EQ(range_res.content_length, 5);
+    EXPECT_EQ(range_res.etag, "range-etag");
+
+    ASSERT_TRUE(mock_transport->last_request().headers.find("range") != mock_transport->last_request().headers.end());
+    EXPECT_EQ(mock_transport->last_request().headers.at("range"), "bytes=0-4");
+}
+
+TEST(S3ClientTest, HeadObjectSuccessAndNotFound) {
+    std::map<std::string, std::string> headers = {
+        {"etag", "\"head-etag-999\""},
+        {"content-type", "application/octet-stream"},
+        {"content-length", "4096"}
+    };
+    auto mock_transport = std::make_shared<MockHttpTransport>(200, "", headers);
+
+    S3ClientConfig cfg;
+    cfg.endpoint = "http://minio:9000";
+    cfg.bucket = "securecloud-files-encrypted";
+    cfg.access_key = "minio_admin";
+    cfg.secret_key = common::configuration::SecretString("minio_secret");
+
+    S3Client client(cfg, mock_transport);
+
+    auto meta = client.head_object("objects/file-1/1");
+    EXPECT_EQ(meta.content_length, 4096);
+    EXPECT_EQ(meta.etag, "head-etag-999");
+    EXPECT_EQ(meta.content_type, "application/octet-stream");
+    EXPECT_EQ(mock_transport->last_request().method, "HEAD");
+    EXPECT_EQ(mock_transport->last_request().path, "/securecloud-files-encrypted/objects/file-1/1");
+
+    // 404 throws S3ObjectNotFoundException
+    mock_transport->set_response(404);
+    EXPECT_THROW((void)client.head_object("nonexistent"), S3ObjectNotFoundException);
+}
+
+TEST(S3ClientTest, DeleteObjectIdempotence) {
+    auto mock_transport = std::make_shared<MockHttpTransport>(204);
+
+    S3ClientConfig cfg;
+    cfg.endpoint = "http://minio:9000";
+    cfg.bucket = "securecloud-files-encrypted";
+    cfg.access_key = "minio_admin";
+    cfg.secret_key = common::configuration::SecretString("minio_secret");
+
+    S3Client client(cfg, mock_transport);
+
+    // 204 No Content -> true
+    EXPECT_TRUE(client.delete_object("chunks/t1/0"));
+    EXPECT_EQ(mock_transport->last_request().method, "DELETE");
+    EXPECT_EQ(mock_transport->last_request().path, "/securecloud-files-encrypted/chunks/t1/0");
+
+    // 200 OK -> true
+    mock_transport->set_response(200);
+    EXPECT_TRUE(client.delete_object("chunks/t1/0"));
+
+    // 404 Not Found -> true (idempotent delete)
+    mock_transport->set_response(404);
+    EXPECT_TRUE(client.delete_object("chunks/t1/0"));
+
+    // 403 Forbidden -> throws S3AuthenticationException
+    mock_transport->set_response(403);
+    EXPECT_THROW((void)client.delete_object("chunks/t1/0"), S3AuthenticationException);
+}
+
+TEST(S3ClientTest, ServerAndConnectionExceptions) {
+    auto mock_transport = std::make_shared<MockHttpTransport>(500);
+
+    S3ClientConfig cfg;
+    cfg.endpoint = "http://minio:9000";
+    cfg.bucket = "securecloud-files-encrypted";
+    cfg.access_key = "minio_admin";
+    cfg.secret_key = common::configuration::SecretString("minio_secret");
+
+    S3Client client(cfg, mock_transport);
+
+    EXPECT_THROW((void)client.put_object("key", "data"), S3ServerException);
+    EXPECT_THROW((void)client.get_object("key"), S3ServerException);
+    EXPECT_THROW((void)client.head_object("key"), S3ServerException);
+    EXPECT_THROW((void)client.delete_object("key"), S3ServerException);
+
+    // Socket failure (status code 0) throws S3ConnectionException
+    mock_transport->set_response(0);
+    EXPECT_THROW((void)client.put_object("key", "data"), S3ConnectionException);
+    EXPECT_THROW((void)client.get_object("key"), S3ConnectionException);
+    EXPECT_THROW((void)client.head_object("key"), S3ConnectionException);
+    EXPECT_THROW((void)client.delete_object("key"), S3ConnectionException);
 }
 
 } // namespace

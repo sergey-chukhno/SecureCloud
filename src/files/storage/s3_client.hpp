@@ -35,6 +35,39 @@ struct HttpResponse {
     [[nodiscard]] bool is_2xx() const noexcept { return status_code >= 200 && status_code < 300; }
 };
 
+/// Specification of a byte range for partial content requests (HTTP Range header)
+struct ByteRange {
+    uint64_t start_byte{0};
+    std::optional<uint64_t> end_byte{std::nullopt};
+
+    [[nodiscard]] std::string to_header_value() const {
+        if (end_byte.has_value()) {
+            return "bytes=" + std::to_string(start_byte) + "-" + std::to_string(*end_byte);
+        }
+        return "bytes=" + std::to_string(start_byte) + "-";
+    }
+};
+
+/// High-level response model for object retrieval
+struct S3ObjectResponse {
+    int status_code{0};
+    std::string body;
+    size_t content_length{0};
+    std::string etag;
+    std::string content_type;
+    std::map<std::string, std::string> headers;
+
+    [[nodiscard]] bool is_2xx() const noexcept { return status_code >= 200 && status_code < 300; }
+};
+
+/// High-level metadata model for object inspection (HEAD object)
+struct S3ObjectMetadata {
+    size_t content_length{0};
+    std::string etag;
+    std::string content_type;
+    std::map<std::string, std::string> headers;
+};
+
 /// Abstract HTTP transport interface enabling zero-network deterministic unit test mocks
 class IHttpTransport {
   public:
@@ -113,6 +146,54 @@ class S3Client {
     /// Throws S3ClientException on unexpected HTTP error status.
     [[nodiscard]] bool object_exists(const std::string& object_key,
                                      std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
+
+    /// Puts an object into the target bucket.
+    /// Issues PUT /<bucket>/<object_key>.
+    /// Automatically sets Content-Type, Content-Length, and x-amz-content-sha256.
+    /// If sha256_hex is empty, it is calculated automatically from payload.
+    /// Returns true on 200 OK or 201 Created.
+    /// Throws S3AuthenticationException on 403 Forbidden.
+    /// Throws S3ServerException on 5xx.
+    /// Throws S3ConnectionException on connection failure.
+    /// Throws S3ClientException on unexpected HTTP error status.
+    bool put_object(const std::string& object_key, std::string_view payload,
+                    const std::string& content_type = "application/octet-stream",
+                    const std::string& sha256_hex = "",
+                    std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
+
+    /// Retrieves an object (or byte range) from the target bucket.
+    /// Issues GET /<bucket>/<object_key>.
+    /// Returns S3ObjectResponse on 200 OK or 206 Partial Content.
+    /// Throws S3ObjectNotFoundException on 404 Not Found.
+    /// Throws S3AuthenticationException on 403 Forbidden.
+    /// Throws S3ServerException on 5xx.
+    /// Throws S3ConnectionException on connection failure.
+    /// Throws S3ClientException on unexpected HTTP error status.
+    [[nodiscard]] S3ObjectResponse get_object(const std::string& object_key,
+                                             std::optional<ByteRange> range = std::nullopt,
+                                             std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
+
+    /// Retrieves metadata for an object without downloading its body.
+    /// Issues HEAD /<bucket>/<object_key>.
+    /// Returns S3ObjectMetadata on 200 OK.
+    /// Throws S3ObjectNotFoundException on 404 Not Found.
+    /// Throws S3AuthenticationException on 403 Forbidden.
+    /// Throws S3ServerException on 5xx.
+    /// Throws S3ConnectionException on connection failure.
+    /// Throws S3ClientException on unexpected HTTP error status.
+    [[nodiscard]] S3ObjectMetadata head_object(const std::string& object_key,
+                                              std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
+
+    /// Deletes an object from the target bucket.
+    /// Issues DELETE /<bucket>/<object_key>.
+    /// In S3, deleting a non-existent key is idempotent and returns 204 or 200.
+    /// Returns true on 204 No Content, 200 OK, or 404 Not Found.
+    /// Throws S3AuthenticationException on 403 Forbidden.
+    /// Throws S3ServerException on 5xx.
+    /// Throws S3ConnectionException on connection failure.
+    /// Throws S3ClientException on unexpected HTTP error status.
+    bool delete_object(const std::string& object_key,
+                       std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
 
     [[nodiscard]] const S3ClientConfig& config() const noexcept;
     [[nodiscard]] const std::string& endpoint_host() const noexcept;
