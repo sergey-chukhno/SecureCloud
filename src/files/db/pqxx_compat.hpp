@@ -13,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-#if __has_include(<pqxx/pqxx>)
+#if defined(SECURECLOUD_FILES_USE_REAL_PQXX) && __has_include(<pqxx/pqxx>)
 #include <pqxx/pqxx>
 #else
 

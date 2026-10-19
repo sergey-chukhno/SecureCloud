@@ -480,7 +480,7 @@ RowBuilder& RowBuilder::set_null(std::string name) {
 }
 
 pqxx::row RowBuilder::build() const {
-#if !__has_include(<pqxx/pqxx>)
+#if !defined(SECURECLOUD_FILES_USE_REAL_PQXX) || !__has_include(<pqxx/pqxx>)
     std::vector<pqxx::field> fields;
     std::map<std::string, size_t> name_map;
     fields.reserve(columns_.size());
