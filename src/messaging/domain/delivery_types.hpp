@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/conversation_types.hpp"
+#include "domain/envelope_types.hpp"
 #include "domain/message_types.hpp"
 
 #include <chrono>
@@ -9,6 +10,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace securecloud::messaging::domain {
 
@@ -70,6 +72,25 @@ struct DeviceDeliveryRecord {
     DeliveryState delivery_state{DeliveryState::Pending};
     int32_t attempt_count{0};
     std::optional<std::chrono::system_clock::time_point> next_retry_at{std::nullopt};
+
+    // E2E Encrypted Envelope fields (ADR-008, MSG-006)
+    std::string ciphertext_blob{};
+    std::vector<uint8_t> ephemeral_public_key{};
+    std::vector<uint8_t> iv{};
+    std::vector<uint8_t> auth_tag{};
+    E2EAlgorithm algorithm{E2EAlgorithm::XChaCha20_Poly1305};
+    E2EProtocolVersion protocol_version{E2EProtocolVersion::V1_Signal_PQXDH_DoubleRatchet};
+    std::optional<std::string> one_time_prekey_id{std::nullopt};
+
+    void set_envelope(const PerDeviceEnvelope& env) {
+        ciphertext_blob = env.ciphertext_blob;
+        ephemeral_public_key = env.ephemeral_public_key;
+        iv = env.iv;
+        auth_tag = env.auth_tag;
+        algorithm = env.algorithm;
+        protocol_version = env.protocol_version;
+        one_time_prekey_id = env.one_time_prekey_id;
+    }
 
     auto operator<=>(const DeviceDeliveryRecord& other) const noexcept = default;
     bool operator==(const DeviceDeliveryRecord& other) const noexcept = default;

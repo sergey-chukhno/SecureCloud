@@ -8,8 +8,11 @@
 #include "securecloud/messaging/v1/messaging.pb.h"
 #include "service/conversation_authorization_service.hpp"
 #include "service/conversation_service.hpp"
+#include "service/e2e_envelope_validator.hpp"
 #include "service/idempotency_guard.hpp"
+#include "service/recipient_device_resolution_service.hpp"
 #include "service/sequence_allocator_interface.hpp"
+#include "util/zero_plaintext_guard.hpp"
 
 #include <array>
 #include <chrono>
@@ -35,12 +38,12 @@ struct MessageSubmissionResponse {
  * @brief Authoritative message submission application service.
  *
  * Implements the critical durability boundary (ADR-007, ADR-008):
- * 1. Syntactic & Cryptographic Envelope Validation (SubmissionValidator)
+ * 1. Syntactic & Cryptographic Envelope Validation (SubmissionValidator & E2EEnvelopeValidator)
  * 2. Participant Authorization & Active Standing (ConversationAuthorizationService)
  * 3. Cryptographic Fingerprinting & Idempotency Evaluation (IdempotencyGuard)
  * 4. Monotonic Sequence Allocation within UTC monthly partition (ISequenceAllocator)
  * 5. Immutable Message Envelope Persistence (IMessageRepository)
- * 6. Initial Per-Device Delivery State Persistence (IDeliveryStateRepository)
+ * 6. Initial Per-Device Delivery State & Encrypted Envelope Persistence (IDeliveryStateRepository)
  * 7. Transactional Outbox Event Publication (IOutboxRepository)
  * 8. Durable Idempotency Commit (IdempotencyGuard)
  */
@@ -51,7 +54,9 @@ class MessageSubmissionService {
                              std::shared_ptr<MessageSubmissionIdempotencyGuard> idempotency_guard,
                              std::shared_ptr<repository::IMessageRepository> message_repo,
                              std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
-                             std::shared_ptr<repository::IOutboxRepository> outbox_repo);
+                             std::shared_ptr<repository::IOutboxRepository> outbox_repo,
+                             std::shared_ptr<E2EEnvelopeValidator> envelope_validator = nullptr,
+                             std::shared_ptr<RecipientDeviceResolutionService> resolution_service = nullptr);
 
     /**
      * @brief Authoritatively processes a client message submission request.
@@ -68,6 +73,8 @@ class MessageSubmissionService {
     std::shared_ptr<repository::IMessageRepository> message_repo_;
     std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<repository::IOutboxRepository> outbox_repo_;
+    std::shared_ptr<E2EEnvelopeValidator> envelope_validator_{nullptr};
+    std::shared_ptr<RecipientDeviceResolutionService> resolution_service_{nullptr};
 
     static constexpr size_t kNumStripes = 64;
     std::array<std::mutex, kNumStripes> submission_stripes_;

@@ -1989,9 +1989,102 @@ target_link_libraries(securecloud_messaging_proxy_handler_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_proxy_handler_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# E2E Message Envelope Domain Types Unit Test Suite (MSG-006-T01)
+add_executable(securecloud_envelope_types_test
+    messaging/envelope_types_test.cpp
+)
 
+target_link_libraries(securecloud_envelope_types_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
 
+gtest_discover_tests(securecloud_envelope_types_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Protocol Version & Crypto Policy Unit Test Suite (MSG-006-T01)
+add_executable(securecloud_protocol_version_policy_test
+    messaging/protocol_version_policy_test.cpp
+)
 
+target_link_libraries(securecloud_protocol_version_policy_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
 
+gtest_discover_tests(securecloud_protocol_version_policy_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Recipient Device Resolution & Target Validation Unit Test Suite (MSG-006-T02)
+add_executable(securecloud_recipient_device_resolution_service_test
+    messaging/recipient_device_resolution_service_test.cpp
+)
+
+target_link_libraries(securecloud_recipient_device_resolution_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_recipient_device_resolution_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Strict Envelope Security & Anti-Plaintext Guard Unit Test Suite (MSG-006-T03)
+add_executable(securecloud_e2e_envelope_validator_test
+    messaging/e2e_envelope_validator_test.cpp
+)
+
+target_link_libraries(securecloud_e2e_envelope_validator_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_e2e_envelope_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# ScyllaDB Delivery Repository Per-Device Envelope Test Suite (MSG-006-T04)
+add_executable(securecloud_scylla_delivery_repository_envelope_test
+    messaging/scylla_delivery_repository_envelope_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_delivery_repository_envelope_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_delivery_repository_envelope_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Zero-Plaintext Guard Test Suite (MSG-006-T05)
+add_executable(securecloud_zero_plaintext_guard_test
+    messaging/zero_plaintext_guard_test.cpp
+)
+
+target_link_libraries(securecloud_zero_plaintext_guard_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_zero_plaintext_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Message Submission Service Envelope Integration Test Suite (MSG-006-T05)
+add_executable(securecloud_message_submission_envelope_integration_test
+    messaging/message_submission_envelope_integration_test.cpp
+)
+
+target_link_libraries(securecloud_message_submission_envelope_integration_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_message_submission_envelope_integration_test ${SECURECLOUD_TEST_PROPERTIES})

@@ -106,6 +106,10 @@ bool ScyllaRow::get_bool(std::string_view column_name) const {
     return get(column_name).as_bool();
 }
 
+const std::vector<uint8_t>& ScyllaRow::get_blob(std::string_view column_name) const {
+    return get(column_name).as_blob();
+}
+
 std::vector<std::string> ScyllaRow::get_string_list(std::string_view column_name) const {
     return get(column_name).as_string_list();
 }

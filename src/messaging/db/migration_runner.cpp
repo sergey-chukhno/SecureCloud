@@ -155,7 +155,9 @@ std::vector<MigrationScript> ScyllaMigrationRunner::get_standard_migrations() {
     return {{1, "create_messaging_keyspace", std::string(k_v001_keyspace_cql), calculate_checksum(k_v001_keyspace_cql)},
             {2, "create_messaging_tables", std::string(k_v002_tables_cql), calculate_checksum(k_v002_tables_cql)},
             {3, "create_schema_version_tracking", std::string(k_v003_version_tracking_cql),
-             calculate_checksum(k_v003_version_tracking_cql)}};
+             calculate_checksum(k_v003_version_tracking_cql)},
+            {4, "add_per_device_envelope_columns", std::string(k_v004_per_device_envelope_cql),
+             calculate_checksum(k_v004_per_device_envelope_cql)}};
 }
 
 MigrationResult ScyllaMigrationRunner::run_migrations() {

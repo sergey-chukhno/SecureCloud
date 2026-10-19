@@ -127,29 +127,34 @@ domain::SubmissionValidationResult SubmissionValidator::validate(const domain::M
         // ADR-008: Algorithm validation
         if (target.algorithm != "XChaCha20-Poly1305" && target.algorithm != "AES-256-GCM") {
             return domain::SubmissionValidationResult::invalid(
-                "delivery_targets.algorithm", "Unsupported cryptographic algorithm: " + target.algorithm);
+                "delivery_targets.algorithm", "Unsupported cryptographic algorithm: " + target.algorithm,
+                v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE);
         }
 
         // ADR-008: Auth tag validation (minimum 16 bytes)
         if (target.auth_tag.size() < kMinAuthTagSize) {
             return domain::SubmissionValidationResult::invalid("delivery_targets.auth_tag",
-                                                               "Authentication tag must be at least 16 bytes");
+                                                               "Authentication tag must be at least 16 bytes",
+                                                               v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE);
         }
 
         // ADR-008: IV size validation
         if (target.algorithm == "XChaCha20-Poly1305" && target.iv.size() < kMinXChaChaIvSize) {
             return domain::SubmissionValidationResult::invalid(
-                "delivery_targets.iv", "Initialization vector (IV) for XChaCha20-Poly1305 must be at least 24 bytes");
+                "delivery_targets.iv", "Initialization vector (IV) for XChaCha20-Poly1305 must be at least 24 bytes",
+                v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE);
         }
         if (target.algorithm == "AES-256-GCM" && target.iv.size() < kMinAesGcmIvSize) {
             return domain::SubmissionValidationResult::invalid(
-                "delivery_targets.iv", "Initialization vector (IV) for AES-256-GCM must be at least 12 bytes");
+                "delivery_targets.iv", "Initialization vector (IV) for AES-256-GCM must be at least 12 bytes",
+                v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE);
         }
 
         // ADR-008: Ephemeral public key validation
         if (target.ephemeral_public_key.empty()) {
             return domain::SubmissionValidationResult::invalid("delivery_targets.ephemeral_public_key",
-                                                               "Ephemeral public key cannot be empty");
+                                                               "Ephemeral public key cannot be empty",
+                                                               v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE);
         }
     }
 

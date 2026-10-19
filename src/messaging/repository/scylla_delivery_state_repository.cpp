@@ -44,6 +44,35 @@ domain::DeviceDeliveryRecord row_to_delivery_record(const db::ScyllaRow& row) {
         record.next_retry_at = from_millis(row.get_timestamp("next_retry_at"));
     }
 
+    if (row.has_column("ciphertext_blob") && !row.is_null("ciphertext_blob")) {
+        const auto& blob = row.get_blob("ciphertext_blob");
+        record.ciphertext_blob.assign(reinterpret_cast<const char*>(blob.data()), blob.size());
+    }
+    if (row.has_column("ephemeral_public_key") && !row.is_null("ephemeral_public_key")) {
+        record.ephemeral_public_key = row.get_blob("ephemeral_public_key");
+    }
+    if (row.has_column("iv") && !row.is_null("iv")) {
+        record.iv = row.get_blob("iv");
+    }
+    if (row.has_column("auth_tag") && !row.is_null("auth_tag")) {
+        record.auth_tag = row.get_blob("auth_tag");
+    }
+    if (row.has_column("algorithm") && !row.is_null("algorithm")) {
+        auto algo_opt = domain::e2e_algorithm_from_string(row.get_string("algorithm"));
+        if (algo_opt) {
+            record.algorithm = *algo_opt;
+        }
+    }
+    if (row.has_column("protocol_version") && !row.is_null("protocol_version")) {
+        auto proto_opt = domain::e2e_protocol_version_from_int(row.get_int("protocol_version"));
+        if (proto_opt) {
+            record.protocol_version = *proto_opt;
+        }
+    }
+    if (row.has_column("one_time_prekey_id") && !row.is_null("one_time_prekey_id")) {
+        record.one_time_prekey_id = row.get_string("one_time_prekey_id");
+    }
+
     return record;
 }
 
@@ -82,17 +111,19 @@ ScyllaDeliveryStateRepository::ScyllaDeliveryStateRepository(std::shared_ptr<db:
 }
 
 void ScyllaDeliveryStateRepository::init_prepared_statements() {
-    prep_insert_pending_ =
-        session_->prepare("deliv_repo_insert_pending",
-                          "INSERT INTO securecloud_messaging.pending_deliveries_by_device "
-                          "(device_id, delivery_bucket, accepted_at, message_id, conversation_id, message_sequence, "
-                          "message_priority, delivery_state, attempt_count, next_retry_at) "
-                          "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+    prep_insert_pending_ = session_->prepare(
+        "deliv_repo_insert_pending",
+        "INSERT INTO securecloud_messaging.pending_deliveries_by_device "
+        "(device_id, delivery_bucket, accepted_at, message_id, conversation_id, message_sequence, "
+        "message_priority, delivery_state, attempt_count, next_retry_at, "
+        "ciphertext_blob, ephemeral_public_key, iv, auth_tag, algorithm, protocol_version, one_time_prekey_id) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
 
     prep_fetch_pending_ = session_->prepare(
         "deliv_repo_fetch_pending",
         "SELECT device_id, delivery_bucket, accepted_at, message_id, conversation_id, message_sequence, "
-        "message_priority, delivery_state, attempt_count, next_retry_at "
+        "message_priority, delivery_state, attempt_count, next_retry_at, "
+        "ciphertext_blob, ephemeral_public_key, iv, auth_tag, algorithm, protocol_version, one_time_prekey_id "
         "FROM securecloud_messaging.pending_deliveries_by_device "
         "WHERE device_id = ? AND delivery_bucket = ? "
         "ORDER BY accepted_at ASC, message_id ASC LIMIT ?;");
@@ -141,6 +172,40 @@ void ScyllaDeliveryStateRepository::save_pending_deliveries(const std::vector<do
         params.add_int(record.attempt_count);
         if (record.next_retry_at) {
             params.add_timestamp(to_millis(*record.next_retry_at));
+        } else {
+            params.add_null();
+        }
+
+        // E2E Envelope Fields (MSG-006)
+        if (!record.ciphertext_blob.empty()) {
+            params.add_blob(std::vector<uint8_t>(record.ciphertext_blob.begin(), record.ciphertext_blob.end()));
+        } else {
+            params.add_null();
+        }
+
+        if (!record.ephemeral_public_key.empty()) {
+            params.add_blob(record.ephemeral_public_key);
+        } else {
+            params.add_null();
+        }
+
+        if (!record.iv.empty()) {
+            params.add_blob(record.iv);
+        } else {
+            params.add_null();
+        }
+
+        if (!record.auth_tag.empty()) {
+            params.add_blob(record.auth_tag);
+        } else {
+            params.add_null();
+        }
+
+        params.add_string(domain::to_string(record.algorithm));
+        params.add_int(static_cast<int32_t>(record.protocol_version));
+
+        if (record.one_time_prekey_id.has_value()) {
+            params.add_string(*record.one_time_prekey_id);
         } else {
             params.add_null();
         }
