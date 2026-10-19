@@ -68,6 +68,28 @@ struct S3ObjectMetadata {
     std::map<std::string, std::string> headers;
 };
 
+/// Completed part representation for CompleteMultipartUpload
+struct CompletedPart {
+    uint32_t part_number{0};
+    std::string etag;
+};
+
+/// High-level representation of an individual object in ListObjectsResult
+struct S3ObjectInfo {
+    std::string key;
+    size_t size{0};
+    std::string etag;
+    std::string last_modified;
+};
+
+/// High-level response model for ListObjectsV2
+struct ListObjectsResult {
+    std::vector<S3ObjectInfo> objects;
+    bool is_truncated{false};
+    std::string next_continuation_token;
+    size_t key_count{0};
+};
+
 /// Abstract HTTP transport interface enabling zero-network deterministic unit test mocks
 class IHttpTransport {
   public:
@@ -194,6 +216,61 @@ class S3Client {
     /// Throws S3ClientException on unexpected HTTP error status.
     bool delete_object(const std::string& object_key,
                        std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
+
+    /// Initiates a multipart upload for an object.
+    /// Issues POST /<bucket>/<object_key>?uploads.
+    /// Returns upload_id string extracted from XML response.
+    /// Throws S3AuthenticationException on 403 Forbidden.
+    /// Throws S3ServerException on 5xx.
+    /// Throws S3ConnectionException on connection failure.
+    /// Throws S3ClientException on error.
+    [[nodiscard]] std::string create_multipart_upload(const std::string& object_key,
+                                                      const std::string& content_type = "application/octet-stream",
+                                                      std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
+
+    /// Uploads an individual part in a multipart upload.
+    /// Issues PUT /<bucket>/<object_key>?partNumber=<part_number>&uploadId=<upload_id>.
+    /// Returns unquoted ETag header from response.
+    /// Throws S3AuthenticationException on 403 Forbidden.
+    /// Throws S3ServerException on 5xx.
+    /// Throws S3ConnectionException on connection failure.
+    /// Throws S3ClientException on error.
+    [[nodiscard]] std::string upload_part(const std::string& object_key, const std::string& upload_id,
+                                          uint32_t part_number, std::string_view payload,
+                                          const std::string& sha256_hex = "",
+                                          std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
+
+    /// Completes a multipart upload by assembling uploaded parts.
+    /// Issues POST /<bucket>/<object_key>?uploadId=<upload_id> with XML part list.
+    /// Returns true on 200 OK.
+    /// Throws S3AuthenticationException on 403 Forbidden.
+    /// Throws S3ServerException on 5xx.
+    /// Throws S3ConnectionException on connection failure.
+    /// Throws S3ClientException on error.
+    bool complete_multipart_upload(const std::string& object_key, const std::string& upload_id,
+                                   const std::vector<CompletedPart>& parts,
+                                   std::chrono::milliseconds timeout = std::chrono::milliseconds(3000));
+
+    /// Aborts an active multipart upload and frees uploaded part storage.
+    /// Issues DELETE /<bucket>/<object_key>?uploadId=<upload_id>.
+    /// Returns true on 204 No Content, 200 OK, or 404 Not Found (idempotent).
+    /// Throws S3AuthenticationException on 403 Forbidden.
+    /// Throws S3ServerException on 5xx.
+    /// Throws S3ConnectionException on connection failure.
+    /// Throws S3ClientException on error.
+    bool abort_multipart_upload(const std::string& object_key, const std::string& upload_id,
+                                std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
+
+    /// Lists objects in the target bucket matching an optional prefix (ListObjectsV2).
+    /// Issues GET /<bucket>?list-type=2&prefix=...
+    /// Returns ListObjectsResult parsed from S3 XML response.
+    /// Throws S3AuthenticationException on 403 Forbidden.
+    /// Throws S3ServerException on 5xx.
+    /// Throws S3ConnectionException on connection failure.
+    /// Throws S3ClientException on error.
+    [[nodiscard]] ListObjectsResult list_objects(const std::string& prefix = "", size_t max_keys = 1000,
+                                                const std::string& continuation_token = "",
+                                                std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
 
     [[nodiscard]] const S3ClientConfig& config() const noexcept;
     [[nodiscard]] const std::string& endpoint_host() const noexcept;

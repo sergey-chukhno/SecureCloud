@@ -411,5 +411,143 @@ TEST(S3ClientTest, ServerAndConnectionExceptions) {
     EXPECT_THROW((void)client.delete_object("key"), S3ConnectionException);
 }
 
+TEST(S3ClientTest, MultipartUploadLifecycleMock) {
+    const std::string init_response =
+        "<InitiateMultipartUploadResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
+        "<Bucket>securecloud-files-encrypted</Bucket>"
+        "<Key>objects/file-10/1</Key>"
+        "<UploadId>mp-upload-id-9988</UploadId>"
+        "</InitiateMultipartUploadResult>";
+
+    auto mock_transport = std::make_shared<MockHttpTransport>(200, init_response);
+
+    S3ClientConfig cfg;
+    cfg.endpoint = "http://minio:9000";
+    cfg.bucket = "securecloud-files-encrypted";
+    cfg.access_key = "minio_admin";
+    cfg.secret_key = common::configuration::SecretString("minio_secret");
+
+    S3Client client(cfg, mock_transport);
+
+    // 1. Initiate multipart upload
+    std::string upload_id = client.create_multipart_upload("objects/file-10/1");
+    EXPECT_EQ(upload_id, "mp-upload-id-9988");
+    EXPECT_EQ(mock_transport->last_request().method, "POST");
+    EXPECT_EQ(mock_transport->last_request().path, "/securecloud-files-encrypted/objects/file-10/1?uploads");
+
+    // 2. Upload part 1
+    mock_transport->set_response(200, "", {{"etag", "\"part1-etag-hex\""}});
+    std::string etag1 = client.upload_part("objects/file-10/1", upload_id, 1, "part1_data");
+    EXPECT_EQ(etag1, "part1-etag-hex");
+    EXPECT_EQ(mock_transport->last_request().method, "PUT");
+    EXPECT_EQ(mock_transport->last_request().path,
+              "/securecloud-files-encrypted/objects/file-10/1?partNumber=1&uploadId=mp-upload-id-9988");
+    EXPECT_EQ(mock_transport->last_request().body, "part1_data");
+
+    // 3. Upload part 2
+    mock_transport->set_response(200, "", {{"etag", "\"part2-etag-hex\""}});
+    std::string etag2 = client.upload_part("objects/file-10/1", upload_id, 2, "part2_data");
+    EXPECT_EQ(etag2, "part2-etag-hex");
+
+    // 4. Complete multipart upload
+    mock_transport->set_response(200, "<CompleteMultipartUploadResult/>");
+    std::vector<CompletedPart> parts = {{1, etag1}, {2, etag2}};
+    EXPECT_TRUE(client.complete_multipart_upload("objects/file-10/1", upload_id, parts));
+    EXPECT_EQ(mock_transport->last_request().method, "POST");
+    EXPECT_EQ(mock_transport->last_request().path,
+              "/securecloud-files-encrypted/objects/file-10/1?uploadId=mp-upload-id-9988");
+    EXPECT_NE(mock_transport->last_request().body.find("<PartNumber>1</PartNumber><ETag>\"part1-etag-hex\"</ETag>"),
+              std::string::npos);
+    EXPECT_NE(mock_transport->last_request().body.find("<PartNumber>2</PartNumber><ETag>\"part2-etag-hex\"</ETag>"),
+              std::string::npos);
+}
+
+TEST(S3ClientTest, AbortMultipartUploadMock) {
+    auto mock_transport = std::make_shared<MockHttpTransport>(204);
+
+    S3ClientConfig cfg;
+    cfg.endpoint = "http://minio:9000";
+    cfg.bucket = "securecloud-files-encrypted";
+    cfg.access_key = "minio_admin";
+    cfg.secret_key = common::configuration::SecretString("minio_secret");
+
+    S3Client client(cfg, mock_transport);
+
+    // 204 No Content -> true
+    EXPECT_TRUE(client.abort_multipart_upload("objects/file-10/1", "mp-upload-id-9988"));
+    EXPECT_EQ(mock_transport->last_request().method, "DELETE");
+    EXPECT_EQ(mock_transport->last_request().path,
+              "/securecloud-files-encrypted/objects/file-10/1?uploadId=mp-upload-id-9988");
+
+    // 404 Not Found -> true (idempotent abort)
+    mock_transport->set_response(404);
+    EXPECT_TRUE(client.abort_multipart_upload("objects/file-10/1", "mp-upload-id-9988"));
+
+    // 403 Forbidden -> throws
+    mock_transport->set_response(403);
+    EXPECT_THROW((void)client.abort_multipart_upload("objects/file-10/1", "mp-upload-id-9988"),
+                 S3AuthenticationException);
+}
+
+TEST(S3ClientTest, ListObjectsV2ParsingMock) {
+    const std::string xml_list_response =
+        "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
+        "<Name>securecloud-files-encrypted</Name>"
+        "<Prefix>chunks/t-123/</Prefix>"
+        "<KeyCount>2</KeyCount>"
+        "<MaxKeys>1000</MaxKeys>"
+        "<IsTruncated>true</IsTruncated>"
+        "<NextContinuationToken>token-next-456</NextContinuationToken>"
+        "<Contents>"
+        "<Key>chunks/t-123/0</Key>"
+        "<LastModified>2026-10-19T10:00:00.000Z</LastModified>"
+        "<ETag>\"etag-chunk-0\"</ETag>"
+        "<Size>4096</Size>"
+        "<StorageClass>STANDARD</StorageClass>"
+        "</Contents>"
+        "<Contents>"
+        "<Key>chunks/t-123/1</Key>"
+        "<LastModified>2026-10-19T10:00:05.000Z</LastModified>"
+        "<ETag>\"etag-chunk-1\"</ETag>"
+        "<Size>2048</Size>"
+        "<StorageClass>STANDARD</StorageClass>"
+        "</Contents>"
+        "</ListBucketResult>";
+
+    auto mock_transport = std::make_shared<MockHttpTransport>(200, xml_list_response);
+
+    S3ClientConfig cfg;
+    cfg.endpoint = "http://minio:9000";
+    cfg.bucket = "securecloud-files-encrypted";
+    cfg.access_key = "minio_admin";
+    cfg.secret_key = common::configuration::SecretString("minio_secret");
+
+    S3Client client(cfg, mock_transport);
+
+    auto result = client.list_objects("chunks/t-123/", 1000);
+    EXPECT_EQ(mock_transport->last_request().method, "GET");
+    EXPECT_EQ(mock_transport->last_request().path,
+              "/securecloud-files-encrypted?list-type=2&max-keys=1000&prefix=chunks/t-123/");
+
+    EXPECT_TRUE(result.is_truncated);
+    EXPECT_EQ(result.next_continuation_token, "token-next-456");
+    EXPECT_EQ(result.key_count, 2);
+    ASSERT_EQ(result.objects.size(), 2);
+
+    EXPECT_EQ(result.objects[0].key, "chunks/t-123/0");
+    EXPECT_EQ(result.objects[0].etag, "etag-chunk-0");
+    EXPECT_EQ(result.objects[0].size, 4096);
+    EXPECT_EQ(result.objects[0].last_modified, "2026-10-19T10:00:00.000Z");
+
+    EXPECT_EQ(result.objects[1].key, "chunks/t-123/1");
+    EXPECT_EQ(result.objects[1].etag, "etag-chunk-1");
+    EXPECT_EQ(result.objects[1].size, 2048);
+    EXPECT_EQ(result.objects[1].last_modified, "2026-10-19T10:00:05.000Z");
+
+    // Error handling on 403
+    mock_transport->set_response(403);
+    EXPECT_THROW((void)client.list_objects("chunks/t-123/"), S3AuthenticationException);
+}
+
 } // namespace
 } // namespace securecloud::files::storage
