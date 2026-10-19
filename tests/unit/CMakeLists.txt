@@ -2163,3 +2163,32 @@ target_link_libraries(securecloud_message_submission_envelope_integration_test P
 )
 
 gtest_discover_tests(securecloud_message_submission_envelope_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Delivery Retry Policy & Decorrelated Jitter Unit Test Suite (MSG-007-T01)
+add_executable(securecloud_delivery_retry_policy_test
+    messaging/delivery_retry_policy_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_retry_policy_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_retry_policy_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Delivery Lifecycle State Machine & Domain Transition Test Suite (MSG-007-T01)
+add_executable(securecloud_delivery_lifecycle_test
+    messaging/delivery_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_lifecycle_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
