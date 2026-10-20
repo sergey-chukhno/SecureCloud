@@ -42,8 +42,16 @@ else()
         -Wunused
         -Woverloaded-virtual
         -fstack-protector-strong
-        -fvisibility=hidden
     )
+
+    # ELF symbol visibility hardening (non-Windows only; on Windows PE/COFF,
+    # symbols are private by default, and -fvisibility=hidden causes MinGW GCC
+    # to emit hidden visibility on template vtables like std::_Sp_counted_ptr_inplace)
+    if(NOT WIN32)
+        target_compile_options(securecloud_compiler_flags INTERFACE
+            -fvisibility=hidden
+        )
+    endif()
 
     # Hardening preprocessor definitions
     target_compile_definitions(securecloud_compiler_flags INTERFACE
