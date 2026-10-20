@@ -2192,3 +2192,17 @@ target_link_libraries(securecloud_delivery_lifecycle_test PRIVATE
 
 gtest_discover_tests(securecloud_delivery_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Device Connection Registry & Channel Routing Port Test Suite (MSG-007-T02)
+add_executable(securecloud_device_connection_registry_test
+    messaging/device_connection_registry_test.cpp
+)
+
+target_link_libraries(securecloud_device_connection_registry_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_device_connection_registry_test ${SECURECLOUD_TEST_PROPERTIES})
+
