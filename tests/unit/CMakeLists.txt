@@ -2248,3 +2248,38 @@ target_link_libraries(securecloud_outbox_delivery_consumer_test PRIVATE
 
 gtest_discover_tests(securecloud_outbox_delivery_consumer_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Delivery Service & AcknowledgeDelivery RPC Test Suite (MSG-007-T05)
+add_executable(securecloud_delivery_service_test
+    messaging/delivery_service_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Messaging Proxy Delivery Acknowledgement Route Test Suite (MSG-007-T05)
+add_executable(securecloud_messaging_proxy_ack_test
+    gateway/messaging_proxy_ack_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_proxy_ack_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_proxy_ack_test ${SECURECLOUD_TEST_PROPERTIES})
+
+

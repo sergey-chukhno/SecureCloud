@@ -20,6 +20,7 @@
 #endif
 
 #include "service/conversation_service.hpp"
+#include "service/delivery_service.hpp"
 #include "service/message_submission_service.hpp"
 
 #include <grpcpp/grpcpp.h>
@@ -37,7 +38,8 @@ class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingS
                                   std::shared_ptr<concurrency::BoundedWorkerPool> delivery_pool = nullptr,
                                   std::shared_ptr<concurrency::BoundedWorkerPool> sync_pool = nullptr,
                                   std::shared_ptr<ConversationService> conversation_service = nullptr,
-                                  std::shared_ptr<MessageSubmissionService> submission_service = nullptr);
+                                  std::shared_ptr<MessageSubmissionService> submission_service = nullptr,
+                                  std::shared_ptr<DeliveryService> delivery_service = nullptr);
     ~MessagingServiceImpl() override = default;
 
     MessagingServiceImpl(const MessagingServiceImpl&) = delete;
@@ -142,6 +144,7 @@ class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingS
     [[nodiscard]] std::shared_ptr<MessageSubmissionService> submission_service() const noexcept {
         return submission_service_;
     }
+    [[nodiscard]] std::shared_ptr<DeliveryService> delivery_service() const noexcept { return delivery_service_; }
 
   private:
     std::shared_ptr<concurrency::BoundedWorkerPool> submission_pool_;
@@ -149,6 +152,7 @@ class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingS
     std::shared_ptr<concurrency::BoundedWorkerPool> sync_pool_;
     std::shared_ptr<ConversationService> conversation_service_;
     std::shared_ptr<MessageSubmissionService> submission_service_;
+    std::shared_ptr<DeliveryService> delivery_service_;
 };
 
 } // namespace securecloud::messaging::service

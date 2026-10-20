@@ -58,6 +58,8 @@ class MessagingProxyHandler {
                                    const AuthenticatedContext& ctx);
     void handle_update_metadata(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
     void handle_send_message(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
+    void handle_acknowledge_delivery(const httplib::Request& req, httplib::Response& res,
+                                     const AuthenticatedContext& ctx);
 
   private:
     std::shared_ptr<grpc::IMessagingClient> messaging_client_;
