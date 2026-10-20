@@ -2206,3 +2206,16 @@ target_link_libraries(securecloud_device_connection_registry_test PRIVATE
 
 gtest_discover_tests(securecloud_device_connection_registry_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Bounded In-Memory Delivery Scheduler & Per-Device Fairness Queue Test Suite (MSG-007-T03)
+add_executable(securecloud_bounded_delivery_scheduler_test
+    messaging/bounded_delivery_scheduler_test.cpp
+)
+
+target_link_libraries(securecloud_bounded_delivery_scheduler_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_bounded_delivery_scheduler_test ${SECURECLOUD_TEST_PROPERTIES})
