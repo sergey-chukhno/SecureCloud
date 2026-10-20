@@ -2219,3 +2219,32 @@ target_link_libraries(securecloud_bounded_delivery_scheduler_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_bounded_delivery_scheduler_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Delivery Worker Pipeline & Retry Scheduling Test Suite (MSG-007-T04)
+add_executable(securecloud_delivery_worker_test
+    messaging/delivery_worker_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_worker_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_worker_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Outbox Delivery Consumer & Online Device Dispatch Test Suite (MSG-007-T04)
+add_executable(securecloud_outbox_delivery_consumer_test
+    messaging/outbox_delivery_consumer_test.cpp
+)
+
+target_link_libraries(securecloud_outbox_delivery_consumer_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_outbox_delivery_consumer_test ${SECURECLOUD_TEST_PROPERTIES})
+

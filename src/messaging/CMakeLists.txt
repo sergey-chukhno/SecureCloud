@@ -7,6 +7,8 @@ add_library(securecloud_messaging_config STATIC
     service/delivery_retry_policy.cpp
     delivery/device_connection_registry.cpp
     delivery/bounded_delivery_scheduler.cpp
+    delivery/delivery_worker.cpp
+    delivery/outbox_delivery_consumer.cpp
     service/messaging_error_mapper.cpp
     domain/conversation_lifecycle.cpp
     domain/message_bucket.cpp
@@ -53,6 +55,7 @@ target_link_libraries(securecloud_messaging_config PUBLIC
     securecloud::common
     securecloud_proto
     OpenSSL::Crypto
+    securecloud::json
     securecloud::compiler_flags
 )
 
