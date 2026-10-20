@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.28)
 
+if(WIN32)
+    set(X_VCPKG_APPLOCAL_DEPS_SERIALIZED ON CACHE BOOL "Serialize vcpkg applocal dependency copying to prevent parallel link file-lock contention")
+endif()
+
 project(SecureCloud
     VERSION 0.1.0
     DESCRIPTION "SecureCloud Enterprise E2EE Messaging, Storage & Audit Platform"
