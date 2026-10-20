@@ -2282,4 +2282,37 @@ target_link_libraries(securecloud_messaging_proxy_ack_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_proxy_ack_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Durable Delivery Recovery Engine Test Suite (MSG-007-T06)
+add_executable(securecloud_durable_delivery_recovery_service_test
+    messaging/durable_delivery_recovery_service_test.cpp
+)
+
+target_link_libraries(securecloud_durable_delivery_recovery_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_durable_delivery_recovery_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Comprehensive Online Delivery Pipeline 10-Scenario Integration Test Suite (MSG-007-T06)
+add_executable(securecloud_online_delivery_pipeline_test
+    messaging/online_delivery_pipeline_test.cpp
+)
+
+target_link_libraries(securecloud_online_delivery_pipeline_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_online_delivery_pipeline_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 

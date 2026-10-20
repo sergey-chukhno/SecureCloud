@@ -9,6 +9,7 @@ add_library(securecloud_messaging_config STATIC
     delivery/bounded_delivery_scheduler.cpp
     delivery/delivery_worker.cpp
     delivery/outbox_delivery_consumer.cpp
+    delivery/durable_delivery_recovery_service.cpp
     service/delivery_service.cpp
     service/messaging_error_mapper.cpp
     domain/conversation_lifecycle.cpp
