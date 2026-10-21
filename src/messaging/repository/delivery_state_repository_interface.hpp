@@ -3,6 +3,7 @@
 #include "domain/conversation_types.hpp"
 #include "domain/delivery_types.hpp"
 #include "domain/message_types.hpp"
+#include "domain/read_receipt_types.hpp"
 
 #include <chrono>
 #include <optional>
@@ -47,6 +48,22 @@ class IDeliveryStateRepository {
     /// Retrieves all recipient delivery states for a given message.
     [[nodiscard]] virtual std::vector<domain::RecipientDeliveryState>
     get_delivery_states_for_message(const domain::MessageId& message_id) = 0;
+
+    /// Updates delivery state monotonically in delivery_state_by_message. Rejects regressions (e.g. DELIVERED ->
+    /// RETRY_WAIT) using DeliveryStateTransitionGuard and returns false. Returns true on successful forward or
+    /// idempotent update.
+    virtual bool update_delivery_state_monotonic(const domain::MessageId& /*message_id*/,
+                                                 const domain::DeviceId& /*recipient_device_id*/,
+                                                 domain::DeliveryState /*new_state*/,
+                                                 const std::chrono::system_clock::time_point& /*updated_at*/) {
+        return false;
+    }
+
+    /// Assembles full delivery and read breakdown across all recipient devices and logical users.
+    [[nodiscard]] virtual std::optional<domain::MessageDeliverySummary>
+    get_message_delivery_summary(const domain::MessageId& /*message_id*/) {
+        return std::nullopt;
+    }
 };
 
 } // namespace securecloud::messaging::repository

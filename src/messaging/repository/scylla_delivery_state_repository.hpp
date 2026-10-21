@@ -39,6 +39,13 @@ class ScyllaDeliveryStateRepository : public IDeliveryStateRepository {
     [[nodiscard]] std::vector<domain::RecipientDeliveryState>
     get_delivery_states_for_message(const domain::MessageId& message_id) override;
 
+    bool update_delivery_state_monotonic(const domain::MessageId& message_id,
+                                         const domain::DeviceId& recipient_device_id, domain::DeliveryState new_state,
+                                         const std::chrono::system_clock::time_point& updated_at) override;
+
+    [[nodiscard]] std::optional<domain::MessageDeliverySummary>
+    get_message_delivery_summary(const domain::MessageId& message_id) override;
+
   private:
     void init_prepared_statements();
 
@@ -52,6 +59,8 @@ class ScyllaDeliveryStateRepository : public IDeliveryStateRepository {
     db::PreparedStatementId prep_delivery_ack_;
     db::PreparedStatementId prep_read_ack_;
     db::PreparedStatementId prep_get_message_states_;
+    db::PreparedStatementId prep_update_delivery_state_;
+    db::PreparedStatementId prep_get_single_device_state_;
 };
 
 } // namespace securecloud::messaging::repository

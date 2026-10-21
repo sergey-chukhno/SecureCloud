@@ -30,3 +30,8 @@ deploy/dev-pki/
 # Walkthrough and review artifacts
 walkthrough-*.md
 *-report.md
+docs/pull_requests/
+
+# Python cache
+__pycache__/
+*.py[cod]

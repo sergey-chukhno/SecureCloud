@@ -66,7 +66,7 @@ TEST(ScyllaDeliveryRepositoryEnvelopeTest, SaveAndFetchWithFullPerDeviceEnvelope
     EXPECT_EQ(params[4].as_string(), conv_id.to_string());
     EXPECT_EQ(params[5].as_int64(), 42);
     EXPECT_EQ(params[6].as_string(), "NORMAL");
-    EXPECT_EQ(params[7].as_string(), "PENDING");
+    EXPECT_EQ(params[7].as_string(), "QUEUED");
     EXPECT_EQ(params[8].as_int(), 0);
 
     // Verify envelope params

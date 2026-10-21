@@ -11,6 +11,9 @@ add_test(
         NAME unit_smoke_test
         COMMAND securecloud_unit_smoke_test
 )
+if(WIN32 AND DEFINED _TEST_ENV_MODS)
+    set_tests_properties(unit_smoke_test PROPERTIES ENVIRONMENT_MODIFICATION "${_TEST_ENV_MODS}")
+endif()
 
 # Dependency Discovery Pipeline Smoke Test (SC002-T03)
 add_executable(securecloud_dependency_smoke_test
@@ -26,6 +29,9 @@ add_test(
         NAME dependency_smoke_test
         COMMAND securecloud_dependency_smoke_test
 )
+if(WIN32 AND DEFINED _TEST_ENV_MODS)
+    set_tests_properties(dependency_smoke_test PROPERTIES ENVIRONMENT_MODIFICATION "${_TEST_ENV_MODS}")
+endif()
 
 # GoogleTest Framework Integration Target (SC-003)
 add_executable(securecloud_gtest_smoke_test
@@ -70,12 +76,26 @@ gtest_discover_tests(securecloud_auth_proto_smoke_test ${SECURECLOUD_TEST_PROPER
 
 # Custom target to explicitly execute generated contract verification
 if(WIN32)
-    # Ensure Windows runtime finds dependent DLLs from the active compiler toolchain
+    # Ensure Windows runtime finds dependent DLLs from the active compiler toolchain and vcpkg
     set(_CONTRACTS_ENV_FLAGS "")
     if(CMAKE_CXX_COMPILER)
         get_filename_component(_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
         if(EXISTS "${_COMPILER_BIN_DIR}")
             list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${_COMPILER_BIN_DIR}")
+        endif()
+    endif()
+    if(EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/debug/bin")
+        list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/debug/bin")
+    endif()
+    if(EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/bin")
+        list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/bin")
+    endif()
+    if(DEFINED VCPKG_TARGET_TRIPLET)
+        if(EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/bin")
+            list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/bin")
+        endif()
+        if(EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/bin")
+            list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/bin")
         endif()
     endif()
 
@@ -2164,30 +2184,234 @@ target_link_libraries(securecloud_message_submission_envelope_integration_test P
 
 gtest_discover_tests(securecloud_message_submission_envelope_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Delivery Retry Policy & Decorrelated Jitter Unit Test Suite (MSG-007-T01)
+add_executable(securecloud_delivery_retry_policy_test
+    messaging/delivery_retry_policy_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_retry_policy_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_retry_policy_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Delivery Lifecycle State Machine & Domain Transition Test Suite (MSG-007-T01)
+add_executable(securecloud_delivery_lifecycle_test
+    messaging/delivery_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_lifecycle_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Device Connection Registry & Channel Routing Port Test Suite (MSG-007-T02)
+add_executable(securecloud_device_connection_registry_test
+    messaging/device_connection_registry_test.cpp
+)
+
+target_link_libraries(securecloud_device_connection_registry_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_device_connection_registry_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Bounded In-Memory Delivery Scheduler & Per-Device Fairness Queue Test Suite (MSG-007-T03)
+add_executable(securecloud_bounded_delivery_scheduler_test
+    messaging/bounded_delivery_scheduler_test.cpp
+)
+
+target_link_libraries(securecloud_bounded_delivery_scheduler_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_bounded_delivery_scheduler_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Delivery Worker Pipeline & Retry Scheduling Test Suite (MSG-007-T04)
+add_executable(securecloud_delivery_worker_test
+    messaging/delivery_worker_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_worker_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_worker_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Outbox Delivery Consumer & Online Device Dispatch Test Suite (MSG-007-T04)
+add_executable(securecloud_outbox_delivery_consumer_test
+    messaging/outbox_delivery_consumer_test.cpp
+)
+
+target_link_libraries(securecloud_outbox_delivery_consumer_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_outbox_delivery_consumer_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Delivery Service & AcknowledgeDelivery RPC Test Suite (MSG-007-T05)
+add_executable(securecloud_delivery_service_test
+    messaging/delivery_service_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Messaging Proxy Delivery Acknowledgement Route Test Suite (MSG-007-T05)
+add_executable(securecloud_messaging_proxy_ack_test
+    gateway/messaging_proxy_ack_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_proxy_ack_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_proxy_ack_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Durable Delivery Recovery Engine Test Suite (MSG-007-T06)
+add_executable(securecloud_durable_delivery_recovery_service_test
+    messaging/durable_delivery_recovery_service_test.cpp
+)
+
+target_link_libraries(securecloud_durable_delivery_recovery_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_durable_delivery_recovery_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Comprehensive Online Delivery Pipeline 10-Scenario Integration Test Suite (MSG-007-T06)
+add_executable(securecloud_online_delivery_pipeline_test
+    messaging/online_delivery_pipeline_test.cpp
+)
+
+target_link_libraries(securecloud_online_delivery_pipeline_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_online_delivery_pipeline_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Delivery State Transition Guard & Regression Test Suite (MSG-008-T01)
+add_executable(securecloud_delivery_state_transition_guard_test
+    messaging/delivery_state_transition_guard_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_state_transition_guard_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_state_transition_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Read Receipt Domain Service & Group Read Semantics Test Suite (MSG-008-T02)
+add_executable(securecloud_read_receipt_service_test
+    messaging/read_receipt_service_test.cpp
+)
+
+target_link_libraries(securecloud_read_receipt_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_read_receipt_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# MessagingService Delivery State & Read Receipt RPCs Test Suite (MSG-008-T04)
+add_executable(securecloud_messaging_service_impl_delivery_state_test
+    messaging/messaging_service_impl_delivery_state_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_service_impl_delivery_state_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    gRPC::grpc++
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_service_impl_delivery_state_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Audit Service Configuration Models & Boundary Validation Test Suite (AUDIT-001-T04)
 add_executable(securecloud_audit_config_test
-        audit/audit_config_test.cpp
+    audit/audit_config_test.cpp
 )
 
 target_link_libraries(securecloud_audit_config_test PRIVATE
-        securecloud::audit_config
-        securecloud::common
-        securecloud::compiler_flags
-        GTest::gtest_main
+    securecloud::audit_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_audit_config_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Audit Service Lifecycle Engine & State Progression Test Suite (AUDIT-001-T04)
 add_executable(securecloud_audit_server_lifecycle_test
-        audit/audit_server_lifecycle_test.cpp
+    audit/audit_server_lifecycle_test.cpp
 )
 
 target_link_libraries(securecloud_audit_server_lifecycle_test PRIVATE
-        securecloud::audit_server
-        securecloud::common
-        securecloud::compiler_flags
-        GTest::gtest_main
+    securecloud::audit_server
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
 )
 
+if(WIN32)
+    target_link_libraries(securecloud_audit_server_lifecycle_test PRIVATE ws2_32)
+endif()
+
 gtest_discover_tests(securecloud_audit_server_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+

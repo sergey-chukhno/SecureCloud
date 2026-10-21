@@ -79,6 +79,20 @@ MessagingServiceClient::send_read_receipt(const securecloud::messaging::v1::Send
     return resp;
 }
 
+Result<securecloud::messaging::v1::GetMessageDeliveryStatusResponse>
+MessagingServiceClient::get_message_delivery_status(
+    const securecloud::messaging::v1::GetMessageDeliveryStatusRequest& req, ClientCallContext& ctx) {
+    if (!stub_) {
+        return null_stub_error();
+    }
+    securecloud::messaging::v1::GetMessageDeliveryStatusResponse resp;
+    auto status = stub_->GetMessageDeliveryStatus(&ctx.raw_context(), req, &resp);
+    if (!status.ok()) {
+        return DependencyError::from_grpc_status(status);
+    }
+    return resp;
+}
+
 Result<securecloud::messaging::v1::CreateConversationResponse>
 MessagingServiceClient::create_conversation(const securecloud::messaging::v1::CreateConversationRequest& req,
                                             ClientCallContext& ctx) {

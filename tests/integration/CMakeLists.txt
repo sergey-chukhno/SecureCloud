@@ -714,23 +714,58 @@ endif()
 
 gtest_discover_tests(securecloud_messaging_e2e_envelope_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Messaging Delivery State & Read Receipts Integration Test Suite (MSG-008-T06)
+add_executable(securecloud_messaging_delivery_state_read_receipts_integration_test
+    messaging_delivery_state_read_receipts_integration_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_delivery_state_read_receipts_integration_test PRIVATE
+    securecloud::messaging
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_config
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    OpenSSL::Crypto
+    OpenSSL::SSL
+    securecloud::compiler_flags
+    GTest::gtest_main
+    GTest::gmock
+)
+
+target_compile_definitions(securecloud_messaging_delivery_state_read_receipts_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_messaging_delivery_state_read_receipts_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_messaging_delivery_state_read_receipts_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Audit Service Lifecycle & mTLS Health Probe Integration Test Suite (AUDIT-001-T05)
 add_executable(securecloud_audit_service_lifecycle_integration_test
-        audit_service_lifecycle_integration_test.cpp
+    audit_service_lifecycle_integration_test.cpp
 )
 
 target_link_libraries(securecloud_audit_service_lifecycle_integration_test PRIVATE
-        securecloud::audit_server
-        securecloud::audit_config
-        securecloud::common
-        securecloud_proto
-        gRPC::grpc++
-        securecloud::compiler_flags
-        GTest::gtest_main
+    securecloud::audit_server
+    securecloud::audit_config
+    securecloud::common
+    securecloud_proto
+    gRPC::grpc++
+    securecloud::compiler_flags
+    GTest::gtest_main
 )
 
 target_compile_definitions(securecloud_audit_service_lifecycle_integration_test PRIVATE
-        SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
 )
 
+if(WIN32)
+    target_link_libraries(securecloud_audit_service_lifecycle_integration_test PRIVATE ws2_32)
+endif()
+
 gtest_discover_tests(securecloud_audit_service_lifecycle_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
