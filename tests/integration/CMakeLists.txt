@@ -713,3 +713,24 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_messaging_e2e_envelope_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Lifecycle & mTLS Health Probe Integration Test Suite (AUDIT-001-T05)
+add_executable(securecloud_audit_service_lifecycle_integration_test
+        audit_service_lifecycle_integration_test.cpp
+)
+
+target_link_libraries(securecloud_audit_service_lifecycle_integration_test PRIVATE
+        securecloud::audit_server
+        securecloud::audit_config
+        securecloud::common
+        securecloud_proto
+        gRPC::grpc++
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_audit_service_lifecycle_integration_test PRIVATE
+        SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_audit_service_lifecycle_integration_test ${SECURECLOUD_TEST_PROPERTIES})
