@@ -34,28 +34,39 @@ concept HasAuthEndpoint = requires(T t) {
     { t.auth_endpoint };
 };
 
+template <typename T>
+concept HasClickHousePassword = requires(T t) {
+    { t.clickhouse.password };
+};
+
 // Compile-time verification of strict service ownership boundaries
 static_assert(!HasDbPassword<gateway::GatewayConfig>, "GatewayConfig must not expose database credentials");
 static_assert(!HasScyllaHost<gateway::GatewayConfig>, "GatewayConfig must not expose ScyllaDB configuration");
 static_assert(!HasS3SecretKey<gateway::GatewayConfig>, "GatewayConfig must not expose S3 credentials");
+static_assert(!HasClickHousePassword<gateway::GatewayConfig>, "GatewayConfig must not expose ClickHouse configuration");
 static_assert(HasAuthEndpoint<gateway::GatewayConfig>, "GatewayConfig must expose downstream auth endpoint");
 
 static_assert(HasDbPassword<auth::AuthConfig>, "AuthConfig must expose PostgreSQL db_password");
 static_assert(!HasScyllaHost<auth::AuthConfig>, "AuthConfig must not expose ScyllaDB configuration");
 static_assert(!HasS3SecretKey<auth::AuthConfig>, "AuthConfig must not expose S3 credentials");
+static_assert(!HasClickHousePassword<auth::AuthConfig>, "AuthConfig must not expose ClickHouse configuration");
 static_assert(!HasAuthEndpoint<auth::AuthConfig>, "AuthConfig must not expose gateway downstream endpoints");
 
 static_assert(!HasDbPassword<messaging::MessagingConfig>, "MessagingConfig must not expose relational db_password");
 static_assert(HasScyllaHost<messaging::MessagingConfig>, "MessagingConfig must expose ScyllaDB configuration");
 static_assert(!HasS3SecretKey<messaging::MessagingConfig>, "MessagingConfig must not expose S3 credentials");
+static_assert(!HasClickHousePassword<messaging::MessagingConfig>,
+              "MessagingConfig must not expose ClickHouse configuration");
 static_assert(!HasAuthEndpoint<messaging::MessagingConfig>, "MessagingConfig must not expose gateway endpoints");
 
 static_assert(HasDbPassword<files::FilesConfig>, "FilesConfig must expose PostgreSQL db_password");
 static_assert(!HasScyllaHost<files::FilesConfig>, "FilesConfig must not expose ScyllaDB configuration");
 static_assert(HasS3SecretKey<files::FilesConfig>, "FilesConfig must expose MinIO S3 credentials");
+static_assert(!HasClickHousePassword<files::FilesConfig>, "FilesConfig must not expose ClickHouse configuration");
 static_assert(!HasAuthEndpoint<files::FilesConfig>, "FilesConfig must not expose gateway endpoints");
 
-static_assert(HasDbPassword<audit::AuditConfig>, "AuditConfig must expose ClickHouse db_password");
+static_assert(!HasDbPassword<audit::AuditConfig>, "AuditConfig must not expose relational db_password");
+static_assert(HasClickHousePassword<audit::AuditConfig>, "AuditConfig must expose ClickHouse password");
 static_assert(!HasScyllaHost<audit::AuditConfig>, "AuditConfig must not expose ScyllaDB configuration");
 static_assert(!HasS3SecretKey<audit::AuditConfig>, "AuditConfig must not expose S3 credentials");
 static_assert(!HasAuthEndpoint<audit::AuditConfig>, "AuditConfig must not expose gateway endpoints");
@@ -238,7 +249,7 @@ TEST(ServiceConfigBoundariesTest, AuditConfigDefaultSettings) {
     auto config = audit::AuditConfig::load(source, errors);
 
     EXPECT_TRUE(errors.is_valid());
-    EXPECT_EQ(config.db_port, k_default_clickhouse_port);
+    EXPECT_EQ(config.clickhouse.port, k_default_clickhouse_port);
 }
 
 TEST(ServiceConfigBoundariesTest, AuditConfigValidAndSecretMasking) {
@@ -250,18 +261,18 @@ TEST(ServiceConfigBoundariesTest, AuditConfigValidAndSecretMasking) {
     auto config = audit::AuditConfig::load(source, errors);
 
     EXPECT_TRUE(errors.is_valid());
-    EXPECT_EQ(config.db_host, "clickhouse");
-    EXPECT_EQ(config.db_port, k_custom_clickhouse_port);
-    EXPECT_EQ(config.db_name, "securecloud_audit");
-    EXPECT_EQ(config.db_user, "audit_user");
+    EXPECT_EQ(config.clickhouse.host, "clickhouse");
+    EXPECT_EQ(config.clickhouse.port, k_custom_clickhouse_port);
+    EXPECT_EQ(config.clickhouse.db_name, "securecloud_audit");
+    EXPECT_EQ(config.clickhouse.user, "audit_user");
 
     // Secret masking in stream
     std::ostringstream ss;
-    ss << config.db_password;
+    ss << config.clickhouse.password;
     EXPECT_EQ(ss.str(), "[REDACTED]");
 
     // Explicit exposure
-    EXPECT_EQ(config.db_password.expose_unredacted_secret(), "audit_clickhouse_secret");
+    EXPECT_EQ(config.clickhouse.password.expose_unredacted_secret(), "audit_clickhouse_secret");
 }
 
 } // namespace securecloud
