@@ -2314,5 +2314,21 @@ target_link_libraries(securecloud_online_delivery_pipeline_test PRIVATE
 
 gtest_discover_tests(securecloud_online_delivery_pipeline_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Delivery State Transition Guard & Regression Test Suite (MSG-008-T01)
+add_executable(securecloud_delivery_state_transition_guard_test
+    messaging/delivery_state_transition_guard_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_state_transition_guard_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_state_transition_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
 

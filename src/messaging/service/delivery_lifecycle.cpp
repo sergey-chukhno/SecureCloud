@@ -1,60 +1,25 @@
 #include "service/delivery_lifecycle.hpp"
 
+#include "service/delivery_state_transition_guard.hpp"
+
 #include <algorithm>
 
 namespace securecloud::messaging::service {
 
 bool is_valid_delivery_transition(v1::DeliveryState current_state, v1::DeliveryState next_state) noexcept {
-    switch (current_state) {
-    case v1::DELIVERY_STATE_QUEUED:
-        return next_state == v1::DELIVERY_STATE_DELIVERING || next_state == v1::DELIVERY_STATE_EXPIRED;
-
-    case v1::DELIVERY_STATE_DELIVERING:
-        return next_state == v1::DELIVERY_STATE_DELIVERED || next_state == v1::DELIVERY_STATE_RETRY_WAIT ||
-               next_state == v1::DELIVERY_STATE_EXPIRED;
-
-    case v1::DELIVERY_STATE_RETRY_WAIT:
-        return next_state == v1::DELIVERY_STATE_DELIVERING || next_state == v1::DELIVERY_STATE_EXPIRED;
-
-    case v1::DELIVERY_STATE_DELIVERED:
-        return next_state == v1::DELIVERY_STATE_READ;
-
-    case v1::DELIVERY_STATE_READ:
-    case v1::DELIVERY_STATE_EXPIRED:
-    case v1::DELIVERY_STATE_UNSPECIFIED:
-    default:
-        return false;
-    }
+    return DeliveryStateTransitionGuard::can_transition(current_state, next_state);
 }
 
 bool is_valid_delivery_transition(domain::DeliveryState current_state, domain::DeliveryState next_state) noexcept {
-    switch (current_state) {
-    case domain::DeliveryState::Queued:
-        return next_state == domain::DeliveryState::Delivering || next_state == domain::DeliveryState::Expired;
-
-    case domain::DeliveryState::Delivering:
-        return next_state == domain::DeliveryState::Delivered || next_state == domain::DeliveryState::RetryWait ||
-               next_state == domain::DeliveryState::Expired;
-
-    case domain::DeliveryState::RetryWait:
-        return next_state == domain::DeliveryState::Delivering || next_state == domain::DeliveryState::Expired;
-
-    case domain::DeliveryState::Delivered:
-        return next_state == domain::DeliveryState::Read;
-
-    case domain::DeliveryState::Read:
-    case domain::DeliveryState::Expired:
-    default:
-        return false;
-    }
+    return DeliveryStateTransitionGuard::can_transition(current_state, next_state);
 }
 
 bool is_idempotent_delivery_state(v1::DeliveryState current_state, v1::DeliveryState candidate_state) noexcept {
-    return current_state == candidate_state && current_state != v1::DELIVERY_STATE_UNSPECIFIED;
+    return DeliveryStateTransitionGuard::is_idempotent(current_state, candidate_state);
 }
 
 bool is_idempotent_delivery_state(domain::DeliveryState current_state, domain::DeliveryState candidate_state) noexcept {
-    return current_state == candidate_state;
+    return DeliveryStateTransitionGuard::is_idempotent(current_state, candidate_state);
 }
 
 v1::DeliveryState to_proto_delivery_state(domain::DeliveryState domain_state) noexcept {
