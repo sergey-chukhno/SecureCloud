@@ -2330,5 +2330,18 @@ target_link_libraries(securecloud_delivery_state_transition_guard_test PRIVATE
 
 gtest_discover_tests(securecloud_delivery_state_transition_guard_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Read Receipt Domain Service & Group Read Semantics Test Suite (MSG-008-T02)
+add_executable(securecloud_read_receipt_service_test
+    messaging/read_receipt_service_test.cpp
+)
 
+target_link_libraries(securecloud_read_receipt_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
 
+gtest_discover_tests(securecloud_read_receipt_service_test ${SECURECLOUD_TEST_PROPERTIES})
