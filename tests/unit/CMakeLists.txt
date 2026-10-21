@@ -2163,3 +2163,31 @@ target_link_libraries(securecloud_message_submission_envelope_integration_test P
 )
 
 gtest_discover_tests(securecloud_message_submission_envelope_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Configuration Models & Boundary Validation Test Suite (AUDIT-001-T04)
+add_executable(securecloud_audit_config_test
+        audit/audit_config_test.cpp
+)
+
+target_link_libraries(securecloud_audit_config_test PRIVATE
+        securecloud::audit_config
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_config_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Lifecycle Engine & State Progression Test Suite (AUDIT-001-T04)
+add_executable(securecloud_audit_server_lifecycle_test
+        audit/audit_server_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_audit_server_lifecycle_test PRIVATE
+        securecloud::audit_server
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_server_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
