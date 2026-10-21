@@ -25,6 +25,10 @@ class IMessagingClient {
     virtual Result<securecloud::messaging::v1::SendReadReceiptResponse>
     send_read_receipt(const securecloud::messaging::v1::SendReadReceiptRequest& req, ClientCallContext& ctx) = 0;
 
+    virtual Result<securecloud::messaging::v1::GetMessageDeliveryStatusResponse>
+    get_message_delivery_status(const securecloud::messaging::v1::GetMessageDeliveryStatusRequest& req,
+                                ClientCallContext& ctx) = 0;
+
     // --- Conversation Topology & Membership ---
     virtual Result<securecloud::messaging::v1::CreateConversationResponse>
     create_conversation(const securecloud::messaging::v1::CreateConversationRequest& req, ClientCallContext& ctx) = 0;

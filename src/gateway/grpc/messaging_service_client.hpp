@@ -29,6 +29,10 @@ class MessagingServiceClient : public IMessagingClient {
     Result<securecloud::messaging::v1::SendReadReceiptResponse>
     send_read_receipt(const securecloud::messaging::v1::SendReadReceiptRequest& req, ClientCallContext& ctx) override;
 
+    Result<securecloud::messaging::v1::GetMessageDeliveryStatusResponse>
+    get_message_delivery_status(const securecloud::messaging::v1::GetMessageDeliveryStatusRequest& req,
+                                ClientCallContext& ctx) override;
+
     // --- Conversation Topology & Membership ---
     Result<securecloud::messaging::v1::CreateConversationResponse>
     create_conversation(const securecloud::messaging::v1::CreateConversationRequest& req,
