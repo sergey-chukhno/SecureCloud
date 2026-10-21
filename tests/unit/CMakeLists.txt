@@ -11,6 +11,9 @@ add_test(
         NAME unit_smoke_test
         COMMAND securecloud_unit_smoke_test
 )
+if(WIN32 AND DEFINED _TEST_ENV_MODS)
+    set_tests_properties(unit_smoke_test PROPERTIES ENVIRONMENT_MODIFICATION "${_TEST_ENV_MODS}")
+endif()
 
 # Dependency Discovery Pipeline Smoke Test (SC002-T03)
 add_executable(securecloud_dependency_smoke_test
@@ -26,6 +29,9 @@ add_test(
         NAME dependency_smoke_test
         COMMAND securecloud_dependency_smoke_test
 )
+if(WIN32 AND DEFINED _TEST_ENV_MODS)
+    set_tests_properties(dependency_smoke_test PROPERTIES ENVIRONMENT_MODIFICATION "${_TEST_ENV_MODS}")
+endif()
 
 # GoogleTest Framework Integration Target (SC-003)
 add_executable(securecloud_gtest_smoke_test
@@ -70,12 +76,26 @@ gtest_discover_tests(securecloud_auth_proto_smoke_test ${SECURECLOUD_TEST_PROPER
 
 # Custom target to explicitly execute generated contract verification
 if(WIN32)
-    # Ensure Windows runtime finds dependent DLLs from the active compiler toolchain
+    # Ensure Windows runtime finds dependent DLLs from the active compiler toolchain and vcpkg
     set(_CONTRACTS_ENV_FLAGS "")
     if(CMAKE_CXX_COMPILER)
         get_filename_component(_COMPILER_BIN_DIR "${CMAKE_CXX_COMPILER}" DIRECTORY)
         if(EXISTS "${_COMPILER_BIN_DIR}")
             list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${_COMPILER_BIN_DIR}")
+        endif()
+    endif()
+    if(EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/debug/bin")
+        list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/debug/bin")
+    endif()
+    if(EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/bin")
+        list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${CMAKE_BINARY_DIR}/vcpkg_installed/x64-windows/bin")
+    endif()
+    if(DEFINED VCPKG_TARGET_TRIPLET)
+        if(EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/bin")
+            list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/debug/bin")
+        endif()
+        if(EXISTS "${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/bin")
+            list(APPEND _CONTRACTS_ENV_FLAGS "--modify" "PATH=path_list_prepend:${CMAKE_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/bin")
         endif()
     endif()
 

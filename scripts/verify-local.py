@@ -48,6 +48,15 @@ class Colors:
         cls.RESET = ""
 
 
+if platform.system() == "Windows":
+    try:
+        import ctypes
+        # SEM_FAILCRITICALERRORS (0x0001) | SEM_NOGPFAULTERRORBOX (0x0002) | SEM_NOOPENFILEERRORBOX (0x8000)
+        # Suppress Windows GUI system error modal dialogs so missing DLLs / crashes fail cleanly to console
+        ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002 | 0x8000)
+    except Exception:
+        pass
+
 if not sys.stdout.isatty() or os.environ.get("NO_COLOR") or platform.system() == "Windows" and "WT_SESSION" not in os.environ and "TERM" not in os.environ:
     # Basic ANSI support check; modern Windows Terminal supports ANSI
     if platform.system() == "Windows" and "WT_SESSION" not in os.environ:
@@ -203,6 +212,7 @@ class VerificationOrchestrator:
             if bash_bin:
                 subprocess.run([bash_bin, str(pki_script)], cwd=str(self.repo_root), check=False)
 
+        setup_windows_environment(self.preset)
         cmd_test = ["ctest", "--preset", self.preset, "--output-on-failure"]
         if not self._execute_stage("5. CTest Execution Suite", cmd_test, skip=skip_tests):
             return self._summarize_and_exit(total_start)
@@ -255,52 +265,65 @@ class VerificationOrchestrator:
 
 def setup_windows_environment(preset: str = "") -> None:
     """
-    On Windows, ensure MSYS2 / MinGW binary search paths are discovered,
-    sanitized, and prepended to PATH. Incompatible environments (e.g. mixing
-    ucrt64 and mingw64) are filtered out to prevent DLL ABI/entrypoint mismatch.
+    On Windows, ensure compiler binary search paths are discovered, sanitized,
+    and prepended to PATH. When targeting MSVC, MSYS2 environments are filtered
+    out to prevent header/DLL collision. When targeting MinGW, the active MSYS2
+    environment is configured.
     """
     if platform.system() != "Windows":
         return
 
-    # Determine preferred MSYS2 environment
     preset_lower = preset.lower() if preset else ""
-    is_ucrt = ("ucrt" in preset_lower or os.environ.get("MSYSTEM", "").upper() == "UCRT64")
-    is_clang = ("clang" in preset_lower or os.environ.get("MSYSTEM", "").upper() == "CLANG64")
+    is_msvc = ("msvc" in preset_lower)
 
+    # Determine preferred MSYS2 environment if not exclusively MSVC
     target_env = "mingw64"
-    if is_ucrt:
-        target_env = "ucrt64"
-    elif is_clang:
-        target_env = "clang64"
+    if not is_msvc:
+        is_ucrt = ("ucrt" in preset_lower or os.environ.get("MSYSTEM", "").upper() == "UCRT64")
+        is_clang = ("clang" in preset_lower or os.environ.get("MSYSTEM", "").upper() == "CLANG64")
+        if is_ucrt:
+            target_env = "ucrt64"
+        elif is_clang:
+            target_env = "clang64"
+        else:
+            for drive in ["C:", "D:"]:
+                for msys_dir in ["msys64", "msys2"]:
+                    base = Path(f"{drive}/{msys_dir}")
+                    if (base / "ucrt64" / "bin" / "g++.exe").exists() and not (base / "mingw64" / "bin" / "g++.exe").exists():
+                        target_env = "ucrt64"
+                        break
 
     # Identify incompatible environments that should NOT be in PATH
-    incompatible_envs = {"mingw64", "ucrt64", "clang64"} - {target_env}
+    incompatible_envs = {"mingw64", "ucrt64", "clang64"}
+    if not is_msvc:
+        incompatible_envs.remove(target_env)
 
     # Discover candidate installation directory
     target_bin: Optional[str] = None
     usr_bin: Optional[str] = None
 
-    # Check MSYSTEM_PREFIX if active
-    msystem_prefix = os.environ.get("MSYSTEM_PREFIX")
-    if msystem_prefix and Path(msystem_prefix).exists():
-        p = Path(msystem_prefix) / "bin"
-        if p.exists():
-            target_bin = str(p.resolve())
+    if not is_msvc:
+        # Check MSYSTEM_PREFIX if active
+        msystem_prefix = os.environ.get("MSYSTEM_PREFIX")
+        if msystem_prefix and Path(msystem_prefix).exists():
+            p = Path(msystem_prefix) / "bin"
+            if p.exists():
+                target_bin = str(p.resolve())
 
-    # Check drive candidates
-    if not target_bin:
-        for drive in ["C:", "D:"]:
-            for msys_dir in ["msys64", "msys2"]:
-                base = Path(f"{drive}/{msys_dir}")
-                cand = base / target_env / "bin"
-                if cand.exists():
-                    target_bin = str(cand.resolve())
-                    u_cand = base / "usr" / "bin"
-                    if u_cand.exists():
-                        usr_bin = str(u_cand.resolve())
+        # Check drive candidates
+        if not target_bin:
+            for drive in ["C:", "D:"]:
+                for msys_dir in ["msys64", "msys2"]:
+                    base = Path(f"{drive}/{msys_dir}")
+                    cand = base / target_env / "bin"
+                    if cand.exists():
+                        target_bin = str(cand.resolve())
+                        u_cand = base / "usr" / "bin"
+                        if u_cand.exists():
+                            usr_bin = str(u_cand.resolve())
+                        break
+                if target_bin:
                     break
-            if target_bin:
-                break
 
     # Clean existing PATH
     curr_path = os.environ.get("PATH", "")
@@ -324,6 +347,25 @@ def setup_windows_environment(preset: str = "") -> None:
         new_parts.append(target_bin)
     if usr_bin:
         new_parts.append(usr_bin)
+
+    # Discover and prepend vcpkg installed runtime DLL directories (Debug and Release)
+    repo_root = Path(__file__).resolve().parent.parent
+    candidate_build_dirs = []
+    if preset:
+        candidate_build_dirs.append(repo_root / "build" / preset)
+    candidate_build_dirs.append(repo_root / "build")
+    for bdir in candidate_build_dirs:
+        if bdir.exists():
+            for vcpkg_bin in bdir.glob("**/vcpkg_installed/*/bin"):
+                if vcpkg_bin.is_dir():
+                    res = str(vcpkg_bin.resolve())
+                    if res not in new_parts:
+                        new_parts.append(res)
+            for vcpkg_dbg in bdir.glob("**/vcpkg_installed/*/debug/bin"):
+                if vcpkg_dbg.is_dir():
+                    res = str(vcpkg_dbg.resolve())
+                    if res not in new_parts:
+                        new_parts.append(res)
 
     # If ninja is not in PATH, probe VS bundled Ninja
     import shutil
@@ -350,7 +392,7 @@ def setup_windows_environment(preset: str = "") -> None:
                         os.environ["PATH"] = f"{cand.parent.resolve()}{os.pathsep}{os.environ['PATH']}"
                         break
 
-    if "msvc" in preset_lower or (not target_bin and shutil.which("cl") is None and shutil.which("g++") is None):
+    if is_msvc or (not target_bin and shutil.which("cl") is None and shutil.which("g++") is None):
         setup_msvc_environment()
 
 
@@ -431,27 +473,22 @@ def auto_detect_preset() -> str:
     if system == "Darwin":
         return "ci-macos"
     elif system == "Windows":
-        # Check if MinGW / MSYS2 / GCC environment is active
+        # Check if MinGW / MSYS2 / GCC environment is explicitly active
         msystem = os.environ.get("MSYSTEM", "").upper()
         if "MINGW" in msystem or "UCRT" in msystem or "CLANG" in msystem:
             setup_windows_environment("ci-windows-mingw")
             return "ci-windows-mingw"
 
-        setup_windows_environment()
+        # On standard Windows (PowerShell / CMD / IDE), prefer MSVC if installed
+        if shutil.which("cl") is not None or setup_msvc_environment():
+            setup_windows_environment("ci-windows-msvc")
+            return "ci-windows-msvc"
 
-        has_mingw_cxx = (shutil.which("g++") is not None)
-        has_cl = (shutil.which("cl") is not None)
-
-        if has_mingw_cxx and not has_cl:
+        setup_windows_environment("ci-windows-mingw")
+        if shutil.which("g++") is not None:
             return "ci-windows-mingw"
 
-        if has_cl:
-            return "ci-windows-msvc"
-
-        if setup_msvc_environment():
-            return "ci-windows-msvc"
-
-        # Probe standard MSYS2 MinGW / UCRT installation paths
+        # Probe standard MSYS2 MinGW / UCRT installation paths as fallback
         for candidate in [
             Path("C:/msys64/mingw64/bin/g++.exe"),
             Path("C:/msys64/ucrt64/bin/g++.exe"),
@@ -543,10 +580,9 @@ def main() -> int:
 
     args = parser.parse_args(normalized_argv)
 
-    setup_windows_environment()
-
     if args.preset:
         preset = args.preset
+        setup_windows_environment(preset)
     elif args.detect or platform.system() == "Windows":
         preset = auto_detect_preset()
     else:

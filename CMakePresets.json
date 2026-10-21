@@ -186,6 +186,9 @@
       "name": "ci-windows-msvc",
       "displayName": "Test CI Windows MSVC",
       "configurePreset": "ci-windows-msvc",
+      "environment": {
+        "PATH": "${sourceDir}/build/ci-windows-msvc/vcpkg_installed/x64-windows/debug/bin;${sourceDir}/build/ci-windows-msvc/vcpkg_installed/x64-windows/bin;$penv{PATH}"
+      },
       "output": {
         "outputOnFailure": true
       }
@@ -195,7 +198,7 @@
       "displayName": "Test CI Windows MinGW",
       "configurePreset": "ci-windows-mingw",
       "environment": {
-        "PATH": "C:/msys64/mingw64/bin;C:/msys64/usr/bin;$penv{PATH}"
+        "PATH": "C:/msys64/ucrt64/bin;C:/msys64/mingw64/bin;C:/msys64/usr/bin;$penv{PATH}"
       },
       "output": {
         "outputOnFailure": true
