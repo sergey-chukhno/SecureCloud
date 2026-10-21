@@ -195,4 +195,39 @@ ReadReceiptService::get_message_read_status(const domain::ConversationId& conver
     return ServiceResult<MessageReadStatusResponse>::ok(resp);
 }
 
+ServiceResult<domain::MessageDeliverySummary>
+ReadReceiptService::get_message_delivery_summary(const domain::ConversationId& conversation_id,
+                                                 const domain::MessageId& message_id,
+                                                 const domain::UserId& caller_user_id) {
+    if (!delivery_repo_) {
+        return ServiceResult<domain::MessageDeliverySummary>::fail(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
+                                                                   "Delivery repository is not configured");
+    }
+
+    if (caller_user_id.empty()) {
+        return ServiceResult<domain::MessageDeliverySummary>::fail(v1::MESSAGING_ERROR_CODE_NOT_A_PARTICIPANT,
+                                                                   "Caller user ID must not be empty");
+    }
+
+    // 1. Authorize conversation membership if membership repo is present
+    if (membership_repo_ && conversation_id != domain::ConversationId{}) {
+        auto participant = membership_repo_->find_participant(conversation_id, caller_user_id);
+        if (!participant.has_value() || participant->status != domain::MembershipStatus::Active) {
+            return ServiceResult<domain::MessageDeliverySummary>::fail(
+                v1::MESSAGING_ERROR_CODE_NOT_A_PARTICIPANT,
+                "Caller is not an active participant in the specified conversation");
+        }
+    }
+
+    // 2. Fetch delivery summary from repository
+    auto summary_opt = delivery_repo_->get_message_delivery_summary(message_id);
+    if (!summary_opt.has_value()) {
+        return ServiceResult<domain::MessageDeliverySummary>::fail(v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+                                                                   "Message delivery states not found");
+    }
+
+    summary_opt->conversation_id = conversation_id;
+    return ServiceResult<domain::MessageDeliverySummary>::ok(std::move(*summary_opt));
+}
+
 } // namespace securecloud::messaging::service

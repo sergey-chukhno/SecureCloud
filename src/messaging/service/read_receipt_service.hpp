@@ -71,6 +71,18 @@ class ReadReceiptService {
     get_message_read_status(const domain::ConversationId& conversation_id, const domain::MessageId& message_id,
                             const domain::UserId& caller_user_id);
 
+    /**
+     * @brief Aggregates full delivery summary and per-user read breakdown for a message.
+     *
+     * @param conversation_id Target conversation identifier.
+     * @param message_id Target message identifier.
+     * @param caller_user_id Authenticated caller querying delivery status.
+     * @return ServiceResult containing MessageDeliverySummary breakdown.
+     */
+    [[nodiscard]] ServiceResult<domain::MessageDeliverySummary>
+    get_message_delivery_summary(const domain::ConversationId& conversation_id, const domain::MessageId& message_id,
+                                 const domain::UserId& caller_user_id);
+
   private:
     std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<repository::IMembershipRepository> membership_repo_;
