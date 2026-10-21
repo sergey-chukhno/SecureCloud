@@ -1,13 +1,14 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
 namespace securecloud::messaging::delivery {
 
 /// Scheduling result status returned when attempting to submit a DeliveryTask to the scheduler.
-enum class SchedulerStatus : uint8_t {
+enum class SchedulerStatus : std::uint8_t {
     Enqueued = 0,                ///< Task successfully accepted into the in-memory queue.
     DeviceQueueFull = 1,         ///< Recipient device queue reached capacity (backpressure applied, drops to durable).
     GlobalCapacityExhausted = 2, ///< Global scheduler memory ceiling reached (backpressure applied, drops to durable).

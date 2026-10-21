@@ -132,8 +132,8 @@ TEST_F(DeviceConnectionRegistryTest, InactiveChannelTreatedAsOffline) {
 }
 
 TEST_F(DeviceConnectionRegistryTest, HeartbeatAndStaleEviction) {
-    // Registry with 60ms lease timeout
-    DeviceConnectionRegistry registry(60ms);
+    // Registry with 100ms lease timeout
+    DeviceConnectionRegistry registry(100ms);
 
     auto ch1 = std::make_shared<MockDeviceDeliveryChannel>(dev1_, user1_);
     auto ch2 = std::make_shared<MockDeviceDeliveryChannel>(dev2_, user2_);
@@ -142,15 +142,15 @@ TEST_F(DeviceConnectionRegistryTest, HeartbeatAndStaleEviction) {
     registry.register_channel(ch2);
     EXPECT_EQ(registry.connected_device_count(), 2u);
 
-    // Sleep 30ms, then touch dev1_
-    std::this_thread::sleep_for(30ms);
+    // Sleep 120ms so both channels become older than 100ms
+    std::this_thread::sleep_for(120ms);
+
+    // Refresh dev1_ heartbeat immediately before eviction: dev1_ becomes 0ms old, dev2_ remains >100ms old
     EXPECT_TRUE(registry.touch_channel(dev1_));
     EXPECT_FALSE(registry.touch_channel(domain::DeviceId{"non-existent"}));
 
-    // Sleep another 40ms: dev2_ has been idle for 70ms (> 60ms), dev1_ was touched 40ms ago (< 60ms)
-    std::this_thread::sleep_for(40ms);
-
-    size_t evicted = registry.evict_stale_channels(60ms);
+    // Evict channels idle for > 100ms. dev2_ has been idle for >= 120ms, dev1_ was touched just now (0ms)
+    size_t evicted = registry.evict_stale_channels(100ms);
     EXPECT_EQ(evicted, 1u);
     EXPECT_EQ(registry.connected_device_count(), 1u);
     EXPECT_TRUE(registry.is_online(dev1_));
@@ -183,7 +183,7 @@ TEST_F(DeviceConnectionRegistryTest, DisconnectCallbackNotification) {
     }
 
     // Eviction triggers callback
-    std::this_thread::sleep_for(60ms);
+    std::this_thread::sleep_for(100ms);
     registry.evict_stale_channels(50ms);
 
     {
