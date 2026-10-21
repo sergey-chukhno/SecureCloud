@@ -221,7 +221,15 @@ jobs:
           msystem: MINGW64
           update: true
           path-type: minimal
-          install: >-
+
+      - name: Install MinGW64 Dependencies with Retries
+        shell: msys2 {0}
+        run: |
+          # Disable pacman low-speed timeout to prevent aborts on slow mirrors
+          sed -i 's/^#DisableDownloadTimeout/DisableDownloadTimeout/' /etc/pacman.conf
+          grep -q "DisableDownloadTimeout" /etc/pacman.conf || sed -i '/\[options\]/a DisableDownloadTimeout' /etc/pacman.conf
+
+          PACKAGES=(
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
@@ -231,6 +239,23 @@ jobs:
             mingw-w64-x86_64-openssl
             mingw-w64-x86_64-nlohmann-json
             mingw-w64-x86_64-libpqxx
+          )
+
+          installed=0
+          for attempt in 1 2 3 4 5; do
+            echo "Attempt $attempt of 5: Installing MinGW64 packages..."
+            if pacman -S --needed --noconfirm --disable-download-timeout "${PACKAGES[@]}"; then
+              installed=1
+              break
+            fi
+            echo "Pacman download attempt $attempt failed, retrying in 10s..."
+            sleep 10
+          done
+
+          if [ $installed -ne 1 ]; then
+            echo "FATAL: Failed to install MinGW64 packages after 5 attempts."
+            exit 1
+          fi
 
       - name: Configure CMake (MinGW MINGW64)
         shell: msys2 {0}
