@@ -351,6 +351,45 @@ message BatchGetPresenceResponse {
 }
 
 // ---------------------------------------------------------------------------
+// Delivery & Read Status Query (MSG-008)
+// ---------------------------------------------------------------------------
+
+message DeviceDeliveryStatus {
+  string device_id = 1;
+  string recipient_user_id = 2;
+  DeliveryState delivery_state = 3;
+  int64 delivered_at_unix_ms = 4;
+  int32 attempt_count = 5;
+}
+
+message LogicalRecipientReadStatus {
+  string user_id = 1;
+  bool is_read = 2;
+  int64 read_at_unix_ms = 3;
+  string reader_device_id = 4;
+}
+
+message DeliverySummary {
+  uint32 total_targets = 1;
+  uint32 delivered_targets = 2;
+  uint32 pending_targets = 3;
+  uint32 expired_targets = 4;
+}
+
+message GetMessageDeliveryStatusRequest {
+  string conversation_id = 1;
+  string message_id = 2;
+}
+
+message GetMessageDeliveryStatusResponse {
+  string message_id = 1;
+  string conversation_id = 2;
+  DeliverySummary summary = 3;
+  repeated DeviceDeliveryStatus device_statuses = 4;
+  repeated LogicalRecipientReadStatus recipient_read_statuses = 5;
+}
+
+// ---------------------------------------------------------------------------
 // Service Definition
 // ---------------------------------------------------------------------------
 
@@ -361,6 +400,7 @@ service MessagingService {
   rpc GetMessages(GetMessagesRequest) returns (GetMessagesResponse);
   rpc AcknowledgeDelivery(AcknowledgeDeliveryRequest) returns (AcknowledgeDeliveryResponse);
   rpc SendReadReceipt(SendReadReceiptRequest) returns (SendReadReceiptResponse);
+  rpc GetMessageDeliveryStatus(GetMessageDeliveryStatusRequest) returns (GetMessageDeliveryStatusResponse);
 
   // Conversations & membership
   rpc CreateConversation(CreateConversationRequest) returns (CreateConversationResponse);

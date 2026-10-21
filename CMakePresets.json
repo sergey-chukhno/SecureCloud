@@ -70,7 +70,8 @@
         "CMAKE_C_COMPILER": "cl",
         "CMAKE_CXX_COMPILER": "cl",
         "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "Embedded",
-        "VCPKG_TARGET_TRIPLET": "x64-windows"
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "X_VCPKG_APPLOCAL_DEPS_SERIALIZED": "ON"
       }
     },
     {
@@ -102,7 +103,8 @@
       },
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "X_VCPKG_APPLOCAL_DEPS_SERIALIZED": "ON"
       }
     }
   ],

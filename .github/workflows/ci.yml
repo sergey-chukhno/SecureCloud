@@ -172,7 +172,7 @@ jobs:
           $attempt = 1
           while ($attempt -le $maxAttempts) {
             Write-Host "Configuring CMake with vcpkg (attempt $attempt of $maxAttempts)..."
-            cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_MAKE_PROGRAM="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe"
+            cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_MAKE_PROGRAM="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe" -DX_VCPKG_APPLOCAL_DEPS_SERIALIZED=ON
             if ($LASTEXITCODE -eq 0) { break }
             if ($attempt -eq $maxAttempts) { exit $LASTEXITCODE }
             Write-Host "CMake configuration failed, retrying in 10s..."

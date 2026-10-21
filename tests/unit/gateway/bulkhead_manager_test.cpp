@@ -480,7 +480,8 @@ TEST(BulkheadManagerTest, RouteRegistrarFilesBulkheadRejection) {
     cfg.emergency_reserved_slots = 5;
     auto bulkhead_mgr = std::make_shared<BulkheadManager>(cfg);
 
-    auto auth_proxy = std::make_shared<AuthProxyHandler>(mock_auth, nullptr, nullptr, bulkhead_mgr);
+    auto auth_proxy =
+        std::shared_ptr<AuthProxyHandler>(new AuthProxyHandler(mock_auth, nullptr, nullptr, bulkhead_mgr));
     GatewayRouteRegistrar registrar(auth_proxy, health_manager, bulkhead_mgr);
 
     Router router;
