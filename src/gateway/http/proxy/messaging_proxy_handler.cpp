@@ -116,6 +116,10 @@ void MessagingProxyHandler::register_routes(Router& router) {
         handle_send_message(req, res, ctx);
     });
 
+    router.post_authenticated("/api/v1/messages/:id/ack", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_acknowledge_delivery(req, res, ctx);
+    });
+
     router.post_authenticated("/api/v1/conversations", [this](const auto& req, auto& res, const auto& ctx) {
         handle_create_conversation(req, res, ctx);
     });
@@ -722,6 +726,91 @@ void MessagingProxyHandler::handle_send_message(const httplib::Request& req, htt
     response_body["target_count"] = result.value().target_count();
 
     res.status = 201;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// 9. handle_acknowledge_delivery
+// ============================================================================
+
+void MessagingProxyHandler::handle_acknowledge_delivery(const httplib::Request& req, httplib::Response& res,
+                                                        const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string message_id = Router::get_path_param(req, "id");
+    if (message_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing message ID", request_id);
+        return;
+    }
+
+    std::string recipient_device_id = ctx.device_id();
+    int64_t delivered_at_ms = 0;
+
+    if (!req.body.empty()) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            if (body.contains("device_id") && body["device_id"].is_string()) {
+                recipient_device_id = body["device_id"].get<std::string>();
+            } else if (body.contains("recipient_device_id") && body["recipient_device_id"].is_string()) {
+                recipient_device_id = body["recipient_device_id"].get<std::string>();
+            }
+            if (body.contains("delivered_at_unix_ms") && body["delivered_at_unix_ms"].is_number_integer()) {
+                delivered_at_ms = body["delivered_at_unix_ms"].get<int64_t>();
+            }
+        } catch (const std::exception&) {
+            ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid JSON body", request_id);
+            return;
+        }
+    }
+
+    if (delivered_at_ms <= 0) {
+        delivered_at_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
+    }
+
+    securecloud::messaging::v1::AcknowledgeDeliveryRequest grpc_req;
+    grpc_req.set_message_id(message_id);
+    grpc_req.set_recipient_device_id(recipient_device_id);
+    grpc_req.set_delivered_at_unix_ms(delivered_at_ms);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->acknowledge_delivery(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    nlohmann::json response_body;
+    response_body["message_id"] = result.value().message_id();
+    response_body["state"] = "DELIVERED";
+    response_body["recorded_at_unix_ms"] = result.value().recorded_at_unix_ms();
+
+    res.status = 200;
     res.set_content(response_body.dump(), k_content_type_json);
 }
 

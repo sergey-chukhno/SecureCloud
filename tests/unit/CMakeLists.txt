@@ -2163,3 +2163,156 @@ target_link_libraries(securecloud_message_submission_envelope_integration_test P
 )
 
 gtest_discover_tests(securecloud_message_submission_envelope_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Delivery Retry Policy & Decorrelated Jitter Unit Test Suite (MSG-007-T01)
+add_executable(securecloud_delivery_retry_policy_test
+    messaging/delivery_retry_policy_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_retry_policy_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_retry_policy_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Delivery Lifecycle State Machine & Domain Transition Test Suite (MSG-007-T01)
+add_executable(securecloud_delivery_lifecycle_test
+    messaging/delivery_lifecycle_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_lifecycle_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Device Connection Registry & Channel Routing Port Test Suite (MSG-007-T02)
+add_executable(securecloud_device_connection_registry_test
+    messaging/device_connection_registry_test.cpp
+)
+
+target_link_libraries(securecloud_device_connection_registry_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_device_connection_registry_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Bounded In-Memory Delivery Scheduler & Per-Device Fairness Queue Test Suite (MSG-007-T03)
+add_executable(securecloud_bounded_delivery_scheduler_test
+    messaging/bounded_delivery_scheduler_test.cpp
+)
+
+target_link_libraries(securecloud_bounded_delivery_scheduler_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_bounded_delivery_scheduler_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Delivery Worker Pipeline & Retry Scheduling Test Suite (MSG-007-T04)
+add_executable(securecloud_delivery_worker_test
+    messaging/delivery_worker_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_worker_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_worker_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Outbox Delivery Consumer & Online Device Dispatch Test Suite (MSG-007-T04)
+add_executable(securecloud_outbox_delivery_consumer_test
+    messaging/outbox_delivery_consumer_test.cpp
+)
+
+target_link_libraries(securecloud_outbox_delivery_consumer_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_outbox_delivery_consumer_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Delivery Service & AcknowledgeDelivery RPC Test Suite (MSG-007-T05)
+add_executable(securecloud_delivery_service_test
+    messaging/delivery_service_test.cpp
+)
+
+target_link_libraries(securecloud_delivery_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_delivery_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Messaging Proxy Delivery Acknowledgement Route Test Suite (MSG-007-T05)
+add_executable(securecloud_messaging_proxy_ack_test
+    gateway/messaging_proxy_ack_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_proxy_ack_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_proxy_ack_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Durable Delivery Recovery Engine Test Suite (MSG-007-T06)
+add_executable(securecloud_durable_delivery_recovery_service_test
+    messaging/durable_delivery_recovery_service_test.cpp
+)
+
+target_link_libraries(securecloud_durable_delivery_recovery_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_durable_delivery_recovery_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Comprehensive Online Delivery Pipeline 10-Scenario Integration Test Suite (MSG-007-T06)
+add_executable(securecloud_online_delivery_pipeline_test
+    messaging/online_delivery_pipeline_test.cpp
+)
+
+target_link_libraries(securecloud_online_delivery_pipeline_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_online_delivery_pipeline_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
+

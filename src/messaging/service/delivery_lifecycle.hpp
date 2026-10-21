@@ -1,8 +1,10 @@
 #pragma once
 
+#include "domain/delivery_types.hpp"
 #include "securecloud/messaging/v1/messaging.pb.h"
 
 #include <cstdint>
+#include <optional>
 
 namespace securecloud::messaging::service {
 
@@ -16,10 +18,22 @@ inline constexpr uint32_t k_max_page_limit = 100;
 ///   QUEUED | DELIVERING | RETRY_WAIT -> EXPIRED
 [[nodiscard]] bool is_valid_delivery_transition(v1::DeliveryState current_state, v1::DeliveryState next_state) noexcept;
 
+/// Overload for domain::DeliveryState transitions
+[[nodiscard]] bool is_valid_delivery_transition(domain::DeliveryState current_state,
+                                                domain::DeliveryState next_state) noexcept;
+
 /// Checks if an attempted state update is an idempotent re-application of the current state
 /// (e.g. duplicate delivery ACK or duplicate read receipt)
 [[nodiscard]] bool is_idempotent_delivery_state(v1::DeliveryState current_state,
                                                 v1::DeliveryState candidate_state) noexcept;
+
+/// Overload for domain::DeliveryState idempotent check
+[[nodiscard]] bool is_idempotent_delivery_state(domain::DeliveryState current_state,
+                                                domain::DeliveryState candidate_state) noexcept;
+
+/// Conversion helpers between domain::DeliveryState and protobuf v1::DeliveryState
+[[nodiscard]] v1::DeliveryState to_proto_delivery_state(domain::DeliveryState domain_state) noexcept;
+[[nodiscard]] std::optional<domain::DeliveryState> from_proto_delivery_state(v1::DeliveryState proto_state) noexcept;
 
 /// Validates non-negative sequence number requirement for device streams
 [[nodiscard]] bool is_valid_sequence(int64_t sequence) noexcept;

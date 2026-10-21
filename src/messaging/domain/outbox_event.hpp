@@ -16,6 +16,7 @@ enum class ConversationOutboxEventType {
     GroupMetadataUpdated,
     ConversationClosed,
     MessageSent,
+    MessageDelivered,
 };
 
 [[nodiscard]] inline std::string to_string(ConversationOutboxEventType type) {
@@ -34,6 +35,8 @@ enum class ConversationOutboxEventType {
         return "ConversationClosed";
     case ConversationOutboxEventType::MessageSent:
         return "MessageSent";
+    case ConversationOutboxEventType::MessageDelivered:
+        return "MessageDelivered";
     }
     return "ConversationCreated";
 }
@@ -60,6 +63,9 @@ conversation_outbox_event_type_from_string(std::string_view sv) noexcept {
     }
     if (sv == "MessageSent") {
         return ConversationOutboxEventType::MessageSent;
+    }
+    if (sv == "MessageDelivered") {
+        return ConversationOutboxEventType::MessageDelivered;
     }
     return std::nullopt;
 }
