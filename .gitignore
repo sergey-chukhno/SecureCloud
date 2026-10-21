@@ -30,3 +30,4 @@ deploy/dev-pki/
 # Walkthrough and review artifacts
 walkthrough-*.md
 *-report.md
+docs/pull_requests/

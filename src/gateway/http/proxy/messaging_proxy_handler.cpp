@@ -28,6 +28,23 @@ nlohmann::json conversation_metadata_to_json(const securecloud::messaging::v1::C
     return j;
 }
 
+std::string delivery_state_to_string(securecloud::messaging::v1::DeliveryState state) {
+    switch (state) {
+    case securecloud::messaging::v1::DELIVERY_STATE_QUEUED:
+        return "QUEUED";
+    case securecloud::messaging::v1::DELIVERY_STATE_DELIVERING:
+        return "DELIVERING";
+    case securecloud::messaging::v1::DELIVERY_STATE_DELIVERED:
+        return "DELIVERED";
+    case securecloud::messaging::v1::DELIVERY_STATE_RETRY_WAIT:
+        return "RETRY_WAIT";
+    case securecloud::messaging::v1::DELIVERY_STATE_EXPIRED:
+        return "EXPIRED";
+    default:
+        return "UNSPECIFIED";
+    }
+}
+
 } // namespace
 
 MessagingProxyHandler::MessagingProxyHandler(std::shared_ptr<grpc::IMessagingClient> messaging_client,
@@ -119,6 +136,40 @@ void MessagingProxyHandler::register_routes(Router& router) {
     router.post_authenticated("/api/v1/messages/:id/ack", [this](const auto& req, auto& res, const auto& ctx) {
         handle_acknowledge_delivery(req, res, ctx);
     });
+
+    // MSG-008 Read Receipts
+    router.post_authenticated(
+        "/api/v1/conversations/:conversationId/messages/:messageId/read",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_send_read_receipt(req, res, ctx); });
+    router.post_authenticated(
+        "/v1/conversations/:conversationId/messages/:messageId/read",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_send_read_receipt(req, res, ctx); });
+    router.post_authenticated(
+        "/api/v1/conversations/:conversation_id/messages/:message_id/read",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_send_read_receipt(req, res, ctx); });
+    router.post_authenticated(
+        "/v1/conversations/:conversation_id/messages/:message_id/read",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_send_read_receipt(req, res, ctx); });
+    router.post_authenticated("/api/v1/messages/:id/read", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_send_read_receipt(req, res, ctx);
+    });
+
+    // MSG-008 Delivery Status Inspection
+    router.get_authenticated(
+        "/api/v1/conversations/:conversationId/messages/:messageId/delivery-status",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_get_delivery_status(req, res, ctx); });
+    router.get_authenticated(
+        "/v1/conversations/:conversationId/messages/:messageId/delivery-status",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_get_delivery_status(req, res, ctx); });
+    router.get_authenticated(
+        "/api/v1/conversations/:conversation_id/messages/:message_id/delivery-status",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_get_delivery_status(req, res, ctx); });
+    router.get_authenticated(
+        "/v1/conversations/:conversation_id/messages/:message_id/delivery-status",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_get_delivery_status(req, res, ctx); });
+    router.get_authenticated(
+        "/api/v1/messages/:id/delivery-status",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_get_delivery_status(req, res, ctx); });
 
     router.post_authenticated("/api/v1/conversations", [this](const auto& req, auto& res, const auto& ctx) {
         handle_create_conversation(req, res, ctx);
@@ -809,6 +860,219 @@ void MessagingProxyHandler::handle_acknowledge_delivery(const httplib::Request& 
     response_body["message_id"] = result.value().message_id();
     response_body["state"] = "DELIVERED";
     response_body["recorded_at_unix_ms"] = result.value().recorded_at_unix_ms();
+
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// 10. handle_send_read_receipt (MSG-008)
+// ============================================================================
+
+void MessagingProxyHandler::handle_send_read_receipt(const httplib::Request& req, httplib::Response& res,
+                                                     const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string message_id = Router::get_path_param(req, "message_id");
+    if (message_id.empty()) {
+        message_id = Router::get_path_param(req, "messageId");
+    }
+    std::string conversation_id = Router::get_path_param(req, "conversation_id");
+    if (conversation_id.empty()) {
+        conversation_id = Router::get_path_param(req, "conversationId");
+    }
+
+    if (message_id.empty()) {
+        message_id = Router::get_path_param(req, "id");
+    } else if (conversation_id.empty()) {
+        conversation_id = Router::get_path_param(req, "id");
+    }
+
+    std::string reader_device_id = ctx.device_id();
+    int64_t read_at_ms = 0;
+
+    if (!req.body.empty()) {
+        try {
+            auto body = nlohmann::json::parse(req.body);
+            if (body.contains("reader_device_id") && body["reader_device_id"].is_string()) {
+                reader_device_id = body["reader_device_id"].get<std::string>();
+            } else if (body.contains("device_id") && body["device_id"].is_string()) {
+                reader_device_id = body["device_id"].get<std::string>();
+            }
+            if (body.contains("conversation_id") && body["conversation_id"].is_string() && conversation_id.empty()) {
+                conversation_id = body["conversation_id"].get<std::string>();
+            }
+            if (body.contains("read_at_unix_ms") && body["read_at_unix_ms"].is_number_integer()) {
+                read_at_ms = body["read_at_unix_ms"].get<int64_t>();
+            }
+        } catch (const std::exception&) {
+            ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid JSON body", request_id);
+            return;
+        }
+    }
+
+    if (conversation_id.empty() && req.has_param("conversation_id")) {
+        conversation_id = req.get_param_value("conversation_id");
+    }
+
+    if (message_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing message ID", request_id);
+        return;
+    }
+
+    if (read_at_ms <= 0) {
+        read_at_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
+    }
+
+    securecloud::messaging::v1::SendReadReceiptRequest grpc_req;
+    grpc_req.set_conversation_id(conversation_id);
+    grpc_req.set_message_id(message_id);
+    grpc_req.set_reader_device_id(reader_device_id);
+    grpc_req.set_read_at_unix_ms(read_at_ms);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->send_read_receipt(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    nlohmann::json response_body;
+    response_body["message_id"] = result.value().message_id();
+    response_body["state"] = "READ";
+    response_body["recorded_at_unix_ms"] = result.value().recorded_at_unix_ms();
+
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// 11. handle_get_delivery_status (MSG-008)
+// ============================================================================
+
+void MessagingProxyHandler::handle_get_delivery_status(const httplib::Request& req, httplib::Response& res,
+                                                       const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string message_id = Router::get_path_param(req, "message_id");
+    if (message_id.empty()) {
+        message_id = Router::get_path_param(req, "messageId");
+    }
+    std::string conversation_id = Router::get_path_param(req, "conversation_id");
+    if (conversation_id.empty()) {
+        conversation_id = Router::get_path_param(req, "conversationId");
+    }
+
+    if (message_id.empty()) {
+        message_id = Router::get_path_param(req, "id");
+    } else if (conversation_id.empty()) {
+        conversation_id = Router::get_path_param(req, "id");
+    }
+
+    if (conversation_id.empty() && req.has_param("conversation_id")) {
+        conversation_id = req.get_param_value("conversation_id");
+    }
+
+    if (message_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing message ID", request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::GetMessageDeliveryStatusRequest grpc_req;
+    grpc_req.set_conversation_id(conversation_id);
+    grpc_req.set_message_id(message_id);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->get_message_delivery_status(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    const auto& resp = result.value();
+    nlohmann::json response_body;
+    response_body["message_id"] = resp.message_id();
+    response_body["conversation_id"] = resp.conversation_id();
+
+    nlohmann::json summary;
+    summary["total_targets"] = resp.summary().total_targets();
+    summary["delivered_targets"] = resp.summary().delivered_targets();
+    summary["pending_targets"] = resp.summary().pending_targets();
+    summary["expired_targets"] = resp.summary().expired_targets();
+    response_body["summary"] = summary;
+
+    nlohmann::json device_statuses = nlohmann::json::array();
+    for (const auto& ds : resp.device_statuses()) {
+        nlohmann::json ds_json;
+        ds_json["device_id"] = ds.device_id();
+        ds_json["recipient_user_id"] = ds.recipient_user_id();
+        ds_json["delivery_state"] = delivery_state_to_string(ds.delivery_state());
+        ds_json["delivered_at_unix_ms"] = ds.delivered_at_unix_ms();
+        ds_json["attempt_count"] = ds.attempt_count();
+        device_statuses.push_back(ds_json);
+    }
+    response_body["device_statuses"] = device_statuses;
+
+    nlohmann::json recipient_read_statuses = nlohmann::json::array();
+    for (const auto& rrs : resp.recipient_read_statuses()) {
+        nlohmann::json rrs_json;
+        rrs_json["user_id"] = rrs.user_id();
+        rrs_json["is_read"] = rrs.is_read();
+        rrs_json["read_at_unix_ms"] = rrs.read_at_unix_ms();
+        rrs_json["reader_device_id"] = rrs.reader_device_id();
+        recipient_read_statuses.push_back(rrs_json);
+    }
+    response_body["recipient_read_statuses"] = recipient_read_statuses;
 
     res.status = 200;
     res.set_content(response_body.dump(), k_content_type_json);

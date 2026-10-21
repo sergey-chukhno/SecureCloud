@@ -1,6 +1,9 @@
 #include "messaging/repository/scylla_delivery_state_repository.hpp"
 
+#include "service/delivery_state_transition_guard.hpp"
+
 #include <chrono>
+#include <map>
 #include <stdexcept>
 
 namespace securecloud::messaging::repository {
@@ -154,6 +157,17 @@ void ScyllaDeliveryStateRepository::init_prepared_statements() {
         "SELECT message_id, recipient_device_id, recipient_user_id, delivery_state, delivered_at, read_at "
         "FROM securecloud_messaging.delivery_state_by_message "
         "WHERE message_id = ?;");
+
+    prep_update_delivery_state_ =
+        session_->prepare("deliv_repo_update_state", "UPDATE securecloud_messaging.delivery_state_by_message "
+                                                     "SET delivery_state = ?, delivered_at = ? "
+                                                     "WHERE message_id = ? AND recipient_device_id = ?;");
+
+    prep_get_single_device_state_ = session_->prepare(
+        "deliv_repo_get_single_state",
+        "SELECT message_id, recipient_device_id, recipient_user_id, delivery_state, delivered_at, read_at "
+        "FROM securecloud_messaging.delivery_state_by_message "
+        "WHERE message_id = ? AND recipient_device_id = ?;");
 }
 
 void ScyllaDeliveryStateRepository::save_pending_deliveries(const std::vector<domain::DeviceDeliveryRecord>& records) {
@@ -323,6 +337,122 @@ ScyllaDeliveryStateRepository::get_delivery_states_for_message(const domain::Mes
         states.push_back(row_to_recipient_state(row));
     }
     return states;
+}
+
+bool ScyllaDeliveryStateRepository::update_delivery_state_monotonic(
+    const domain::MessageId& message_id, const domain::DeviceId& recipient_device_id, domain::DeliveryState new_state,
+    const std::chrono::system_clock::time_point& updated_at) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    db::ScyllaParams fetch_params;
+    fetch_params.add_string(message_id.to_string());
+    fetch_params.add_string(recipient_device_id.str());
+
+    auto rows = session_->execute_prepared(prep_get_single_device_state_, fetch_params);
+    if (rows.empty()) {
+        return false;
+    }
+
+    const auto& row = rows.front();
+    auto current_state_opt = domain::delivery_state_from_string(row.get_string("delivery_state"));
+    auto current_state = current_state_opt.value_or(domain::DeliveryState::Pending);
+
+    // Idempotency: re-applying current state is a no-op that succeeds
+    if (service::DeliveryStateTransitionGuard::is_idempotent(current_state, new_state)) {
+        return true;
+    }
+
+    // Monotonicity / Regression check
+    if (service::DeliveryStateTransitionGuard::is_regression(current_state, new_state) ||
+        !service::DeliveryStateTransitionGuard::can_transition(current_state, new_state)) {
+        return false;
+    }
+
+    // Valid transition: commit update
+    db::ScyllaParams update_params;
+    update_params.add_string(domain::to_string(new_state));
+
+    if (new_state == domain::DeliveryState::Delivered) {
+        if (row.is_null("delivered_at")) {
+            update_params.add_timestamp(to_millis(updated_at));
+        } else {
+            update_params.add_timestamp(row.get_timestamp("delivered_at"));
+        }
+    } else {
+        if (!row.is_null("delivered_at")) {
+            update_params.add_timestamp(row.get_timestamp("delivered_at"));
+        } else {
+            update_params.add_null();
+        }
+    }
+
+    update_params.add_string(message_id.to_string());
+    update_params.add_string(recipient_device_id.str());
+
+    session_->execute_prepared(prep_update_delivery_state_, update_params);
+    return true;
+}
+
+std::optional<domain::MessageDeliverySummary>
+ScyllaDeliveryStateRepository::get_message_delivery_summary(const domain::MessageId& message_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    db::ScyllaParams params;
+    params.add_string(message_id.to_string());
+
+    auto rows = session_->execute_prepared(prep_get_message_states_, params);
+    if (rows.empty()) {
+        return std::nullopt;
+    }
+
+    domain::MessageDeliverySummary summary;
+    summary.message_id = message_id;
+
+    std::map<domain::UserId, domain::LogicalRecipientReadStatus> read_status_map;
+
+    for (const auto& row : rows) {
+        domain::DeviceDeliveryStatus dev_status;
+        dev_status.device_id = domain::DeviceId(row.get_string("recipient_device_id"));
+        dev_status.recipient_user_id = domain::UserId(row.get_string("recipient_user_id"));
+
+        auto opt_state = domain::delivery_state_from_string(row.get_string("delivery_state"));
+        dev_status.delivery_state = opt_state.value_or(domain::DeliveryState::Pending);
+
+        if (!row.is_null("delivered_at")) {
+            dev_status.delivered_at = from_millis(row.get_timestamp("delivered_at"));
+        }
+
+        summary.total_targets++;
+        if (dev_status.delivery_state == domain::DeliveryState::Delivered) {
+            summary.delivered_targets++;
+        } else if (dev_status.delivery_state == domain::DeliveryState::Expired) {
+            summary.expired_targets++;
+        } else {
+            summary.pending_targets++;
+        }
+
+        // Track per-user logical read status
+        auto& user_status = read_status_map[dev_status.recipient_user_id];
+        user_status.user_id = dev_status.recipient_user_id;
+        if (!row.is_null("read_at")) {
+            auto row_read_at = from_millis(row.get_timestamp("read_at"));
+            if (user_status.read_state != domain::ReadState::Read || !user_status.read_at ||
+                row_read_at < *user_status.read_at) {
+                user_status.read_state = domain::ReadState::Read;
+                user_status.read_at = row_read_at;
+                user_status.reader_device_id = dev_status.device_id;
+            }
+        }
+
+        summary.device_statuses.push_back(std::move(dev_status));
+    }
+
+    summary.recipient_read_statuses.reserve(read_status_map.size());
+    for (auto& [_, status] : read_status_map) {
+        summary.recipient_read_statuses.push_back(std::move(status));
+    }
+
+    return summary;
 }
 
 } // namespace securecloud::messaging::repository

@@ -2314,5 +2314,51 @@ target_link_libraries(securecloud_online_delivery_pipeline_test PRIVATE
 
 gtest_discover_tests(securecloud_online_delivery_pipeline_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Delivery State Transition Guard & Regression Test Suite (MSG-008-T01)
+add_executable(securecloud_delivery_state_transition_guard_test
+    messaging/delivery_state_transition_guard_test.cpp
+)
 
+target_link_libraries(securecloud_delivery_state_transition_guard_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
 
+gtest_discover_tests(securecloud_delivery_state_transition_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Read Receipt Domain Service & Group Read Semantics Test Suite (MSG-008-T02)
+add_executable(securecloud_read_receipt_service_test
+    messaging/read_receipt_service_test.cpp
+)
+
+target_link_libraries(securecloud_read_receipt_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_read_receipt_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# MessagingService Delivery State & Read Receipt RPCs Test Suite (MSG-008-T04)
+add_executable(securecloud_messaging_service_impl_delivery_state_test
+    messaging/messaging_service_impl_delivery_state_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_service_impl_delivery_state_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    gRPC::grpc++
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_service_impl_delivery_state_test ${SECURECLOUD_TEST_PROPERTIES})
