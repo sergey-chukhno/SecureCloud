@@ -28,6 +28,8 @@ if(MSVC)
         _UNICODE
         WIN32_LEAN_AND_MEAN
         NOMINMAX
+        _WIN32_WINNT=0x0A00
+        WINVER=0x0A00
     )
 else()
     # Clang / AppleClang / GCC compile options
@@ -63,5 +65,7 @@ if(WIN32 AND NOT MSVC)
     target_compile_definitions(securecloud_compiler_flags INTERFACE
         WIN32_LEAN_AND_MEAN
         NOMINMAX
+        _WIN32_WINNT=0x0A00
+        WINVER=0x0A00
     )
 endif()
