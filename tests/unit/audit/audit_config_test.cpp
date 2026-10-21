@@ -3,7 +3,6 @@
 #include "securecloud/configuration/validation_error.hpp"
 
 #include <gtest/gtest.h>
-
 #include <sstream>
 #include <string>
 

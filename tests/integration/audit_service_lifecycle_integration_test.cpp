@@ -3,12 +3,11 @@
 #include "securecloud/configuration/configuration_source.hpp"
 #include "securecloud/security/mtls_config.hpp"
 
-#include <grpcpp/grpcpp.h>
-#include <gtest/gtest.h>
-
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <grpcpp/grpcpp.h>
+#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <thread>
@@ -17,9 +16,9 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+#include <windows.h>
 #include <winsock2.h>
 #include <ws2tcpip.h>
-#include <windows.h>
 
 inline void ensure_integration_winsock() noexcept {
     static const bool initialized = []() noexcept {
@@ -57,7 +56,7 @@ std::filesystem::path find_pki_root() {
 }
 
 AuditConfig create_integration_test_config(const std::filesystem::path& pki_root, uint16_t port,
-                                            uint16_t clickhouse_port = 8123) {
+                                           uint16_t clickhouse_port = 8123) {
     common::configuration::InMemoryConfigurationSource source;
     source.set("SECURECLOUD_AUDIT_GRPC_PORT", std::to_string(port));
     source.set("SECURECLOUD_AUDIT_GRPC_HOST", "127.0.0.1");
@@ -82,8 +81,8 @@ std::shared_ptr<grpc::Channel> create_mtls_channel(const std::filesystem::path& 
         .service_key_path = pki_root / "services" / "gateway" / "gateway.key",
     };
 
-    return common::security::MtlsCredentialLoader::create_mtls_channel(
-        "127.0.0.1:" + std::to_string(port), gateway_config, "audit");
+    return common::security::MtlsCredentialLoader::create_mtls_channel("127.0.0.1:" + std::to_string(port),
+                                                                       gateway_config, "audit");
 }
 
 std::shared_ptr<grpc::Channel> create_insecure_channel(uint16_t port) {
