@@ -80,6 +80,13 @@ ServiceResult<ReadReceiptResponse> ReadReceiptService::record_read_receipt(const
             "Caller is not authorized to submit read receipt on behalf of another recipient");
     }
 
+    // 5b. Precondition: Expired deliveries cannot be marked as read
+    if (target_state->delivery_state == domain::DeliveryState::Expired) {
+        return ServiceResult<ReadReceiptResponse>::fail(
+            v1::MESSAGING_ERROR_CODE_MESSAGE_EXPIRED,
+            "Message delivery window has expired and cannot be marked as read");
+    }
+
     const auto now = std::chrono::system_clock::now();
     const auto effective_read_at = (cmd.read_at.time_since_epoch().count() > 0) ? cmd.read_at : now;
 
