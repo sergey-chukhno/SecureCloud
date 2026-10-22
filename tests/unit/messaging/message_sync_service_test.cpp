@@ -1,14 +1,14 @@
-#include "messaging/service/message_sync_service.hpp"
 #include "messaging/domain/conversation_types.hpp"
 #include "messaging/domain/message_bucket.hpp"
 #include "messaging/domain/message_entity.hpp"
 #include "messaging/repository/in_memory_conversation_repository.hpp"
 #include "messaging/repository/in_memory_membership_repository.hpp"
 #include "messaging/service/conversation_authorization_service.hpp"
+#include "messaging/service/message_sync_service.hpp"
 #include "messaging/service/sync_cursor_manager.hpp"
 
-#include <gtest/gtest.h>
 #include <algorithm>
+#include <gtest/gtest.h>
 #include <map>
 #include <memory>
 #include <vector>
@@ -33,7 +33,7 @@ using domain::UserId;
 class MockSyncCursorRepo : public repository::ISyncCursorRepository {
   public:
     std::optional<DeviceSyncCursor> get_sync_cursor(const DeviceId& device_id,
-                                                   const ConversationId& conversation_id) override {
+                                                    const ConversationId& conversation_id) override {
         auto key = std::make_pair(device_id.str(), conversation_id.to_string());
         auto it = store_.find(key);
         if (it != store_.end()) {
@@ -73,7 +73,7 @@ class MockMessageRepo : public repository::IMessageRepository {
     }
 
     std::optional<MessageEntity> find_by_id(const ConversationId& conv, const MessageBucket& bucket,
-                                           const MessageId& id) override {
+                                            const MessageId& id) override {
         (void)bucket;
         auto it = messages_.find(conv.to_string());
         if (it == messages_.end()) {
@@ -87,10 +87,8 @@ class MockMessageRepo : public repository::IMessageRepository {
         return std::nullopt;
     }
 
-    std::vector<MessageEntity> list_messages_by_sequence_range(const ConversationId& conv,
-                                                              const MessageBucket& bucket,
-                                                              uint64_t from, uint64_t to,
-                                                              size_t limit) override {
+    std::vector<MessageEntity> list_messages_by_sequence_range(const ConversationId& conv, const MessageBucket& bucket,
+                                                               uint64_t from, uint64_t to, size_t limit) override {
         (void)bucket;
         std::vector<MessageEntity> results;
         auto it = messages_.find(conv.to_string());
@@ -109,8 +107,7 @@ class MockMessageRepo : public repository::IMessageRepository {
         return results;
     }
 
-    uint64_t get_last_sequence(const ConversationId& conversation_id,
-                              const MessageBucket& message_bucket) override {
+    uint64_t get_last_sequence(const ConversationId& conversation_id, const MessageBucket& message_bucket) override {
         (void)message_bucket;
         auto it = messages_.find(conversation_id.to_string());
         if (it == messages_.end() || it->second.empty()) {
@@ -123,8 +120,8 @@ class MockMessageRepo : public repository::IMessageRepository {
     std::map<std::string, std::vector<MessageEntity>> messages_;
 };
 
-domain::MessageEntity create_test_message(const ConversationId& conv_id, uint64_t seq,
-                                         const UserId& sender_user, const DeviceId& sender_dev) {
+domain::MessageEntity create_test_message(const ConversationId& conv_id, uint64_t seq, const UserId& sender_user,
+                                          const DeviceId& sender_dev) {
     domain::MessageEntity entity;
     entity.conversation_id = conv_id;
     entity.message_bucket = domain::MessageBucket::from_time_point(std::chrono::system_clock::now());
@@ -208,11 +205,7 @@ TEST_F(MessageSyncServiceTest, ActiveParticipantSyncsMessagesSuccessfully) {
     }
 
     SyncDeviceMessagesCommand cmd{
-        .device_id = alice_device_,
-        .conversation_id = conv_id_,
-        .since_sequence = 0,
-        .max_messages = 10
-    };
+        .device_id = alice_device_, .conversation_id = conv_id_, .since_sequence = 0, .max_messages = 10};
 
     auto result = sync_service_->sync_messages(alice_, cmd);
 
@@ -228,11 +221,7 @@ TEST_F(MessageSyncServiceTest, ActiveParticipantSyncsMessagesSuccessfully) {
 
 TEST_F(MessageSyncServiceTest, NonParticipantSyncAttemptRejected) {
     SyncDeviceMessagesCommand cmd{
-        .device_id = DeviceId("eve-device-1"),
-        .conversation_id = conv_id_,
-        .since_sequence = 0,
-        .max_messages = 50
-    };
+        .device_id = DeviceId("eve-device-1"), .conversation_id = conv_id_, .since_sequence = 0, .max_messages = 50};
 
     auto result = sync_service_->sync_messages(eve_, cmd);
 
@@ -244,11 +233,7 @@ TEST_F(MessageSyncServiceTest, NonParticipantSyncAttemptRejected) {
 TEST_F(MessageSyncServiceTest, ConversationNotFoundRejected) {
     auto unknown_conv = ConversationId::generate_v7();
     SyncDeviceMessagesCommand cmd{
-        .device_id = alice_device_,
-        .conversation_id = unknown_conv,
-        .since_sequence = 0,
-        .max_messages = 50
-    };
+        .device_id = alice_device_, .conversation_id = unknown_conv, .since_sequence = 0, .max_messages = 50};
 
     auto result = sync_service_->sync_messages(alice_, cmd);
 
@@ -264,11 +249,7 @@ TEST_F(MessageSyncServiceTest, PaginationBoundariesAndHasMore) {
 
     // Batch 1: fetch 3 messages starting from sequence 0
     SyncDeviceMessagesCommand cmd1{
-        .device_id = alice_device_,
-        .conversation_id = conv_id_,
-        .since_sequence = 0,
-        .max_messages = 3
-    };
+        .device_id = alice_device_, .conversation_id = conv_id_, .since_sequence = 0, .max_messages = 3};
     auto r1 = sync_service_->sync_messages(alice_, cmd1);
     ASSERT_TRUE(r1.is_success());
     ASSERT_EQ(r1.messages.size(), 3U);
@@ -280,11 +261,7 @@ TEST_F(MessageSyncServiceTest, PaginationBoundariesAndHasMore) {
 
     // Batch 2: fetch 5 messages starting from sequence 3
     SyncDeviceMessagesCommand cmd2{
-        .device_id = alice_device_,
-        .conversation_id = conv_id_,
-        .since_sequence = 3,
-        .max_messages = 5
-    };
+        .device_id = alice_device_, .conversation_id = conv_id_, .since_sequence = 3, .max_messages = 5};
     auto r2 = sync_service_->sync_messages(alice_, cmd2);
     ASSERT_TRUE(r2.is_success());
     ASSERT_EQ(r2.messages.size(), 5U);
@@ -295,11 +272,7 @@ TEST_F(MessageSyncServiceTest, PaginationBoundariesAndHasMore) {
 
     // Batch 3: fetch remaining starting from sequence 8
     SyncDeviceMessagesCommand cmd3{
-        .device_id = alice_device_,
-        .conversation_id = conv_id_,
-        .since_sequence = 8,
-        .max_messages = 5
-    };
+        .device_id = alice_device_, .conversation_id = conv_id_, .since_sequence = 8, .max_messages = 5};
     auto r3 = sync_service_->sync_messages(alice_, cmd3);
     ASSERT_TRUE(r3.is_success());
     ASSERT_EQ(r3.messages.size(), 2U);
@@ -321,12 +294,10 @@ TEST_F(MessageSyncServiceTest, CursorOutOfBoundsRejected) {
         message_repo_->save_message(create_test_message(conv_id_, i, bob_, DeviceId("bob-dev-1")));
     }
 
-    SyncDeviceMessagesCommand cmd{
-        .device_id = alice_device_,
-        .conversation_id = conv_id_,
-        .since_sequence = 25, // Ceiling is 10
-        .max_messages = 10
-    };
+    SyncDeviceMessagesCommand cmd{.device_id = alice_device_,
+                                  .conversation_id = conv_id_,
+                                  .since_sequence = 25, // Ceiling is 10
+                                  .max_messages = 10};
 
     auto result = sync_service_->sync_messages(alice_, cmd);
 
@@ -336,11 +307,7 @@ TEST_F(MessageSyncServiceTest, CursorOutOfBoundsRejected) {
 
 TEST_F(MessageSyncServiceTest, EmptyConversationReturnsGracefully) {
     SyncDeviceMessagesCommand cmd{
-        .device_id = alice_device_,
-        .conversation_id = conv_id_,
-        .since_sequence = 0,
-        .max_messages = 10
-    };
+        .device_id = alice_device_, .conversation_id = conv_id_, .since_sequence = 0, .max_messages = 10};
 
     auto result = sync_service_->sync_messages(alice_, cmd);
 
@@ -367,11 +334,7 @@ TEST_F(MessageSyncServiceTest, FallbackToStoredCursorWhenSinceSequenceIsZero) {
 
     // Client requests with since_sequence = 0 (resume from persisted checkpoint)
     SyncDeviceMessagesCommand cmd{
-        .device_id = alice_device_,
-        .conversation_id = conv_id_,
-        .since_sequence = 0,
-        .max_messages = 10
-    };
+        .device_id = alice_device_, .conversation_id = conv_id_, .since_sequence = 0, .max_messages = 10};
 
     auto result = sync_service_->sync_messages(alice_, cmd);
 
@@ -384,17 +347,11 @@ TEST_F(MessageSyncServiceTest, FallbackToStoredCursorWhenSinceSequenceIsZero) {
 }
 
 TEST_F(MessageSyncServiceTest, InvalidArgumentsRejected) {
-    SyncDeviceMessagesCommand empty_dev{
-        .device_id = DeviceId(""),
-        .conversation_id = conv_id_
-    };
+    SyncDeviceMessagesCommand empty_dev{.device_id = DeviceId(""), .conversation_id = conv_id_};
     auto r1 = sync_service_->sync_messages(alice_, empty_dev);
     EXPECT_EQ(r1.status, SyncMessagesStatus::InvalidArguments);
 
-    SyncDeviceMessagesCommand no_conv{
-        .device_id = alice_device_,
-        .conversation_id = std::nullopt
-    };
+    SyncDeviceMessagesCommand no_conv{.device_id = alice_device_, .conversation_id = std::nullopt};
     auto r2 = sync_service_->sync_messages(alice_, no_conv);
     EXPECT_EQ(r2.status, SyncMessagesStatus::InvalidArguments);
 }

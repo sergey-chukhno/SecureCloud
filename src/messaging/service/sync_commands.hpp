@@ -79,25 +79,19 @@ struct SyncMessagesResult {
     domain::MessageSequence latest_sequence{0};
     std::string error_message{};
 
-    [[nodiscard]] bool is_success() const noexcept {
-        return status == SyncMessagesStatus::Success;
-    }
+    [[nodiscard]] bool is_success() const noexcept { return status == SyncMessagesStatus::Success; }
 
-    [[nodiscard]] static SyncMessagesResult failure(SyncMessagesStatus st,
-                                                    domain::DeviceId dev_id,
-                                                    std::optional<domain::ConversationId> conv_id,
-                                                    std::string msg) {
-        return SyncMessagesResult{
-            .status = st,
-            .device_id = std::move(dev_id),
-            .conversation_id = std::move(conv_id),
-            .messages = {},
-            .cursor = {},
-            .has_more = false,
-            .next_sequence = 0,
-            .latest_sequence = 0,
-            .error_message = std::move(msg)
-        };
+    [[nodiscard]] static SyncMessagesResult failure(SyncMessagesStatus st, domain::DeviceId dev_id,
+                                                    std::optional<domain::ConversationId> conv_id, std::string msg) {
+        return SyncMessagesResult{.status = st,
+                                  .device_id = std::move(dev_id),
+                                  .conversation_id = std::move(conv_id),
+                                  .messages = {},
+                                  .cursor = {},
+                                  .has_more = false,
+                                  .next_sequence = 0,
+                                  .latest_sequence = 0,
+                                  .error_message = std::move(msg)};
     }
 };
 
@@ -122,19 +116,11 @@ struct UpdateSyncCursorResult {
     std::string error_message{};
 
     [[nodiscard]] static UpdateSyncCursorResult ok(domain::DeviceSyncCursor c) noexcept {
-        return UpdateSyncCursorResult{
-            .cursor = std::move(c),
-            .success = true,
-            .error_message = ""
-        };
+        return UpdateSyncCursorResult{.cursor = std::move(c), .success = true, .error_message = ""};
     }
 
     [[nodiscard]] static UpdateSyncCursorResult failure(std::string message) {
-        return UpdateSyncCursorResult{
-            .cursor = {},
-            .success = false,
-            .error_message = std::move(message)
-        };
+        return UpdateSyncCursorResult{.cursor = {}, .success = false, .error_message = std::move(message)};
     }
 };
 

@@ -1,5 +1,5 @@
-#include "messaging/service/sync_cursor_manager.hpp"
 #include "messaging/domain/message_bucket.hpp"
+#include "messaging/service/sync_cursor_manager.hpp"
 
 #include <gtest/gtest.h>
 #include <map>
@@ -21,7 +21,7 @@ using domain::MessageId;
 class MockSyncCursorRepo : public repository::ISyncCursorRepository {
   public:
     std::optional<DeviceSyncCursor> get_sync_cursor(const DeviceId& device_id,
-                                                   const ConversationId& conversation_id) override {
+                                                    const ConversationId& conversation_id) override {
         auto key = std::make_pair(device_id.str(), conversation_id.to_string());
         auto it = store_.find(key);
         if (it != store_.end()) {
@@ -61,21 +61,24 @@ class MockMessageRepo : public repository::IMessageRepository {
     void save_message(const MessageEntity& msg) override { (void)msg; }
 
     std::optional<MessageEntity> find_by_id(const ConversationId& conv, const MessageBucket& bucket,
-                                           const MessageId& id) override {
-        (void)conv; (void)bucket; (void)id;
+                                            const MessageId& id) override {
+        (void)conv;
+        (void)bucket;
+        (void)id;
         return std::nullopt;
     }
 
-    std::vector<MessageEntity> list_messages_by_sequence_range(const ConversationId& conv,
-                                                              const MessageBucket& bucket,
-                                                              uint64_t from, uint64_t to,
-                                                              size_t limit) override {
-        (void)conv; (void)bucket; (void)from; (void)to; (void)limit;
+    std::vector<MessageEntity> list_messages_by_sequence_range(const ConversationId& conv, const MessageBucket& bucket,
+                                                               uint64_t from, uint64_t to, size_t limit) override {
+        (void)conv;
+        (void)bucket;
+        (void)from;
+        (void)to;
+        (void)limit;
         return {};
     }
 
-    uint64_t get_last_sequence(const ConversationId& conversation_id,
-                              const MessageBucket& message_bucket) override {
+    uint64_t get_last_sequence(const ConversationId& conversation_id, const MessageBucket& message_bucket) override {
         auto key = std::make_pair(conversation_id.to_string(), message_bucket.value());
         auto it = ceilings_.find(key);
         if (it != ceilings_.end()) {
@@ -302,11 +305,7 @@ TEST_F(SyncCursorManagerTest, UpdateCursorViaCommandOverload) {
     seq_allocator_->set_peek_sequence(conv_id_, current_bucket_, 50);
 
     UpdateSyncCursorCommand cmd{
-        .device_id = dev_id_,
-        .conversation_id = conv_id_,
-        .new_sequence = 25,
-        .sync_version = 1
-    };
+        .device_id = dev_id_, .conversation_id = conv_id_, .new_sequence = 25, .sync_version = 1};
 
     auto outcome = manager_->update_cursor(cmd);
     EXPECT_TRUE(outcome.is_success());

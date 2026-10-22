@@ -48,9 +48,7 @@ struct SyncCursorUpdateOutcome {
     domain::DeviceSyncCursor cursor{};
     std::string error_message{};
 
-    [[nodiscard]] bool is_success() const noexcept {
-        return status == SyncCursorUpdateStatus::Success;
-    }
+    [[nodiscard]] bool is_success() const noexcept { return status == SyncCursorUpdateStatus::Success; }
 };
 
 /**
@@ -87,8 +85,8 @@ class SyncCursorManager {
     [[nodiscard]] SyncCursorUpdateOutcome update_cursor(const UpdateSyncCursorCommand& cmd);
 
     /// Queries the highest allocated message sequence (stream ceiling) in a conversation.
-    [[nodiscard]] domain::MessageSequence get_conversation_sequence_ceiling(
-        const domain::ConversationId& conversation_id);
+    [[nodiscard]] domain::MessageSequence
+    get_conversation_sequence_ceiling(const domain::ConversationId& conversation_id);
 
   private:
     std::shared_ptr<repository::ISyncCursorRepository> cursor_repo_;

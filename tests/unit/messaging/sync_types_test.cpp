@@ -2,8 +2,8 @@
 #include "messaging/service/sync_commands.hpp"
 #include "securecloud/messaging/v1/messaging.pb.h"
 
-#include <gtest/gtest.h>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <string>
 #include <thread>
 
@@ -111,12 +111,10 @@ TEST(SyncCommandsTest, SyncCommandsDefaultValues) {
     EXPECT_EQ(cmd.max_messages, k_default_sync_batch_size);
     EXPECT_FALSE(cmd.conversation_id.has_value());
 
-    UpdateSyncCursorCommand update_cmd{
-        .device_id = DeviceId("dev-1"),
-        .conversation_id = ConversationId::generate_v7(),
-        .new_sequence = 42,
-        .sync_version = 1
-    };
+    UpdateSyncCursorCommand update_cmd{.device_id = DeviceId("dev-1"),
+                                       .conversation_id = ConversationId::generate_v7(),
+                                       .new_sequence = 42,
+                                       .sync_version = 1};
     EXPECT_EQ(update_cmd.new_sequence, 42U);
     EXPECT_EQ(update_cmd.sync_version, 1);
 }

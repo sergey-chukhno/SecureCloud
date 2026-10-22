@@ -46,11 +46,11 @@ void ScyllaSyncCursorRepository::init_prepared_statements() {
                                 "FROM securecloud_messaging.sync_state_by_device "
                                 "WHERE device_id = ? AND conversation_id = ?;");
 
-    prep_list_cursors_by_device_ = session_->prepare(
-        "sync_repo_list_cursors_by_device",
-        "SELECT device_id, conversation_id, last_synced_sequence, last_sync_at, sync_version "
-        "FROM securecloud_messaging.sync_state_by_device "
-        "WHERE device_id = ?;");
+    prep_list_cursors_by_device_ =
+        session_->prepare("sync_repo_list_cursors_by_device",
+                          "SELECT device_id, conversation_id, last_synced_sequence, last_sync_at, sync_version "
+                          "FROM securecloud_messaging.sync_state_by_device "
+                          "WHERE device_id = ?;");
 
     prep_upsert_cursor_ = session_->prepare(
         "sync_repo_upsert_cursor", "INSERT INTO securecloud_messaging.sync_state_by_device "

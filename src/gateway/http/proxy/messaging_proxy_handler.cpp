@@ -45,6 +45,62 @@ std::string delivery_state_to_string(securecloud::messaging::v1::DeliveryState s
     }
 }
 
+std::string priority_to_string(securecloud::messaging::v1::MessagePriority priority) {
+    switch (priority) {
+    case securecloud::messaging::v1::MESSAGE_PRIORITY_URGENT:
+        return "urgent";
+    case securecloud::messaging::v1::MESSAGE_PRIORITY_EMERGENCY:
+        return "emergency";
+    case securecloud::messaging::v1::MESSAGE_PRIORITY_NORMAL:
+    default:
+        return "normal";
+    }
+}
+
+nlohmann::json message_envelope_to_json(const securecloud::messaging::v1::MessageEnvelope& env) {
+    nlohmann::json j;
+    j["message_id"] = env.message_id();
+    j["conversation_id"] = env.conversation_id();
+    j["sender_user_id"] = env.sender_user_id();
+    j["sender_device_id"] = env.sender_device_id();
+    j["priority"] = priority_to_string(env.priority());
+    j["created_at_unix_ms"] = env.created_at_unix_ms();
+    j["expires_at_unix_ms"] = env.expires_at_unix_ms();
+    j["client_idempotency_token"] = env.client_idempotency_token();
+
+    nlohmann::json targets = nlohmann::json::array();
+    for (const auto& target : env.delivery_targets()) {
+        nlohmann::json t_json;
+        t_json["recipient_user_id"] = target.recipient_user_id();
+        t_json["recipient_device_id"] = target.recipient_device_id();
+        t_json["state"] = delivery_state_to_string(target.state());
+        t_json["updated_at_unix_ms"] = target.updated_at_unix_ms();
+
+        if (target.has_encrypted_payload()) {
+            const auto& ep = target.encrypted_payload();
+            nlohmann::json ep_json;
+            ep_json["ciphertext_blob"] = ep.ciphertext_blob();
+            ep_json["ephemeral_public_key"] = ep.ephemeral_public_key();
+            ep_json["initialization_vector"] = ep.initialization_vector();
+            ep_json["auth_tag"] = ep.auth_tag();
+            ep_json["algorithm"] = ep.algorithm();
+            t_json["encrypted_payload"] = ep_json;
+        }
+        targets.push_back(t_json);
+    }
+    j["delivery_targets"] = targets;
+    return j;
+}
+
+nlohmann::json sync_cursor_to_json(const securecloud::messaging::v1::SyncCursor& cursor) {
+    nlohmann::json j;
+    j["device_id"] = cursor.device_id();
+    j["conversation_id"] = cursor.conversation_id();
+    j["last_delivered_sequence"] = cursor.last_delivered_sequence();
+    j["last_sync_timestamp_unix_ms"] = cursor.last_sync_timestamp_unix_ms();
+    return j;
+}
+
 } // namespace
 
 MessagingProxyHandler::MessagingProxyHandler(std::shared_ptr<grpc::IMessagingClient> messaging_client,
@@ -198,6 +254,53 @@ void MessagingProxyHandler::register_routes(Router& router) {
     router.add_authenticated_route(
         "PATCH", "/api/v1/conversations/:id/metadata",
         [this](const auto& req, auto& res, const auto& ctx) { handle_update_metadata(req, res, ctx); });
+
+    // MSG-009 Message Synchronization and Resumption
+    router.get_authenticated("/api/v1/conversations/:id/messages", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_sync_messages(req, res, ctx);
+    });
+    router.get_authenticated("/v1/conversations/:id/messages", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_sync_messages(req, res, ctx);
+    });
+    router.get_authenticated(
+        "/api/v1/conversations/:conversationId/messages",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_sync_messages(req, res, ctx); });
+    router.get_authenticated(
+        "/v1/conversations/:conversationId/messages",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_sync_messages(req, res, ctx); });
+    router.get_authenticated(
+        "/api/v1/conversations/:conversation_id/messages",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_sync_messages(req, res, ctx); });
+    router.get_authenticated(
+        "/v1/conversations/:conversation_id/messages",
+        [this](const auto& req, auto& res, const auto& ctx) { handle_sync_messages(req, res, ctx); });
+
+    // MSG-009 Sync Cursor Management
+    router.get_authenticated("/api/v1/devices/:deviceId/cursor", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_get_sync_cursor(req, res, ctx);
+    });
+    router.get_authenticated("/v1/devices/:deviceId/cursor", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_get_sync_cursor(req, res, ctx);
+    });
+    router.get_authenticated("/api/v1/devices/:device_id/cursor", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_get_sync_cursor(req, res, ctx);
+    });
+    router.get_authenticated("/v1/devices/:device_id/cursor", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_get_sync_cursor(req, res, ctx);
+    });
+
+    router.put_authenticated("/api/v1/devices/:deviceId/cursor", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_update_sync_cursor(req, res, ctx);
+    });
+    router.put_authenticated("/v1/devices/:deviceId/cursor", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_update_sync_cursor(req, res, ctx);
+    });
+    router.put_authenticated("/api/v1/devices/:device_id/cursor", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_update_sync_cursor(req, res, ctx);
+    });
+    router.put_authenticated("/v1/devices/:device_id/cursor", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_update_sync_cursor(req, res, ctx);
+    });
 }
 
 // ============================================================================
@@ -1073,6 +1176,320 @@ void MessagingProxyHandler::handle_get_delivery_status(const httplib::Request& r
         recipient_read_statuses.push_back(rrs_json);
     }
     response_body["recipient_read_statuses"] = recipient_read_statuses;
+
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// MSG-009 Synchronization and Cursor Handlers
+// ============================================================================
+
+void MessagingProxyHandler::handle_sync_messages(const httplib::Request& req, httplib::Response& res,
+                                                 const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string conversation_id = Router::get_path_param(req, "conversationId");
+    if (conversation_id.empty()) {
+        conversation_id = Router::get_path_param(req, "conversation_id");
+    }
+    if (conversation_id.empty()) {
+        conversation_id = Router::get_path_param(req, "id");
+    }
+    if (conversation_id.empty() && req.has_param("conversation_id")) {
+        conversation_id = req.get_param_value("conversation_id");
+    }
+
+    if (conversation_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing conversation ID", request_id);
+        return;
+    }
+
+    int64_t since_sequence = 0;
+    if (req.has_param("since_sequence")) {
+        try {
+            since_sequence = std::stoll(req.get_param_value("since_sequence"));
+            if (since_sequence < 0) {
+                ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "since_sequence must be non-negative",
+                                         request_id);
+                return;
+            }
+        } catch (const std::exception&) {
+            ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid since_sequence parameter", request_id);
+            return;
+        }
+    }
+
+    uint32_t limit = 50;
+    if (req.has_param("limit")) {
+        try {
+            int parsed_limit = std::stoi(req.get_param_value("limit"));
+            if (parsed_limit < 1) {
+                limit = 1;
+            } else if (parsed_limit > 100) {
+                limit = 100;
+            } else {
+                limit = static_cast<uint32_t>(parsed_limit);
+            }
+        } catch (const std::exception&) {
+            ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid limit parameter", request_id);
+            return;
+        }
+    } else if (req.has_param("max_messages")) {
+        try {
+            int parsed_limit = std::stoi(req.get_param_value("max_messages"));
+            if (parsed_limit < 1) {
+                limit = 1;
+            } else if (parsed_limit > 100) {
+                limit = 100;
+            } else {
+                limit = static_cast<uint32_t>(parsed_limit);
+            }
+        } catch (const std::exception&) {
+            ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid max_messages parameter", request_id);
+            return;
+        }
+    }
+
+    securecloud::messaging::v1::SyncDeviceMessagesRequest grpc_req;
+    grpc_req.set_conversation_id(conversation_id);
+    grpc_req.set_device_id(ctx.device_id());
+    grpc_req.set_since_sequence(since_sequence);
+    grpc_req.set_max_messages(limit);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->sync_device_messages(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    const auto& resp = result.value();
+    nlohmann::json response_body;
+    response_body["device_id"] = resp.device_id();
+    response_body["conversation_id"] = conversation_id;
+    response_body["has_more"] = resp.has_more();
+    response_body["next_sequence"] = resp.next_sequence();
+    response_body["latest_sequence"] = resp.latest_sequence();
+
+    nlohmann::json messages_json = nlohmann::json::array();
+    for (const auto& msg : resp.messages()) {
+        messages_json.push_back(message_envelope_to_json(msg));
+    }
+    response_body["messages"] = messages_json;
+
+    if (resp.has_cursor()) {
+        response_body["cursor"] = sync_cursor_to_json(resp.cursor());
+    }
+
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+void MessagingProxyHandler::handle_get_sync_cursor(const httplib::Request& req, httplib::Response& res,
+                                                   const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string device_id = Router::get_path_param(req, "deviceId");
+    if (device_id.empty()) {
+        device_id = Router::get_path_param(req, "device_id");
+    }
+    if (device_id.empty()) {
+        device_id = Router::get_path_param(req, "id");
+    }
+
+    if (device_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing device ID", request_id);
+        return;
+    }
+
+    // AuthenticatedContext device boundary enforcement
+    if (!ctx.device_id().empty() && ctx.device_id() != device_id) {
+        ErrorMapper::write_error(res, 403, "PERMISSION_DENIED", "Access forbidden to device cursor", request_id);
+        return;
+    }
+
+    std::string conversation_id;
+    if (req.has_param("conversation_id")) {
+        conversation_id = req.get_param_value("conversation_id");
+    } else if (req.has_param("conversationId")) {
+        conversation_id = req.get_param_value("conversationId");
+    }
+
+    securecloud::messaging::v1::GetSyncCursorRequest grpc_req;
+    grpc_req.set_device_id(device_id);
+    grpc_req.set_conversation_id(conversation_id);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->get_sync_cursor(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    const auto& resp = result.value();
+    nlohmann::json response_body;
+    if (resp.has_cursor()) {
+        response_body = sync_cursor_to_json(resp.cursor());
+    } else {
+        response_body["device_id"] = device_id;
+        response_body["conversation_id"] = conversation_id;
+        response_body["last_delivered_sequence"] = 0;
+        response_body["last_sync_timestamp_unix_ms"] = 0;
+    }
+
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+void MessagingProxyHandler::handle_update_sync_cursor(const httplib::Request& req, httplib::Response& res,
+                                                      const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string device_id = Router::get_path_param(req, "deviceId");
+    if (device_id.empty()) {
+        device_id = Router::get_path_param(req, "device_id");
+    }
+    if (device_id.empty()) {
+        device_id = Router::get_path_param(req, "id");
+    }
+
+    if (device_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing device ID", request_id);
+        return;
+    }
+
+    // AuthenticatedContext device boundary enforcement
+    if (!ctx.device_id().empty() && ctx.device_id() != device_id) {
+        ErrorMapper::write_error(res, 403, "PERMISSION_DENIED", "Access forbidden to update device cursor", request_id);
+        return;
+    }
+
+    nlohmann::json body;
+    try {
+        body = nlohmann::json::parse(req.body);
+    } catch (const std::exception&) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid JSON body", request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::UpdateSyncCursorRequest grpc_req;
+    auto* cursor = grpc_req.mutable_cursor();
+    cursor->set_device_id(device_id);
+
+    std::string conversation_id = body.value("conversation_id", "");
+    if (conversation_id.empty() && body.contains("conversationId") && body["conversationId"].is_string()) {
+        conversation_id = body["conversationId"].get<std::string>();
+    }
+    cursor->set_conversation_id(conversation_id);
+
+    int64_t last_delivered_sequence = 0;
+    if (body.contains("last_delivered_sequence") && body["last_delivered_sequence"].is_number_integer()) {
+        last_delivered_sequence = body["last_delivered_sequence"].get<int64_t>();
+    } else if (body.contains("sequence") && body["sequence"].is_number_integer()) {
+        last_delivered_sequence = body["sequence"].get<int64_t>();
+    }
+    cursor->set_last_delivered_sequence(last_delivered_sequence);
+
+    int64_t timestamp_ms = 0;
+    if (body.contains("last_sync_timestamp_unix_ms") && body["last_sync_timestamp_unix_ms"].is_number_integer()) {
+        timestamp_ms = body["last_sync_timestamp_unix_ms"].get<int64_t>();
+    } else if (body.contains("checkpoint_timestamp_ms") && body["checkpoint_timestamp_ms"].is_number_integer()) {
+        timestamp_ms = body["checkpoint_timestamp_ms"].get<int64_t>();
+    } else {
+        timestamp_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
+    }
+    cursor->set_last_sync_timestamp_unix_ms(timestamp_ms);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->update_sync_cursor(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    const auto& resp = result.value();
+    nlohmann::json response_body;
+    response_body["success"] = resp.success();
+    if (resp.has_cursor()) {
+        response_body["cursor"] = sync_cursor_to_json(resp.cursor());
+    } else {
+        response_body["cursor"] = sync_cursor_to_json(*cursor);
+    }
 
     res.status = 200;
     res.set_content(response_body.dump(), k_content_type_json);
