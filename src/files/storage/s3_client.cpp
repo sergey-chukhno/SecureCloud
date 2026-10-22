@@ -4,13 +4,16 @@
 #include <array>
 #include <cctype>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <ctime>
 #include <iomanip>
 #include <openssl/evp.h>
 #include <openssl/hmac.h>
 #include <openssl/sha.h>
+#include <random>
 #include <sstream>
+#include <thread>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -87,6 +90,28 @@ constexpr int kBase10 = 10;
 constexpr int kHttpStatusOk = 200;
 constexpr int kHttpStatusForbidden = 403;
 constexpr int kHttpStatusNotFound = 404;
+
+inline std::string unquote(std::string_view s) {
+    if (s.size() >= 2 && s.front() == '"' && s.back() == '"') {
+        return std::string(s.substr(1, s.size() - 2));
+    }
+    return std::string(s);
+}
+
+inline std::string extract_xml_tag(std::string_view xml, std::string_view tag) {
+    const std::string open_tag = "<" + std::string(tag) + ">";
+    const std::string close_tag = "</" + std::string(tag) + ">";
+    size_t start = xml.find(open_tag);
+    if (start == std::string_view::npos) {
+        return "";
+    }
+    start += open_tag.size();
+    const size_t end = xml.find(close_tag, start);
+    if (end == std::string_view::npos) {
+        return "";
+    }
+    return std::string(xml.substr(start, end - start));
+}
 
 } // namespace
 
@@ -170,7 +195,13 @@ void SigV4Signer::sign_request(HttpRequest& req, const std::string& access_key, 
     const std::string date_stamp = amz_date.substr(0, kDateStampLen);
 
     // Payload Hash
-    const std::string payload_hash = sha256_hex(req.body);
+    std::string payload_hash;
+    const auto sha_it = req.headers.find("x-amz-content-sha256");
+    if (sha_it != req.headers.end() && !sha_it->second.empty()) {
+        payload_hash = sha_it->second;
+    } else {
+        payload_hash = sha256_hex(req.body);
+    }
 
     // Host header representation
     std::string host_header_val = req.host;
@@ -200,15 +231,46 @@ void SigV4Signer::sign_request(HttpRequest& req, const std::string& access_key, 
         first = false;
     }
 
-    // Canonical URI
+    // Canonical URI and Query String
     std::string canonical_uri = req.path;
+    std::string canonical_query_string;
+    const size_t q_pos = req.path.find('?');
+    if (q_pos != std::string::npos) {
+        canonical_uri = req.path.substr(0, q_pos);
+        const std::string raw_query = req.path.substr(q_pos + 1);
+
+        std::map<std::string, std::string> query_map;
+        std::istringstream q_stream(raw_query);
+        std::string param;
+        while (std::getline(q_stream, param, '&')) {
+            if (param.empty()) {
+                continue;
+            }
+            const size_t eq_pos = param.find('=');
+            if (eq_pos != std::string::npos) {
+                query_map[param.substr(0, eq_pos)] = param.substr(eq_pos + 1);
+            } else {
+                query_map[param] = "";
+            }
+        }
+
+        bool first_param = true;
+        for (const auto& [k, v] : query_map) {
+            if (!first_param) {
+                canonical_query_string += "&";
+            }
+            canonical_query_string += k + "=" + v;
+            first_param = false;
+        }
+    }
+
     if (canonical_uri.empty() || canonical_uri.front() != '/') {
         canonical_uri = "/" + canonical_uri;
     }
 
     // Canonical Request
-    std::string canonical_request =
-        req.method + "\n" + canonical_uri + "\n\n" + canonical_headers + "\n" + signed_headers + "\n" + payload_hash;
+    const std::string canonical_request = req.method + "\n" + canonical_uri + "\n" + canonical_query_string + "\n" +
+                                          canonical_headers + "\n" + signed_headers + "\n" + payload_hash;
 
     // String to Sign
     const std::string credential_scope = date_stamp + "/" + region + "/" + service + "/aws4_request";
@@ -225,7 +287,46 @@ void SigV4Signer::sign_request(HttpRequest& req, const std::string& access_key, 
                                    ", SignedHeaders=" + signed_headers + ", Signature=" + signature;
 }
 
+// --- S3RetryPolicy Implementation ---
+
+std::chrono::milliseconds S3RetryPolicy::calculate_backoff(uint32_t attempt) const noexcept {
+    if (attempt == 0) {
+        attempt = 1;
+    }
+    const double multiplier = std::pow(2.0, static_cast<double>(attempt - 1));
+    const double raw_backoff_ms = static_cast<double>(initial_backoff.count()) * multiplier;
+    double capped_ms = std::min(raw_backoff_ms, static_cast<double>(max_backoff.count()));
+    if (jitter_factor > 0.0) {
+        static thread_local std::mt19937 gen(std::random_device{}());
+        std::uniform_real_distribution<double> dist(1.0 - jitter_factor, 1.0 + jitter_factor);
+        capped_ms *= dist(gen);
+    }
+    return std::chrono::milliseconds(static_cast<long long>(std::max(0.0, std::round(capped_ms))));
+}
+
 // --- DefaultHttpTransport Implementation ---
+
+DefaultHttpTransport::DefaultHttpTransport() = default;
+
+DefaultHttpTransport::~DefaultHttpTransport() {
+    close_current_socket();
+}
+
+void DefaultHttpTransport::close_current_socket() noexcept {
+#ifdef _WIN32
+    if (cached_sock_ != ~static_cast<uintptr_t>(0)) {
+        close_socket(static_cast<SOCKET>(cached_sock_));
+        cached_sock_ = ~static_cast<uintptr_t>(0);
+    }
+#else
+    if (cached_sock_ >= 0) {
+        close_socket(cached_sock_);
+        cached_sock_ = -1;
+    }
+#endif
+    cached_host_.clear();
+    cached_port_ = 0;
+}
 
 HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
     init_winsock();
@@ -316,9 +417,54 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
     }
     close_socket(sock);
 
-    // Parse HTTP status line: "HTTP/1.1 <code status_message>\r\n"
+    // Parse HTTP response status line, headers and body
     HttpResponse res;
-    if (response_data.starts_with("HTTP/")) {
+    const size_t header_end = response_data.find("\r\n\r\n");
+    if (header_end != std::string::npos) {
+        const std::string header_str = response_data.substr(0, header_end);
+        if (req.method != "HEAD") {
+            res.body = response_data.substr(header_end + 4);
+        }
+
+        std::istringstream stream(header_str);
+        std::string line;
+        // Parse status line: "HTTP/1.1 <code status_message>\r\n"
+        if (std::getline(stream, line)) {
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+            if (line.starts_with("HTTP/")) {
+                const size_t first_space = line.find(' ');
+                if (first_space != std::string::npos) {
+                    const size_t second_space = line.find(' ', first_space + 1);
+                    if (second_space != std::string::npos) {
+                        res.status_code = static_cast<int>(std::strtol(
+                            line.substr(first_space + 1, second_space - first_space - 1).c_str(), nullptr, kBase10));
+                        res.status_message = line.substr(second_space + 1);
+                    } else {
+                        res.status_code =
+                            static_cast<int>(std::strtol(line.substr(first_space + 1).c_str(), nullptr, kBase10));
+                    }
+                }
+            }
+        }
+
+        // Parse HTTP headers
+        while (std::getline(stream, line)) {
+            if (!line.empty() && line.back() == '\r') {
+                line.pop_back();
+            }
+            if (line.empty()) {
+                continue;
+            }
+            const size_t colon = line.find(':');
+            if (colon != std::string::npos) {
+                const std::string k = to_lower(trim(line.substr(0, colon)));
+                const std::string v = trim(line.substr(colon + 1));
+                res.headers[k] = v;
+            }
+        }
+    } else if (response_data.starts_with("HTTP/")) {
         const size_t first_space = response_data.find(' ');
         if (first_space != std::string::npos) {
             const size_t second_space = response_data.find(' ', first_space + 1);
@@ -340,7 +486,7 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
 // --- S3Client Implementation ---
 
 S3Client::S3Client(S3ClientConfig config, std::shared_ptr<IHttpTransport> transport)
-    : config_(std::move(config)), transport_(std::move(transport)) {
+    : config_(std::move(config)), transport_(std::move(transport)), retry_policy_(config_.retry_policy) {
     config_.validate();
     parse_endpoint();
 
@@ -379,6 +525,24 @@ void S3Client::parse_endpoint() {
     }
 }
 
+HttpResponse S3Client::execute_with_retry(HttpRequest req) {
+    uint32_t attempt = 0;
+    while (true) {
+        attempt++;
+        HttpResponse res = transport_->execute(req);
+        if (res.status_code >= 200 && res.status_code < 300) {
+            return res;
+        }
+        if (!retry_policy_.is_retryable(res.status_code) || attempt > retry_policy_.max_retries) {
+            return res;
+        }
+        const auto backoff = retry_policy_.calculate_backoff(attempt);
+        if (backoff.count() > 0) {
+            std::this_thread::sleep_for(backoff);
+        }
+    }
+}
+
 bool S3Client::ping_bucket(std::chrono::milliseconds timeout) noexcept {
     try {
         HttpRequest req;
@@ -391,7 +555,7 @@ bool S3Client::ping_bucket(std::chrono::milliseconds timeout) noexcept {
         SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(),
                                   config_.region, "s3");
 
-        const HttpResponse res = transport_->execute(req);
+        const HttpResponse res = execute_with_retry(req);
         return res.status_code == kHttpStatusOk;
     } catch (...) {
         return false;
@@ -409,7 +573,7 @@ bool S3Client::object_exists(const std::string& object_key, std::chrono::millise
     SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
                               "s3");
 
-    const HttpResponse res = transport_->execute(req);
+    const HttpResponse res = execute_with_retry(req);
 
     if (res.status_code == kHttpStatusOk) {
         return true;
@@ -425,6 +589,403 @@ bool S3Client::object_exists(const std::string& object_key, std::chrono::millise
     }
 
     throw S3ClientException("Unexpected S3 response status: " + std::to_string(res.status_code));
+}
+
+bool S3Client::put_object(const std::string& object_key, std::string_view payload, const std::string& content_type,
+                          const std::string& sha256_hex, std::chrono::milliseconds timeout) {
+    HttpRequest req;
+    req.method = "PUT";
+    req.path = "/" + config_.bucket + "/" + object_key;
+    req.host = host_;
+    req.port = port_;
+    req.timeout = timeout;
+    req.body = std::string(payload);
+    req.headers["content-type"] = content_type;
+    req.headers["content-length"] = std::to_string(payload.size());
+
+    const std::string payload_hash = sha256_hex.empty() ? SigV4Signer::sha256_hex(payload) : sha256_hex;
+    req.headers["x-amz-content-sha256"] = payload_hash;
+
+    SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
+                              "s3");
+
+    const HttpResponse res = execute_with_retry(req);
+
+    if (res.status_code == kHttpStatusOk || res.status_code == 201) {
+        return true;
+    }
+    if (res.status_code == kHttpStatusForbidden || res.status_code == 401) {
+        throw S3AuthenticationException("MinIO S3 rejected PUT request: " + std::to_string(res.status_code));
+    }
+    if (res.status_code >= 500 && res.status_code <= 599) {
+        throw S3ServerException("MinIO S3 server error on PUT: " + std::to_string(res.status_code));
+    }
+    if (res.status_code == 0) {
+        throw S3ConnectionException("Failed to reach S3 endpoint on PUT: " + config_.endpoint);
+    }
+
+    throw S3ClientException("Unexpected S3 PUT response status: " + std::to_string(res.status_code));
+}
+
+S3ObjectResponse S3Client::get_object(const std::string& object_key, std::optional<ByteRange> range,
+                                      std::chrono::milliseconds timeout) {
+    HttpRequest req;
+    req.method = "GET";
+    req.path = "/" + config_.bucket + "/" + object_key;
+    req.host = host_;
+    req.port = port_;
+    req.timeout = timeout;
+
+    if (range.has_value()) {
+        req.headers["range"] = range->to_header_value();
+    }
+
+    SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
+                              "s3");
+
+    const HttpResponse res = execute_with_retry(req);
+
+    if (res.status_code == kHttpStatusOk || res.status_code == 206) {
+        S3ObjectResponse obj;
+        obj.status_code = res.status_code;
+        obj.body = res.body;
+        obj.content_length = obj.body.size();
+        obj.headers = res.headers;
+
+        const auto etag_it = res.headers.find("etag");
+        if (etag_it != res.headers.end()) {
+            obj.etag = unquote(etag_it->second);
+        }
+        const auto ct_it = res.headers.find("content-type");
+        if (ct_it != res.headers.end()) {
+            obj.content_type = ct_it->second;
+        }
+        const auto cl_it = res.headers.find("content-length");
+        if (cl_it != res.headers.end()) {
+            obj.content_length = static_cast<size_t>(std::strtoull(cl_it->second.c_str(), nullptr, kBase10));
+        }
+        return obj;
+    }
+    if (res.status_code == kHttpStatusNotFound) {
+        throw S3ObjectNotFoundException("Object not found: " + object_key);
+    }
+    if (res.status_code == kHttpStatusForbidden || res.status_code == 401) {
+        throw S3AuthenticationException("MinIO S3 rejected GET request: " + std::to_string(res.status_code));
+    }
+    if (res.status_code >= 500 && res.status_code <= 599) {
+        throw S3ServerException("MinIO S3 server error on GET: " + std::to_string(res.status_code));
+    }
+    if (res.status_code == 0) {
+        throw S3ConnectionException("Failed to reach S3 endpoint on GET: " + config_.endpoint);
+    }
+
+    throw S3ClientException("Unexpected S3 GET response status: " + std::to_string(res.status_code));
+}
+
+S3ObjectMetadata S3Client::head_object(const std::string& object_key, std::chrono::milliseconds timeout) {
+    HttpRequest req;
+    req.method = "HEAD";
+    req.path = "/" + config_.bucket + "/" + object_key;
+    req.host = host_;
+    req.port = port_;
+    req.timeout = timeout;
+
+    SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
+                              "s3");
+
+    const HttpResponse res = execute_with_retry(req);
+
+    if (res.status_code == kHttpStatusOk) {
+        S3ObjectMetadata meta;
+        meta.headers = res.headers;
+        const auto etag_it = res.headers.find("etag");
+        if (etag_it != res.headers.end()) {
+            meta.etag = unquote(etag_it->second);
+        }
+        const auto ct_it = res.headers.find("content-type");
+        if (ct_it != res.headers.end()) {
+            meta.content_type = ct_it->second;
+        }
+        const auto cl_it = res.headers.find("content-length");
+        if (cl_it != res.headers.end()) {
+            meta.content_length = static_cast<size_t>(std::strtoull(cl_it->second.c_str(), nullptr, kBase10));
+        }
+        return meta;
+    }
+    if (res.status_code == kHttpStatusNotFound) {
+        throw S3ObjectNotFoundException("Object not found: " + object_key);
+    }
+    if (res.status_code == kHttpStatusForbidden || res.status_code == 401) {
+        throw S3AuthenticationException("MinIO S3 rejected HEAD request: " + std::to_string(res.status_code));
+    }
+    if (res.status_code >= 500 && res.status_code <= 599) {
+        throw S3ServerException("MinIO S3 server error on HEAD: " + std::to_string(res.status_code));
+    }
+    if (res.status_code == 0) {
+        throw S3ConnectionException("Failed to reach S3 endpoint on HEAD: " + config_.endpoint);
+    }
+
+    throw S3ClientException("Unexpected S3 HEAD response status: " + std::to_string(res.status_code));
+}
+
+bool S3Client::delete_object(const std::string& object_key, std::chrono::milliseconds timeout) {
+    HttpRequest req;
+    req.method = "DELETE";
+    req.path = "/" + config_.bucket + "/" + object_key;
+    req.host = host_;
+    req.port = port_;
+    req.timeout = timeout;
+
+    SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
+                              "s3");
+
+    const HttpResponse res = execute_with_retry(req);
+
+    if (res.status_code == 204 || res.status_code == kHttpStatusOk || res.status_code == kHttpStatusNotFound) {
+        return true;
+    }
+    if (res.status_code == kHttpStatusForbidden || res.status_code == 401) {
+        throw S3AuthenticationException("MinIO S3 rejected DELETE request: " + std::to_string(res.status_code));
+    }
+    if (res.status_code >= 500 && res.status_code <= 599) {
+        throw S3ServerException("MinIO S3 server error on DELETE: " + std::to_string(res.status_code));
+    }
+    if (res.status_code == 0) {
+        throw S3ConnectionException("Failed to reach S3 endpoint on DELETE: " + config_.endpoint);
+    }
+
+    throw S3ClientException("Unexpected S3 DELETE response status: " + std::to_string(res.status_code));
+}
+
+std::string S3Client::create_multipart_upload(const std::string& object_key, const std::string& content_type,
+                                              std::chrono::milliseconds timeout) {
+    HttpRequest req;
+    req.method = "POST";
+    req.path = "/" + config_.bucket + "/" + object_key + "?uploads";
+    req.host = host_;
+    req.port = port_;
+    req.timeout = timeout;
+    req.headers["content-type"] = content_type;
+    req.headers["content-length"] = "0";
+
+    SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
+                              "s3");
+
+    const HttpResponse res = execute_with_retry(req);
+
+    if (res.status_code == kHttpStatusOk) {
+        std::string upload_id = extract_xml_tag(res.body, "UploadId");
+        if (upload_id.empty()) {
+            throw S3ClientException("Failed to parse UploadId from S3 create_multipart_upload response");
+        }
+        return upload_id;
+    }
+    if (res.status_code == kHttpStatusForbidden || res.status_code == 401) {
+        throw S3AuthenticationException("MinIO S3 rejected create_multipart_upload: " +
+                                        std::to_string(res.status_code));
+    }
+    if (res.status_code >= 500 && res.status_code <= 599) {
+        throw S3ServerException("MinIO S3 server error on create_multipart_upload: " + std::to_string(res.status_code));
+    }
+    if (res.status_code == 0) {
+        throw S3ConnectionException("Failed to reach S3 endpoint on create_multipart_upload: " + config_.endpoint);
+    }
+
+    throw S3ClientException("Unexpected S3 create_multipart_upload response status: " +
+                            std::to_string(res.status_code));
+}
+
+std::string S3Client::upload_part(const std::string& object_key, const std::string& upload_id, uint32_t part_number,
+                                  std::string_view payload, const std::string& sha256_hex,
+                                  std::chrono::milliseconds timeout) {
+    HttpRequest req;
+    req.method = "PUT";
+    req.path = "/" + config_.bucket + "/" + object_key + "?partNumber=" + std::to_string(part_number) +
+               "&uploadId=" + upload_id;
+    req.host = host_;
+    req.port = port_;
+    req.timeout = timeout;
+    req.body = std::string(payload);
+    req.headers["content-length"] = std::to_string(payload.size());
+
+    const std::string payload_hash = sha256_hex.empty() ? SigV4Signer::sha256_hex(payload) : sha256_hex;
+    req.headers["x-amz-content-sha256"] = payload_hash;
+
+    SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
+                              "s3");
+
+    const HttpResponse res = execute_with_retry(req);
+
+    if (res.status_code == kHttpStatusOk) {
+        const auto etag_it = res.headers.find("etag");
+        if (etag_it != res.headers.end()) {
+            return unquote(etag_it->second);
+        }
+        throw S3ClientException("Missing ETag header in upload_part response");
+    }
+    if (res.status_code == kHttpStatusForbidden || res.status_code == 401) {
+        throw S3AuthenticationException("MinIO S3 rejected upload_part: " + std::to_string(res.status_code));
+    }
+    if (res.status_code >= 500 && res.status_code <= 599) {
+        throw S3ServerException("MinIO S3 server error on upload_part: " + std::to_string(res.status_code));
+    }
+    if (res.status_code == 0) {
+        throw S3ConnectionException("Failed to reach S3 endpoint on upload_part: " + config_.endpoint);
+    }
+
+    throw S3ClientException("Unexpected S3 upload_part response status: " + std::to_string(res.status_code));
+}
+
+bool S3Client::complete_multipart_upload(const std::string& object_key, const std::string& upload_id,
+                                         const std::vector<CompletedPart>& parts, std::chrono::milliseconds timeout) {
+    HttpRequest req;
+    req.method = "POST";
+    req.path = "/" + config_.bucket + "/" + object_key + "?uploadId=" + upload_id;
+    req.host = host_;
+    req.port = port_;
+    req.timeout = timeout;
+
+    std::ostringstream xml;
+    xml << "<CompleteMultipartUpload>";
+    for (const auto& part : parts) {
+        xml << "<Part>";
+        xml << "<PartNumber>" << part.part_number << "</PartNumber>";
+        std::string etag = part.etag;
+        if (!etag.empty() && etag.front() != '"') {
+            etag = "\"" + etag + "\"";
+        }
+        xml << "<ETag>" << etag << "</ETag>";
+        xml << "</Part>";
+    }
+    xml << "</CompleteMultipartUpload>";
+
+    req.body = xml.str();
+    req.headers["content-type"] = "application/xml";
+    req.headers["content-length"] = std::to_string(req.body.size());
+
+    SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
+                              "s3");
+
+    const HttpResponse res = execute_with_retry(req);
+
+    if (res.status_code == kHttpStatusOk) {
+        return true;
+    }
+    if (res.status_code == kHttpStatusForbidden || res.status_code == 401) {
+        throw S3AuthenticationException("MinIO S3 rejected complete_multipart_upload: " +
+                                        std::to_string(res.status_code));
+    }
+    if (res.status_code >= 500 && res.status_code <= 599) {
+        throw S3ServerException("MinIO S3 server error on complete_multipart_upload: " +
+                                std::to_string(res.status_code));
+    }
+    if (res.status_code == 0) {
+        throw S3ConnectionException("Failed to reach S3 endpoint on complete_multipart_upload: " + config_.endpoint);
+    }
+
+    throw S3ClientException("Unexpected S3 complete_multipart_upload response status: " +
+                            std::to_string(res.status_code));
+}
+
+bool S3Client::abort_multipart_upload(const std::string& object_key, const std::string& upload_id,
+                                      std::chrono::milliseconds timeout) {
+    HttpRequest req;
+    req.method = "DELETE";
+    req.path = "/" + config_.bucket + "/" + object_key + "?uploadId=" + upload_id;
+    req.host = host_;
+    req.port = port_;
+    req.timeout = timeout;
+
+    SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
+                              "s3");
+
+    const HttpResponse res = execute_with_retry(req);
+
+    if (res.status_code == 204 || res.status_code == kHttpStatusOk || res.status_code == kHttpStatusNotFound) {
+        return true;
+    }
+    if (res.status_code == kHttpStatusForbidden || res.status_code == 401) {
+        throw S3AuthenticationException("MinIO S3 rejected abort_multipart_upload: " + std::to_string(res.status_code));
+    }
+    if (res.status_code >= 500 && res.status_code <= 599) {
+        throw S3ServerException("MinIO S3 server error on abort_multipart_upload: " + std::to_string(res.status_code));
+    }
+    if (res.status_code == 0) {
+        throw S3ConnectionException("Failed to reach S3 endpoint on abort_multipart_upload: " + config_.endpoint);
+    }
+
+    throw S3ClientException("Unexpected S3 abort_multipart_upload response status: " + std::to_string(res.status_code));
+}
+
+ListObjectsResult S3Client::list_objects(const std::string& prefix, size_t max_keys,
+                                         const std::string& continuation_token, std::chrono::milliseconds timeout) {
+    HttpRequest req;
+    req.method = "GET";
+    std::string path = "/" + config_.bucket + "?list-type=2";
+    if (!continuation_token.empty()) {
+        path += "&continuation-token=" + continuation_token;
+    }
+    if (max_keys > 0) {
+        path += "&max-keys=" + std::to_string(max_keys);
+    }
+    if (!prefix.empty()) {
+        path += "&prefix=" + prefix;
+    }
+    req.path = path;
+    req.host = host_;
+    req.port = port_;
+    req.timeout = timeout;
+
+    SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
+                              "s3");
+
+    const HttpResponse res = execute_with_retry(req);
+
+    if (res.status_code == kHttpStatusOk) {
+        ListObjectsResult result;
+        const std::string& xml = res.body;
+
+        const std::string is_truncated_str = extract_xml_tag(xml, "IsTruncated");
+        result.is_truncated = (is_truncated_str == "true");
+        result.next_continuation_token = extract_xml_tag(xml, "NextContinuationToken");
+
+        constexpr std::string_view kOpenContents = "<Contents>";
+        constexpr std::string_view kCloseContents = "</Contents>";
+        size_t pos = 0;
+        while ((pos = xml.find(kOpenContents, pos)) != std::string::npos) {
+            pos += kOpenContents.size();
+            const size_t end_pos = xml.find(kCloseContents, pos);
+            if (end_pos == std::string::npos) {
+                break;
+            }
+            std::string_view item_xml(xml.data() + pos, end_pos - pos);
+            S3ObjectInfo info;
+            info.key = extract_xml_tag(item_xml, "Key");
+            info.etag = unquote(extract_xml_tag(item_xml, "ETag"));
+            info.last_modified = extract_xml_tag(item_xml, "LastModified");
+            const std::string size_str = extract_xml_tag(item_xml, "Size");
+            if (!size_str.empty()) {
+                info.size = static_cast<size_t>(std::strtoull(size_str.c_str(), nullptr, kBase10));
+            }
+            if (!info.key.empty()) {
+                result.objects.push_back(std::move(info));
+            }
+            pos = end_pos + kCloseContents.size();
+        }
+        result.key_count = result.objects.size();
+        return result;
+    }
+    if (res.status_code == kHttpStatusForbidden || res.status_code == 401) {
+        throw S3AuthenticationException("MinIO S3 rejected list_objects: " + std::to_string(res.status_code));
+    }
+    if (res.status_code >= 500 && res.status_code <= 599) {
+        throw S3ServerException("MinIO S3 server error on list_objects: " + std::to_string(res.status_code));
+    }
+    if (res.status_code == 0) {
+        throw S3ConnectionException("Failed to reach S3 endpoint on list_objects: " + config_.endpoint);
+    }
+
+    throw S3ClientException("Unexpected S3 list_objects response status: " + std::to_string(res.status_code));
 }
 
 const S3ClientConfig& S3Client::config() const noexcept {
