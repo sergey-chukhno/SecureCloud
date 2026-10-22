@@ -50,9 +50,9 @@ inline void ensure_integration_winsock() noexcept {}
 
 inline std::string generate_test_uuid() {
     static std::atomic<uint64_t> counter{1};
-    const auto now = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
-                                               std::chrono::system_clock::now().time_since_epoch())
-                                               .count());
+    const auto now = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
     uint64_t id = counter.fetch_add(1);
     std::ostringstream oss;
     oss << std::hex << std::setfill('0') << std::setw(8) << (now & 0xFFFFFFFF) << "-" << std::setw(4)
@@ -204,10 +204,8 @@ TEST_F(FilesMinioStorageIntegrationTest, TC4_LiveMultipartUploadLifecycle) {
     ASSERT_FALSE(etag2.empty());
 
     // 4. Complete multipart upload
-    std::vector<CompletedPart> parts = {
-        CompletedPart{.part_number = 1, .etag = etag1},
-        CompletedPart{.part_number = 2, .etag = etag2}
-    };
+    std::vector<CompletedPart> parts = {CompletedPart{.part_number = 1, .etag = etag1},
+                                        CompletedPart{.part_number = 2, .etag = etag2}};
     EXPECT_TRUE(s3_client_->complete_multipart_upload(object_key, upload_id, parts));
 
     // 5. Verify assembled object exists and check content length

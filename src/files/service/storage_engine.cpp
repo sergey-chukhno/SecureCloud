@@ -28,8 +28,8 @@ std::string StorageEngine::derive_file_object_key(const std::string& file_id, ui
     return "objects/" + file_id + "/" + std::to_string(version_number);
 }
 
-bool StorageEngine::put_chunk(const std::string& transfer_id, uint32_t chunk_index,
-                              std::string_view encrypted_data, const std::string& expected_sha256) {
+bool StorageEngine::put_chunk(const std::string& transfer_id, uint32_t chunk_index, std::string_view encrypted_data,
+                              const std::string& expected_sha256) {
     if (!s3_client_) {
         throw storage::S3ClientException("StorageEngine: S3Client dependency is null");
     }
@@ -87,8 +87,7 @@ bool StorageEngine::put_file_object(const std::string& file_id, uint32_t version
     return s3_client_->put_object(object_key, encrypted_data, "application/octet-stream", actual_sha256);
 }
 
-std::optional<std::string> StorageEngine::get_file_object(const std::string& file_id,
-                                                          uint32_t version_number,
+std::optional<std::string> StorageEngine::get_file_object(const std::string& file_id, uint32_t version_number,
                                                           std::optional<storage::ByteRange> range) {
     if (!s3_client_) {
         throw storage::S3ClientException("StorageEngine: S3Client dependency is null");

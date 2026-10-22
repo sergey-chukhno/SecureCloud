@@ -15,8 +15,8 @@ using storage::HttpResponse;
 using storage::IHttpTransport;
 using storage::S3Client;
 using storage::S3ClientConfig;
-using storage::S3IntegrityException;
 using storage::S3ClientException;
+using storage::S3IntegrityException;
 using storage::SigV4Signer;
 
 /// Mock transport for inspecting requests issued by StorageEngine through S3Client
@@ -47,9 +47,7 @@ class StorageMockHttpTransport : public IHttpTransport {
         scripted_responses_[method + " " + path] = std::move(res);
     }
 
-    [[nodiscard]] const std::vector<HttpRequest>& executed_requests() const noexcept {
-        return executed_requests_;
-    }
+    [[nodiscard]] const std::vector<HttpRequest>& executed_requests() const noexcept { return executed_requests_; }
 
   private:
     std::map<std::string, HttpResponse> scripted_responses_;
@@ -110,9 +108,9 @@ TEST_F(StorageEngineTest, PutAndGetChunkSuccess) {
     EXPECT_EQ(put_req.headers.at("x-amz-content-sha256"), expected_hash);
 
     // 2. Get chunk
-    mock_transport_->set_response("GET", "/securecloud-files-encrypted/chunks/test-transfer-100/0",
-                                  HttpResponse{200, "OK", {{"content-length", std::to_string(encrypted_data.size())}},
-                                               encrypted_data});
+    mock_transport_->set_response(
+        "GET", "/securecloud-files-encrypted/chunks/test-transfer-100/0",
+        HttpResponse{200, "OK", {{"content-length", std::to_string(encrypted_data.size())}}, encrypted_data});
 
     auto fetched = engine_->get_chunk(transfer_id, chunk_idx);
     ASSERT_TRUE(fetched.has_value());
@@ -126,15 +124,13 @@ TEST_F(StorageEngineTest, IntegrityMismatchRejection) {
     const std::string tampered_hash = "0000000000000000000000000000000000000000000000000000000000000000";
 
     // Mismatched checksum MUST throw S3IntegrityException before S3 upload
-    EXPECT_THROW((void)engine_->put_chunk(transfer_id, chunk_idx, encrypted_data, tampered_hash),
-                 S3IntegrityException);
+    EXPECT_THROW((void)engine_->put_chunk(transfer_id, chunk_idx, encrypted_data, tampered_hash), S3IntegrityException);
 
     // Ensure no S3 request was sent
     EXPECT_TRUE(mock_transport_->executed_requests().empty());
 
     // Same check for file object
-    EXPECT_THROW((void)engine_->put_file_object("file-1", 1, encrypted_data, tampered_hash),
-                 S3IntegrityException);
+    EXPECT_THROW((void)engine_->put_file_object("file-1", 1, encrypted_data, tampered_hash), S3IntegrityException);
     EXPECT_TRUE(mock_transport_->executed_requests().empty());
 }
 
@@ -189,16 +185,15 @@ TEST_F(StorageEngineTest, FileObjectOperations) {
 
 TEST_F(StorageEngineTest, BatchChunkCleanup) {
     const std::string transfer_id = "transfer-cleanup-id";
-    const std::string list_xml =
-        "<ListBucketResult>"
-        "<Contents><Key>chunks/transfer-cleanup-id/0</Key></Contents>"
-        "<Contents><Key>chunks/transfer-cleanup-id/1</Key></Contents>"
-        "<Contents><Key>chunks/transfer-cleanup-id/2</Key></Contents>"
-        "</ListBucketResult>";
+    const std::string list_xml = "<ListBucketResult>"
+                                 "<Contents><Key>chunks/transfer-cleanup-id/0</Key></Contents>"
+                                 "<Contents><Key>chunks/transfer-cleanup-id/1</Key></Contents>"
+                                 "<Contents><Key>chunks/transfer-cleanup-id/2</Key></Contents>"
+                                 "</ListBucketResult>";
 
-    mock_transport_->set_response("GET",
-                                  "/securecloud-files-encrypted?list-type=2&max-keys=1000&prefix=chunks/transfer-cleanup-id/",
-                                  HttpResponse{200, "OK", {}, list_xml});
+    mock_transport_->set_response(
+        "GET", "/securecloud-files-encrypted?list-type=2&max-keys=1000&prefix=chunks/transfer-cleanup-id/",
+        HttpResponse{200, "OK", {}, list_xml});
 
     EXPECT_TRUE(engine_->delete_transfer_chunks(transfer_id));
 

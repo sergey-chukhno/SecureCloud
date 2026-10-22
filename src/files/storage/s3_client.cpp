@@ -442,8 +442,8 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
                             line.substr(first_space + 1, second_space - first_space - 1).c_str(), nullptr, kBase10));
                         res.status_message = line.substr(second_space + 1);
                     } else {
-                        res.status_code = static_cast<int>(std::strtol(
-                            line.substr(first_space + 1).c_str(), nullptr, kBase10));
+                        res.status_code =
+                            static_cast<int>(std::strtol(line.substr(first_space + 1).c_str(), nullptr, kBase10));
                     }
                 }
             }
@@ -591,9 +591,8 @@ bool S3Client::object_exists(const std::string& object_key, std::chrono::millise
     throw S3ClientException("Unexpected S3 response status: " + std::to_string(res.status_code));
 }
 
-bool S3Client::put_object(const std::string& object_key, std::string_view payload,
-                          const std::string& content_type, const std::string& sha256_hex,
-                          std::chrono::milliseconds timeout) {
+bool S3Client::put_object(const std::string& object_key, std::string_view payload, const std::string& content_type,
+                          const std::string& sha256_hex, std::chrono::milliseconds timeout) {
     HttpRequest req;
     req.method = "PUT";
     req.path = "/" + config_.bucket + "/" + object_key;
@@ -782,7 +781,8 @@ std::string S3Client::create_multipart_upload(const std::string& object_key, con
         return upload_id;
     }
     if (res.status_code == kHttpStatusForbidden || res.status_code == 401) {
-        throw S3AuthenticationException("MinIO S3 rejected create_multipart_upload: " + std::to_string(res.status_code));
+        throw S3AuthenticationException("MinIO S3 rejected create_multipart_upload: " +
+                                        std::to_string(res.status_code));
     }
     if (res.status_code >= 500 && res.status_code <= 599) {
         throw S3ServerException("MinIO S3 server error on create_multipart_upload: " + std::to_string(res.status_code));
@@ -791,7 +791,8 @@ std::string S3Client::create_multipart_upload(const std::string& object_key, con
         throw S3ConnectionException("Failed to reach S3 endpoint on create_multipart_upload: " + config_.endpoint);
     }
 
-    throw S3ClientException("Unexpected S3 create_multipart_upload response status: " + std::to_string(res.status_code));
+    throw S3ClientException("Unexpected S3 create_multipart_upload response status: " +
+                            std::to_string(res.status_code));
 }
 
 std::string S3Client::upload_part(const std::string& object_key, const std::string& upload_id, uint32_t part_number,
@@ -836,8 +837,7 @@ std::string S3Client::upload_part(const std::string& object_key, const std::stri
 }
 
 bool S3Client::complete_multipart_upload(const std::string& object_key, const std::string& upload_id,
-                                         const std::vector<CompletedPart>& parts,
-                                         std::chrono::milliseconds timeout) {
+                                         const std::vector<CompletedPart>& parts, std::chrono::milliseconds timeout) {
     HttpRequest req;
     req.method = "POST";
     req.path = "/" + config_.bucket + "/" + object_key + "?uploadId=" + upload_id;
@@ -872,16 +872,19 @@ bool S3Client::complete_multipart_upload(const std::string& object_key, const st
         return true;
     }
     if (res.status_code == kHttpStatusForbidden || res.status_code == 401) {
-        throw S3AuthenticationException("MinIO S3 rejected complete_multipart_upload: " + std::to_string(res.status_code));
+        throw S3AuthenticationException("MinIO S3 rejected complete_multipart_upload: " +
+                                        std::to_string(res.status_code));
     }
     if (res.status_code >= 500 && res.status_code <= 599) {
-        throw S3ServerException("MinIO S3 server error on complete_multipart_upload: " + std::to_string(res.status_code));
+        throw S3ServerException("MinIO S3 server error on complete_multipart_upload: " +
+                                std::to_string(res.status_code));
     }
     if (res.status_code == 0) {
         throw S3ConnectionException("Failed to reach S3 endpoint on complete_multipart_upload: " + config_.endpoint);
     }
 
-    throw S3ClientException("Unexpected S3 complete_multipart_upload response status: " + std::to_string(res.status_code));
+    throw S3ClientException("Unexpected S3 complete_multipart_upload response status: " +
+                            std::to_string(res.status_code));
 }
 
 bool S3Client::abort_multipart_upload(const std::string& object_key, const std::string& upload_id,
@@ -915,8 +918,7 @@ bool S3Client::abort_multipart_upload(const std::string& object_key, const std::
 }
 
 ListObjectsResult S3Client::list_objects(const std::string& prefix, size_t max_keys,
-                                        const std::string& continuation_token,
-                                        std::chrono::milliseconds timeout) {
+                                         const std::string& continuation_token, std::chrono::milliseconds timeout) {
     HttpRequest req;
     req.method = "GET";
     std::string path = "/" + config_.bucket + "?list-type=2";

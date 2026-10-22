@@ -210,8 +210,7 @@ class S3Client {
     /// Throws S3ConnectionException on connection failure.
     /// Throws S3ClientException on unexpected HTTP error status.
     bool put_object(const std::string& object_key, std::string_view payload,
-                    const std::string& content_type = "application/octet-stream",
-                    const std::string& sha256_hex = "",
+                    const std::string& content_type = "application/octet-stream", const std::string& sha256_hex = "",
                     std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
 
     /// Retrieves an object (or byte range) from the target bucket.
@@ -223,8 +222,8 @@ class S3Client {
     /// Throws S3ConnectionException on connection failure.
     /// Throws S3ClientException on unexpected HTTP error status.
     [[nodiscard]] S3ObjectResponse get_object(const std::string& object_key,
-                                             std::optional<ByteRange> range = std::nullopt,
-                                             std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
+                                              std::optional<ByteRange> range = std::nullopt,
+                                              std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
 
     /// Retrieves metadata for an object without downloading its body.
     /// Issues HEAD /<bucket>/<object_key>.
@@ -235,7 +234,7 @@ class S3Client {
     /// Throws S3ConnectionException on connection failure.
     /// Throws S3ClientException on unexpected HTTP error status.
     [[nodiscard]] S3ObjectMetadata head_object(const std::string& object_key,
-                                              std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
+                                               std::chrono::milliseconds timeout = std::chrono::milliseconds(1000));
 
     /// Deletes an object from the target bucket.
     /// Issues DELETE /<bucket>/<object_key>.
@@ -255,9 +254,9 @@ class S3Client {
     /// Throws S3ServerException on 5xx.
     /// Throws S3ConnectionException on connection failure.
     /// Throws S3ClientException on error.
-    [[nodiscard]] std::string create_multipart_upload(const std::string& object_key,
-                                                      const std::string& content_type = "application/octet-stream",
-                                                      std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
+    [[nodiscard]] std::string
+    create_multipart_upload(const std::string& object_key, const std::string& content_type = "application/octet-stream",
+                            std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
 
     /// Uploads an individual part in a multipart upload.
     /// Issues PUT /<bucket>/<object_key>?partNumber=<part_number>&uploadId=<upload_id>.
@@ -300,8 +299,8 @@ class S3Client {
     /// Throws S3ConnectionException on connection failure.
     /// Throws S3ClientException on error.
     [[nodiscard]] ListObjectsResult list_objects(const std::string& prefix = "", size_t max_keys = 1000,
-                                                const std::string& continuation_token = "",
-                                                std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
+                                                 const std::string& continuation_token = "",
+                                                 std::chrono::milliseconds timeout = std::chrono::milliseconds(2000));
 
     [[nodiscard]] const S3ClientConfig& config() const noexcept;
     [[nodiscard]] const std::string& endpoint_host() const noexcept;

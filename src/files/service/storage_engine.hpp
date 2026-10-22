@@ -21,13 +21,12 @@ class IStorageEngine {
     /// Stores an encrypted chunk object in S3.
     /// Derives opaque key: chunks/{transfer_id}/{chunk_index}.
     /// Validates payload SHA-256 against expected_sha256 (throws S3IntegrityException if mismatched).
-    virtual bool put_chunk(const std::string& transfer_id, uint32_t chunk_index,
-                           std::string_view encrypted_data, const std::string& expected_sha256) = 0;
+    virtual bool put_chunk(const std::string& transfer_id, uint32_t chunk_index, std::string_view encrypted_data,
+                           const std::string& expected_sha256) = 0;
 
     /// Retrieves an encrypted chunk object from S3.
     /// Returns std::nullopt if the chunk is not found.
-    virtual std::optional<std::string> get_chunk(const std::string& transfer_id,
-                                                 uint32_t chunk_index) = 0;
+    virtual std::optional<std::string> get_chunk(const std::string& transfer_id, uint32_t chunk_index) = 0;
 
     /// Deletes a specific chunk object from S3 idempotently.
     virtual bool delete_chunk(const std::string& transfer_id, uint32_t chunk_index) = 0;
@@ -35,13 +34,12 @@ class IStorageEngine {
     /// Stores a finalized encrypted file object in S3.
     /// Derives opaque key: objects/{file_id}/{version_number}.
     /// Validates payload SHA-256 against expected_sha256 (throws S3IntegrityException if mismatched).
-    virtual bool put_file_object(const std::string& file_id, uint32_t version_number,
-                                 std::string_view encrypted_data, const std::string& expected_sha256) = 0;
+    virtual bool put_file_object(const std::string& file_id, uint32_t version_number, std::string_view encrypted_data,
+                                 const std::string& expected_sha256) = 0;
 
     /// Retrieves a finalized encrypted file object (or byte-range) from S3.
     /// Returns std::nullopt if the object is not found.
-    virtual std::optional<std::string> get_file_object(const std::string& file_id,
-                                                       uint32_t version_number,
+    virtual std::optional<std::string> get_file_object(const std::string& file_id, uint32_t version_number,
                                                        std::optional<storage::ByteRange> range = std::nullopt) = 0;
 
     /// Deletes all versions/objects associated with a file_id prefix.
@@ -62,19 +60,17 @@ class StorageEngine : public IStorageEngine {
     StorageEngine(StorageEngine&&) noexcept = default;
     StorageEngine& operator=(StorageEngine&&) noexcept = default;
 
-    bool put_chunk(const std::string& transfer_id, uint32_t chunk_index,
-                   std::string_view encrypted_data, const std::string& expected_sha256) override;
+    bool put_chunk(const std::string& transfer_id, uint32_t chunk_index, std::string_view encrypted_data,
+                   const std::string& expected_sha256) override;
 
-    std::optional<std::string> get_chunk(const std::string& transfer_id,
-                                         uint32_t chunk_index) override;
+    std::optional<std::string> get_chunk(const std::string& transfer_id, uint32_t chunk_index) override;
 
     bool delete_chunk(const std::string& transfer_id, uint32_t chunk_index) override;
 
-    bool put_file_object(const std::string& file_id, uint32_t version_number,
-                         std::string_view encrypted_data, const std::string& expected_sha256) override;
+    bool put_file_object(const std::string& file_id, uint32_t version_number, std::string_view encrypted_data,
+                         const std::string& expected_sha256) override;
 
-    std::optional<std::string> get_file_object(const std::string& file_id,
-                                               uint32_t version_number,
+    std::optional<std::string> get_file_object(const std::string& file_id, uint32_t version_number,
                                                std::optional<storage::ByteRange> range = std::nullopt) override;
 
     bool delete_file_objects(const std::string& file_id) override;

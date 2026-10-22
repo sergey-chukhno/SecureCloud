@@ -292,10 +292,7 @@ TEST(S3ClientTest, PutObjectSuccessAndHeaders) {
 
 TEST(S3ClientTest, GetObjectFullAndRange) {
     std::map<std::string, std::string> headers = {
-        {"etag", "\"abcdef123456\""},
-        {"content-type", "application/octet-stream"},
-        {"content-length", "10"}
-    };
+        {"etag", "\"abcdef123456\""}, {"content-type", "application/octet-stream"}, {"content-length", "10"}};
     auto mock_transport = std::make_shared<MockHttpTransport>(200, "0123456789", headers);
 
     S3ClientConfig cfg;
@@ -332,10 +329,7 @@ TEST(S3ClientTest, GetObjectFullAndRange) {
 
 TEST(S3ClientTest, HeadObjectSuccessAndNotFound) {
     std::map<std::string, std::string> headers = {
-        {"etag", "\"head-etag-999\""},
-        {"content-type", "application/octet-stream"},
-        {"content-length", "4096"}
-    };
+        {"etag", "\"head-etag-999\""}, {"content-type", "application/octet-stream"}, {"content-length", "4096"}};
     auto mock_transport = std::make_shared<MockHttpTransport>(200, "", headers);
 
     S3ClientConfig cfg;
@@ -490,29 +484,28 @@ TEST(S3ClientTest, AbortMultipartUploadMock) {
 }
 
 TEST(S3ClientTest, ListObjectsV2ParsingMock) {
-    const std::string xml_list_response =
-        "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
-        "<Name>securecloud-files-encrypted</Name>"
-        "<Prefix>chunks/t-123/</Prefix>"
-        "<KeyCount>2</KeyCount>"
-        "<MaxKeys>1000</MaxKeys>"
-        "<IsTruncated>true</IsTruncated>"
-        "<NextContinuationToken>token-next-456</NextContinuationToken>"
-        "<Contents>"
-        "<Key>chunks/t-123/0</Key>"
-        "<LastModified>2026-10-19T10:00:00.000Z</LastModified>"
-        "<ETag>\"etag-chunk-0\"</ETag>"
-        "<Size>4096</Size>"
-        "<StorageClass>STANDARD</StorageClass>"
-        "</Contents>"
-        "<Contents>"
-        "<Key>chunks/t-123/1</Key>"
-        "<LastModified>2026-10-19T10:00:05.000Z</LastModified>"
-        "<ETag>\"etag-chunk-1\"</ETag>"
-        "<Size>2048</Size>"
-        "<StorageClass>STANDARD</StorageClass>"
-        "</Contents>"
-        "</ListBucketResult>";
+    const std::string xml_list_response = "<ListBucketResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">"
+                                          "<Name>securecloud-files-encrypted</Name>"
+                                          "<Prefix>chunks/t-123/</Prefix>"
+                                          "<KeyCount>2</KeyCount>"
+                                          "<MaxKeys>1000</MaxKeys>"
+                                          "<IsTruncated>true</IsTruncated>"
+                                          "<NextContinuationToken>token-next-456</NextContinuationToken>"
+                                          "<Contents>"
+                                          "<Key>chunks/t-123/0</Key>"
+                                          "<LastModified>2026-10-19T10:00:00.000Z</LastModified>"
+                                          "<ETag>\"etag-chunk-0\"</ETag>"
+                                          "<Size>4096</Size>"
+                                          "<StorageClass>STANDARD</StorageClass>"
+                                          "</Contents>"
+                                          "<Contents>"
+                                          "<Key>chunks/t-123/1</Key>"
+                                          "<LastModified>2026-10-19T10:00:05.000Z</LastModified>"
+                                          "<ETag>\"etag-chunk-1\"</ETag>"
+                                          "<Size>2048</Size>"
+                                          "<StorageClass>STANDARD</StorageClass>"
+                                          "</Contents>"
+                                          "</ListBucketResult>";
 
     auto mock_transport = std::make_shared<MockHttpTransport>(200, xml_list_response);
 
@@ -552,8 +545,7 @@ TEST(S3ClientTest, ListObjectsV2ParsingMock) {
 /// Sequential mock transport for simulating transient failures across retry attempts
 class SequentialMockHttpTransport : public IHttpTransport {
   public:
-    explicit SequentialMockHttpTransport(std::vector<HttpResponse> responses)
-        : responses_(std::move(responses)) {}
+    explicit SequentialMockHttpTransport(std::vector<HttpResponse> responses) : responses_(std::move(responses)) {}
 
     HttpResponse execute(const HttpRequest& req) override {
         last_request_ = req;
@@ -575,10 +567,8 @@ class SequentialMockHttpTransport : public IHttpTransport {
 };
 
 TEST(S3ClientTest, RetryPolicyTransientRecovery) {
-    std::vector<HttpResponse> responses = {
-        HttpResponse{503, "Service Unavailable", {}, ""},
-        HttpResponse{200, "OK", {}, ""}
-    };
+    std::vector<HttpResponse> responses = {HttpResponse{503, "Service Unavailable", {}, ""},
+                                           HttpResponse{200, "OK", {}, ""}};
     auto mock_transport = std::make_shared<SequentialMockHttpTransport>(std::move(responses));
 
     S3ClientConfig cfg;
@@ -599,11 +589,8 @@ TEST(S3ClientTest, RetryPolicyTransientRecovery) {
 
 TEST(S3ClientTest, RetryPolicyExhaustion) {
     std::vector<HttpResponse> responses = {
-        HttpResponse{503, "Service Unavailable", {}, ""},
-        HttpResponse{503, "Service Unavailable", {}, ""},
-        HttpResponse{503, "Service Unavailable", {}, ""},
-        HttpResponse{503, "Service Unavailable", {}, ""}
-    };
+        HttpResponse{503, "Service Unavailable", {}, ""}, HttpResponse{503, "Service Unavailable", {}, ""},
+        HttpResponse{503, "Service Unavailable", {}, ""}, HttpResponse{503, "Service Unavailable", {}, ""}};
     auto mock_transport = std::make_shared<SequentialMockHttpTransport>(std::move(responses));
 
     S3ClientConfig cfg;
@@ -623,9 +610,7 @@ TEST(S3ClientTest, RetryPolicyExhaustion) {
 }
 
 TEST(S3ClientTest, NonRetryableErrorFailsImmediately) {
-    std::vector<HttpResponse> responses = {
-        HttpResponse{404, "Not Found", {}, ""}
-    };
+    std::vector<HttpResponse> responses = {HttpResponse{404, "Not Found", {}, ""}};
     auto mock_transport = std::make_shared<SequentialMockHttpTransport>(std::move(responses));
 
     S3ClientConfig cfg;
