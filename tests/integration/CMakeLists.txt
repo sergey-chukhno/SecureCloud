@@ -715,11 +715,16 @@ endif()
 gtest_discover_tests(securecloud_messaging_e2e_envelope_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Messaging Delivery State & Read Receipts Integration Test Suite (MSG-008-T06)
-add_executable(securecloud_messaging_delivery_state_read_receipts_integration_test
+add_executable(securecloud_msg_read_receipts_integration_test
     messaging_delivery_state_read_receipts_integration_test.cpp
 )
 
-target_link_libraries(securecloud_messaging_delivery_state_read_receipts_integration_test PRIVATE
+set_target_properties(securecloud_msg_read_receipts_integration_test PROPERTIES
+    OUTPUT_NAME "securecloud_messaging_delivery_state_read_receipts_integration_test"
+)
+add_executable(securecloud_messaging_delivery_state_read_receipts_integration_test ALIAS securecloud_msg_read_receipts_integration_test)
+
+target_link_libraries(securecloud_msg_read_receipts_integration_test PRIVATE
     securecloud::messaging
     securecloud::gateway_http
     securecloud::gateway_grpc
@@ -734,15 +739,15 @@ target_link_libraries(securecloud_messaging_delivery_state_read_receipts_integra
     GTest::gmock
 )
 
-target_compile_definitions(securecloud_messaging_delivery_state_read_receipts_integration_test PRIVATE
+target_compile_definitions(securecloud_msg_read_receipts_integration_test PRIVATE
     SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
 )
 
 if(WIN32)
-    target_link_libraries(securecloud_messaging_delivery_state_read_receipts_integration_test PRIVATE ws2_32)
+    target_link_libraries(securecloud_msg_read_receipts_integration_test PRIVATE ws2_32)
 endif()
 
-gtest_discover_tests(securecloud_messaging_delivery_state_read_receipts_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+gtest_discover_tests(securecloud_msg_read_receipts_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Audit Service Lifecycle & mTLS Health Probe Integration Test Suite (AUDIT-001-T05)
 add_executable(securecloud_audit_service_lifecycle_integration_test
