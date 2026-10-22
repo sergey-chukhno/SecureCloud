@@ -30,6 +30,34 @@ inline constexpr uint32_t k_max_sync_batch_size = 500;
     return requested;
 }
 
+/// Status outcome for a message synchronization request.
+enum class SyncMessagesStatus {
+    Success = 0,
+    NotAuthorized,
+    ConversationNotFound,
+    CursorOutOfBounds,
+    InvalidArguments,
+    StorageError
+};
+
+[[nodiscard]] inline std::string to_string(SyncMessagesStatus status) {
+    switch (status) {
+    case SyncMessagesStatus::Success:
+        return "SUCCESS";
+    case SyncMessagesStatus::NotAuthorized:
+        return "NOT_AUTHORIZED";
+    case SyncMessagesStatus::ConversationNotFound:
+        return "CONVERSATION_NOT_FOUND";
+    case SyncMessagesStatus::CursorOutOfBounds:
+        return "CURSOR_OUT_OF_BOUNDS";
+    case SyncMessagesStatus::InvalidArguments:
+        return "INVALID_ARGUMENTS";
+    case SyncMessagesStatus::StorageError:
+        return "STORAGE_ERROR";
+    }
+    return "UNKNOWN";
+}
+
 /// Command requesting message synchronization for a device.
 /// Optionally scoped to a specific conversation.
 struct SyncDeviceMessagesCommand {
@@ -41,6 +69,7 @@ struct SyncDeviceMessagesCommand {
 
 /// Result of message synchronization for a device.
 struct SyncMessagesResult {
+    SyncMessagesStatus status{SyncMessagesStatus::Success};
     domain::DeviceId device_id;
     std::optional<domain::ConversationId> conversation_id{std::nullopt};
     std::vector<domain::MessageEntity> messages{};
@@ -48,6 +77,28 @@ struct SyncMessagesResult {
     bool has_more{false};
     domain::MessageSequence next_sequence{0};
     domain::MessageSequence latest_sequence{0};
+    std::string error_message{};
+
+    [[nodiscard]] bool is_success() const noexcept {
+        return status == SyncMessagesStatus::Success;
+    }
+
+    [[nodiscard]] static SyncMessagesResult failure(SyncMessagesStatus st,
+                                                    domain::DeviceId dev_id,
+                                                    std::optional<domain::ConversationId> conv_id,
+                                                    std::string msg) {
+        return SyncMessagesResult{
+            .status = st,
+            .device_id = std::move(dev_id),
+            .conversation_id = std::move(conv_id),
+            .messages = {},
+            .cursor = {},
+            .has_more = false,
+            .next_sequence = 0,
+            .latest_sequence = 0,
+            .error_message = std::move(msg)
+        };
+    }
 };
 
 /// Command to retrieve the sync cursor for a device in a conversation.
