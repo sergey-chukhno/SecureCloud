@@ -1,4 +1,5 @@
 #include "audit_event_validator.hpp"
+#include "sensitive_data_guard.hpp"
 
 #include <cctype>
 
@@ -12,11 +13,11 @@ bool is_valid_event_type_format(std::string_view type, size_t max_length) noexce
     }
 
     bool has_dot = false;
-    bool prev_was_dot = true; // Prevents leading dot
+    bool prev_was_dot = true;
 
     for (char c : type) {
         if (c == '.') {
-            if (prev_was_dot) return false; // Disallow double dots or leading dot
+            if (prev_was_dot) return false;
             has_dot = true;
             prev_was_dot = true;
         } else if (std::islower(static_cast<unsigned char>(c)) ||
@@ -24,11 +25,11 @@ bool is_valid_event_type_format(std::string_view type, size_t max_length) noexce
                    c == '_') {
             prev_was_dot = false;
         } else {
-            return false; // Character not allowed
+            return false;
         }
     }
 
-    return has_dot && !prev_was_dot; // Must have at least one dot and not end with a dot
+    return has_dot && !prev_was_dot;
 }
 
 bool is_valid_metadata_key(std::string_view key, size_t max_length) noexcept {
@@ -215,7 +216,13 @@ AuditValidationResult AuditEventValidator::validate(
         }
     }
 
-    // Rule 8: Approximate In-Memory Size limit
+    // Rule 8: Sensitive Data inspection
+    auto sensitive_data_result = SensitiveDataGuard::inspect(event);
+    for (const auto& err : sensitive_data_result.errors()) {
+        result.add_error(err);
+    }
+
+    // Rule 9: Approximate In-Memory Size limit
     if (total_estimated_bytes > limits.max_event_size_bytes) {
         result.add_error({
             AuditValidationErrorCode::PayloadOversized,

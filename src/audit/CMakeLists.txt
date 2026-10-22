@@ -3,6 +3,7 @@ add_library(securecloud_audit_domain STATIC
         domain/event_id.cpp
         domain/validation_result.cpp
         domain/audit_event_validator.cpp
+        domain/sensitive_data_guard.cpp
 )
 
 add_library(securecloud::audit_domain ALIAS securecloud_audit_domain)
