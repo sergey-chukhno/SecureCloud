@@ -549,5 +549,123 @@ TEST(S3ClientTest, ListObjectsV2ParsingMock) {
     EXPECT_THROW((void)client.list_objects("chunks/t-123/"), S3AuthenticationException);
 }
 
+/// Sequential mock transport for simulating transient failures across retry attempts
+class SequentialMockHttpTransport : public IHttpTransport {
+  public:
+    explicit SequentialMockHttpTransport(std::vector<HttpResponse> responses)
+        : responses_(std::move(responses)) {}
+
+    HttpResponse execute(const HttpRequest& req) override {
+        last_request_ = req;
+        execution_count_++;
+        if (current_idx_ < responses_.size()) {
+            return responses_[current_idx_++];
+        }
+        return HttpResponse{500, "Out of responses", {}, ""};
+    }
+
+    [[nodiscard]] size_t execution_count() const noexcept { return execution_count_; }
+    [[nodiscard]] const HttpRequest& last_request() const noexcept { return last_request_; }
+
+  private:
+    std::vector<HttpResponse> responses_;
+    size_t current_idx_{0};
+    size_t execution_count_{0};
+    HttpRequest last_request_;
+};
+
+TEST(S3ClientTest, RetryPolicyTransientRecovery) {
+    std::vector<HttpResponse> responses = {
+        HttpResponse{503, "Service Unavailable", {}, ""},
+        HttpResponse{200, "OK", {}, ""}
+    };
+    auto mock_transport = std::make_shared<SequentialMockHttpTransport>(std::move(responses));
+
+    S3ClientConfig cfg;
+    cfg.endpoint = "http://minio:9000";
+    cfg.bucket = "securecloud-files-encrypted";
+    cfg.access_key = "minio_admin";
+    cfg.secret_key = common::configuration::SecretString("minio_secret");
+    cfg.retry_policy.max_retries = 3;
+    cfg.retry_policy.initial_backoff = std::chrono::milliseconds(1);
+    cfg.retry_policy.max_backoff = std::chrono::milliseconds(5);
+    cfg.retry_policy.jitter_factor = 0.0;
+
+    S3Client client(cfg, mock_transport);
+
+    EXPECT_TRUE(client.put_object("chunks/t-123/0", "ciphertext-data"));
+    EXPECT_EQ(mock_transport->execution_count(), 2);
+}
+
+TEST(S3ClientTest, RetryPolicyExhaustion) {
+    std::vector<HttpResponse> responses = {
+        HttpResponse{503, "Service Unavailable", {}, ""},
+        HttpResponse{503, "Service Unavailable", {}, ""},
+        HttpResponse{503, "Service Unavailable", {}, ""},
+        HttpResponse{503, "Service Unavailable", {}, ""}
+    };
+    auto mock_transport = std::make_shared<SequentialMockHttpTransport>(std::move(responses));
+
+    S3ClientConfig cfg;
+    cfg.endpoint = "http://minio:9000";
+    cfg.bucket = "securecloud-files-encrypted";
+    cfg.access_key = "minio_admin";
+    cfg.secret_key = common::configuration::SecretString("minio_secret");
+    cfg.retry_policy.max_retries = 3;
+    cfg.retry_policy.initial_backoff = std::chrono::milliseconds(1);
+    cfg.retry_policy.max_backoff = std::chrono::milliseconds(5);
+    cfg.retry_policy.jitter_factor = 0.0;
+
+    S3Client client(cfg, mock_transport);
+
+    EXPECT_THROW((void)client.put_object("chunks/t-123/0", "ciphertext-data"), S3ServerException);
+    EXPECT_EQ(mock_transport->execution_count(), 4); // 1 initial + 3 retries
+}
+
+TEST(S3ClientTest, NonRetryableErrorFailsImmediately) {
+    std::vector<HttpResponse> responses = {
+        HttpResponse{404, "Not Found", {}, ""}
+    };
+    auto mock_transport = std::make_shared<SequentialMockHttpTransport>(std::move(responses));
+
+    S3ClientConfig cfg;
+    cfg.endpoint = "http://minio:9000";
+    cfg.bucket = "securecloud-files-encrypted";
+    cfg.access_key = "minio_admin";
+    cfg.secret_key = common::configuration::SecretString("minio_secret");
+    cfg.retry_policy.max_retries = 3;
+    cfg.retry_policy.initial_backoff = std::chrono::milliseconds(1);
+
+    S3Client client(cfg, mock_transport);
+
+    EXPECT_THROW((void)client.get_object("nonexistent-key"), S3ObjectNotFoundException);
+    EXPECT_EQ(mock_transport->execution_count(), 1);
+}
+
+TEST(S3ClientTest, RetryPolicyBackoffCalculation) {
+    S3RetryPolicy policy;
+    policy.max_retries = 3;
+    policy.initial_backoff = std::chrono::milliseconds(50);
+    policy.max_backoff = std::chrono::milliseconds(500);
+    policy.jitter_factor = 0.0;
+
+    EXPECT_EQ(policy.calculate_backoff(1).count(), 50);
+    EXPECT_EQ(policy.calculate_backoff(2).count(), 100);
+    EXPECT_EQ(policy.calculate_backoff(3).count(), 200);
+    EXPECT_EQ(policy.calculate_backoff(4).count(), 400);
+    EXPECT_EQ(policy.calculate_backoff(5).count(), 500); // capped at max_backoff
+
+    EXPECT_TRUE(policy.is_retryable(0));
+    EXPECT_TRUE(policy.is_retryable(500));
+    EXPECT_TRUE(policy.is_retryable(502));
+    EXPECT_TRUE(policy.is_retryable(503));
+    EXPECT_TRUE(policy.is_retryable(504));
+    EXPECT_FALSE(policy.is_retryable(200));
+    EXPECT_FALSE(policy.is_retryable(400));
+    EXPECT_FALSE(policy.is_retryable(401));
+    EXPECT_FALSE(policy.is_retryable(403));
+    EXPECT_FALSE(policy.is_retryable(404));
+}
+
 } // namespace
 } // namespace securecloud::files::storage
