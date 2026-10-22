@@ -1103,6 +1103,10 @@ target_link_libraries(securecloud_auth_proxy_resilience_test PRIVATE
     GTest::gtest_main
 )
 
+if(WIN32)
+    target_link_libraries(securecloud_auth_proxy_resilience_test PRIVATE ws2_32)
+endif()
+
 gtest_discover_tests(securecloud_auth_proxy_resilience_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Gateway Files Microservice HTTP Streaming Proxy Handler Test (GW-010-T03)
