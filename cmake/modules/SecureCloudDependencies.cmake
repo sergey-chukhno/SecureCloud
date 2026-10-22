@@ -194,10 +194,11 @@ if(BUILD_TESTING)
     message(STATUS "[SecureCloud] Discovering GoogleTest testing framework...")
     find_package(GTest REQUIRED)
     include(GoogleTest)
-    if(WIN32)
-        # On Windows (MSYS2 MinGW & MSVC), GTest and GMock are built as shared DLLs.
+    if(MSVC)
+        # On Windows MSVC (vcpkg dynamic x64-windows triplet), GTest and GMock are built as shared DLLs.
         # Consumers must define GTEST_LINKED_AS_SHARED_LIBRARY=1 to correctly import
         # data symbols like g_gmock_mutex, g_gmock_implicit_sequence, and vtables with __declspec(dllimport).
+        # On MinGW (GCC), GTest is built statically or handles import linkage without dllimport decorations.
         if(TARGET GTest::gtest)
             target_compile_definitions(GTest::gtest INTERFACE GTEST_LINKED_AS_SHARED_LIBRARY=1)
         endif()

@@ -30,4 +30,14 @@ class S3ConnectionException : public S3ClientException {
     using S3ClientException::S3ClientException;
 };
 
+/// Thrown when S3 server returns 5xx error
+class S3ServerException : public S3ClientException {
+    using S3ClientException::S3ClientException;
+};
+
+/// Thrown when chunk or payload integrity check fails (SHA-256 mismatch)
+class S3IntegrityException : public S3ClientException {
+    using S3ClientException::S3ClientException;
+};
+
 } // namespace securecloud::files::storage
