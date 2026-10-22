@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package securecloud.audit.v1;
+
+enum SeverityProto {
+  SEVERITY_UNSPECIFIED = 0;
+  SEVERITY_INFO = 1;
+  SEVERITY_WARNING = 2;
+  SEVERITY_SECURITY = 3;
+  SEVERITY_CRITICAL = 4;
+}
+
+enum ProducerServiceProto {
+  PRODUCER_SERVICE_UNSPECIFIED = 0;
+  PRODUCER_SERVICE_GATEWAY = 1;
+  PRODUCER_SERVICE_AUTH = 2;
+  PRODUCER_SERVICE_MESSAGING = 3;
+  PRODUCER_SERVICE_FILES = 4;
+  PRODUCER_SERVICE_AUDIT = 5;
+}
+
+enum ActorTypeProto {
+  ACTOR_TYPE_UNSPECIFIED = 0;
+  ACTOR_TYPE_USER = 1;
+  ACTOR_TYPE_DEVICE = 2;
+  ACTOR_TYPE_SERVICE = 3;
+  ACTOR_TYPE_SYSTEM = 4;
+}
+
+enum TargetTypeProto {
+  TARGET_TYPE_UNSPECIFIED = 0;
+  TARGET_TYPE_USER = 1;
+  TARGET_TYPE_DEVICE = 2;
+  TARGET_TYPE_CONVERSATION = 3;
+  TARGET_TYPE_FILE = 4;
+  TARGET_TYPE_SERVICE = 5;
+}
+
+message AuditEventProto {
+  string event_id = 1;
+  int64 occurred_at_ms = 2;
+  string event_type = 3;
+  SeverityProto severity = 4;
+  ProducerServiceProto producer_service = 5;
+  string producer_instance = 6;
+  ActorTypeProto actor_type = 7;
+  string actor_id = 8;
+  TargetTypeProto target_type = 9;
+  string target_id = 10;
+  string correlation_id = 11;
+  optional string causation_id = 12;
+  map<string, string> metadata = 13;
+}
+
+message SubmitAuditEventRequest {
+  AuditEventProto event = 1;
+}
+
+message SubmitAuditEventResponse {
+  bool success = 1;
+  string event_id = 2;
+  int64 received_at_ms = 3;
+}
+
+message BatchSubmitAuditEventsRequest {
+  repeated AuditEventProto events = 1;
+}
+
+message BatchSubmitAuditEventsResponse {
+  uint32 accepted_count = 1;
+  uint32 rejected_count = 2;
+  repeated string rejected_event_ids = 3;
+}
+
+service AuditIngestionService {
+  rpc SubmitAuditEvent(SubmitAuditEventRequest) returns (SubmitAuditEventResponse);
+  rpc BatchSubmitAuditEvents(BatchSubmitAuditEventsRequest) returns (BatchSubmitAuditEventsResponse);
+}

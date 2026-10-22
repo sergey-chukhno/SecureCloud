@@ -5,6 +5,7 @@ add_library(securecloud_audit_domain STATIC
         domain/audit_event_validator.cpp
         domain/sensitive_data_guard.cpp
         domain/producer_identity_validator.cpp
+        domain/audit_event_mapper.cpp
 )
 
 add_library(securecloud::audit_domain ALIAS securecloud_audit_domain)
@@ -15,6 +16,7 @@ target_include_directories(securecloud_audit_domain PUBLIC
 
 target_link_libraries(securecloud_audit_domain PUBLIC
         securecloud::common
+        securecloud_proto
         securecloud::compiler_flags
         OpenSSL::Crypto
 )
