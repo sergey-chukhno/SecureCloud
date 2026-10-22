@@ -28,7 +28,8 @@ deploy/dev-pki/
 *.pfx
 
 # Walkthrough and review artifacts
-walkthrough-*.md
+/walkthrough-*.md
+!docs/final-reports/*.md
 *-report.md
 docs/pull_requests/
 

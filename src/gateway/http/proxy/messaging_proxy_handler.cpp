@@ -171,6 +171,12 @@ void MessagingProxyHandler::write_grpc_error(httplib::Response& res, const grpc:
         } else if (error.grpc_code == ::grpc::StatusCode::RESOURCE_EXHAUSTED) {
             http_status = 429;
             code = "RESOURCE_EXHAUSTED";
+        } else if (error.grpc_code == ::grpc::StatusCode::OUT_OF_RANGE) {
+            http_status = 400;
+            code = "OUT_OF_RANGE";
+        } else if (error.grpc_code == ::grpc::StatusCode::FAILED_PRECONDITION) {
+            http_status = 412;
+            code = "FAILED_PRECONDITION";
         } else {
             http_status = 500;
             code = "DOWNSTREAM_ERROR";
