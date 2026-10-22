@@ -50,9 +50,9 @@ inline void ensure_integration_winsock() noexcept {}
 
 inline std::string generate_test_uuid() {
     static std::atomic<uint64_t> counter{1};
-    auto now = std::chrono::duration_cast<std::chrono::microseconds>(
-                   std::chrono::system_clock::now().time_since_epoch())
-                   .count();
+    const auto now = static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
+                                               std::chrono::system_clock::now().time_since_epoch())
+                                               .count());
     uint64_t id = counter.fetch_add(1);
     std::ostringstream oss;
     oss << std::hex << std::setfill('0') << std::setw(8) << (now & 0xFFFFFFFF) << "-" << std::setw(4)
