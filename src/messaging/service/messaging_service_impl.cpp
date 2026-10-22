@@ -54,6 +54,100 @@ void populate_conversation_metadata(const ConversationDetails& details,
     }
 }
 
+void populate_message_envelope(const domain::MessageEntity& entity,
+                               securecloud::messaging::v1::MessageEnvelope* envelope) {
+    envelope->set_message_id(entity.message_id.to_string());
+    envelope->set_conversation_id(entity.conversation_id.to_string());
+    envelope->set_sender_user_id(entity.sender_user_id.str());
+    envelope->set_sender_device_id(entity.sender_device_id.str());
+    switch (entity.priority) {
+    case domain::MessagePriority::Urgent:
+        envelope->set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_URGENT);
+        break;
+    case domain::MessagePriority::Emergency:
+        envelope->set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_EMERGENCY);
+        break;
+    case domain::MessagePriority::Normal:
+    default:
+        envelope->set_priority(securecloud::messaging::v1::MESSAGE_PRIORITY_NORMAL);
+        break;
+    }
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(entity.accepted_at.time_since_epoch()).count();
+    envelope->set_created_at_unix_ms(ms);
+
+    if (!entity.envelope.ciphertext.empty()) {
+        auto* target = envelope->add_delivery_targets();
+        target->set_recipient_device_id(entity.sender_device_id.str());
+        target->set_state(securecloud::messaging::v1::DELIVERY_STATE_DELIVERED);
+        auto* ep = target->mutable_encrypted_payload();
+        ep->set_ciphertext_blob(entity.envelope.ciphertext);
+        ep->set_algorithm("XChaCha20-Poly1305");
+    }
+}
+
+void populate_sync_cursor(const domain::DeviceSyncCursor& cursor, securecloud::messaging::v1::SyncCursor* out) {
+    out->set_device_id(cursor.device_id.str());
+    out->set_conversation_id(cursor.conversation_id.to_string());
+    out->set_last_delivered_sequence(static_cast<int64_t>(cursor.last_synced_sequence));
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(cursor.last_sync_at.time_since_epoch()).count();
+    out->set_last_sync_timestamp_unix_ms(ms);
+}
+
+::grpc::Status sync_status_to_grpc_status(SyncMessagesStatus status, const std::string& error_message,
+                                          const std::string& correlation_id, ::grpc::ServerContext* context) {
+    switch (status) {
+    case SyncMessagesStatus::Success:
+        return ::grpc::Status::OK;
+    case SyncMessagesStatus::NotAuthorized:
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_NOT_A_PARTICIPANT,
+                              error_message.empty() ? "Caller is not an active participant" : error_message,
+                              correlation_id, context);
+    case SyncMessagesStatus::ConversationNotFound:
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND,
+                              error_message.empty() ? "Conversation not found" : error_message, correlation_id,
+                              context);
+    case SyncMessagesStatus::CursorOutOfBounds:
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_CURSOR_OUT_OF_BOUNDS,
+                              error_message.empty() ? "Cursor out of bounds" : error_message, correlation_id, context);
+    case SyncMessagesStatus::InvalidArguments:
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+                              error_message.empty() ? "Invalid arguments" : error_message, correlation_id, context);
+    case SyncMessagesStatus::StorageError:
+    default:
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
+                              error_message.empty() ? "Internal storage error" : error_message, correlation_id,
+                              context);
+    }
+}
+
+::grpc::Status cursor_update_status_to_grpc_status(SyncCursorUpdateStatus status, const std::string& error_message,
+                                                   const std::string& correlation_id, ::grpc::ServerContext* context) {
+    switch (status) {
+    case SyncCursorUpdateStatus::Success:
+        return ::grpc::Status::OK;
+    case SyncCursorUpdateStatus::RegressionRejected:
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_CURSOR_OUT_OF_BOUNDS,
+                              error_message.empty() ? "Cursor sequence regression rejected" : error_message,
+                              correlation_id, context);
+    case SyncCursorUpdateStatus::OutOfBoundsRejected:
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_CURSOR_OUT_OF_BOUNDS,
+                              error_message.empty() ? "Cursor sequence exceeds conversation ceiling" : error_message,
+                              correlation_id, context);
+    case SyncCursorUpdateStatus::VersionConflict:
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_IDEMPOTENCY_CONFLICT,
+                              error_message.empty() ? "Sync version conflict" : error_message, correlation_id, context);
+    case SyncCursorUpdateStatus::InvalidCursor:
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+                              error_message.empty() ? "Invalid cursor arguments" : error_message, correlation_id,
+                              context);
+    case SyncCursorUpdateStatus::StorageError:
+    default:
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
+                              error_message.empty() ? "Internal storage error" : error_message, correlation_id,
+                              context);
+    }
+}
+
 } // namespace
 
 MessagingServiceImpl::MessagingServiceImpl(std::shared_ptr<concurrency::BoundedWorkerPool> submission_pool,
@@ -62,11 +156,14 @@ MessagingServiceImpl::MessagingServiceImpl(std::shared_ptr<concurrency::BoundedW
                                            std::shared_ptr<ConversationService> conversation_service,
                                            std::shared_ptr<MessageSubmissionService> submission_service,
                                            std::shared_ptr<DeliveryService> delivery_service,
-                                           std::shared_ptr<ReadReceiptService> read_receipt_service)
+                                           std::shared_ptr<ReadReceiptService> read_receipt_service,
+                                           std::shared_ptr<MessageSyncService> sync_service,
+                                           std::shared_ptr<SyncCursorManager> cursor_manager)
     : submission_pool_(std::move(submission_pool)), delivery_pool_(std::move(delivery_pool)),
       sync_pool_(std::move(sync_pool)), conversation_service_(std::move(conversation_service)),
       submission_service_(std::move(submission_service)), delivery_service_(std::move(delivery_service)),
-      read_receipt_service_(std::move(read_receipt_service)) {}
+      read_receipt_service_(std::move(read_receipt_service)), sync_service_(std::move(sync_service)),
+      cursor_manager_(std::move(cursor_manager)) {}
 
 // --- Message lifecycle RPCs ---
 
@@ -222,10 +319,102 @@ MessagingServiceImpl::MessagingServiceImpl(std::shared_ptr<concurrency::BoundedW
 }
 
 ::grpc::Status MessagingServiceImpl::GetMessages(::grpc::ServerContext* context,
-                                                 const ::securecloud::messaging::v1::GetMessagesRequest* /*request*/,
-                                                 ::securecloud::messaging::v1::GetMessagesResponse* /*response*/) {
+                                                 const ::securecloud::messaging::v1::GetMessagesRequest* request,
+                                                 ::securecloud::messaging::v1::GetMessagesResponse* response) {
     log_rpc_invocation("GetMessages", context);
-    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    if (!sync_service_) {
+        return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    }
+    if (!request || !response) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null"};
+    }
+
+    auto cancel_status = check_deadline_and_cancellation(context);
+    if (!cancel_status.ok()) {
+        return cancel_status;
+    }
+
+    auto caller_ctx = extract_messaging_caller_context(context);
+    std::string error_reason;
+    auto val_status = validate_messaging_caller_context(caller_ctx, kRequireUserId, error_reason);
+    if (!val_status.ok()) {
+        return val_status;
+    }
+
+    auto caller_id = domain::UserId::from_string(caller_ctx.user_id());
+    if (!caller_id) {
+        return {::grpc::StatusCode::UNAUTHENTICATED, "Missing or invalid user ID header (expected RFC 4122 UUID)"};
+    }
+
+    std::string effective_device_id =
+        !request->recipient_device_id().empty() ? request->recipient_device_id() : caller_ctx.device_id();
+    if (effective_device_id.empty()) {
+        effective_device_id = "device-default";
+    }
+
+    auto conv_id = domain::ConversationId::from_string(request->conversation_id());
+    if (!conv_id) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND, "Invalid conversation ID format",
+                              caller_ctx.correlation_id(), context);
+    }
+
+    SyncDeviceMessagesCommand cmd;
+    cmd.device_id = domain::DeviceId(effective_device_id);
+    cmd.conversation_id = *conv_id;
+    cmd.since_sequence =
+        request->since_sequence() > 0 ? static_cast<domain::MessageSequence>(request->since_sequence()) : 0;
+    cmd.max_messages = request->max_results() > 0 ? request->max_results() : k_default_sync_batch_size;
+
+    auto run_task = [sync_svc = sync_service_, caller = *caller_id, command = std::move(cmd)]() {
+        return sync_svc->sync_messages(caller, command);
+    };
+
+    SyncMessagesResult task_result;
+    if (sync_pool_) {
+        auto promise = std::make_shared<std::promise<SyncMessagesResult>>();
+        auto future = promise->get_future();
+        bool enqueued = sync_pool_->try_submit([promise, run_task]() {
+            try {
+                promise->set_value(run_task());
+            } catch (const std::exception& ex) {
+                promise->set_value(SyncMessagesResult::failure(SyncMessagesStatus::StorageError, domain::DeviceId(""),
+                                                               std::nullopt, ex.what()));
+            } catch (...) {
+                promise->set_value(SyncMessagesResult::failure(SyncMessagesStatus::StorageError, domain::DeviceId(""),
+                                                               std::nullopt, "Unknown worker failure"));
+            }
+        });
+
+        if (!enqueued) {
+            return to_grpc_status(v1::MESSAGING_ERROR_CODE_QUEUE_CAPACITY_EXCEEDED,
+                                  "Sync worker pool capacity exceeded", caller_ctx.correlation_id(), context);
+        }
+
+        if (context->raw_deadline().tv_sec != 0 || context->raw_deadline().tv_nsec != 0) {
+            auto deadline = context->deadline();
+            if (deadline < std::chrono::system_clock::time_point::max()) {
+                auto wait_res = future.wait_until(deadline);
+                if (wait_res == std::future_status::timeout) {
+                    return {::grpc::StatusCode::DEADLINE_EXCEEDED, "GetMessages deadline exceeded"};
+                }
+            }
+        }
+        task_result = future.get();
+    } else {
+        task_result = run_task();
+    }
+
+    if (!task_result.is_success()) {
+        return sync_status_to_grpc_status(task_result.status, task_result.error_message, caller_ctx.correlation_id(),
+                                          context);
+    }
+
+    for (const auto& msg : task_result.messages) {
+        populate_message_envelope(msg, response->add_messages());
+    }
+    response->set_has_more(task_result.has_more);
+    response->set_latest_sequence(static_cast<int64_t>(task_result.latest_sequence));
+    return ::grpc::Status::OK;
 }
 
 ::grpc::Status
@@ -887,26 +1076,278 @@ MessagingServiceImpl::LeaveConversation(::grpc::ServerContext* context,
 
 ::grpc::Status
 MessagingServiceImpl::SyncDeviceMessages(::grpc::ServerContext* context,
-                                         const ::securecloud::messaging::v1::SyncDeviceMessagesRequest* /*request*/,
-                                         ::securecloud::messaging::v1::SyncDeviceMessagesResponse* /*response*/) {
+                                         const ::securecloud::messaging::v1::SyncDeviceMessagesRequest* request,
+                                         ::securecloud::messaging::v1::SyncDeviceMessagesResponse* response) {
     log_rpc_invocation("SyncDeviceMessages", context);
-    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    if (!sync_service_) {
+        return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    }
+    if (!request || !response) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null"};
+    }
+
+    auto cancel_status = check_deadline_and_cancellation(context);
+    if (!cancel_status.ok()) {
+        return cancel_status;
+    }
+
+    auto caller_ctx = extract_messaging_caller_context(context);
+    std::string error_reason;
+    auto val_status = validate_messaging_caller_context(caller_ctx, kRequireUserId, error_reason);
+    if (!val_status.ok()) {
+        return val_status;
+    }
+
+    auto caller_id = domain::UserId::from_string(caller_ctx.user_id());
+    if (!caller_id) {
+        return {::grpc::StatusCode::UNAUTHENTICATED, "Missing or invalid user ID header (expected RFC 4122 UUID)"};
+    }
+
+    std::string effective_device_id = !request->device_id().empty() ? request->device_id() : caller_ctx.device_id();
+    if (effective_device_id.empty()) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Missing device ID"};
+    }
+
+    if (request->conversation_id().empty()) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND, "Missing conversation ID",
+                              caller_ctx.correlation_id(), context);
+    }
+    auto conv_id = domain::ConversationId::from_string(request->conversation_id());
+    if (!conv_id) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND, "Invalid conversation ID format",
+                              caller_ctx.correlation_id(), context);
+    }
+
+    if (request->since_sequence() < 0) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_CURSOR_OUT_OF_BOUNDS, "since_sequence must be non-negative",
+                              caller_ctx.correlation_id(), context);
+    }
+
+    SyncDeviceMessagesCommand cmd;
+    cmd.device_id = domain::DeviceId(effective_device_id);
+    cmd.conversation_id = *conv_id;
+    cmd.since_sequence = static_cast<domain::MessageSequence>(request->since_sequence());
+    cmd.max_messages = request->max_messages() > 0 ? request->max_messages() : k_default_sync_batch_size;
+
+    auto run_task = [sync_svc = sync_service_, caller = *caller_id, command = std::move(cmd)]() {
+        return sync_svc->sync_messages(caller, command);
+    };
+
+    SyncMessagesResult task_result;
+    if (sync_pool_) {
+        auto promise = std::make_shared<std::promise<SyncMessagesResult>>();
+        auto future = promise->get_future();
+        bool enqueued = sync_pool_->try_submit([promise, run_task]() {
+            try {
+                promise->set_value(run_task());
+            } catch (const std::exception& ex) {
+                promise->set_value(SyncMessagesResult::failure(SyncMessagesStatus::StorageError, domain::DeviceId(""),
+                                                               std::nullopt, ex.what()));
+            } catch (...) {
+                promise->set_value(SyncMessagesResult::failure(SyncMessagesStatus::StorageError, domain::DeviceId(""),
+                                                               std::nullopt, "Unknown worker failure"));
+            }
+        });
+
+        if (!enqueued) {
+            return to_grpc_status(v1::MESSAGING_ERROR_CODE_QUEUE_CAPACITY_EXCEEDED,
+                                  "Sync worker pool capacity exceeded", caller_ctx.correlation_id(), context);
+        }
+
+        if (context->raw_deadline().tv_sec != 0 || context->raw_deadline().tv_nsec != 0) {
+            auto deadline = context->deadline();
+            if (deadline < std::chrono::system_clock::time_point::max()) {
+                auto wait_res = future.wait_until(deadline);
+                if (wait_res == std::future_status::timeout) {
+                    return {::grpc::StatusCode::DEADLINE_EXCEEDED, "SyncDeviceMessages deadline exceeded"};
+                }
+            }
+        }
+        task_result = future.get();
+    } else {
+        task_result = run_task();
+    }
+
+    if (!task_result.is_success()) {
+        return sync_status_to_grpc_status(task_result.status, task_result.error_message, caller_ctx.correlation_id(),
+                                          context);
+    }
+
+    response->set_device_id(task_result.device_id.str());
+    response->set_has_more(task_result.has_more);
+    response->set_next_sequence(static_cast<int64_t>(task_result.next_sequence));
+    response->set_latest_sequence(static_cast<int64_t>(task_result.latest_sequence));
+    if (task_result.cursor.is_valid()) {
+        populate_sync_cursor(task_result.cursor, response->mutable_cursor());
+    }
+    for (const auto& msg : task_result.messages) {
+        populate_message_envelope(msg, response->add_messages());
+    }
+    return ::grpc::Status::OK;
 }
 
-::grpc::Status
-MessagingServiceImpl::GetSyncCursor(::grpc::ServerContext* context,
-                                    const ::securecloud::messaging::v1::GetSyncCursorRequest* /*request*/,
-                                    ::securecloud::messaging::v1::GetSyncCursorResponse* /*response*/) {
+::grpc::Status MessagingServiceImpl::GetSyncCursor(::grpc::ServerContext* context,
+                                                   const ::securecloud::messaging::v1::GetSyncCursorRequest* request,
+                                                   ::securecloud::messaging::v1::GetSyncCursorResponse* response) {
     log_rpc_invocation("GetSyncCursor", context);
-    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    if (!cursor_manager_) {
+        return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    }
+    if (!request || !response) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null"};
+    }
+
+    auto cancel_status = check_deadline_and_cancellation(context);
+    if (!cancel_status.ok()) {
+        return cancel_status;
+    }
+
+    auto caller_ctx = extract_messaging_caller_context(context);
+    std::string dev_id_str = !request->device_id().empty() ? request->device_id() : caller_ctx.device_id();
+    if (dev_id_str.empty()) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Missing device ID"};
+    }
+
+    domain::ConversationId conv_id;
+    if (!request->conversation_id().empty()) {
+        auto parsed_conv = domain::ConversationId::from_string(request->conversation_id());
+        if (!parsed_conv) {
+            return to_grpc_status(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND, "Invalid conversation ID format",
+                                  caller_ctx.correlation_id(), context);
+        }
+        conv_id = *parsed_conv;
+    }
+
+    auto run_task = [mgr = cursor_manager_, dev_id = domain::DeviceId(dev_id_str), conv_id]() {
+        return mgr->get_cursor(dev_id, conv_id);
+    };
+
+    domain::DeviceSyncCursor task_result;
+    if (sync_pool_) {
+        auto promise = std::make_shared<std::promise<domain::DeviceSyncCursor>>();
+        auto future = promise->get_future();
+        bool enqueued = sync_pool_->try_submit([promise, run_task]() {
+            try {
+                promise->set_value(run_task());
+            } catch (...) {
+                promise->set_value(domain::DeviceSyncCursor{});
+            }
+        });
+
+        if (!enqueued) {
+            return to_grpc_status(v1::MESSAGING_ERROR_CODE_QUEUE_CAPACITY_EXCEEDED,
+                                  "Sync worker pool capacity exceeded", caller_ctx.correlation_id(), context);
+        }
+
+        if (context->raw_deadline().tv_sec != 0 || context->raw_deadline().tv_nsec != 0) {
+            auto deadline = context->deadline();
+            if (deadline < std::chrono::system_clock::time_point::max()) {
+                auto wait_res = future.wait_until(deadline);
+                if (wait_res == std::future_status::timeout) {
+                    return {::grpc::StatusCode::DEADLINE_EXCEEDED, "GetSyncCursor deadline exceeded"};
+                }
+            }
+        }
+        task_result = future.get();
+    } else {
+        task_result = run_task();
+    }
+
+    populate_sync_cursor(task_result, response->mutable_cursor());
+    return ::grpc::Status::OK;
 }
 
 ::grpc::Status
 MessagingServiceImpl::UpdateSyncCursor(::grpc::ServerContext* context,
-                                       const ::securecloud::messaging::v1::UpdateSyncCursorRequest* /*request*/,
-                                       ::securecloud::messaging::v1::UpdateSyncCursorResponse* /*response*/) {
+                                       const ::securecloud::messaging::v1::UpdateSyncCursorRequest* request,
+                                       ::securecloud::messaging::v1::UpdateSyncCursorResponse* response) {
     log_rpc_invocation("UpdateSyncCursor", context);
-    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    if (!cursor_manager_) {
+        return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    }
+    if (!request || !response) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null"};
+    }
+    if (!request->has_cursor()) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Request must contain cursor"};
+    }
+
+    auto cancel_status = check_deadline_and_cancellation(context);
+    if (!cancel_status.ok()) {
+        return cancel_status;
+    }
+
+    auto caller_ctx = extract_messaging_caller_context(context);
+    const auto& cursor_proto = request->cursor();
+    std::string dev_id_str = !cursor_proto.device_id().empty() ? cursor_proto.device_id() : caller_ctx.device_id();
+    if (dev_id_str.empty()) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Missing device ID"};
+    }
+
+    auto parsed_conv = domain::ConversationId::from_string(cursor_proto.conversation_id());
+    if (!parsed_conv) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND, "Invalid conversation ID format",
+                              caller_ctx.correlation_id(), context);
+    }
+
+    if (cursor_proto.last_delivered_sequence() < 0) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_CURSOR_OUT_OF_BOUNDS, "Sequence must be non-negative",
+                              caller_ctx.correlation_id(), context);
+    }
+
+    UpdateSyncCursorCommand cmd{
+        .device_id = domain::DeviceId(dev_id_str),
+        .conversation_id = *parsed_conv,
+        .new_sequence = static_cast<domain::MessageSequence>(cursor_proto.last_delivered_sequence()),
+        .sync_version = 0,
+    };
+
+    auto run_task = [mgr = cursor_manager_, command = std::move(cmd)]() { return mgr->update_cursor(command); };
+
+    SyncCursorUpdateOutcome task_result;
+    if (sync_pool_) {
+        auto promise = std::make_shared<std::promise<SyncCursorUpdateOutcome>>();
+        auto future = promise->get_future();
+        bool enqueued = sync_pool_->try_submit([promise, run_task]() {
+            try {
+                promise->set_value(run_task());
+            } catch (const std::exception& ex) {
+                promise->set_value(SyncCursorUpdateOutcome{
+                    .status = SyncCursorUpdateStatus::StorageError, .cursor = {}, .error_message = ex.what()});
+            } catch (...) {
+                promise->set_value(SyncCursorUpdateOutcome{.status = SyncCursorUpdateStatus::StorageError,
+                                                           .cursor = {},
+                                                           .error_message = "Unknown worker failure"});
+            }
+        });
+
+        if (!enqueued) {
+            return to_grpc_status(v1::MESSAGING_ERROR_CODE_QUEUE_CAPACITY_EXCEEDED,
+                                  "Sync worker pool capacity exceeded", caller_ctx.correlation_id(), context);
+        }
+
+        if (context->raw_deadline().tv_sec != 0 || context->raw_deadline().tv_nsec != 0) {
+            auto deadline = context->deadline();
+            if (deadline < std::chrono::system_clock::time_point::max()) {
+                auto wait_res = future.wait_until(deadline);
+                if (wait_res == std::future_status::timeout) {
+                    return {::grpc::StatusCode::DEADLINE_EXCEEDED, "UpdateSyncCursor deadline exceeded"};
+                }
+            }
+        }
+        task_result = future.get();
+    } else {
+        task_result = run_task();
+    }
+
+    if (!task_result.is_success()) {
+        return cursor_update_status_to_grpc_status(task_result.status, task_result.error_message,
+                                                   caller_ctx.correlation_id(), context);
+    }
+
+    response->set_success(true);
+    populate_sync_cursor(task_result.cursor, response->mutable_cursor());
+    return ::grpc::Status::OK;
 }
 
 // --- Presence signaling & query RPCs ---

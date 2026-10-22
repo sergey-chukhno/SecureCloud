@@ -2481,3 +2481,20 @@ target_link_libraries(securecloud_messaging_proxy_sync_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_proxy_sync_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# MessagingService Implementation Sync RPCs Test Suite (MSG-009-T05)
+add_executable(securecloud_messaging_service_impl_sync_test
+    messaging/messaging_service_impl_sync_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_service_impl_sync_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_service_impl_sync_test ${SECURECLOUD_TEST_PROPERTIES})
+
