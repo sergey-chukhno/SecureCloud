@@ -11,14 +11,14 @@ void DeviceConnectionRegistry::register_channel(std::shared_ptr<IDeviceDeliveryC
     }
 
     const auto id = channel->device_id();
-    std::unique_lock<std::shared_mutex> lock(mutex_);
+    const std::lock_guard<std::mutex> lock(mutex_);
     channels_[id] = ChannelEntry{std::move(channel), std::chrono::steady_clock::now()};
 }
 
 void DeviceConnectionRegistry::unregister_channel(const domain::DeviceId& device_id) {
     bool found = false;
     {
-        std::unique_lock<std::shared_mutex> lock(mutex_);
+        const std::lock_guard<std::mutex> lock(mutex_);
         auto it = channels_.find(device_id);
         if (it != channels_.end()) {
             channels_.erase(it);
@@ -33,7 +33,7 @@ void DeviceConnectionRegistry::unregister_channel(const domain::DeviceId& device
 
 std::shared_ptr<IDeviceDeliveryChannel> DeviceConnectionRegistry::get_channel(const domain::DeviceId& device_id) const {
     const auto now = std::chrono::steady_clock::now();
-    std::shared_lock<std::shared_mutex> lock(mutex_);
+    const std::lock_guard<std::mutex> lock(mutex_);
 
     auto it = channels_.find(device_id);
     if (it == channels_.end()) {
@@ -65,7 +65,7 @@ DeviceConnectionRegistry::filter_online_devices(const std::vector<domain::Device
     std::vector<domain::DeviceId> online;
     online.reserve(device_ids.size());
 
-    std::shared_lock<std::shared_mutex> lock(mutex_);
+    const std::lock_guard<std::mutex> lock(mutex_);
     for (const auto& id : device_ids) {
         auto it = channels_.find(id);
         if (it != channels_.end() && it->second.channel && it->second.channel->is_active()) {
@@ -79,12 +79,12 @@ DeviceConnectionRegistry::filter_online_devices(const std::vector<domain::Device
 }
 
 size_t DeviceConnectionRegistry::connected_device_count() const noexcept {
-    std::shared_lock<std::shared_mutex> lock(mutex_);
+    const std::lock_guard<std::mutex> lock(mutex_);
     return channels_.size();
 }
 
 bool DeviceConnectionRegistry::touch_channel(const domain::DeviceId& device_id) {
-    std::unique_lock<std::shared_mutex> lock(mutex_);
+    const std::lock_guard<std::mutex> lock(mutex_);
     auto it = channels_.find(device_id);
     if (it != channels_.end() && it->second.channel && it->second.channel->is_active()) {
         it->second.last_active_at = std::chrono::steady_clock::now();
@@ -99,7 +99,7 @@ size_t DeviceConnectionRegistry::evict_stale_channels(std::chrono::milliseconds 
     std::vector<domain::DeviceId> evicted_ids;
 
     {
-        std::unique_lock<std::shared_mutex> lock(mutex_);
+        const std::lock_guard<std::mutex> lock(mutex_);
         for (auto it = channels_.begin(); it != channels_.end();) {
             const bool inactive = !it->second.channel || !it->second.channel->is_active();
             const bool timed_out = (limit.count() > 0) && ((now - it->second.last_active_at) > limit);
