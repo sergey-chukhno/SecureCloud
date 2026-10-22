@@ -287,7 +287,46 @@ void SigV4Signer::sign_request(HttpRequest& req, const std::string& access_key, 
                                    ", SignedHeaders=" + signed_headers + ", Signature=" + signature;
 }
 
+// --- S3RetryPolicy Implementation ---
+
+std::chrono::milliseconds S3RetryPolicy::calculate_backoff(uint32_t attempt) const noexcept {
+    if (attempt == 0) {
+        attempt = 1;
+    }
+    const double multiplier = std::pow(2.0, static_cast<double>(attempt - 1));
+    const double raw_backoff_ms = static_cast<double>(initial_backoff.count()) * multiplier;
+    double capped_ms = std::min(raw_backoff_ms, static_cast<double>(max_backoff.count()));
+    if (jitter_factor > 0.0) {
+        static thread_local std::mt19937 gen(std::random_device{}());
+        std::uniform_real_distribution<double> dist(1.0 - jitter_factor, 1.0 + jitter_factor);
+        capped_ms *= dist(gen);
+    }
+    return std::chrono::milliseconds(static_cast<long long>(std::max(0.0, std::round(capped_ms))));
+}
+
 // --- DefaultHttpTransport Implementation ---
+
+DefaultHttpTransport::DefaultHttpTransport() = default;
+
+DefaultHttpTransport::~DefaultHttpTransport() {
+    close_current_socket();
+}
+
+void DefaultHttpTransport::close_current_socket() noexcept {
+#ifdef _WIN32
+    if (cached_sock_ != ~static_cast<uintptr_t>(0)) {
+        close_socket(static_cast<SOCKET>(cached_sock_));
+        cached_sock_ = ~static_cast<uintptr_t>(0);
+    }
+#else
+    if (cached_sock_ >= 0) {
+        close_socket(cached_sock_);
+        cached_sock_ = -1;
+    }
+#endif
+    cached_host_.clear();
+    cached_port_ = 0;
+}
 
 HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
     init_winsock();
@@ -447,7 +486,7 @@ HttpResponse DefaultHttpTransport::execute(const HttpRequest& req) {
 // --- S3Client Implementation ---
 
 S3Client::S3Client(S3ClientConfig config, std::shared_ptr<IHttpTransport> transport)
-    : config_(std::move(config)), transport_(std::move(transport)) {
+    : config_(std::move(config)), transport_(std::move(transport)), retry_policy_(config_.retry_policy) {
     config_.validate();
     parse_endpoint();
 
@@ -486,6 +525,24 @@ void S3Client::parse_endpoint() {
     }
 }
 
+HttpResponse S3Client::execute_with_retry(HttpRequest req) {
+    uint32_t attempt = 0;
+    while (true) {
+        attempt++;
+        HttpResponse res = transport_->execute(req);
+        if (res.status_code >= 200 && res.status_code < 300) {
+            return res;
+        }
+        if (!retry_policy_.is_retryable(res.status_code) || attempt > retry_policy_.max_retries) {
+            return res;
+        }
+        const auto backoff = retry_policy_.calculate_backoff(attempt);
+        if (backoff.count() > 0) {
+            std::this_thread::sleep_for(backoff);
+        }
+    }
+}
+
 bool S3Client::ping_bucket(std::chrono::milliseconds timeout) noexcept {
     try {
         HttpRequest req;
@@ -498,7 +555,7 @@ bool S3Client::ping_bucket(std::chrono::milliseconds timeout) noexcept {
         SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(),
                                   config_.region, "s3");
 
-        const HttpResponse res = transport_->execute(req);
+        const HttpResponse res = execute_with_retry(req);
         return res.status_code == kHttpStatusOk;
     } catch (...) {
         return false;
@@ -516,7 +573,7 @@ bool S3Client::object_exists(const std::string& object_key, std::chrono::millise
     SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
                               "s3");
 
-    const HttpResponse res = transport_->execute(req);
+    const HttpResponse res = execute_with_retry(req);
 
     if (res.status_code == kHttpStatusOk) {
         return true;
@@ -553,7 +610,7 @@ bool S3Client::put_object(const std::string& object_key, std::string_view payloa
     SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
                               "s3");
 
-    const HttpResponse res = transport_->execute(req);
+    const HttpResponse res = execute_with_retry(req);
 
     if (res.status_code == kHttpStatusOk || res.status_code == 201) {
         return true;
@@ -587,7 +644,7 @@ S3ObjectResponse S3Client::get_object(const std::string& object_key, std::option
     SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
                               "s3");
 
-    const HttpResponse res = transport_->execute(req);
+    const HttpResponse res = execute_with_retry(req);
 
     if (res.status_code == kHttpStatusOk || res.status_code == 206) {
         S3ObjectResponse obj;
@@ -637,7 +694,7 @@ S3ObjectMetadata S3Client::head_object(const std::string& object_key, std::chron
     SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
                               "s3");
 
-    const HttpResponse res = transport_->execute(req);
+    const HttpResponse res = execute_with_retry(req);
 
     if (res.status_code == kHttpStatusOk) {
         S3ObjectMetadata meta;
@@ -683,7 +740,7 @@ bool S3Client::delete_object(const std::string& object_key, std::chrono::millise
     SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
                               "s3");
 
-    const HttpResponse res = transport_->execute(req);
+    const HttpResponse res = execute_with_retry(req);
 
     if (res.status_code == 204 || res.status_code == kHttpStatusOk || res.status_code == kHttpStatusNotFound) {
         return true;
@@ -715,7 +772,7 @@ std::string S3Client::create_multipart_upload(const std::string& object_key, con
     SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
                               "s3");
 
-    const HttpResponse res = transport_->execute(req);
+    const HttpResponse res = execute_with_retry(req);
 
     if (res.status_code == kHttpStatusOk) {
         std::string upload_id = extract_xml_tag(res.body, "UploadId");
@@ -756,7 +813,7 @@ std::string S3Client::upload_part(const std::string& object_key, const std::stri
     SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
                               "s3");
 
-    const HttpResponse res = transport_->execute(req);
+    const HttpResponse res = execute_with_retry(req);
 
     if (res.status_code == kHttpStatusOk) {
         const auto etag_it = res.headers.find("etag");
@@ -809,7 +866,7 @@ bool S3Client::complete_multipart_upload(const std::string& object_key, const st
     SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
                               "s3");
 
-    const HttpResponse res = transport_->execute(req);
+    const HttpResponse res = execute_with_retry(req);
 
     if (res.status_code == kHttpStatusOk) {
         return true;
@@ -839,7 +896,7 @@ bool S3Client::abort_multipart_upload(const std::string& object_key, const std::
     SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
                               "s3");
 
-    const HttpResponse res = transport_->execute(req);
+    const HttpResponse res = execute_with_retry(req);
 
     if (res.status_code == 204 || res.status_code == kHttpStatusOk || res.status_code == kHttpStatusNotFound) {
         return true;
@@ -880,7 +937,7 @@ ListObjectsResult S3Client::list_objects(const std::string& prefix, size_t max_k
     SigV4Signer::sign_request(req, config_.access_key, config_.secret_key.expose_unredacted_secret(), config_.region,
                               "s3");
 
-    const HttpResponse res = transport_->execute(req);
+    const HttpResponse res = execute_with_retry(req);
 
     if (res.status_code == kHttpStatusOk) {
         ListObjectsResult result;

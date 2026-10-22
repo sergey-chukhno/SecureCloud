@@ -792,5 +792,3 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_audit_service_lifecycle_integration_test ${SECURECLOUD_TEST_PROPERTIES})
-
->>>>>>> main
