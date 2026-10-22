@@ -46,6 +46,12 @@ void ScyllaSyncCursorRepository::init_prepared_statements() {
                                 "FROM securecloud_messaging.sync_state_by_device "
                                 "WHERE device_id = ? AND conversation_id = ?;");
 
+    prep_list_cursors_by_device_ = session_->prepare(
+        "sync_repo_list_cursors_by_device",
+        "SELECT device_id, conversation_id, last_synced_sequence, last_sync_at, sync_version "
+        "FROM securecloud_messaging.sync_state_by_device "
+        "WHERE device_id = ?;");
+
     prep_upsert_cursor_ = session_->prepare(
         "sync_repo_upsert_cursor", "INSERT INTO securecloud_messaging.sync_state_by_device "
                                    "(device_id, conversation_id, last_synced_sequence, last_sync_at, sync_version) "
@@ -67,6 +73,22 @@ ScyllaSyncCursorRepository::get_sync_cursor(const domain::DeviceId& device_id,
     }
 
     return row_to_sync_cursor(result.front());
+}
+
+std::vector<domain::DeviceSyncCursor>
+ScyllaSyncCursorRepository::list_sync_cursors_by_device(const domain::DeviceId& device_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    db::ScyllaParams params;
+    params.add_string(device_id.str());
+
+    auto result = session_->execute_prepared(prep_list_cursors_by_device_, params);
+    std::vector<domain::DeviceSyncCursor> cursors;
+    cursors.reserve(result.size());
+    for (const auto& row : result) {
+        cursors.push_back(row_to_sync_cursor(row));
+    }
+    return cursors;
 }
 
 void ScyllaSyncCursorRepository::upsert_sync_cursor(const domain::DeviceSyncCursor& cursor) {

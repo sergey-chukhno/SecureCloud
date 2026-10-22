@@ -2431,3 +2431,19 @@ target_link_libraries(securecloud_messaging_sync_types_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_sync_types_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Messaging Online Synchronization Cursor Manager Test Suite (MSG-009-T02)
+add_executable(securecloud_sync_cursor_manager_test
+    messaging/sync_cursor_manager_test.cpp
+)
+
+target_link_libraries(securecloud_sync_cursor_manager_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_sync_cursor_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+

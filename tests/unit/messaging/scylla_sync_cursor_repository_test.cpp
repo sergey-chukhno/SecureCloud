@@ -57,5 +57,34 @@ TEST(ScyllaSyncCursorRepositoryTest, UpsertAndGetSyncCursor) {
     EXPECT_FALSE(not_found.has_value());
 }
 
+TEST(ScyllaSyncCursorRepositoryTest, ListSyncCursorsByDevice) {
+    auto mock = std::make_shared<db::MockScyllaSession>();
+    ScyllaSyncCursorRepository repo(mock);
+
+    auto dev_id = DeviceId("dev-laptop-789");
+    auto conv_1 = ConversationId::generate_v7();
+    auto conv_2 = ConversationId::generate_v7();
+    auto now = std::chrono::system_clock::now();
+    int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
+
+    db::ScyllaRow row1({"device_id", "conversation_id", "last_synced_sequence", "last_sync_at", "sync_version"},
+                       {db::ScyllaValue(dev_id.str()), db::ScyllaValue(conv_1.to_string()),
+                        db::ScyllaValue(static_cast<int64_t>(100)), db::ScyllaValue(now_ms), db::ScyllaValue(1)});
+    db::ScyllaRow row2({"device_id", "conversation_id", "last_synced_sequence", "last_sync_at", "sync_version"},
+                       {db::ScyllaValue(dev_id.str()), db::ScyllaValue(conv_2.to_string()),
+                        db::ScyllaValue(static_cast<int64_t>(200)), db::ScyllaValue(now_ms), db::ScyllaValue(2)});
+
+    mock->set_prepared_result(db::PreparedStatementId("sync_repo_list_cursors_by_device"),
+                              db::ScyllaQueryResult({row1, row2}));
+
+    auto list = repo.list_sync_cursors_by_device(dev_id);
+    ASSERT_EQ(list.size(), 2U);
+    EXPECT_EQ(list[0].device_id, dev_id);
+    EXPECT_EQ(list[0].conversation_id, conv_1);
+    EXPECT_EQ(list[0].last_synced_sequence, 100U);
+    EXPECT_EQ(list[1].conversation_id, conv_2);
+    EXPECT_EQ(list[1].last_synced_sequence, 200U);
+}
+
 } // namespace
 } // namespace securecloud::messaging::repository::test
