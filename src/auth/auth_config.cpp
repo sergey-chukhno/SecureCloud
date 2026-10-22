@@ -1,5 +1,6 @@
 #include "auth_config.hpp"
 
+#include "auth/db/postgres_connection_pool.hpp"
 #include "securecloud/configuration/config_parser.hpp"
 
 namespace securecloud::auth {
@@ -63,6 +64,10 @@ AuthConfig AuthConfig::load(const common::configuration::ConfigurationSource& so
     }
 
     return config;
+}
+
+std::shared_ptr<db::PostgresConnectionPool> AuthConfig::create_database_pool() const {
+    return std::make_shared<db::PostgresConnectionPool>(*this);
 }
 
 } // namespace securecloud::auth

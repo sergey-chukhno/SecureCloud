@@ -292,5 +292,44 @@ TEST(GatewayTlsConfigTest, DisabledTlsAllowsEmptyCertificatePaths) {
     EXPECT_FALSE(config.tls.enabled);
 }
 
+TEST(GatewayStreamingConfigTest, DefaultValuesAreSound) {
+    common::configuration::InMemoryConfigurationSource source;
+    common::configuration::ValidationResult errors;
+
+    auto config = GatewayConfig::load(source, errors);
+    EXPECT_TRUE(errors.is_valid()) << errors.to_string();
+
+    EXPECT_EQ(config.streaming.max_chunk_size_bytes, 4194304u);
+    EXPECT_EQ(config.streaming.max_stream_buffer_bytes, 8388608u);
+    EXPECT_EQ(config.streaming.idle_timeout_ms, 30000u);
+}
+
+TEST(GatewayStreamingConfigTest, LoadsValidOverrides) {
+    common::configuration::InMemoryConfigurationSource source({
+        {"SECURECLOUD_GATEWAY_STREAM_MAX_CHUNK_BYTES", "1048576"},
+        {"SECURECLOUD_GATEWAY_STREAM_MAX_BUFFER_BYTES", "4194304"},
+        {"SECURECLOUD_GATEWAY_STREAM_IDLE_TIMEOUT_MS", "15000"},
+    });
+    common::configuration::ValidationResult errors;
+
+    auto config = GatewayConfig::load(source, errors);
+    EXPECT_TRUE(errors.is_valid()) << errors.to_string();
+
+    EXPECT_EQ(config.streaming.max_chunk_size_bytes, 1048576u);
+    EXPECT_EQ(config.streaming.max_stream_buffer_bytes, 4194304u);
+    EXPECT_EQ(config.streaming.idle_timeout_ms, 15000u);
+}
+
+TEST(GatewayStreamingConfigTest, RejectsBufferSmallerThanChunk) {
+    common::configuration::InMemoryConfigurationSource source({
+        {"SECURECLOUD_GATEWAY_STREAM_MAX_CHUNK_BYTES", "4194304"},
+        {"SECURECLOUD_GATEWAY_STREAM_MAX_BUFFER_BYTES", "1048576"},
+    });
+    common::configuration::ValidationResult errors;
+
+    auto config = GatewayConfig::load(source, errors);
+    EXPECT_FALSE(errors.is_valid());
+}
+
 } // namespace
 } // namespace securecloud::gateway

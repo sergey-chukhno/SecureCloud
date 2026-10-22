@@ -1,8 +1,8 @@
-#include "http/error_mapper.hpp"
-#include "http/logging_middleware.hpp"
-#include "http/middleware.hpp"
-#include "http/request_id_middleware.hpp"
-#include "http/router.hpp"
+#include "http/errors/error_mapper.hpp"
+#include "http/middleware/logging_middleware.hpp"
+#include "http/middleware/middleware.hpp"
+#include "http/middleware/request_id_middleware.hpp"
+#include "http/routing/router.hpp"
 
 #include <grpcpp/support/status_code_enum.h>
 #include <gtest/gtest.h>

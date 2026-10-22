@@ -26,19 +26,12 @@ void FilesOutboxRepository::stage_event(const FilesOutboxEntity& event, pqxx::wo
         processed_str = db::to_iso8601(*event.processed_at);
     }
 
-    tx.exec_params(
-        "INSERT INTO files_outbox (event_id, aggregate_type, aggregate_id, event_type, payload_json, status, retry_count, created_at, processed_at) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
-        event.event_id,
-        event.aggregate_type.empty() ? "FILE" : event.aggregate_type,
-        event.aggregate_id,
-        event.event_type,
-        event.payload_json,
-        db::to_string(event.status),
-        event.retry_count,
-        db::to_iso8601(event.created_at),
-        processed_str
-    );
+    tx.exec_params("INSERT INTO files_outbox (event_id, aggregate_type, aggregate_id, event_type, payload_json, "
+                   "status, retry_count, created_at, processed_at) "
+                   "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+                   event.event_id, event.aggregate_type.empty() ? "FILE" : event.aggregate_type, event.aggregate_id,
+                   event.event_type, event.payload_json, db::to_string(event.status), event.retry_count,
+                   db::to_iso8601(event.created_at), processed_str);
 }
 
 void FilesOutboxRepository::stage_event(const FilesOutboxEntity& event) {
@@ -49,10 +42,10 @@ void FilesOutboxRepository::stage_event(const FilesOutboxEntity& event) {
 
 std::vector<FilesOutboxEntity> FilesOutboxRepository::fetch_pending_events(size_t limit, pqxx::work& tx) {
     auto res = tx.exec_params(
-        "SELECT event_id, aggregate_type, aggregate_id, event_type, payload_json, status, retry_count, created_at, processed_at "
+        "SELECT event_id, aggregate_type, aggregate_id, event_type, payload_json, status, retry_count, created_at, "
+        "processed_at "
         "FROM files_outbox WHERE status = 'PENDING' ORDER BY created_at ASC LIMIT $1 FOR UPDATE SKIP LOCKED",
-        static_cast<uint64_t>(limit)
-    );
+        static_cast<uint64_t>(limit));
 
     std::vector<FilesOutboxEntity> events;
     events.reserve(res.size());
@@ -73,11 +66,8 @@ bool FilesOutboxRepository::mark_published(const std::string& event_id, pqxx::wo
     }
 
     auto now_iso = db::to_iso8601(std::chrono::system_clock::now());
-    auto res = tx.exec_params(
-        "UPDATE files_outbox SET status = 'PUBLISHED', processed_at = $1 WHERE event_id = $2",
-        now_iso,
-        event_id
-    );
+    auto res = tx.exec_params("UPDATE files_outbox SET status = 'PUBLISHED', processed_at = $1 WHERE event_id = $2",
+                              now_iso, event_id);
 
     return res.affected_rows() > 0;
 }
@@ -97,9 +87,7 @@ bool FilesOutboxRepository::mark_failed(const std::string& event_id, pqxx::work&
     }
 
     auto res = tx.exec_params(
-        "UPDATE files_outbox SET status = 'FAILED', retry_count = retry_count + 1 WHERE event_id = $1",
-        event_id
-    );
+        "UPDATE files_outbox SET status = 'FAILED', retry_count = retry_count + 1 WHERE event_id = $1", event_id);
 
     return res.affected_rows() > 0;
 }
@@ -118,11 +106,10 @@ std::optional<FilesOutboxEntity> FilesOutboxRepository::find_by_id(const std::st
         return std::nullopt;
     }
 
-    auto res = tx.exec_params(
-        "SELECT event_id, aggregate_type, aggregate_id, event_type, payload_json, status, retry_count, created_at, processed_at "
-        "FROM files_outbox WHERE event_id = $1",
-        event_id
-    );
+    auto res = tx.exec_params("SELECT event_id, aggregate_type, aggregate_id, event_type, payload_json, status, "
+                              "retry_count, created_at, processed_at "
+                              "FROM files_outbox WHERE event_id = $1",
+                              event_id);
 
     if (res.empty()) {
         return std::nullopt;

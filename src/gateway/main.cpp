@@ -1,11 +1,29 @@
-#include "gateway_config.hpp"
+#include "grpc/auth_service_client.hpp"
 #include "grpc/channel_manager.hpp"
+#include "grpc/files_service_client.hpp"
 #include "health/gateway_health_evaluator.hpp"
-#include "http/http_redirect_server.hpp"
-#include "http/http_server.hpp"
-#include "http/https_server.hpp"
-#include "http/resource_limiter_middleware.hpp"
-#include "http/router.hpp"
+#include "http/auth/auth_service_token_validator.hpp"
+#include "http/auth/authentication_middleware.hpp"
+#include "http/auth/authorization_middleware.hpp"
+#include "http/auth/gateway_security_policy.hpp"
+#include "http/auth/local_token_verifier.hpp"
+#include "http/middleware/drain_middleware.hpp"
+#include "http/middleware/logging_middleware.hpp"
+#include "http/middleware/rate_limiter_middleware.hpp"
+#include "http/middleware/request_id_middleware.hpp"
+#include "http/middleware/resource_limiter_middleware.hpp"
+#include "http/proxy/auth_proxy_handler.hpp"
+#include "http/proxy/files_proxy_handler.hpp"
+#include "http/resilience/bulkhead_manager.hpp"
+#include "http/resilience/circuit_breaker.hpp"
+#include "http/resilience/deadline_manager.hpp"
+#include "http/resilience/drain_manager.hpp"
+#include "http/resilience/retry_policy.hpp"
+#include "http/routing/gateway_route_registrar.hpp"
+#include "http/routing/router.hpp"
+#include "http/server/http_redirect_server.hpp"
+#include "http/server/http_server.hpp"
+#include "http/server/https_server.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
 #include "securecloud/configuration/configuration_source.hpp"
@@ -17,10 +35,12 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <fstream>
 #include <grpcpp/grpcpp.h>
 #include <httplib.h>
 #include <iostream>
 #include <memory>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -35,32 +55,6 @@ void signal_handler(int signal) {
     if (signal == SIGINT || signal == SIGTERM) {
         g_shutdown_requested.store(true);
     }
-}
-
-constexpr int k_http_status_ok = 200;
-constexpr int k_http_status_service_unavailable = 503;
-
-void register_health_routes(securecloud::gateway::http::Router& router,
-                            securecloud::common::health::HealthStatusManager& health_manager) {
-    router.get("/health/live", [&health_manager](const httplib::Request&, httplib::Response& res) {
-        if (health_manager.is_live()) {
-            res.status = k_http_status_ok;
-            res.set_content(R"({"status":"SERVING"})", "application/json");
-        } else {
-            res.status = k_http_status_service_unavailable;
-            res.set_content(R"({"status":"NOT_SERVING"})", "application/json");
-        }
-    });
-
-    router.get("/health/ready", [&health_manager](const httplib::Request&, httplib::Response& res) {
-        if (health_manager.is_ready() && health_manager.evaluate_readiness()) {
-            res.status = k_http_status_ok;
-            res.set_content(R"({"status":"SERVING"})", "application/json");
-        } else {
-            res.status = k_http_status_service_unavailable;
-            res.set_content(R"({"status":"NOT_SERVING"})", "application/json");
-        }
-    });
 }
 
 void execute_peer_probe(const securecloud::gateway::GatewayConfig& config) {
@@ -153,9 +147,100 @@ int run_service() {
     std::cout << "[SecureCloud] [" << config.common.service_name << "] mTLS server listening strictly on "
               << server_address << " with service identity 'DNS:" << config.common.service_name << "'\n";
 
+    // Configure downstream Auth gRPC client & perimeter validation
+    auto auth_channel = channel_manager.get_auth_channel();
+    auto auth_client = std::make_shared<securecloud::gateway::grpc::AuthServiceClient>(auth_channel);
+
+    std::shared_ptr<securecloud::gateway::http::ITokenValidator> token_validator;
+    if (config.token_verification_mode == "local") {
+        std::string public_key_pem = config.auth_public_key_pem;
+        if (public_key_pem.empty() && !config.auth_public_key_path.empty()) {
+            std::ifstream file(config.auth_public_key_path);
+            if (file.is_open()) {
+                std::stringstream buffer;
+                buffer << file.rdbuf();
+                public_key_pem = buffer.str();
+            }
+        }
+        if (public_key_pem.empty()) {
+            securecloud::gateway::grpc::ClientCallContext ctx(std::chrono::milliseconds(2000));
+            securecloud::auth::v1::GetPublicSigningKeyRequest req;
+            auto key_res = auth_client->get_public_signing_key(req, ctx);
+            if (key_res.has_value()) {
+                public_key_pem = key_res.value().public_key_pem();
+                std::cout << "[SecureCloud] [" << config.common.service_name
+                          << "] Fetched public signing key from AuthService (key_id: " << key_res.value().key_id()
+                          << ")\n";
+            } else {
+                std::cerr << "[SecureCloud] [" << config.common.service_name
+                          << "] WARNING: Failed to fetch public signing key from AuthService: "
+                          << key_res.error().message << ". Falling back to remote RPC validation.\n";
+            }
+        }
+
+        if (!public_key_pem.empty()) {
+            try {
+                token_validator = securecloud::gateway::http::LocalTokenVerifier::from_public_key_pem(public_key_pem);
+                std::cout << "[SecureCloud] [" << config.common.service_name
+                          << "] Initialized LocalTokenVerifier for offline Ed25519 token verification\n";
+            } catch (const std::exception& ex) {
+                std::cerr << "[SecureCloud] [" << config.common.service_name
+                          << "] ERROR: Failed to construct LocalTokenVerifier: " << ex.what()
+                          << ". Falling back to remote RPC validation.\n";
+                token_validator = std::make_shared<securecloud::gateway::http::AuthServiceTokenValidator>(auth_client);
+            }
+        } else {
+            token_validator = std::make_shared<securecloud::gateway::http::AuthServiceTokenValidator>(auth_client);
+            std::cout << "[SecureCloud] [" << config.common.service_name
+                      << "] Initialized AuthServiceTokenValidator (remote RPC fallback)\n";
+        }
+    } else {
+        token_validator = std::make_shared<securecloud::gateway::http::AuthServiceTokenValidator>(auth_client);
+        std::cout << "[SecureCloud] [" << config.common.service_name
+                  << "] Initialized AuthServiceTokenValidator for remote gRPC token validation\n";
+    }
+
+    auto security_policy = std::make_shared<securecloud::gateway::http::GatewaySecurityPolicy>(
+        securecloud::gateway::http::GatewaySecurityPolicy::create_default());
+
+    auto drain_manager = std::make_shared<securecloud::gateway::http::DrainManager>(&health_manager);
+
+    // Assemble deterministic perimeter middleware pipeline:
+    // 1. RequestIdMiddleware: assigns/propagates standard correlation ID
+    // 2. LoggingMiddleware: measures request duration & logs all responses
+    // 3. DrainMiddleware: rejects new requests with 503 SERVER_SHUTTING_DOWN during graceful drain (GW-009-T04)
+    // 4. ResourceLimiterMiddleware: enforces transport header/body limits & concurrency boundary (GW-002)
+    // 5. AuthenticationMiddleware: verifies Bearer token/MFA, establishes AuthenticatedContext
+    // 6. RateLimiterMiddleware: token-bucket per-client/IP rate limiting & memory bounds (GW-009-T02)
+    // 7. AuthorizationMiddleware: evaluates Enterprise Route Matrix, scopes, and device binding (GW-007)
     securecloud::gateway::http::Router router;
+    router.use(std::make_shared<securecloud::gateway::http::RequestIdMiddleware>());
+    router.use(std::make_shared<securecloud::gateway::http::LoggingMiddleware>());
+    router.use(std::make_shared<securecloud::gateway::http::DrainMiddleware>(drain_manager));
     router.use(std::make_shared<securecloud::gateway::http::ResourceLimiterMiddleware>(config));
-    register_health_routes(router, health_manager);
+    router.use(
+        std::make_shared<securecloud::gateway::http::AuthenticationMiddleware>(security_policy, token_validator));
+    router.use(std::make_shared<securecloud::gateway::http::RateLimiterMiddleware>(config));
+    router.use(std::make_shared<securecloud::gateway::http::AuthorizationMiddleware>(security_policy));
+
+    // Register all perimeter routes (Health, Auth proxy, and Phase 2 service stubs)
+    auto deadline_manager = std::make_shared<securecloud::gateway::http::DeadlineManager>(config.deadlines);
+    auto retry_policy = std::make_shared<securecloud::gateway::http::RetryPolicy>();
+    auto bulkhead_manager = std::make_shared<securecloud::gateway::http::BulkheadManager>(config.bulkhead);
+    auto circuit_breaker_registry =
+        std::make_shared<securecloud::gateway::http::CircuitBreakerRegistry>(config.circuit_breaker);
+    auto auth_proxy = std::make_shared<securecloud::gateway::http::AuthProxyHandler>(
+        auth_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("auth"));
+
+    auto files_channel = channel_manager.get_files_channel();
+    auto files_client = std::make_shared<securecloud::gateway::grpc::FilesServiceClient>(files_channel);
+    auto files_proxy = std::make_shared<securecloud::gateway::http::FilesProxyHandler>(
+        files_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("files"),
+        config.streaming);
+
+    securecloud::gateway::http::GatewayRouteRegistrar route_registrar(auth_proxy, health_manager, bulkhead_manager,
+                                                                      files_proxy);
+    route_registrar.register_all_routes(router);
 
     std::unique_ptr<securecloud::gateway::http::HttpServer> http_server;
     std::unique_ptr<securecloud::gateway::http::HttpRedirectServer> redirect_server;
@@ -205,7 +290,11 @@ int run_service() {
         std::this_thread::sleep_for(k_poll_interval);
     }
 
+    std::cout << "[SecureCloud] [" << config.common.service_name
+              << "] Shutdown signal received: starting coordinated graceful drain...\n";
+    drain_manager->start_drain(std::chrono::milliseconds(5000));
     health_manager.set_shutting_down(true);
+
     if (https_server) {
         std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down HTTPS server...\n";
         https_server->stop();

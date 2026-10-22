@@ -8,15 +8,7 @@
 namespace securecloud::files {
 
 /// Authoritative file lifecycle states (Files Design 6.3)
-enum class FileStatus {
-    Created,
-    Uploading,
-    Finalizing,
-    Available,
-    Expired,
-    Deleted,
-    Failed
-};
+enum class FileStatus { Created, Uploading, Finalizing, Available, Expired, Deleted, Failed };
 
 /// Strongly typed C++20 domain entity for master logical file records.
 /// Maps 1:1 to the `files` PostgreSQL table.

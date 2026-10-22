@@ -1,0 +1,424 @@
+syntax = "proto3";
+
+package securecloud.messaging.v1;
+
+option cc_generic_services = false;
+
+// ---------------------------------------------------------------------------
+// Enums
+// ---------------------------------------------------------------------------
+
+// Message priority classes governing delivery scheduling (ADR-007, Design 5.19-5.21).
+enum MessagePriority {
+  MESSAGE_PRIORITY_UNSPECIFIED = 0;
+  MESSAGE_PRIORITY_NORMAL = 1;
+  MESSAGE_PRIORITY_URGENT = 2;
+  MESSAGE_PRIORITY_EMERGENCY = 3;
+}
+
+// Server-side delivery lifecycle states (Design 5.13).
+// Valid transitions:
+//   QUEUED -> DELIVERING -> DELIVERED -> READ
+//   DELIVERING -> RETRY_WAIT -> DELIVERING
+//   QUEUED | RETRY_WAIT -> EXPIRED
+enum DeliveryState {
+  DELIVERY_STATE_UNSPECIFIED = 0;
+  DELIVERY_STATE_QUEUED = 1;
+  DELIVERY_STATE_DELIVERING = 2;
+  DELIVERY_STATE_DELIVERED = 3;
+  DELIVERY_STATE_READ = 4;
+  DELIVERY_STATE_RETRY_WAIT = 5;
+  DELIVERY_STATE_EXPIRED = 6;
+}
+
+// Receipt type classification separating delivery receipts from read receipts (ADR-007, Design 5.13).
+enum ReceiptType {
+  RECEIPT_TYPE_UNSPECIFIED = 0;
+  RECEIPT_TYPE_DELIVERY = 1;
+  RECEIPT_TYPE_READ = 2;
+}
+
+// Conversation topology types (Design 5.3, 5.32).
+enum ConversationType {
+  CONVERSATION_TYPE_UNSPECIFIED = 0;
+  CONVERSATION_TYPE_DIRECT = 1;
+  CONVERSATION_TYPE_GROUP = 2;
+}
+
+// User online/active presence state (Design 5.25, 5.32).
+// Note: Presence is an ephemeral operational signal, separate from durable message queues.
+enum PresenceStatus {
+  PRESENCE_STATUS_UNSPECIFIED = 0;
+  PRESENCE_STATUS_ONLINE = 1;
+  PRESENCE_STATUS_AWAY = 2;
+  PRESENCE_STATUS_BUSY = 3;
+  PRESENCE_STATUS_OFFLINE = 4;
+}
+
+// Canonical domain error codes for structured Messaging service errors.
+enum MessagingErrorCode {
+  MESSAGING_ERROR_CODE_UNSPECIFIED = 0;
+  MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND = 1;
+  MESSAGING_ERROR_CODE_NOT_A_PARTICIPANT = 2;
+  MESSAGING_ERROR_CODE_DEVICE_REVOKED = 3;
+  MESSAGING_ERROR_CODE_IDEMPOTENCY_CONFLICT = 4;
+  MESSAGING_ERROR_CODE_PAYLOAD_TOO_LARGE = 5;
+  MESSAGING_ERROR_CODE_QUEUE_CAPACITY_EXCEEDED = 6;
+  MESSAGING_ERROR_CODE_CURSOR_OUT_OF_BOUNDS = 7;
+  MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE = 8;
+  MESSAGING_ERROR_CODE_MESSAGE_EXPIRED = 9;
+}
+
+// ---------------------------------------------------------------------------
+// Value Objects & Sub-messages
+// ---------------------------------------------------------------------------
+
+// Ephemeral presence state for an authenticated user.
+message UserPresence {
+  string user_id = 1;                  // Canonical 36-char UUIDv4/v7
+  PresenceStatus status = 2;
+  int64 last_active_unix_ms = 3;
+  string custom_status_message = 4;
+}
+
+// Structured domain error detail returned across gRPC boundaries.
+message MessagingErrorDetail {
+  MessagingErrorCode error_code = 1;
+  string reason = 2;
+  string correlation_id = 3;
+  map<string, string> metadata = 4;
+}
+
+
+// Opaque end-to-end encrypted payload (ADR-008).
+// The Messaging backend never inspects or decrypts these bytes.
+message EncryptedPayload {
+  bytes ciphertext_blob = 1;
+  bytes ephemeral_public_key = 2;
+  bytes initialization_vector = 3;
+  bytes auth_tag = 4;
+  string algorithm = 5;
+}
+
+// Device-level recipient target with device-specific encrypted payload (Design 5.3, 5.15).
+message PerDeviceDeliveryTarget {
+  string recipient_user_id = 1;    // Canonical 36-char UUIDv4/v7
+  string recipient_device_id = 2;  // Canonical 36-char UUIDv4/v7
+  EncryptedPayload encrypted_payload = 3;
+  DeliveryState state = 4;
+  int64 updated_at_unix_ms = 5;
+}
+
+// Full message envelope containing routing metadata and device delivery targets (Design 5.3, 5.39).
+message MessageEnvelope {
+  string message_id = 1;                    // Canonical UUID
+  string conversation_id = 2;              // Canonical UUID
+  string sender_user_id = 3;                // Canonical UUID
+  string sender_device_id = 4;              // Canonical UUID
+  MessagePriority priority = 5;
+  int64 created_at_unix_ms = 6;
+  int64 expires_at_unix_ms = 7;
+  string client_idempotency_token = 8;
+  repeated PerDeviceDeliveryTarget delivery_targets = 9;
+}
+
+// Metadata representation for a direct or group conversation.
+message ConversationMetadata {
+  string conversation_id = 1;
+  ConversationType type = 2;
+  string title = 3;
+  string creator_user_id = 4;
+  int64 created_at_unix_ms = 5;
+  repeated string participant_user_ids = 6;
+}
+
+// Synchronization cursor tracking last synchronized sequence for a device (Design 5.3, 5.17).
+message SyncCursor {
+  string device_id = 1;
+  int64 last_delivered_sequence = 2;
+  int64 last_sync_timestamp_unix_ms = 3;
+}
+
+// Structured delivery/read receipt event (ADR-007, Design 5.13, 5.23).
+message DeliveryReceipt {
+  string message_id = 1;           // Canonical UUID
+  string conversation_id = 2;      // Canonical UUID
+  string recipient_user_id = 3;    // Canonical UUID
+  string recipient_device_id = 4;  // Canonical UUID
+  ReceiptType receipt_type = 5;
+  int64 timestamp_unix_ms = 6;
+}
+
+// ---------------------------------------------------------------------------
+// Request / Response Messages
+// ---------------------------------------------------------------------------
+
+// 1. SendMessage
+message SendMessageRequest {
+  string conversation_id = 1;
+  string sender_device_id = 2;
+  MessagePriority priority = 3;
+  string client_idempotency_token = 4;
+  int64 expires_at_unix_ms = 5;
+  repeated PerDeviceDeliveryTarget delivery_targets = 6;
+}
+
+message SendMessageResponse {
+  string message_id = 1;
+  string conversation_id = 2;
+  int64 accepted_at_unix_ms = 3;
+  DeliveryState initial_state = 4;
+  uint32 target_count = 5;
+}
+
+// 2. GetMessages
+message GetMessagesRequest {
+  string conversation_id = 1;
+  string recipient_device_id = 2;
+  int64 since_sequence = 3;
+  uint32 max_results = 4;
+}
+
+message GetMessagesResponse {
+  repeated MessageEnvelope messages = 1;
+  bool has_more = 2;
+  int64 latest_sequence = 3;
+}
+
+// 3. AcknowledgeDelivery
+message AcknowledgeDeliveryRequest {
+  string message_id = 1;
+  string recipient_device_id = 2;
+  int64 delivered_at_unix_ms = 3;
+}
+
+message AcknowledgeDeliveryResponse {
+  string message_id = 1;
+  DeliveryState state = 2;
+  int64 recorded_at_unix_ms = 3;
+}
+
+// 4. SendReadReceipt
+message SendReadReceiptRequest {
+  string conversation_id = 1;
+  string message_id = 2;
+  string reader_device_id = 3;
+  int64 read_at_unix_ms = 4;
+}
+
+message SendReadReceiptResponse {
+  string message_id = 1;
+  DeliveryState state = 2;
+  int64 recorded_at_unix_ms = 3;
+}
+
+// 5. CreateConversation
+message CreateConversationRequest {
+  ConversationType type = 1;
+  string title = 2;
+  repeated string participant_user_ids = 3;
+}
+
+message CreateConversationResponse {
+  ConversationMetadata conversation = 1;
+}
+
+// 6. GetConversation
+message GetConversationRequest {
+  string conversation_id = 1;
+}
+
+message GetConversationResponse {
+  ConversationMetadata conversation = 1;
+}
+
+// 7. ListConversations
+message ListConversationsRequest {
+  string user_id = 1;
+  uint32 max_results = 2;
+  string page_token = 3;
+}
+
+message ListConversationsResponse {
+  repeated ConversationMetadata conversations = 1;
+  string next_page_token = 2;
+}
+
+// 8. AddParticipant
+message AddParticipantRequest {
+  string conversation_id = 1;
+  string participant_user_id = 2;
+}
+
+message AddParticipantResponse {
+  string conversation_id = 1;
+  string participant_user_id = 2;
+  uint32 total_participants = 3;
+}
+
+// 9. RemoveParticipant
+message RemoveParticipantRequest {
+  string conversation_id = 1;
+  string participant_user_id = 2;
+}
+
+message RemoveParticipantResponse {
+  string conversation_id = 1;
+  string participant_user_id = 2;
+  uint32 total_participants = 3;
+}
+
+// 10. LeaveConversation
+message LeaveConversationRequest {
+  string conversation_id = 1;
+}
+
+message LeaveConversationResponse {
+  string conversation_id = 1;
+  bool success = 2;
+}
+
+// 11. UpdateConversationMetadata
+message UpdateConversationMetadataRequest {
+  string conversation_id = 1;
+  string title = 2;
+}
+
+message UpdateConversationMetadataResponse {
+  ConversationMetadata conversation = 1;
+}
+
+// 12. SyncDeviceMessages
+message SyncDeviceMessagesRequest {
+  string device_id = 1;
+  int64 since_sequence = 2;
+  uint32 max_messages = 3;
+}
+
+message SyncDeviceMessagesResponse {
+  string device_id = 1;
+  repeated MessageEnvelope messages = 2;
+  SyncCursor cursor = 3;
+  bool has_more = 4;
+  int64 next_sequence = 5;
+}
+
+// 13. GetSyncCursor
+message GetSyncCursorRequest {
+  string device_id = 1;
+}
+
+message GetSyncCursorResponse {
+  SyncCursor cursor = 1;
+}
+
+// 14. UpdateSyncCursor
+message UpdateSyncCursorRequest {
+  SyncCursor cursor = 1;
+}
+
+message UpdateSyncCursorResponse {
+  SyncCursor cursor = 1;
+  bool success = 2;
+}
+
+// 15. UpdatePresence
+message UpdatePresenceRequest {
+  PresenceStatus status = 1;
+  string custom_status_message = 2;
+}
+
+message UpdatePresenceResponse {
+  UserPresence presence = 1;
+}
+
+// 16. GetPresence
+message GetPresenceRequest {
+  string user_id = 1;
+}
+
+message GetPresenceResponse {
+  UserPresence presence = 1;
+}
+
+// 17. BatchGetPresence
+message BatchGetPresenceRequest {
+  repeated string user_ids = 1;
+}
+
+message BatchGetPresenceResponse {
+  repeated UserPresence presences = 1;
+}
+
+// ---------------------------------------------------------------------------
+// Delivery & Read Status Query (MSG-008)
+// ---------------------------------------------------------------------------
+
+message DeviceDeliveryStatus {
+  string device_id = 1;
+  string recipient_user_id = 2;
+  DeliveryState delivery_state = 3;
+  int64 delivered_at_unix_ms = 4;
+  int32 attempt_count = 5;
+}
+
+message LogicalRecipientReadStatus {
+  string user_id = 1;
+  bool is_read = 2;
+  int64 read_at_unix_ms = 3;
+  string reader_device_id = 4;
+}
+
+message DeliverySummary {
+  uint32 total_targets = 1;
+  uint32 delivered_targets = 2;
+  uint32 pending_targets = 3;
+  uint32 expired_targets = 4;
+}
+
+message GetMessageDeliveryStatusRequest {
+  string conversation_id = 1;
+  string message_id = 2;
+}
+
+message GetMessageDeliveryStatusResponse {
+  string message_id = 1;
+  string conversation_id = 2;
+  DeliverySummary summary = 3;
+  repeated DeviceDeliveryStatus device_statuses = 4;
+  repeated LogicalRecipientReadStatus recipient_read_statuses = 5;
+}
+
+// ---------------------------------------------------------------------------
+// Service Definition
+// ---------------------------------------------------------------------------
+
+// Authoritative internal gRPC Messaging Service contract (ADR-004).
+service MessagingService {
+  // Message submission & retrieval
+  rpc SendMessage(SendMessageRequest) returns (SendMessageResponse);
+  rpc GetMessages(GetMessagesRequest) returns (GetMessagesResponse);
+  rpc AcknowledgeDelivery(AcknowledgeDeliveryRequest) returns (AcknowledgeDeliveryResponse);
+  rpc SendReadReceipt(SendReadReceiptRequest) returns (SendReadReceiptResponse);
+  rpc GetMessageDeliveryStatus(GetMessageDeliveryStatusRequest) returns (GetMessageDeliveryStatusResponse);
+
+  // Conversations & membership
+  rpc CreateConversation(CreateConversationRequest) returns (CreateConversationResponse);
+  rpc GetConversation(GetConversationRequest) returns (GetConversationResponse);
+  rpc ListConversations(ListConversationsRequest) returns (ListConversationsResponse);
+  rpc AddParticipant(AddParticipantRequest) returns (AddParticipantResponse);
+  rpc RemoveParticipant(RemoveParticipantRequest) returns (RemoveParticipantResponse);
+  rpc LeaveConversation(LeaveConversationRequest) returns (LeaveConversationResponse);
+  rpc UpdateConversationMetadata(UpdateConversationMetadataRequest) returns (UpdateConversationMetadataResponse);
+
+  // Device synchronization
+  rpc SyncDeviceMessages(SyncDeviceMessagesRequest) returns (SyncDeviceMessagesResponse);
+  rpc GetSyncCursor(GetSyncCursorRequest) returns (GetSyncCursorResponse);
+  rpc UpdateSyncCursor(UpdateSyncCursorRequest) returns (UpdateSyncCursorResponse);
+
+  // Presence signaling & query (ephemeral operational protocol)
+  rpc UpdatePresence(UpdatePresenceRequest) returns (UpdatePresenceResponse);
+  rpc GetPresence(GetPresenceRequest) returns (GetPresenceResponse);
+  rpc BatchGetPresence(BatchGetPresenceRequest) returns (BatchGetPresenceResponse);
+}
+

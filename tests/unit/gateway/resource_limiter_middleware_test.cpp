@@ -1,8 +1,8 @@
 #include "gateway_config.hpp"
-#include "http/middleware.hpp"
-#include "http/request_id_middleware.hpp"
-#include "http/resource_limiter_middleware.hpp"
-#include "http/router.hpp"
+#include "http/middleware/middleware.hpp"
+#include "http/middleware/request_id_middleware.hpp"
+#include "http/middleware/resource_limiter_middleware.hpp"
+#include "http/routing/router.hpp"
 
 #include <chrono>
 #include <cstdint>

@@ -138,11 +138,29 @@ fi
 # ==============================================================================
 # Check 6: ScyllaDB Health & CQL Responsiveness
 # ==============================================================================
-log_info "Check 6: Verifying ScyllaDB CQL responsiveness..."
+log_info "Check 6: Verifying ScyllaDB CQL responsiveness & messaging schema..."
 if $COMPOSE_CMD exec -T scylladb cqlsh -e "SHOW HOST" >/dev/null 2>&1; then
     log_pass "ScyllaDB is responsive to cqlsh queries."
 else
     log_fail "ScyllaDB cqlsh responsiveness check failed."
+fi
+
+# Ensure ScyllaDB messaging schema is initialized
+log_info "Applying ScyllaDB messaging schema migrations..."
+if ./scripts/init-scylladb-schema.sh >/dev/null 2>&1; then
+    log_pass "ScyllaDB messaging schema initialized successfully."
+else
+    log_fail "Failed to initialize ScyllaDB messaging schema."
+fi
+
+# Verify keyspace and sample tables
+SCYLLA_TABLES=$($COMPOSE_CMD exec -T scylladb cqlsh -e "DESCRIBE KEYSPACE securecloud_messaging;" 2>&1 || true)
+if echo "$SCYLLA_TABLES" | grep -q "conversations_by_id" && \
+   echo "$SCYLLA_TABLES" | grep -q "messages_by_conversation" && \
+   echo "$SCYLLA_TABLES" | grep -q "pending_deliveries_by_device"; then
+    log_pass "securecloud_messaging keyspace and core tables verified in ScyllaDB."
+else
+    log_fail "securecloud_messaging keyspace verification failed."
 fi
 
 # ==============================================================================

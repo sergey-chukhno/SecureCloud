@@ -31,8 +31,9 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew install openssl@3 protobuf grpc googletest llvm@18 ninja nlohmann-json cpp-httplib
+          brew install openssl@3 protobuf grpc googletest llvm@18 ninja nlohmann-json cpp-httplib libpqxx libpq
           echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
+          echo "/opt/homebrew/opt/libpq/bin" >> $GITHUB_PATH
 
       - name: Configure CMake with Static Analysis
         run: |
@@ -65,8 +66,9 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew install openssl@3 protobuf grpc googletest ninja nlohmann-json cpp-httplib
+          brew install openssl@3 protobuf grpc googletest ninja nlohmann-json cpp-httplib libpqxx libpq
           echo "/opt/homebrew/opt/openssl@3/bin" >> "$GITHUB_PATH"
+          echo "/opt/homebrew/opt/libpq/bin" >> "$GITHUB_PATH"
 
       - name: Generate Development PKI Certificates
         run: |
@@ -91,51 +93,107 @@ jobs:
     name: Windows (MSVC 2022 / vcpkg)
     runs-on: windows-2022
     env:
-      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg-cache
+      VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg_archives
+      VCPKG_DOWNLOADS: ${{ github.workspace }}/.vcpkg_downloads
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Ninja build system
+      - name: Restore vcpkg binary archives and downloads
+        id: vcpkg-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ${{ github.workspace }}/.vcpkg_archives
+            ${{ github.workspace }}/.vcpkg_downloads
+          key: vcpkg-msvc-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            vcpkg-msvc-
+
+      - name: Ensure vcpkg cache directories exist
         shell: pwsh
         run: |
-          choco install -y ninja
-          "C:\ProgramData\chocolatey\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg_archives"
+          New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg_downloads"
+
+      - name: Pre-fetch vcpkg tools
+        shell: pwsh
+        run: |
+          $cmakeZip = "${{ github.workspace }}/.vcpkg_downloads/cmake-4.4.3-windows-x86_64.zip"
+          $needsDownload = $true
+          if (Test-Path -Path $cmakeZip) {
+            $file = Get-Item -Path $cmakeZip
+            if ($file.Length -gt 10000000) {
+              $needsDownload = $false
+              Write-Host "cmake-4.4.3-windows-x86_64.zip already cached ($($file.Length) bytes)."
+            }
+          }
+
+          if ($needsDownload) {
+            Write-Host "Pre-fetching cmake-4.4.3-windows-x86_64.zip with retries..."
+            $url = "https://github.com/Kitware/CMake/releases/download/v4.4.3/cmake-4.4.3-windows-x86_64.zip"
+            $retries = 5
+            for ($i = 1; $i -le $retries; $i++) {
+              Write-Host "Download attempt $i of $retries..."
+              & curl.exe -sSL --retry 3 --retry-delay 5 -o $cmakeZip $url
+              if (Test-Path -Path $cmakeZip) {
+                $downloaded = Get-Item -Path $cmakeZip
+                if ($downloaded.Length -gt 10000000) {
+                  Write-Host "Successfully downloaded cmake 4.4.3 ($($downloaded.Length) bytes)"
+                  break
+                }
+              }
+              Write-Host "Attempt $i produced incomplete file, retrying in 10s..."
+              Start-Sleep -Seconds 10
+            }
+          }
 
       - name: Set up MSVC Developer Command Prompt
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Ensure complete vcpkg git history
+      - name: Configure Ninja build system path
         shell: pwsh
         run: |
-          $isShallow = git -C $env:VCPKG_INSTALLATION_ROOT rev-parse --is-shallow-repository
-          if ($isShallow -eq "true") {
-            Write-Host "Unshallowing vcpkg repository..."
-            git -C $env:VCPKG_INSTALLATION_ROOT fetch --unshallow
+          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Ensure vcpkg baseline commit
+        shell: pwsh
+        run: |
+          $hasCommit = git -C $env:VCPKG_INSTALLATION_ROOT cat-file -e b322364f06308bdd24823f9d8f03fe0cc86fd46f 2>$null; $LASTEXITCODE -eq 0
+          if (-not $hasCommit) {
+            Write-Host "Fetching specific vcpkg baseline commit..."
+            git -C $env:VCPKG_INSTALLATION_ROOT fetch --depth=1 origin b322364f06308bdd24823f9d8f03fe0cc86fd46f
           }
-
-      - name: Create vcpkg binary cache directory
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "${{ env.VCPKG_DEFAULT_BINARY_CACHE }}"
-
-      - name: Restore vcpkg binary cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.VCPKG_DEFAULT_BINARY_CACHE }}
-          key: vcpkg-binary-cache-${{ runner.os }}-${{ hashFiles('vcpkg.json') }}
-          restore-keys: |
-            vcpkg-binary-cache-${{ runner.os }}-
 
       - name: Configure CMake with MSVC & vcpkg
         shell: pwsh
         run: |
-          cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          $maxAttempts = 3
+          $attempt = 1
+          while ($attempt -le $maxAttempts) {
+            Write-Host "Configuring CMake with vcpkg (attempt $attempt of $maxAttempts)..."
+            cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_MAKE_PROGRAM="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe" -DX_VCPKG_APPLOCAL_DEPS_SERIALIZED=ON
+            if ($LASTEXITCODE -eq 0) { break }
+            if ($attempt -eq $maxAttempts) { exit $LASTEXITCODE }
+            Write-Host "CMake configuration failed, retrying in 10s..."
+            Start-Sleep -Seconds 10
+            $attempt++
+          }
+
+      - name: Save vcpkg binary archives and downloads
+        uses: actions/cache/save@v4
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        with:
+          path: |
+            ${{ github.workspace }}/.vcpkg_archives
+            ${{ github.workspace }}/.vcpkg_downloads
+          key: vcpkg-msvc-${{ hashFiles('vcpkg.json') }}
 
       - name: Build All Targets
         shell: pwsh
         run: |
-          cmake --build --preset ci-windows-msvc
+          cmake --build --preset ci-windows-msvc --parallel
 
       - name: Generate Development PKI Certificates
         shell: bash
@@ -145,50 +203,76 @@ jobs:
       - name: Execute CTest Suite
         shell: pwsh
         run: |
-          ctest --preset ci-windows-msvc --output-on-failure
+          ctest --preset ci-windows-msvc --output-on-failure --parallel 4
 
   # ============================================================================
-  # Native Windows MinGW Build & Test Job (MSYS2 UCRT64 / GCC 14+)
+  # Native Windows MinGW Build & Test Job (MSYS2 MINGW64 / GCC 15+)
   # ============================================================================
   windows-mingw-build-test:
-    name: Windows (MinGW-w64 UCRT64 / GCC 14+)
+    name: Windows (MinGW-w64 MINGW64 / GCC 15+)
     runs-on: windows-2022
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up MSYS2 UCRT64 Environment
+      - name: Set up MSYS2 MINGW64 Environment
         uses: msys2/setup-msys2@v2
         with:
-          msystem: UCRT64
+          msystem: MINGW64
           update: true
           path-type: minimal
-          install: >-
-            mingw-w64-ucrt-x86_64-toolchain
-            mingw-w64-ucrt-x86_64-cmake
-            mingw-w64-ucrt-x86_64-ninja
-            mingw-w64-ucrt-x86_64-protobuf
-            mingw-w64-ucrt-x86_64-grpc
-            mingw-w64-ucrt-x86_64-gtest
-            mingw-w64-ucrt-x86_64-openssl
-            mingw-w64-ucrt-x86_64-nlohmann-json
 
-      - name: Configure CMake (MinGW UCRT64)
+      - name: Install MinGW64 Dependencies with Retries
+        shell: msys2 {0}
+        run: |
+          # Disable pacman low-speed timeout to prevent aborts on slow mirrors
+          sed -i 's/^#DisableDownloadTimeout/DisableDownloadTimeout/' /etc/pacman.conf
+          grep -q "DisableDownloadTimeout" /etc/pacman.conf || sed -i '/\[options\]/a DisableDownloadTimeout' /etc/pacman.conf
+
+          PACKAGES=(
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-protobuf
+            mingw-w64-x86_64-grpc
+            mingw-w64-x86_64-gtest
+            mingw-w64-x86_64-openssl
+            mingw-w64-x86_64-nlohmann-json
+            mingw-w64-x86_64-libpqxx
+          )
+
+          installed=0
+          for attempt in 1 2 3 4 5; do
+            echo "Attempt $attempt of 5: Installing MinGW64 packages..."
+            if pacman -S --needed --noconfirm --disable-download-timeout "${PACKAGES[@]}"; then
+              installed=1
+              break
+            fi
+            echo "Pacman download attempt $attempt failed, retrying in 10s..."
+            sleep 10
+          done
+
+          if [ $installed -ne 1 ]; then
+            echo "FATAL: Failed to install MinGW64 packages after 5 attempts."
+            exit 1
+          fi
+
+      - name: Configure CMake (MinGW MINGW64)
         shell: msys2 {0}
         run: |
           cmake --preset ci-windows-mingw
 
-      - name: Build All Targets (MinGW UCRT64)
+      - name: Build All Targets (MinGW MINGW64)
         shell: msys2 {0}
         run: |
           cmake --build --preset ci-windows-mingw
 
-      - name: Generate Development PKI Certificates (MinGW UCRT64)
+      - name: Generate Development PKI Certificates (MinGW MINGW64)
         shell: msys2 {0}
         run: |
           bash scripts/generate-dev-pki.sh --force
 
-      - name: Execute CTest Suite (MinGW UCRT64)
+      - name: Execute CTest Suite (MinGW MINGW64)
         shell: msys2 {0}
         run: |
           ctest --preset ci-windows-mingw --output-on-failure

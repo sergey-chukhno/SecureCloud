@@ -15,7 +15,7 @@ namespace securecloud::files {
 
 /// Authoritative repository managing persistent immutable version snapshots for files.
 class FileVersionRepository {
-public:
+  public:
     explicit FileVersionRepository(std::shared_ptr<db::FilesDbConnectionPool> pool = nullptr);
 
     /// Creates an immutable version record within transaction `tx`.
@@ -36,7 +36,7 @@ public:
     /// Lists all versions associated with a given file, ordered by version_number ascending.
     [[nodiscard]] std::vector<FileVersionEntity> list_versions(const std::string& file_id);
 
-private:
+  private:
     std::shared_ptr<db::FilesDbConnectionPool> pool_;
 };
 

@@ -19,6 +19,8 @@ if(MSVC)
         /permissive-
         /volatile:iso
         /EHsc
+        /utf-8
+        /Zc:inline
     )
     target_compile_definitions(securecloud_compiler_flags INTERFACE
         _CRT_SECURE_NO_WARNINGS
@@ -26,6 +28,8 @@ if(MSVC)
         _UNICODE
         WIN32_LEAN_AND_MEAN
         NOMINMAX
+        _WIN32_WINNT=0x0A00
+        WINVER=0x0A00
     )
 else()
     # Clang / AppleClang / GCC compile options
@@ -40,8 +44,16 @@ else()
         -Wunused
         -Woverloaded-virtual
         -fstack-protector-strong
-        -fvisibility=hidden
     )
+
+    # ELF symbol visibility hardening (non-Windows only; on Windows PE/COFF,
+    # symbols are private by default, and -fvisibility=hidden causes MinGW GCC
+    # to emit hidden visibility on template vtables like std::_Sp_counted_ptr_inplace)
+    if(NOT WIN32)
+        target_compile_options(securecloud_compiler_flags INTERFACE
+            -fvisibility=hidden
+        )
+    endif()
 
     # Hardening preprocessor definitions
     target_compile_definitions(securecloud_compiler_flags INTERFACE
@@ -53,5 +65,7 @@ if(WIN32 AND NOT MSVC)
     target_compile_definitions(securecloud_compiler_flags INTERFACE
         WIN32_LEAN_AND_MEAN
         NOMINMAX
+        _WIN32_WINNT=0x0A00
+        WINVER=0x0A00
     )
 endif()

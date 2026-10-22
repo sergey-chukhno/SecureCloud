@@ -13,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-#if __has_include(<pqxx/pqxx>)
+#if defined(SECURECLOUD_FILES_USE_REAL_PQXX) && __has_include(<pqxx/pqxx>)
 #include <pqxx/pqxx>
 #else
 
@@ -21,45 +21,36 @@ namespace pqxx {
 
 /// Standard pqxx exception hierarchy when libpqxx is not bundled
 class failure : public std::runtime_error {
-public:
+  public:
     using std::runtime_error::runtime_error;
 };
 
 class broken_connection : public failure {
-public:
+  public:
     using failure::failure;
 };
 
 class sql_error : public failure {
-public:
+  public:
     using failure::failure;
 };
 
 /// Lightweight abstraction for a PostgreSQL row field when libpqxx is not bundled.
 class field {
-public:
+  public:
     field() = default;
     explicit field(std::optional<std::string> value, std::string name = "")
         : value_(std::move(value)), name_(std::move(name)) {}
 
-    [[nodiscard]] bool is_null() const noexcept {
-        return !value_.has_value();
-    }
+    [[nodiscard]] bool is_null() const noexcept { return !value_.has_value(); }
 
-    [[nodiscard]] const char* c_str() const {
-        return value_ ? value_->c_str() : "";
-    }
+    [[nodiscard]] const char* c_str() const { return value_ ? value_->c_str() : ""; }
 
-    [[nodiscard]] std::string_view view() const {
-        return value_ ? std::string_view(*value_) : std::string_view();
-    }
+    [[nodiscard]] std::string_view view() const { return value_ ? std::string_view(*value_) : std::string_view(); }
 
-    [[nodiscard]] const std::string& name() const noexcept {
-        return name_;
-    }
+    [[nodiscard]] const std::string& name() const noexcept { return name_; }
 
-    template <typename T>
-    T as() const {
+    template <typename T> T as() const {
         if (is_null()) {
             throw std::runtime_error("Attempted to read non-nullable field from SQL NULL: " + name_);
         }
@@ -87,25 +78,21 @@ public:
         }
     }
 
-private:
+  private:
     std::optional<std::string> value_{std::nullopt};
     std::string name_;
 };
 
 /// Lightweight abstraction for a PostgreSQL row when libpqxx is not bundled.
 class row {
-public:
+  public:
     row() = default;
     row(std::vector<field> fields, std::map<std::string, size_t> name_map)
         : fields_(std::move(fields)), name_map_(std::move(name_map)) {}
 
-    [[nodiscard]] size_t size() const noexcept {
-        return fields_.size();
-    }
+    [[nodiscard]] size_t size() const noexcept { return fields_.size(); }
 
-    [[nodiscard]] bool empty() const noexcept {
-        return fields_.empty();
-    }
+    [[nodiscard]] bool empty() const noexcept { return fields_.empty(); }
 
     [[nodiscard]] const field& operator[](size_t index) const {
         if (index >= fields_.size()) {
@@ -129,62 +116,46 @@ public:
         return fields_[it->second];
     }
 
-    [[nodiscard]] const field& operator[](const char* name) const {
-        return (*this)[std::string_view(name)];
-    }
+    [[nodiscard]] const field& operator[](const char* name) const { return (*this)[std::string_view(name)]; }
 
     [[nodiscard]] bool has_column(std::string_view name) const noexcept {
         return name_map_.find(std::string(name)) != name_map_.end();
     }
 
-private:
+  private:
     std::vector<field> fields_;
     std::map<std::string, size_t> name_map_;
 };
 
 /// Lightweight abstraction for PostgreSQL query result when libpqxx is not bundled.
 class result {
-public:
+  public:
     result() = default;
     explicit result(std::vector<row> rows, size_t affected_rows = 0)
         : rows_(std::move(rows)), affected_rows_(affected_rows) {}
 
-    [[nodiscard]] size_t size() const noexcept {
-        return rows_.size();
-    }
+    [[nodiscard]] size_t size() const noexcept { return rows_.size(); }
 
-    [[nodiscard]] bool empty() const noexcept {
-        return rows_.empty();
-    }
+    [[nodiscard]] bool empty() const noexcept { return rows_.empty(); }
 
-    [[nodiscard]] const row& operator[](size_t index) const {
-        return rows_.at(index);
-    }
+    [[nodiscard]] const row& operator[](size_t index) const { return rows_.at(index); }
 
-    [[nodiscard]] const row& at(size_t index) const {
-        return rows_.at(index);
-    }
+    [[nodiscard]] const row& at(size_t index) const { return rows_.at(index); }
 
-    [[nodiscard]] size_t affected_rows() const noexcept {
-        return affected_rows_;
-    }
+    [[nodiscard]] size_t affected_rows() const noexcept { return affected_rows_; }
 
-    [[nodiscard]] auto begin() const noexcept {
-        return rows_.begin();
-    }
+    [[nodiscard]] auto begin() const noexcept { return rows_.begin(); }
 
-    [[nodiscard]] auto end() const noexcept {
-        return rows_.end();
-    }
+    [[nodiscard]] auto end() const noexcept { return rows_.end(); }
 
-private:
+  private:
     std::vector<row> rows_;
     size_t affected_rows_{0};
 };
 
 /// In-memory mock database store supporting unit test verification of SQL repositories
 class MockStorage {
-public:
+  public:
     static MockStorage& instance() {
         static MockStorage s_instance;
         return s_instance;
@@ -300,7 +271,7 @@ public:
 
 /// RAII transaction handle abstraction (compatible with pqxx::work)
 class work {
-public:
+  public:
     work() = default;
 
     ~work() {
@@ -313,20 +284,17 @@ public:
     work& operator=(const work&) = delete;
 
     work(work&& other) noexcept
-        : committed_(other.committed_),
-          staged_files_(std::move(other.staged_files_)),
-          staged_metadata_(std::move(other.staged_metadata_)),
-          staged_versions_(std::move(other.staged_versions_)),
-          staged_transfers_(std::move(other.staged_transfers_)),
-          staged_chunks_(std::move(other.staged_chunks_)),
-          staged_access_(std::move(other.staged_access_)),
-          staged_outbox_(std::move(other.staged_outbox_)) {
+        : committed_(other.committed_), staged_files_(std::move(other.staged_files_)),
+          staged_metadata_(std::move(other.staged_metadata_)), staged_versions_(std::move(other.staged_versions_)),
+          staged_transfers_(std::move(other.staged_transfers_)), staged_chunks_(std::move(other.staged_chunks_)),
+          staged_access_(std::move(other.staged_access_)), staged_outbox_(std::move(other.staged_outbox_)) {
         other.committed_ = true;
     }
 
     work& operator=(work&& other) noexcept {
         if (this != &other) {
-            if (!committed_) abort();
+            if (!committed_)
+                abort();
             committed_ = other.committed_;
             staged_files_ = std::move(other.staged_files_);
             staged_metadata_ = std::move(other.staged_metadata_);
@@ -340,20 +308,18 @@ public:
         return *this;
     }
 
-    template <typename... Args>
-    result exec_params(std::string_view query, Args&&... args) {
+    template <typename... Args> result exec_params(std::string_view query, Args&&... args) {
         std::vector<std::optional<std::string>> params;
         params.reserve(sizeof...(args));
         (params.push_back(to_string_param(std::forward<Args>(args))), ...);
         return execute(query, params);
     }
 
-    result exec(std::string_view query) {
-        return execute(query, {});
-    }
+    result exec(std::string_view query) { return execute(query, {}); }
 
     void commit() {
-        if (committed_) return;
+        if (committed_)
+            return;
         auto& store = MockStorage::instance();
         std::lock_guard<std::mutex> lock(store.mutex_);
 
@@ -400,9 +366,8 @@ public:
         committed_ = true;
     }
 
-private:
-    template <typename T>
-    static std::optional<std::string> to_string_param(const T& val) {
+  private:
+    template <typename T> static std::optional<std::string> to_string_param(const T& val) {
         if constexpr (std::is_same_v<T, std::nullopt_t>) {
             return std::nullopt;
         } else if constexpr (std::is_same_v<T, std::string>) {
@@ -416,7 +381,8 @@ private:
         } else if constexpr (std::is_arithmetic_v<T>) {
             return std::to_string(val);
         } else if constexpr (requires { val.has_value(); }) { // optional
-            if (!val.has_value()) return std::nullopt;
+            if (!val.has_value())
+                return std::nullopt;
             return to_string_param(*val);
         } else {
             return std::nullopt;
@@ -563,7 +529,8 @@ private:
         std::lock_guard<std::mutex> lock(store.mutex_);
 
         // 1. INSERT INTO files
-        if (query.find("INSERT INTO files ") != std::string_view::npos || query.find("INSERT INTO files(") != std::string_view::npos) {
+        if (query.find("INSERT INTO files ") != std::string_view::npos ||
+            query.find("INSERT INTO files(") != std::string_view::npos) {
             MockStorage::StoredFile f;
             f.file_id = params[0].value_or("");
             f.owner_user_id = params[1].value_or("");
@@ -619,7 +586,8 @@ private:
         }
 
         // 5. UPDATE files SET status = $1, updated_at = $2 WHERE file_id = $3 AND status = $4
-        if (query.find("UPDATE files SET status = $1, updated_at = $2 WHERE file_id = $3 AND status = $4") != std::string_view::npos) {
+        if (query.find("UPDATE files SET status = $1, updated_at = $2 WHERE file_id = $3 AND status = $4") !=
+            std::string_view::npos) {
             std::string new_status = params[0].value_or("");
             std::string updated_at = params[1].value_or("");
             std::string file_id = params[2].value_or("");
@@ -679,9 +647,8 @@ private:
                 }
             }
 
-            std::sort(expired.begin(), expired.end(), [](const auto& a, const auto& b) {
-                return *a.retention_until < *b.retention_until;
-            });
+            std::sort(expired.begin(), expired.end(),
+                      [](const auto& a, const auto& b) { return *a.retention_until < *b.retention_until; });
 
             if (expired.size() > limit) {
                 expired.resize(limit);
@@ -777,9 +744,8 @@ private:
                 }
             }
 
-            std::sort(matching.begin(), matching.end(), [](const auto& a, const auto& b) {
-                return a.version_number < b.version_number;
-            });
+            std::sort(matching.begin(), matching.end(),
+                      [](const auto& a, const auto& b) { return a.version_number < b.version_number; });
 
             std::vector<row> rows;
             for (const auto& v : matching) {
@@ -879,8 +845,7 @@ private:
             c.created_at = params[8].value_or("");
 
             auto key = std::make_pair(c.transfer_id, c.chunk_index);
-            if (staged_chunks_.find(key) != staged_chunks_.end() ||
-                store.chunks_.find(key) != store.chunks_.end()) {
+            if (staged_chunks_.find(key) != staged_chunks_.end() || store.chunks_.find(key) != store.chunks_.end()) {
                 // Conflict: DO NOTHING (affected rows = 0)
                 return result({}, 0);
             }
@@ -951,7 +916,8 @@ private:
 
             int32_t count = 0;
             for (const auto& [k, c] : all_chunks) {
-                if (k.first == transfer_id) count++;
+                if (k.first == transfer_id)
+                    count++;
             }
 
             std::vector<field> f;
@@ -967,8 +933,7 @@ private:
             int32_t chunk_idx = std::stoi(params[1].value_or("0"));
             auto key = std::make_pair(transfer_id, chunk_idx);
 
-            if (staged_chunks_.find(key) != staged_chunks_.end() ||
-                store.chunks_.find(key) != store.chunks_.end()) {
+            if (staged_chunks_.find(key) != staged_chunks_.end() || store.chunks_.find(key) != store.chunks_.end()) {
                 std::vector<field> f;
                 std::map<std::string, size_t> map;
                 map["?column?"] = 0;
@@ -994,9 +959,8 @@ private:
                 }
             }
 
-            std::sort(matching.begin(), matching.end(), [](const auto& a, const auto& b) {
-                return a.chunk_index < b.chunk_index;
-            });
+            std::sort(matching.begin(), matching.end(),
+                      [](const auto& a, const auto& b) { return a.chunk_index < b.chunk_index; });
 
             std::vector<row> rows;
             for (const auto& c : matching) {
@@ -1043,7 +1007,8 @@ private:
         }
 
         // 24. SELECT ... FROM file_access WHERE file_id = $1 AND grantee_user_id = $2 AND revoked_at IS NULL
-        if (query.find("FROM file_access WHERE file_id = $1 AND grantee_user_id = $2 AND revoked_at IS NULL") != std::string_view::npos) {
+        if (query.find("FROM file_access WHERE file_id = $1 AND grantee_user_id = $2 AND revoked_at IS NULL") !=
+            std::string_view::npos) {
             std::string file_id = params[0].value_or("");
             std::string user_id = params[1].value_or("");
             auto key = std::make_pair(file_id, user_id);
@@ -1099,7 +1064,8 @@ private:
         }
 
         // 27. SELECT ... FROM file_access WHERE file_id = $1 AND revoked_at IS NULL ORDER BY granted_at
-        if (query.find("FROM file_access WHERE file_id = $1 AND revoked_at IS NULL ORDER BY granted_at") != std::string_view::npos) {
+        if (query.find("FROM file_access WHERE file_id = $1 AND revoked_at IS NULL ORDER BY granted_at") !=
+            std::string_view::npos) {
             std::string file_id = params[0].value_or("");
 
             std::map<std::pair<std::string, std::string>, MockStorage::StoredAccess> all_access = store.access_;
@@ -1114,9 +1080,8 @@ private:
                 }
             }
 
-            std::sort(active.begin(), active.end(), [](const auto& x, const auto& y) {
-                return x.granted_at < y.granted_at;
-            });
+            std::sort(active.begin(), active.end(),
+                      [](const auto& x, const auto& y) { return x.granted_at < y.granted_at; });
 
             std::vector<row> rows;
             for (const auto& v : active) {
@@ -1158,9 +1123,8 @@ private:
                 }
             }
 
-            std::sort(pending.begin(), pending.end(), [](const auto& a, const auto& b) {
-                return a.created_at < b.created_at;
-            });
+            std::sort(pending.begin(), pending.end(),
+                      [](const auto& a, const auto& b) { return a.created_at < b.created_at; });
 
             if (pending.size() > limit) {
                 pending.resize(limit);

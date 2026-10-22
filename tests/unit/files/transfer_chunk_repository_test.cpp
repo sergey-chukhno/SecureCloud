@@ -4,9 +4,8 @@
 #include "files/repository/file_chunk_repository.hpp"
 #include "files/repository/file_transfer_repository.hpp"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
+#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
@@ -14,14 +13,15 @@ namespace securecloud::files {
 namespace {
 
 class TransferChunkRepositoryTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         // Reset mock in-memory storage before each test
         pqxx::MockStorage::instance().reset();
     }
 };
 
-FileTransferEntity make_sample_transfer(std::string transfer_id = "transfer-uuid-1", std::string file_id = "file-uuid-1") {
+FileTransferEntity make_sample_transfer(std::string transfer_id = "transfer-uuid-1",
+                                        std::string file_id = "file-uuid-1") {
     FileTransferEntity t;
     t.transfer_id = std::move(transfer_id);
     t.file_id = std::move(file_id);

@@ -1,0 +1,79 @@
+#pragma once
+
+#include "grpc/client_call_context.hpp"
+#include "grpc/dependency_error.hpp"
+#include "securecloud/auth/v1/auth.pb.h"
+
+namespace securecloud::gateway::grpc {
+
+class IAuthClient {
+  public:
+    virtual ~IAuthClient() = default;
+
+    virtual Result<securecloud::auth::v1::AuthenticateResponse>
+    authenticate(const securecloud::auth::v1::AuthenticateRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::ValidateSessionResponse>
+    validate_session(const securecloud::auth::v1::ValidateSessionRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::RefreshSessionResponse>
+    refresh_session(const securecloud::auth::v1::RefreshSessionRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::RevokeSessionResponse>
+    revoke_session(const securecloud::auth::v1::RevokeSessionRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::GetUserResponse> get_user(const securecloud::auth::v1::GetUserRequest& req,
+                                                                    ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::RegisterDeviceResponse>
+    register_device(const securecloud::auth::v1::RegisterDeviceRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::GetCryptoIdentityResponse>
+    get_crypto_identity(const securecloud::auth::v1::GetCryptoIdentityRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::GetDeviceCryptoDirectoryResponse>
+    get_device_crypto_directory(const securecloud::auth::v1::GetDeviceCryptoDirectoryRequest& req,
+                                ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::UpdateCryptoPrekeysResponse>
+    update_crypto_prekeys(const securecloud::auth::v1::UpdateCryptoPrekeysRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::GetPrekeyInventoryStatusResponse>
+    get_prekey_inventory_status(const securecloud::auth::v1::GetPrekeyInventoryStatusRequest& req,
+                                ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::ClaimPrekeyBundleResponse>
+    claim_prekey_bundle(const securecloud::auth::v1::ClaimPrekeyBundleRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::GetPublicSigningKeyResponse>
+    get_public_signing_key(const securecloud::auth::v1::GetPublicSigningKeyRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::InitiateMfaEnrollmentResponse>
+    initiate_mfa_enrollment(const securecloud::auth::v1::InitiateMfaEnrollmentRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::ConfirmMfaEnrollmentResponse>
+    confirm_mfa_enrollment(const securecloud::auth::v1::ConfirmMfaEnrollmentRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::VerifyMfaChallengeResponse>
+    verify_mfa_challenge(const securecloud::auth::v1::VerifyMfaChallengeRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::DisableMfaResponse>
+    disable_mfa(const securecloud::auth::v1::DisableMfaRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::GetDeviceResponse>
+    get_device(const securecloud::auth::v1::GetDeviceRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::ListUserDevicesResponse>
+    list_user_devices(const securecloud::auth::v1::ListUserDevicesRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::InitiateDevicePairingResponse>
+    initiate_device_pairing(const securecloud::auth::v1::InitiateDevicePairingRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::AuthorizeDeviceResponse>
+    authorize_device(const securecloud::auth::v1::AuthorizeDeviceRequest& req, ClientCallContext& ctx) = 0;
+
+    virtual Result<securecloud::auth::v1::RevokeDeviceResponse>
+    revoke_device(const securecloud::auth::v1::RevokeDeviceRequest& req, ClientCallContext& ctx) = 0;
+};
+
+} // namespace securecloud::gateway::grpc

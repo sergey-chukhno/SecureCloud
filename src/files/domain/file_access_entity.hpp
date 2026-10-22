@@ -7,11 +7,7 @@
 namespace securecloud::files {
 
 /// Authoritative granular file permission levels
-enum class FilePermission {
-    Read,
-    Write,
-    Admin
-};
+enum class FilePermission { Read, Write, Admin };
 
 /// Strongly typed C++20 domain entity for file-level access control grants.
 /// Maps 1:1 to the `file_access` PostgreSQL table.

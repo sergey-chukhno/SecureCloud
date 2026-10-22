@@ -7,9 +7,8 @@
 #include "files/domain/file_version_entity.hpp"
 #include "files/domain/files_outbox_entity.hpp"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
+#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
@@ -20,14 +19,10 @@ namespace {
 
 TEST(DomainEntitiesTest, FileStatusEnumRoundtrip) {
     const std::vector<std::pair<FileStatus, std::string>> cases = {
-        {FileStatus::Created, "CREATED"},
-        {FileStatus::Uploading, "UPLOADING"},
-        {FileStatus::Finalizing, "FINALIZING"},
-        {FileStatus::Available, "AVAILABLE"},
-        {FileStatus::Expired, "EXPIRED"},
-        {FileStatus::Deleted, "DELETED"},
-        {FileStatus::Failed, "FAILED"}
-    };
+        {FileStatus::Created, "CREATED"},       {FileStatus::Uploading, "UPLOADING"},
+        {FileStatus::Finalizing, "FINALIZING"}, {FileStatus::Available, "AVAILABLE"},
+        {FileStatus::Expired, "EXPIRED"},       {FileStatus::Deleted, "DELETED"},
+        {FileStatus::Failed, "FAILED"}};
 
     for (const auto& [status, str] : cases) {
         EXPECT_EQ(to_string(status), str);
@@ -52,14 +47,10 @@ TEST(DomainEntitiesTest, TransferTypeEnumRoundtrip) {
 
 TEST(DomainEntitiesTest, TransferStatusEnumRoundtrip) {
     const std::vector<std::pair<TransferStatus, std::string>> cases = {
-        {TransferStatus::Created, "CREATED"},
-        {TransferStatus::Transferring, "TRANSFERRING"},
-        {TransferStatus::Finalizing, "FINALIZING"},
-        {TransferStatus::Completed, "COMPLETED"},
-        {TransferStatus::Failed, "FAILED"},
-        {TransferStatus::Expired, "EXPIRED"},
-        {TransferStatus::Cancelled, "CANCELLED"}
-    };
+        {TransferStatus::Created, "CREATED"},       {TransferStatus::Transferring, "TRANSFERRING"},
+        {TransferStatus::Finalizing, "FINALIZING"}, {TransferStatus::Completed, "COMPLETED"},
+        {TransferStatus::Failed, "FAILED"},         {TransferStatus::Expired, "EXPIRED"},
+        {TransferStatus::Cancelled, "CANCELLED"}};
 
     for (const auto& [status, str] : cases) {
         EXPECT_EQ(to_string(status), str);
@@ -143,10 +134,10 @@ TEST(DomainEntitiesTest, TimestampRejectsMalformedStrings) {
     EXPECT_THROW(from_iso8601(""), TimestampParseException);
     EXPECT_THROW(from_iso8601("invalid-date"), TimestampParseException);
     EXPECT_THROW(from_iso8601("2026/09/25T10:30:45Z"), TimestampParseException);
-    EXPECT_THROW(from_iso8601("2026-13-25T10:30:45Z"), TimestampParseException); // month 13
-    EXPECT_THROW(from_iso8601("2026-09-32T10:30:45Z"), TimestampParseException); // day 32
-    EXPECT_THROW(from_iso8601("2026-09-25T25:30:45Z"), TimestampParseException); // hour 25
-    EXPECT_THROW(from_iso8601("2026-09-25T10:65:45Z"), TimestampParseException); // min 65
+    EXPECT_THROW(from_iso8601("2026-13-25T10:30:45Z"), TimestampParseException);  // month 13
+    EXPECT_THROW(from_iso8601("2026-09-32T10:30:45Z"), TimestampParseException);  // day 32
+    EXPECT_THROW(from_iso8601("2026-09-25T25:30:45Z"), TimestampParseException);  // hour 25
+    EXPECT_THROW(from_iso8601("2026-09-25T10:65:45Z"), TimestampParseException);  // min 65
     EXPECT_THROW(from_iso8601("2026-09-25T10:30:45.Z"), TimestampParseException); // missing frac digits
 }
 
@@ -182,16 +173,16 @@ TEST(DomainEntitiesTest, ByteaRejectsMalformedHex) {
 TEST(DomainEntitiesTest, MapFileEntityCompleteRow) {
     RowBuilder builder;
     builder.set("file_id", "550e8400-e29b-41d4-a716-446655440000")
-           .set("owner_user_id", "660e8400-e29b-41d4-a716-446655440001")
-           .set("owner_device_id", "770e8400-e29b-41d4-a716-446655440002")
-           .set("conversation_id", "880e8400-e29b-41d4-a716-446655440003")
-           .set("encrypted_size", "10485760")
-           .set("content_type", "application/pdf")
-           .set("encryption_algorithm", "XChaCha20-Poly1305")
-           .set("status", "AVAILABLE")
-           .set("retention_until", "2027-01-01T00:00:00Z")
-           .set("created_at", "2026-09-25T10:00:00Z")
-           .set("updated_at", "2026-09-25T10:05:00Z");
+        .set("owner_user_id", "660e8400-e29b-41d4-a716-446655440001")
+        .set("owner_device_id", "770e8400-e29b-41d4-a716-446655440002")
+        .set("conversation_id", "880e8400-e29b-41d4-a716-446655440003")
+        .set("encrypted_size", "10485760")
+        .set("content_type", "application/pdf")
+        .set("encryption_algorithm", "XChaCha20-Poly1305")
+        .set("status", "AVAILABLE")
+        .set("retention_until", "2027-01-01T00:00:00Z")
+        .set("created_at", "2026-09-25T10:00:00Z")
+        .set("updated_at", "2026-09-25T10:05:00Z");
 
     pqxx::row row = builder.build();
     FileEntity entity = file_from_row(row);
@@ -215,16 +206,16 @@ TEST(DomainEntitiesTest, MapFileEntityCompleteRow) {
 TEST(DomainEntitiesTest, MapFileEntityNullableFieldsNull) {
     RowBuilder builder;
     builder.set("file_id", "550e8400-e29b-41d4-a716-446655440000")
-           .set("owner_user_id", "660e8400-e29b-41d4-a716-446655440001")
-           .set("owner_device_id", "770e8400-e29b-41d4-a716-446655440002")
-           .set_null("conversation_id")
-           .set("encrypted_size", "2048")
-           .set_null("content_type")
-           .set("encryption_algorithm", "XChaCha20-Poly1305")
-           .set("status", "CREATED")
-           .set_null("retention_until")
-           .set("created_at", "2026-09-25T10:00:00Z")
-           .set("updated_at", "2026-09-25T10:00:00Z");
+        .set("owner_user_id", "660e8400-e29b-41d4-a716-446655440001")
+        .set("owner_device_id", "770e8400-e29b-41d4-a716-446655440002")
+        .set_null("conversation_id")
+        .set("encrypted_size", "2048")
+        .set_null("content_type")
+        .set("encryption_algorithm", "XChaCha20-Poly1305")
+        .set("status", "CREATED")
+        .set_null("retention_until")
+        .set("created_at", "2026-09-25T10:00:00Z")
+        .set("updated_at", "2026-09-25T10:00:00Z");
 
     pqxx::row row = builder.build();
     FileEntity entity = file_from_row(row);
@@ -241,13 +232,13 @@ TEST(DomainEntitiesTest, MapFileEntityNullableFieldsNull) {
 TEST(DomainEntitiesTest, MapFileVersionEntityRow) {
     RowBuilder builder;
     builder.set("version_id", "110e8400-e29b-41d4-a716-446655440000")
-           .set("file_id", "550e8400-e29b-41d4-a716-446655440000")
-           .set("version_number", "2")
-           .set("encrypted_size", "4096")
-           .set("minio_object_key", "files/550e8400/v2.bin")
-           .set("checksum_sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
-           .set("created_at", "2026-09-25T10:15:00Z")
-           .set("is_active", "t");
+        .set("file_id", "550e8400-e29b-41d4-a716-446655440000")
+        .set("version_number", "2")
+        .set("encrypted_size", "4096")
+        .set("minio_object_key", "files/550e8400/v2.bin")
+        .set("checksum_sha256", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+        .set("created_at", "2026-09-25T10:15:00Z")
+        .set("is_active", "t");
 
     pqxx::row row = builder.build();
     FileVersionEntity version = file_version_from_row(row);
@@ -267,12 +258,12 @@ TEST(DomainEntitiesTest, MapFileVersionEntityRow) {
 TEST(DomainEntitiesTest, MapEncryptedFileMetadataEntityRow) {
     RowBuilder builder;
     builder.set("file_id", "550e8400-e29b-41d4-a716-446655440000")
-           .set("encrypted_filename", "\\xabcdef0123456789")
-           .set("encrypted_mime_type", "\\x12345678")
-           .set("metadata_nonce", "\\x99887766554433221100")
-           .set("metadata_tag", "\\x0102030405060708090a0b0c0d0e0f10")
-           .set("client_encryption_metadata", "{\"kdf\":\"Argon2id\",\"salt\":\"somesalt\"}")
-           .set("updated_at", "2026-09-25T10:20:00Z");
+        .set("encrypted_filename", "\\xabcdef0123456789")
+        .set("encrypted_mime_type", "\\x12345678")
+        .set("metadata_nonce", "\\x99887766554433221100")
+        .set("metadata_tag", "\\x0102030405060708090a0b0c0d0e0f10")
+        .set("client_encryption_metadata", "{\"kdf\":\"Argon2id\",\"salt\":\"somesalt\"}")
+        .set("updated_at", "2026-09-25T10:20:00Z");
 
     pqxx::row row = builder.build();
     EncryptedFileMetadataEntity meta = encrypted_metadata_from_row(row);
@@ -290,12 +281,12 @@ TEST(DomainEntitiesTest, MapEncryptedFileMetadataEntityRow) {
 TEST(DomainEntitiesTest, MapEncryptedFileMetadataNullMimeType) {
     RowBuilder builder;
     builder.set("file_id", "550e8400-e29b-41d4-a716-446655440000")
-           .set("encrypted_filename", "\\xabcdef01")
-           .set_null("encrypted_mime_type")
-           .set("metadata_nonce", "\\x11223344")
-           .set("metadata_tag", "\\x55667788")
-           .set("client_encryption_metadata", "{}")
-           .set("updated_at", "2026-09-25T10:20:00Z");
+        .set("encrypted_filename", "\\xabcdef01")
+        .set_null("encrypted_mime_type")
+        .set("metadata_nonce", "\\x11223344")
+        .set("metadata_tag", "\\x55667788")
+        .set("client_encryption_metadata", "{}")
+        .set("updated_at", "2026-09-25T10:20:00Z");
 
     pqxx::row row = builder.build();
     EncryptedFileMetadataEntity meta = encrypted_metadata_from_row(row);
@@ -308,18 +299,18 @@ TEST(DomainEntitiesTest, MapEncryptedFileMetadataNullMimeType) {
 TEST(DomainEntitiesTest, MapFileTransferEntityRow) {
     RowBuilder builder;
     builder.set("transfer_id", "220e8400-e29b-41d4-a716-446655440000")
-           .set("file_id", "550e8400-e29b-41d4-a716-446655440000")
-           .set("transfer_type", "UPLOAD")
-           .set("initiator_user_id", "660e8400-e29b-41d4-a716-446655440001")
-           .set("initiator_device_id", "770e8400-e29b-41d4-a716-446655440002")
-           .set("status", "TRANSFERRING")
-           .set("total_chunks", "10")
-           .set("accepted_chunks", "3")
-           .set("total_bytes", "10485760")
-           .set("transferred_bytes", "3145728")
-           .set("created_at", "2026-09-25T10:00:00Z")
-           .set("updated_at", "2026-09-25T10:05:00Z")
-           .set("expires_at", "2026-09-25T11:00:00Z");
+        .set("file_id", "550e8400-e29b-41d4-a716-446655440000")
+        .set("transfer_type", "UPLOAD")
+        .set("initiator_user_id", "660e8400-e29b-41d4-a716-446655440001")
+        .set("initiator_device_id", "770e8400-e29b-41d4-a716-446655440002")
+        .set("status", "TRANSFERRING")
+        .set("total_chunks", "10")
+        .set("accepted_chunks", "3")
+        .set("total_bytes", "10485760")
+        .set("transferred_bytes", "3145728")
+        .set("created_at", "2026-09-25T10:00:00Z")
+        .set("updated_at", "2026-09-25T10:05:00Z")
+        .set("expires_at", "2026-09-25T11:00:00Z");
 
     pqxx::row row = builder.build();
     FileTransferEntity transfer = file_transfer_from_row(row);
@@ -340,14 +331,14 @@ TEST(DomainEntitiesTest, MapFileTransferEntityRow) {
 TEST(DomainEntitiesTest, MapFileChunkEntityRow) {
     RowBuilder builder;
     builder.set("chunk_id", "330e8400-e29b-41d4-a716-446655440000")
-           .set("transfer_id", "220e8400-e29b-41d4-a716-446655440000")
-           .set("chunk_index", "0")
-           .set("byte_offset", "0")
-           .set("chunk_size", "1048576")
-           .set("chunk_hash_sha256", "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
-           .set("minio_chunk_key", "chunks/220e8400/part_0.bin")
-           .set("status", "RECEIVED")
-           .set("created_at", "2026-09-25T10:02:00Z");
+        .set("transfer_id", "220e8400-e29b-41d4-a716-446655440000")
+        .set("chunk_index", "0")
+        .set("byte_offset", "0")
+        .set("chunk_size", "1048576")
+        .set("chunk_hash_sha256", "b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9")
+        .set("minio_chunk_key", "chunks/220e8400/part_0.bin")
+        .set("status", "RECEIVED")
+        .set("created_at", "2026-09-25T10:02:00Z");
 
     pqxx::row row = builder.build();
     FileChunkEntity chunk = file_chunk_from_row(row);
@@ -368,13 +359,13 @@ TEST(DomainEntitiesTest, MapFileChunkEntityRow) {
 TEST(DomainEntitiesTest, MapFileAccessEntityRow) {
     RowBuilder builder;
     builder.set("access_id", "440e8400-e29b-41d4-a716-446655440000")
-           .set("file_id", "550e8400-e29b-41d4-a716-446655440000")
-           .set("grantee_user_id", "990e8400-e29b-41d4-a716-446655440000")
-           .set("grantee_device_id", "aa0e8400-e29b-41d4-a716-446655440000")
-           .set("permission", "WRITE")
-           .set("granted_by", "660e8400-e29b-41d4-a716-446655440001")
-           .set("granted_at", "2026-09-25T10:01:00Z")
-           .set("revoked_at", "2026-09-25T12:00:00Z");
+        .set("file_id", "550e8400-e29b-41d4-a716-446655440000")
+        .set("grantee_user_id", "990e8400-e29b-41d4-a716-446655440000")
+        .set("grantee_device_id", "aa0e8400-e29b-41d4-a716-446655440000")
+        .set("permission", "WRITE")
+        .set("granted_by", "660e8400-e29b-41d4-a716-446655440001")
+        .set("granted_at", "2026-09-25T10:01:00Z")
+        .set("revoked_at", "2026-09-25T12:00:00Z");
 
     pqxx::row row = builder.build();
     FileAccessEntity access = file_access_from_row(row);
@@ -394,13 +385,13 @@ TEST(DomainEntitiesTest, MapFileAccessEntityRow) {
 TEST(DomainEntitiesTest, MapFileAccessEntityNullableNull) {
     RowBuilder builder;
     builder.set("access_id", "440e8400-e29b-41d4-a716-446655440000")
-           .set("file_id", "550e8400-e29b-41d4-a716-446655440000")
-           .set("grantee_user_id", "990e8400-e29b-41d4-a716-446655440000")
-           .set_null("grantee_device_id")
-           .set("permission", "READ")
-           .set("granted_by", "660e8400-e29b-41d4-a716-446655440001")
-           .set("granted_at", "2026-09-25T10:01:00Z")
-           .set_null("revoked_at");
+        .set("file_id", "550e8400-e29b-41d4-a716-446655440000")
+        .set("grantee_user_id", "990e8400-e29b-41d4-a716-446655440000")
+        .set_null("grantee_device_id")
+        .set("permission", "READ")
+        .set("granted_by", "660e8400-e29b-41d4-a716-446655440001")
+        .set("granted_at", "2026-09-25T10:01:00Z")
+        .set_null("revoked_at");
 
     pqxx::row row = builder.build();
     FileAccessEntity access = file_access_from_row(row);
@@ -415,14 +406,14 @@ TEST(DomainEntitiesTest, MapFileAccessEntityNullableNull) {
 TEST(DomainEntitiesTest, MapFilesOutboxEntityRow) {
     RowBuilder builder;
     builder.set("event_id", "880e8400-e29b-41d4-a716-446655440000")
-           .set("aggregate_type", "FILE")
-           .set("aggregate_id", "550e8400-e29b-41d4-a716-446655440000")
-           .set("event_type", "FILE_UPLOAD_COMPLETED")
-           .set("payload_json", "{\"file_id\":\"550e8400\",\"size\":10485760}")
-           .set("status", "PENDING")
-           .set("retry_count", "0")
-           .set("created_at", "2026-09-25T10:05:00Z")
-           .set_null("processed_at");
+        .set("aggregate_type", "FILE")
+        .set("aggregate_id", "550e8400-e29b-41d4-a716-446655440000")
+        .set("event_type", "FILE_UPLOAD_COMPLETED")
+        .set("payload_json", "{\"file_id\":\"550e8400\",\"size\":10485760}")
+        .set("status", "PENDING")
+        .set("retry_count", "0")
+        .set("created_at", "2026-09-25T10:05:00Z")
+        .set_null("processed_at");
 
     pqxx::row row = builder.build();
     FilesOutboxEntity outbox = files_outbox_from_row(row);
@@ -441,14 +432,14 @@ TEST(DomainEntitiesTest, MapFilesOutboxEntityRow) {
 TEST(DomainEntitiesTest, MapFilesOutboxEntityProcessed) {
     RowBuilder builder;
     builder.set("event_id", "880e8400-e29b-41d4-a716-446655440000")
-           .set("aggregate_type", "FILE")
-           .set("aggregate_id", "550e8400-e29b-41d4-a716-446655440000")
-           .set("event_type", "FILE_UPLOAD_COMPLETED")
-           .set("payload_json", "{}")
-           .set("status", "PUBLISHED")
-           .set("retry_count", "1")
-           .set("created_at", "2026-09-25T10:05:00Z")
-           .set("processed_at", "2026-09-25T10:06:00Z");
+        .set("aggregate_type", "FILE")
+        .set("aggregate_id", "550e8400-e29b-41d4-a716-446655440000")
+        .set("event_type", "FILE_UPLOAD_COMPLETED")
+        .set("payload_json", "{}")
+        .set("status", "PUBLISHED")
+        .set("retry_count", "1")
+        .set("created_at", "2026-09-25T10:05:00Z")
+        .set("processed_at", "2026-09-25T10:06:00Z");
 
     pqxx::row row = builder.build();
     FilesOutboxEntity outbox = files_outbox_from_row(row);

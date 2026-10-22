@@ -16,47 +16,39 @@ void FileVersionRepository::create_version(const FileVersionEntity& version, pqx
     }
 
     try {
-        tx.exec_params(
-            "INSERT INTO file_versions (version_id, file_id, version_number, encrypted_size, minio_object_key, checksum_sha256, created_at, is_active) "
-            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-            version.version_id,
-            version.file_id,
-            version.version_number,
-            version.encrypted_size,
-            version.minio_object_key,
-            version.checksum_sha256,
-            db::to_iso8601(version.created_at),
-            version.is_active
-        );
+        tx.exec_params("INSERT INTO file_versions (version_id, file_id, version_number, encrypted_size, "
+                       "minio_object_key, checksum_sha256, created_at, is_active) "
+                       "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                       version.version_id, version.file_id, version.version_number, version.encrypted_size,
+                       version.minio_object_key, version.checksum_sha256, db::to_iso8601(version.created_at),
+                       version.is_active);
     } catch (const std::exception& e) {
         std::string msg = e.what();
         if (msg.find("unique") != std::string::npos || msg.find("UNIQUE") != std::string::npos ||
             msg.find("uq_file_version") != std::string::npos) {
-            throw UniqueConstraintViolationException(
-                "Version " + std::to_string(version.version_number) + " already exists for file " + version.file_id);
+            throw UniqueConstraintViolationException("Version " + std::to_string(version.version_number) +
+                                                     " already exists for file " + version.file_id);
         }
         throw;
     }
 
     if (version.is_active) {
-        tx.exec_params(
-            "UPDATE file_versions SET is_active = FALSE WHERE file_id = $1 AND version_number != $2",
-            version.file_id,
-            version.version_number
-        );
+        tx.exec_params("UPDATE file_versions SET is_active = FALSE WHERE file_id = $1 AND version_number != $2",
+                       version.file_id, version.version_number);
     }
 }
 
-std::optional<FileVersionEntity> FileVersionRepository::find_active_version(const std::string& file_id, pqxx::work& tx) {
+std::optional<FileVersionEntity> FileVersionRepository::find_active_version(const std::string& file_id,
+                                                                            pqxx::work& tx) {
     if (file_id.empty()) {
         return std::nullopt;
     }
 
     auto res = tx.exec_params(
-        "SELECT version_id, file_id, version_number, encrypted_size, minio_object_key, checksum_sha256, created_at, is_active "
+        "SELECT version_id, file_id, version_number, encrypted_size, minio_object_key, checksum_sha256, created_at, "
+        "is_active "
         "FROM file_versions WHERE file_id = $1 AND is_active = TRUE ORDER BY version_number DESC LIMIT 1",
-        file_id
-    );
+        file_id);
 
     if (res.empty()) {
         return std::nullopt;
@@ -75,11 +67,10 @@ std::vector<FileVersionEntity> FileVersionRepository::list_versions(const std::s
         return {};
     }
 
-    auto res = tx.exec_params(
-        "SELECT version_id, file_id, version_number, encrypted_size, minio_object_key, checksum_sha256, created_at, is_active "
-        "FROM file_versions WHERE file_id = $1 ORDER BY version_number ASC",
-        file_id
-    );
+    auto res = tx.exec_params("SELECT version_id, file_id, version_number, encrypted_size, minio_object_key, "
+                              "checksum_sha256, created_at, is_active "
+                              "FROM file_versions WHERE file_id = $1 ORDER BY version_number ASC",
+                              file_id);
 
     std::vector<FileVersionEntity> versions;
     versions.reserve(res.size());

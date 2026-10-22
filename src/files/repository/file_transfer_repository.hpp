@@ -15,7 +15,7 @@ namespace securecloud::files {
 /// Authoritative repository managing resumable upload/download transfer sessions.
 /// Maps 1:1 to the `file_transfers` PostgreSQL table (Files Design 6.3, 6.18, 6.19).
 class FileTransferRepository {
-public:
+  public:
     explicit FileTransferRepository(std::shared_ptr<db::FilesDbConnectionPool> pool = nullptr);
 
     /// Inserts a new transfer session record within the provided transaction `tx`.
@@ -41,7 +41,7 @@ public:
     /// Increments accepted_chunks and transferred_bytes (creates autonomous work session).
     bool increment_chunk_progress(const std::string& transfer_id, int64_t bytes_added);
 
-private:
+  private:
     std::shared_ptr<db::FilesDbConnectionPool> pool_;
 };
 

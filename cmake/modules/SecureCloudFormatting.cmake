@@ -29,7 +29,30 @@ foreach(FILE IN LISTS RAW_TOOLING_FILES)
     endif()
 endforeach()
 
-if(CLANG_FORMAT_BIN)
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(NOT Python3_EXECUTABLE)
+    find_program(Python3_EXECUTABLE NAMES python3 python py)
+endif()
+
+if(Python3_EXECUTABLE)
+    message(STATUS "[SecureCloud] Using Python runner for clang-format: ${Python3_EXECUTABLE}")
+    
+    # Read-only formatting check target (returns non-zero exit code on formatting error)
+    add_custom_target(check-format
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/run-clang-format.py" --mode check --binary "${CLANG_FORMAT_BIN}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Checking project C++ formatting (read-only)..."
+        VERBATIM
+    )
+
+    # In-place formatting convenience target
+    add_custom_target(format
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/run-clang-format.py" --mode format --binary "${CLANG_FORMAT_BIN}"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        COMMENT "Applying clang-format to project C++ files in-place..."
+        VERBATIM
+    )
+elseif(CLANG_FORMAT_BIN)
     message(STATUS "[SecureCloud] Found clang-format: ${CLANG_FORMAT_BIN}")
     
     # Read-only formatting check target (returns non-zero exit code on formatting error)

@@ -21,13 +21,13 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <gtest/gtest.h>
 #include <iomanip>
 #include <memory>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
-#include <gtest/gtest.h>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -60,22 +60,20 @@ inline void ensure_integration_winsock() noexcept {}
 
 inline std::string generate_test_uuid() {
     static std::atomic<uint64_t> counter{1};
-    auto now = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count();
+    auto now = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
     uint64_t id = counter.fetch_add(1);
     std::ostringstream oss;
-    oss << std::hex << std::setfill('0')
-        << std::setw(8) << (now & 0xFFFFFFFF) << "-"
-        << std::setw(4) << ((now >> 32) & 0xFFFF) << "-4"
-        << std::setw(3) << (id & 0x0FFF) << "-a"
-        << std::setw(3) << (id & 0x0FFF) << "-"
-        << std::setw(12) << (now ^ id);
+    oss << std::hex << std::setfill('0') << std::setw(8) << (now & 0xFFFFFFFF) << "-" << std::setw(4)
+        << ((now >> 32) & 0xFFFF) << "-4" << std::setw(3) << (id & 0x0FFF) << "-a" << std::setw(3) << (id & 0x0FFF)
+        << "-" << std::setw(12) << (now ^ id);
     return oss.str();
 }
 
 /// Fixture for PostgreSQL Persistence Integration tests
 class FilesPostgresPersistenceIntegrationTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         ensure_integration_winsock();
         pqxx::MockStorage::instance().reset();
