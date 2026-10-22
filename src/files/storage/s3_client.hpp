@@ -97,6 +97,25 @@ class IHttpTransport {
     virtual HttpResponse execute(const HttpRequest& req) = 0;
 };
 
+/// Exponential backoff retry policy with jitter for transient S3/MinIO failures
+struct S3RetryPolicy {
+    uint32_t max_retries{3};
+    std::chrono::milliseconds initial_backoff{50};
+    std::chrono::milliseconds max_backoff{500};
+    double jitter_factor{0.2};
+
+    /// Classifies HTTP status code: 0 (network/reset), 500, 502, 503, 504 are retryable.
+    /// 400, 401, 403, 404 are non-retryable.
+    [[nodiscard]] bool is_retryable(int status_code) const noexcept {
+        if (status_code == 0) {
+            return true;
+        }
+        return status_code == 500 || status_code == 502 || status_code == 503 || status_code == 504;
+    }
+
+    [[nodiscard]] std::chrono::milliseconds calculate_backoff(uint32_t attempt) const noexcept;
+};
+
 /// Strongly typed configuration model for MinIO S3 object storage
 struct S3ClientConfig {
     std::string endpoint{"http://minio:9000"};
@@ -105,6 +124,7 @@ struct S3ClientConfig {
     common::configuration::SecretString secret_key;
     std::string region{"us-east-1"};
     std::chrono::milliseconds default_timeout{1000};
+    S3RetryPolicy retry_policy{};
 
     /// Constructs S3ClientConfig from FilesConfig
     static S3ClientConfig from_files_config(const FilesConfig& config);
@@ -136,13 +156,24 @@ class SigV4Signer {
                              const std::chrono::system_clock::time_point& now = std::chrono::system_clock::now());
 };
 
-/// Default socket-based HTTP/1.1 transport implementation
+/// Default socket-based HTTP/1.1 transport implementation with Keep-Alive connection pooling
 class DefaultHttpTransport : public IHttpTransport {
   public:
-    DefaultHttpTransport() = default;
-    ~DefaultHttpTransport() override = default;
+    DefaultHttpTransport();
+    ~DefaultHttpTransport() override;
 
     HttpResponse execute(const HttpRequest& req) override;
+
+  private:
+    void close_current_socket() noexcept;
+
+#ifdef _WIN32
+    uintptr_t cached_sock_{~static_cast<uintptr_t>(0)};
+#else
+    int cached_sock_{-1};
+#endif
+    std::string cached_host_;
+    uint16_t cached_port_{0};
 };
 
 /// Lightweight, non-blocking S3 client wrapper for MinIO storage
@@ -275,15 +306,19 @@ class S3Client {
     [[nodiscard]] const S3ClientConfig& config() const noexcept;
     [[nodiscard]] const std::string& endpoint_host() const noexcept;
     [[nodiscard]] uint16_t endpoint_port() const noexcept;
+    [[nodiscard]] const S3RetryPolicy& retry_policy() const noexcept { return retry_policy_; }
+    void set_retry_policy(S3RetryPolicy policy) noexcept { retry_policy_ = policy; }
 
   private:
     void parse_endpoint();
+    [[nodiscard]] HttpResponse execute_with_retry(HttpRequest req);
 
     S3ClientConfig config_;
     std::shared_ptr<IHttpTransport> transport_;
     std::string host_{"127.0.0.1"};
     uint16_t port_{9000};
     bool is_https_{false};
+    S3RetryPolicy retry_policy_{};
 };
 
 } // namespace securecloud::files::storage
