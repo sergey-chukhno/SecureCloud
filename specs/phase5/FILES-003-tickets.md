@@ -346,13 +346,14 @@ Card **FILES-003** establishes the authoritative **MinIO S3-compatible Object St
 
 ## 5. Quality Gate & Sign-Off Checklist for Card FILES-003
 
-- [ ] Zero-Plaintext Invariant: Only encrypted ciphertext is sent to or retrieved from MinIO.
-- [ ] Opaque Key Invariant: Object keys derive exclusively from UUIDs and indices; no user or file plaintexts are leaked.
-- [ ] End-to-End Cryptographic Integrity: Payload SHA-256 digests are asserted on write and read.
-- [ ] Bounded Buffering: No whole-file buffering in memory; maximum 4 MiB logical chunk size enforced.
-- [ ] S3 REST Capabilities: Full implementation of PUT, GET (with Range), HEAD, DELETE, ListObjectsV2, and Multipart Uploads.
-- [ ] Transient Failure Resilience: Configurable exponential backoff retries with jitter for 500/503 errors.
-- [ ] Unit Test Coverage: Deterministic mock transport unit tests covering all operations and error states.
-- [ ] Live Integration Verification: Integration test suite passing cleanly against live MinIO container on port 9000.
-- [ ] Cross-Platform Cleanliness: Zero warnings or errors on Windows (MSVC / MinGW) and macOS.
-- [ ] Non-Regression: All existing 89 FILES-002 tests and Phase 1 / 2 tests pass without regressions.
+- [x] Zero-Plaintext Invariant: Only encrypted ciphertext is sent to or retrieved from MinIO.
+- [x] Opaque Key Invariant: Object keys derive exclusively from UUIDs and indices; no user or file plaintexts are leaked.
+- [x] End-to-End Cryptographic Integrity: Payload SHA-256 digests are asserted on write and read.
+- [x] Bounded Buffering: No whole-file buffering in memory; maximum 4 MiB logical chunk size enforced.
+- [x] S3 REST Capabilities: Full implementation of PUT, GET (with Range), HEAD, DELETE, ListObjectsV2, and Multipart Uploads.
+- [x] Transient Failure Resilience: Configurable exponential backoff retries with jitter for 500/503 errors.
+- [x] Unit Test Coverage: Deterministic mock transport unit tests covering all operations and error states.
+- [x] Live Integration Verification: Integration test suite passing cleanly against live MinIO container on port 9000.
+- [x] Cross-Platform Cleanliness: Zero warnings or errors on Windows (MSVC / MinGW) and macOS.
+- [x] Non-Regression: All existing 89 FILES-002 tests and Phase 1 / 2 tests pass without regressions.
+
