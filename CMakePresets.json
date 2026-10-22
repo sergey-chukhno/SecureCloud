@@ -77,7 +77,7 @@
     {
       "name": "ci-windows-mingw",
       "displayName": "CI Windows MinGW Build Preset",
-      "description": "Strict build configuration for Windows MinGW UCRT64 CI environment",
+      "description": "Strict build configuration for Windows MinGW MINGW64 CI environment",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/ci-windows-mingw",
       "cacheVariables": {
@@ -198,7 +198,7 @@
       "displayName": "Test CI Windows MinGW",
       "configurePreset": "ci-windows-mingw",
       "environment": {
-        "PATH": "C:/msys64/ucrt64/bin;C:/msys64/mingw64/bin;C:/msys64/usr/bin;$penv{PATH}"
+        "PATH": "C:/msys64/mingw64/bin;C:/msys64/ucrt64/bin;C:/msys64/usr/bin;$penv{PATH}"
       },
       "output": {
         "outputOnFailure": true

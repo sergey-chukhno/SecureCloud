@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.28)
 
 if(WIN32)
     set(X_VCPKG_APPLOCAL_DEPS_SERIALIZED ON CACHE BOOL "Serialize vcpkg applocal dependency copying to prevent parallel link file-lock contention")
+    # Target Windows 10 (0x0A00) baseline across all Windows toolchains (MSVC and MinGW-w64)
+    add_compile_definitions(_WIN32_WINNT=0x0A00 WINVER=0x0A00)
 endif()
 
 project(SecureCloud

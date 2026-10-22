@@ -165,16 +165,39 @@ ctest --preset ci-windows-mingw --output-on-failure
 
 ---
 
-## 6. Questions pour Lorenzo
+## 6. Solution Clé en Main pour Lorenzo (Suite au Rapport de Diagnostic)
 
-Pour nous permettre d'adapter le pipeline CI à ta machine si nécessaire :
+Suite à l'analyse de ton rapport `lorenzo_msys2_config.txt`, **la cause exacte du blocage a été identifiée** :
 
-1. **Quel terminal MSYS2 lances-tu ?**
-   - Lances-tu bien l'icône **"MSYS2 UCRT64"** ou une autre ?
-2. **Quelle est la commande exacte qui échoue chez toi ?**
-   - Est-ce lors de `cmake --preset ci-windows-mingw` (étape de configuration / discovery des librairies) ?
-   - Ou lors de `cmake --build --preset ci-windows-mingw` (étape de compilation C++) ?
-3. **Quel est le premier message d'erreur ?**
-   - Pourrais-tu copier/coller les 20 à 30 premières lignes d'erreur ?
-4. **As-tu mis à jour tes paquets récemment ?**
-   - Parfois, un mélange de paquets récents et anciens crée un problème d'ABI. Un `pacman -Syu` résout souvent la situation.
+### Le Diagnostic :
+1. **Tous tes paquets sont déjà parfaitement installés !**
+   - Tu possèdes bien `mingw-w64-x86_64-gcc 15.1.0-1`, `cmake 4.0.1-1`, `ninja 1.12.1-1`, `protobuf 30.2-2`, `grpc 1.72.0-1`, `openssl 3.5.0-1`, `gtest 1.16.0-1`, `nlohmann-json 3.12.0-1`, `libpqxx 7.10.1-1`.
+2. **Le problème : Tu as lancé le terminal "MSYS" au lieu de "MINGW64" :**
+   - Ton rapport indique `MSYSTEM: MSYS` (terminal par défaut violet `msys2.exe`).
+   - Dans ce terminal POSIX/Cygwin, le dossier `/mingw64/bin` n'est pas dans le `PATH`, c'est pourquoi `which gcc` et `which cmake` apparaissaient vides !
+3. **Alignement CI :**
+   - Notre pipeline CI (`.github/workflows/ci.yml`) et `CMakePresets.json` ont été mis à jour pour cibler directement **MSYS2 MINGW64** (`mingw-w64-x86_64-*` avec GCC 15). Ton environnement est désormais notre référence exacte de CI !
+
+### La Procédure Immédiate pour Compiler :
+
+1. **Ferme ton terminal MSYS actuel.**
+2. **Ouvre le terminal "MSYS2 MINGW64"** :
+   - Depuis le menu Démarrer de Windows, recherche et clique sur **"MSYS2 MINGW64"** (icône bleu foncé ou lance `C:\msys64\mingw64.exe`).
+3. **Vérifie ton environnement en tapant** :
+   ```bash
+   echo $MSYSTEM
+   # Doit afficher : MINGW64
+
+   which gcc
+   # Doit afficher : /mingw64/bin/gcc
+   ```
+4. **Compile et teste SecureCloud** :
+   ```bash
+   cd /c/Users/Acer-Lorenzo/Desktop/C:C++/SecureCloud
+   git pull origin main
+   cmake --preset ci-windows-mingw
+   cmake --build --preset ci-windows-mingw -j4
+   bash scripts/generate-dev-pki.sh --force
+   ctest --preset ci-windows-mingw --output-on-failure
+   ```
+
