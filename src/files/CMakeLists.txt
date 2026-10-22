@@ -66,6 +66,7 @@ endif()
 
 add_library(securecloud_files_service STATIC
     service/files_service_impl.cpp
+    service/storage_engine.cpp
 )
 
 add_library(securecloud::files_service ALIAS securecloud_files_service)
