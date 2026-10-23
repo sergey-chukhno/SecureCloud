@@ -63,6 +63,10 @@ class MessagingProxyHandler {
     void handle_send_read_receipt(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
     void handle_get_delivery_status(const httplib::Request& req, httplib::Response& res,
                                     const AuthenticatedContext& ctx);
+    void handle_sync_messages(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
+    void handle_get_sync_cursor(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
+    void handle_update_sync_cursor(const httplib::Request& req, httplib::Response& res,
+                                   const AuthenticatedContext& ctx);
 
   private:
     std::shared_ptr<grpc::IMessagingClient> messaging_client_;

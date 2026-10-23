@@ -1103,6 +1103,10 @@ target_link_libraries(securecloud_auth_proxy_resilience_test PRIVATE
     GTest::gtest_main
 )
 
+if(WIN32)
+    target_link_libraries(securecloud_auth_proxy_resilience_test PRIVATE ws2_32)
+endif()
+
 gtest_discover_tests(securecloud_auth_proxy_resilience_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Gateway Files Microservice HTTP Streaming Proxy Handler Test (GW-010-T03)
@@ -1553,6 +1557,22 @@ target_link_libraries(securecloud_s3_client_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_s3_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Storage Engine Unit Test Suite (FILES-003-T05)
+add_executable(securecloud_storage_engine_test
+    files/storage_engine_test.cpp
+)
+
+target_link_libraries(securecloud_storage_engine_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_storage_engine_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Files Service Implementation Unit Test Suite (FILES-001-T04)
 add_executable(securecloud_files_service_impl_test
@@ -2414,6 +2434,89 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_audit_server_lifecycle_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Online Synchronization Domain Types & Protobuf Contracts Test Suite (MSG-009-T01)
+add_executable(securecloud_messaging_sync_types_test
+    messaging/sync_types_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_sync_types_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_sync_types_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Online Synchronization Cursor Manager Test Suite (MSG-009-T02)
+add_executable(securecloud_sync_cursor_manager_test
+    messaging/sync_cursor_manager_test.cpp
+)
+
+target_link_libraries(securecloud_sync_cursor_manager_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_sync_cursor_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Online Message Synchronization Service Test Suite (MSG-009-T03)
+add_executable(securecloud_message_sync_service_test
+    messaging/message_sync_service_test.cpp
+)
+
+target_link_libraries(securecloud_message_sync_service_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_message_sync_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Messaging Proxy Message Synchronization & Cursor Management Test Suite (MSG-009-T04)
+add_executable(securecloud_messaging_proxy_sync_test
+    gateway/messaging_proxy_sync_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_proxy_sync_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_proxy_sync_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# MessagingService Implementation Sync RPCs Test Suite (MSG-009-T05)
+add_executable(securecloud_messaging_service_impl_sync_test
+    messaging/messaging_service_impl_sync_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_service_impl_sync_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_service_impl_sync_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Audit Service Domain Event Model Unit Test Suite (AUDIT-002-T06)
 add_executable(securecloud_audit_event_model_test

@@ -5,6 +5,7 @@
 #include "domain/sync_types.hpp"
 
 #include <optional>
+#include <vector>
 
 namespace securecloud::messaging::repository {
 
@@ -20,6 +21,10 @@ class ISyncCursorRepository {
     /// Retrieves the synchronization cursor for a device in a conversation.
     [[nodiscard]] virtual std::optional<domain::DeviceSyncCursor>
     get_sync_cursor(const domain::DeviceId& device_id, const domain::ConversationId& conversation_id) = 0;
+
+    /// Lists all synchronization cursors across all conversations for a given device.
+    [[nodiscard]] virtual std::vector<domain::DeviceSyncCursor>
+    list_sync_cursors_by_device(const domain::DeviceId& device_id) = 0;
 
     /// Inserts or updates the synchronization cursor for a device.
     virtual void upsert_sync_cursor(const domain::DeviceSyncCursor& cursor) = 0;
