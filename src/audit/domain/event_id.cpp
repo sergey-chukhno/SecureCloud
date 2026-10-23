@@ -1,9 +1,8 @@
 #include "event_id.hpp"
 
-#include <openssl/rand.h>
-
 #include <chrono>
 #include <cstdio>
+#include <openssl/rand.h>
 #include <stdexcept>
 
 namespace securecloud::audit::domain {
@@ -11,9 +10,12 @@ namespace securecloud::audit::domain {
 namespace {
 
 int hex_digit_to_int(char c) noexcept {
-    if (c >= '0' && c <= '9') return c - '0';
-    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
-    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    if (c >= 'a' && c <= 'f')
+        return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F')
+        return c - 'A' + 10;
     return -1;
 }
 
@@ -26,8 +28,7 @@ EventId EventId::generate_v7() {
     }
 
     auto now_ms = static_cast<uint64_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch())
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
             .count());
 
     // 48-bit big-endian millisecond timestamp into bytes 0..5
@@ -86,24 +87,16 @@ std::optional<EventId> EventId::from_string(std::string_view sv) noexcept {
 
 std::string EventId::to_string() const {
     char buf[37];
-    std::snprintf(
-        buf, sizeof(buf),
-        "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-        bytes_[0], bytes_[1], bytes_[2], bytes_[3],
-        bytes_[4], bytes_[5],
-        bytes_[6], bytes_[7],
-        bytes_[8], bytes_[9],
-        bytes_[10], bytes_[11], bytes_[12], bytes_[13], bytes_[14], bytes_[15]);
+    std::snprintf(buf, sizeof(buf), "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", bytes_[0],
+                  bytes_[1], bytes_[2], bytes_[3], bytes_[4], bytes_[5], bytes_[6], bytes_[7], bytes_[8], bytes_[9],
+                  bytes_[10], bytes_[11], bytes_[12], bytes_[13], bytes_[14], bytes_[15]);
     return std::string(buf, 36);
 }
 
 uint64_t EventId::timestamp_ms() const noexcept {
-    return (static_cast<uint64_t>(bytes_[0]) << 40) |
-           (static_cast<uint64_t>(bytes_[1]) << 32) |
-           (static_cast<uint64_t>(bytes_[2]) << 24) |
-           (static_cast<uint64_t>(bytes_[3]) << 16) |
-           (static_cast<uint64_t>(bytes_[4]) << 8)  |
-           (static_cast<uint64_t>(bytes_[5]));
+    return (static_cast<uint64_t>(bytes_[0]) << 40) | (static_cast<uint64_t>(bytes_[1]) << 32) |
+           (static_cast<uint64_t>(bytes_[2]) << 24) | (static_cast<uint64_t>(bytes_[3]) << 16) |
+           (static_cast<uint64_t>(bytes_[4]) << 8) | (static_cast<uint64_t>(bytes_[5]));
 }
 
 } // namespace securecloud::audit::domain

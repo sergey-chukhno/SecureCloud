@@ -29,26 +29,26 @@ bool is_peer_authorized(ProducerService producer, const PeerIdentity& peer) noex
     std::string_view fqdn;
 
     switch (producer) {
-        case ProducerService::Gateway:
-            short_name = "gateway";
-            fqdn = "gateway.securecloud.internal";
-            break;
-        case ProducerService::Auth:
-            short_name = "auth";
-            fqdn = "auth.securecloud.internal";
-            break;
-        case ProducerService::Messaging:
-            short_name = "messaging";
-            fqdn = "messaging.securecloud.internal";
-            break;
-        case ProducerService::Files:
-            short_name = "files";
-            fqdn = "files.securecloud.internal";
-            break;
-        case ProducerService::Audit:
-            short_name = "audit";
-            fqdn = "audit.securecloud.internal";
-            break;
+    case ProducerService::Gateway:
+        short_name = "gateway";
+        fqdn = "gateway.securecloud.internal";
+        break;
+    case ProducerService::Auth:
+        short_name = "auth";
+        fqdn = "auth.securecloud.internal";
+        break;
+    case ProducerService::Messaging:
+        short_name = "messaging";
+        fqdn = "messaging.securecloud.internal";
+        break;
+    case ProducerService::Files:
+        short_name = "files";
+        fqdn = "files.securecloud.internal";
+        break;
+    case ProducerService::Audit:
+        short_name = "audit";
+        fqdn = "audit.securecloud.internal";
+        break;
     }
 
     if (matches_identity(peer.common_name, short_name, fqdn)) {
@@ -72,24 +72,20 @@ bool is_peer_authorized(ProducerService producer, const PeerIdentity& peer) noex
 
 } // namespace
 
-AuditValidationResult ProducerIdentityValidator::validate_producer_authorization(
-    ProducerService declared_producer, const PeerIdentity& peer_identity) noexcept {
+AuditValidationResult
+ProducerIdentityValidator::validate_producer_authorization(ProducerService declared_producer,
+                                                           const PeerIdentity& peer_identity) noexcept {
 
     if (!peer_identity.is_authenticated) {
-        return AuditValidationResult::failure({
-            AuditValidationErrorCode::UnauthorizedProducer,
-            "producer_service",
-            "Unauthenticated peer attempting to produce audit events"
-        });
+        return AuditValidationResult::failure({AuditValidationErrorCode::UnauthorizedProducer, "producer_service",
+                                               "Unauthenticated peer attempting to produce audit events"});
     }
 
     if (!is_peer_authorized(declared_producer, peer_identity)) {
-        return AuditValidationResult::failure({
-            AuditValidationErrorCode::UnauthorizedProducer,
-            "producer_service",
-            "Declared producer service '" + std::string(to_string(declared_producer)) +
-                "' does not match authenticated peer identity"
-        });
+        return AuditValidationResult::failure({AuditValidationErrorCode::UnauthorizedProducer, "producer_service",
+                                               "Declared producer service '" +
+                                                   std::string(to_string(declared_producer)) +
+                                                   "' does not match authenticated peer identity"});
     }
 
     return AuditValidationResult::ok();

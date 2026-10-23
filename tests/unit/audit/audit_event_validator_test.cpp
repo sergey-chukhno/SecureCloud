@@ -26,11 +26,9 @@ AuditEvent create_valid_event() {
 } // namespace
 
 TEST(AuditEventValidatorTest, ValidEventPasses) {
-    const std::array<ProducerService, 5> producers = {
-        ProducerService::Gateway, ProducerService::Auth,
-        ProducerService::Messaging, ProducerService::Files,
-        ProducerService::Audit
-    };
+    const std::array<ProducerService, 5> producers = {ProducerService::Gateway, ProducerService::Auth,
+                                                      ProducerService::Messaging, ProducerService::Files,
+                                                      ProducerService::Audit};
 
     for (auto prod : producers) {
         auto event = create_valid_event();

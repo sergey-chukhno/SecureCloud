@@ -9,16 +9,11 @@ namespace securecloud::audit::domain {
 namespace {
 
 constexpr std::array<std::string_view, 13> k_forbidden_key_terms = {
-    "password", "passwd", "secret", "token", "credential",
-    "private_key", "privkey", "mfa", "totp", "plaintext",
-    "seed", "salt", "api_key"
-};
+    "password", "passwd", "secret",    "token", "credential", "private_key", "privkey",
+    "mfa",      "totp",   "plaintext", "seed",  "salt",       "api_key"};
 
 constexpr std::array<std::string_view, 3> k_pem_key_headers = {
-    "-----BEGIN PRIVATE KEY-----",
-    "-----BEGIN RSA PRIVATE KEY-----",
-    "-----BEGIN EC PRIVATE KEY-----"
-};
+    "-----BEGIN PRIVATE KEY-----", "-----BEGIN RSA PRIVATE KEY-----", "-----BEGIN EC PRIVATE KEY-----"};
 
 std::string to_lower_string(std::string_view sv) {
     std::string lower(sv);
@@ -86,21 +81,16 @@ AuditValidationResult SensitiveDataGuard::inspect(const AuditEvent& event) noexc
 
         for (const auto& term : k_forbidden_key_terms) {
             if (lower_key.find(term) != std::string_view::npos) {
-                result.add_error({
-                    AuditValidationErrorCode::SensitiveDataDetected,
-                    "metadata." + key,
-                    "Sensitive key forbidden in metadata: '" + key + "' contains prohibited credential term"
-                });
+                result.add_error(
+                    {AuditValidationErrorCode::SensitiveDataDetected, "metadata." + key,
+                     "Sensitive key forbidden in metadata: '" + key + "' contains prohibited credential term"});
                 break;
             }
         }
 
         if (contains_pem_key_header(value) || contains_jwt_pattern(value)) {
-            result.add_error({
-                AuditValidationErrorCode::SensitiveDataDetected,
-                "metadata." + key,
-                "Value contains prohibited secret or key material"
-            });
+            result.add_error({AuditValidationErrorCode::SensitiveDataDetected, "metadata." + key,
+                              "Value contains prohibited secret or key material"});
         }
     }
 
