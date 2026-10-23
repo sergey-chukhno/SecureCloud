@@ -4,8 +4,9 @@ if(WIN32)
     set(X_VCPKG_APPLOCAL_DEPS_SERIALIZED ON CACHE BOOL "Serialize vcpkg applocal dependency copying to prevent parallel link file-lock contention")
     # Target Windows 10 (0x0A00) baseline across all Windows toolchains (MSVC and MinGW-w64)
     add_compile_definitions(_WIN32_WINNT=0x0A00 WINVER=0x0A00)
-    # Restrict parallel linker jobs under Ninja to avoid MSVC LNK1102 (out of memory)
-    set_property(GLOBAL PROPERTY JOB_POOLS link_pool=2)
+    # Restrict parallel linker jobs under Ninja to 1 to eliminate MSVC LNK1102 (out of memory)
+    # and prevent concurrent vcpkg z-applocal DLL file-lock collisions in shared directories
+    set_property(GLOBAL PROPERTY JOB_POOLS link_pool=1)
     set(CMAKE_JOB_POOL_LINK link_pool)
 endif()
 
