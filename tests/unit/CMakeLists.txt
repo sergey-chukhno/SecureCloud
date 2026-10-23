@@ -2588,3 +2588,19 @@ target_link_libraries(securecloud_audit_event_mapper_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_event_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Presence & Connection Session Domain Types Test Suite (MSG-010-T01)
+add_executable(securecloud_messaging_presence_types_test
+    messaging/presence_types_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_presence_types_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_presence_types_test ${SECURECLOUD_TEST_PROPERTIES})
