@@ -4,24 +4,6 @@
 
 namespace securecloud::files {
 
-bool is_valid_state_transition(FileStatus from, FileStatus to) noexcept {
-    switch (from) {
-    case FileStatus::Created:
-        return to == FileStatus::Uploading || to == FileStatus::Failed;
-    case FileStatus::Uploading:
-        return to == FileStatus::Finalizing || to == FileStatus::Failed;
-    case FileStatus::Finalizing:
-        return to == FileStatus::Available || to == FileStatus::Failed;
-    case FileStatus::Available:
-        return to == FileStatus::Expired || to == FileStatus::Deleted;
-    case FileStatus::Expired:
-        return to == FileStatus::Deleted;
-    case FileStatus::Deleted:
-    case FileStatus::Failed:
-        return false;
-    }
-    return false;
-}
 
 FileRepository::FileRepository(std::shared_ptr<db::FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
 
