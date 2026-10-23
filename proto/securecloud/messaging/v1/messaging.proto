@@ -137,6 +137,8 @@ message SyncCursor {
   string device_id = 1;
   int64 last_delivered_sequence = 2;
   int64 last_sync_timestamp_unix_ms = 3;
+  string conversation_id = 4;
+  int32 sync_version = 5;
 }
 
 // Structured delivery/read receipt event (ADR-007, Design 5.13, 5.23).
@@ -293,6 +295,7 @@ message SyncDeviceMessagesRequest {
   string device_id = 1;
   int64 since_sequence = 2;
   uint32 max_messages = 3;
+  string conversation_id = 4;
 }
 
 message SyncDeviceMessagesResponse {
@@ -301,11 +304,13 @@ message SyncDeviceMessagesResponse {
   SyncCursor cursor = 3;
   bool has_more = 4;
   int64 next_sequence = 5;
+  int64 latest_sequence = 6;
 }
 
 // 13. GetSyncCursor
 message GetSyncCursorRequest {
   string device_id = 1;
+  string conversation_id = 2;
 }
 
 message GetSyncCursorResponse {

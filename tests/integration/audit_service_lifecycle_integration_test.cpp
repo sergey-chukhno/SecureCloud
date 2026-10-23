@@ -60,8 +60,10 @@ AuditConfig create_integration_test_config(const std::filesystem::path& pki_root
     common::configuration::InMemoryConfigurationSource source;
     source.set("SECURECLOUD_AUDIT_GRPC_PORT", std::to_string(port));
     source.set("SECURECLOUD_AUDIT_GRPC_HOST", "127.0.0.1");
+    source.set("SECURECLOUD_AUDIT_DB_HOST", "127.0.0.1");
     source.set("SECURECLOUD_AUDIT_DB_PASSWORD", "IntegrationTestPassword123!");
     source.set("SECURECLOUD_AUDIT_DB_PORT", std::to_string(clickhouse_port));
+    source.set("SECURECLOUD_AUDIT_SHUTDOWN_GRACE_PERIOD_MS", "500");
     source.set("SECURECLOUD_CA_CERT_PATH", (pki_root / "ca" / "ca.crt").string());
     source.set("SECURECLOUD_SERVICE_CERT_PATH", (pki_root / "services" / "audit" / "audit.crt").string());
     source.set("SECURECLOUD_SERVICE_KEY_PATH", (pki_root / "services" / "audit" / "audit.key").string());
@@ -126,7 +128,12 @@ TEST_F(AuditServerIntegrationTest, AuditServiceStartsAndBindsMtlsPort) {
     AuditServer server(std::move(config));
 
     std::atomic<bool> start_ok{false};
-    std::thread server_thread([&server, &start_ok]() { start_ok = server.start(); });
+    std::thread server_thread([&server, &start_ok]() {
+        start_ok = server.start();
+        if (start_ok.load()) {
+            server.wait();
+        }
+    });
 
     wait_until_server_running(server);
 
@@ -138,6 +145,7 @@ TEST_F(AuditServerIntegrationTest, AuditServiceStartsAndBindsMtlsPort) {
                              << " (code: " << status.error_code() << ")";
     EXPECT_EQ(response.status(), common::v1::HealthCheckResponse::SERVING);
 
+    channel.reset();
     server.stop();
     if (server_thread.joinable()) {
         server_thread.join();
@@ -150,7 +158,13 @@ TEST_F(AuditServerIntegrationTest, AuditServiceRejectsInsecurePlaintextConnectio
     auto config = create_integration_test_config(pki_root_, port);
     AuditServer server(std::move(config));
 
-    std::thread server_thread([&server]() { server.start(); });
+    std::atomic<bool> start_ok{false};
+    std::thread server_thread([&server, &start_ok]() {
+        start_ok = server.start();
+        if (start_ok.load()) {
+            server.wait();
+        }
+    });
 
     wait_until_server_running(server);
 
@@ -160,6 +174,7 @@ TEST_F(AuditServerIntegrationTest, AuditServiceRejectsInsecurePlaintextConnectio
 
     EXPECT_FALSE(status.ok());
 
+    channel.reset();
     server.stop();
     if (server_thread.joinable()) {
         server_thread.join();
@@ -173,21 +188,36 @@ TEST_F(AuditServerIntegrationTest, ClickHouseConnectivityProbeHealthDegradation)
     auto config = create_integration_test_config(pki_root_, port, unreachable_ch_port);
     AuditServer server(std::move(config));
 
-    std::thread server_thread([&server]() { server.start(); });
+    std::atomic<bool> start_ok{false};
+    std::thread server_thread([&server, &start_ok]() {
+        start_ok = server.start();
+        if (start_ok.load()) {
+            server.wait();
+        }
+    });
 
     wait_until_server_running(server);
 
     auto channel = create_mtls_channel(pki_root_, port);
-    common::v1::HealthCheckResponse response;
-    auto status = check_health(channel, "", response);
 
-    EXPECT_TRUE(status.ok());
-    EXPECT_EQ(response.status(), common::v1::HealthCheckResponse::SERVING);
+    // 1. Liveness probe check succeeds
+    common::v1::HealthCheckResponse liveness_response;
+    auto liveness_status = check_health(channel, "", liveness_response);
+    EXPECT_TRUE(liveness_status.ok());
+    EXPECT_EQ(liveness_response.status(), common::v1::HealthCheckResponse::SERVING);
 
+    // 2. Readiness probe degrades to NOT_SERVING due to unreachable ClickHouse port
+    common::v1::HealthCheckResponse readiness_response;
+    auto readiness_status = check_health(channel, "readiness", readiness_response);
+    EXPECT_TRUE(readiness_status.ok());
+    EXPECT_EQ(readiness_response.status(), common::v1::HealthCheckResponse::NOT_SERVING);
+
+    channel.reset();
     server.stop();
     if (server_thread.joinable()) {
         server_thread.join();
     }
+    EXPECT_TRUE(start_ok.load());
 }
 
 TEST_F(AuditServerIntegrationTest, GracefulShutdownDrainsCleanly) {
@@ -195,7 +225,13 @@ TEST_F(AuditServerIntegrationTest, GracefulShutdownDrainsCleanly) {
     auto config = create_integration_test_config(pki_root_, port);
     AuditServer server(std::move(config));
 
-    std::thread server_thread([&server]() { server.start(); });
+    std::atomic<bool> start_ok{false};
+    std::thread server_thread([&server, &start_ok]() {
+        start_ok = server.start();
+        if (start_ok.load()) {
+            server.wait();
+        }
+    });
 
     wait_until_server_running(server);
     EXPECT_TRUE(server.is_healthy());

@@ -217,6 +217,9 @@ TEST_F(DeviceConnectionRegistryTest, ConcurrentReadWriteStress) {
                     registry.unregister_channel(dev);
                 }
                 ++counter;
+                if ((counter & 0x0F) == 0) {
+                    std::this_thread::yield();
+                }
             }
         });
     }
@@ -224,6 +227,7 @@ TEST_F(DeviceConnectionRegistryTest, ConcurrentReadWriteStress) {
     // 8 Reader threads
     for (int r = 0; r < 8; ++r) {
         workers.emplace_back([&, r]() {
+            int r_counter = 0;
             while (running.load(std::memory_order_relaxed)) {
                 const auto& dev = device_pool[static_cast<size_t>(r % kDevices)];
                 (void)registry.is_online(dev);
@@ -231,6 +235,10 @@ TEST_F(DeviceConnectionRegistryTest, ConcurrentReadWriteStress) {
                 const auto next_idx = static_cast<size_t>((r + 1) % kDevices);
                 (void)registry.filter_online_devices({dev, device_pool[next_idx]});
                 (void)registry.connected_device_count();
+                ++r_counter;
+                if ((r_counter & 0x0F) == 0) {
+                    std::this_thread::yield();
+                }
             }
         });
     }

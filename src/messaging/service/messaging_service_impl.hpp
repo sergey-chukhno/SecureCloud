@@ -22,7 +22,9 @@
 #include "service/conversation_service.hpp"
 #include "service/delivery_service.hpp"
 #include "service/message_submission_service.hpp"
+#include "service/message_sync_service.hpp"
 #include "service/read_receipt_service.hpp"
+#include "service/sync_cursor_manager.hpp"
 
 #include <grpcpp/grpcpp.h>
 #include <memory>
@@ -41,7 +43,9 @@ class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingS
                                   std::shared_ptr<ConversationService> conversation_service = nullptr,
                                   std::shared_ptr<MessageSubmissionService> submission_service = nullptr,
                                   std::shared_ptr<DeliveryService> delivery_service = nullptr,
-                                  std::shared_ptr<ReadReceiptService> read_receipt_service = nullptr);
+                                  std::shared_ptr<ReadReceiptService> read_receipt_service = nullptr,
+                                  std::shared_ptr<MessageSyncService> sync_service = nullptr,
+                                  std::shared_ptr<SyncCursorManager> cursor_manager = nullptr);
     ~MessagingServiceImpl() override = default;
 
     MessagingServiceImpl(const MessagingServiceImpl&) = delete;
@@ -155,6 +159,8 @@ class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingS
     [[nodiscard]] std::shared_ptr<ReadReceiptService> read_receipt_service() const noexcept {
         return read_receipt_service_;
     }
+    [[nodiscard]] std::shared_ptr<MessageSyncService> sync_service() const noexcept { return sync_service_; }
+    [[nodiscard]] std::shared_ptr<SyncCursorManager> cursor_manager() const noexcept { return cursor_manager_; }
 
   private:
     std::shared_ptr<concurrency::BoundedWorkerPool> submission_pool_;
@@ -164,6 +170,8 @@ class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingS
     std::shared_ptr<MessageSubmissionService> submission_service_;
     std::shared_ptr<DeliveryService> delivery_service_;
     std::shared_ptr<ReadReceiptService> read_receipt_service_;
+    std::shared_ptr<MessageSyncService> sync_service_;
+    std::shared_ptr<SyncCursorManager> cursor_manager_;
 };
 
 } // namespace securecloud::messaging::service

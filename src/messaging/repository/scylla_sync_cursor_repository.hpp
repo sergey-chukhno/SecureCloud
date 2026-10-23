@@ -20,6 +20,9 @@ class ScyllaSyncCursorRepository : public ISyncCursorRepository {
     [[nodiscard]] std::optional<domain::DeviceSyncCursor>
     get_sync_cursor(const domain::DeviceId& device_id, const domain::ConversationId& conversation_id) override;
 
+    [[nodiscard]] std::vector<domain::DeviceSyncCursor>
+    list_sync_cursors_by_device(const domain::DeviceId& device_id) override;
+
     void upsert_sync_cursor(const domain::DeviceSyncCursor& cursor) override;
 
   private:
@@ -29,6 +32,7 @@ class ScyllaSyncCursorRepository : public ISyncCursorRepository {
     mutable std::mutex mutex_;
 
     db::PreparedStatementId prep_get_cursor_;
+    db::PreparedStatementId prep_list_cursors_by_device_;
     db::PreparedStatementId prep_upsert_cursor_;
 };
 
