@@ -103,7 +103,7 @@ $$\mathbf{Presence} \neq \mathbf{Delivery\ (Per\text{-}Device)} \neq \mathbf{Rea
 | Ticket ID | Status | Focus Area | Deliverables |
 | :--- | :--- | :--- | :--- |
 | **MSG-010-T01** | **COMPLETED** | Domain Models & Contracts | `domain/presence_types.hpp`, `domain/connection_session.hpp`, 12 unit tests (100% pass) |
-| **MSG-010-T02** | PENDING | Presence Coordinator Engine | `PresenceCoordinator`, multi-device aggregation, in-memory lease decay |
+| **MSG-010-T02** | **COMPLETED** | Presence Coordinator Engine | `PresenceCoordinator`, multi-device aggregation, in-memory lease decay, 10 unit tests (100% pass) |
 | **MSG-010-T03** | PENDING | Connection Lifecycle & Reaper | `ConnectionLifecycleManager`, capacity guards, background stale reaper |
 | **MSG-010-T04** | PENDING | Reconnect Fast-Track Pipeline | Fast-track delivery sweep upon device reconnect, latency reduction |
 | **MSG-010-T05** | PENDING | gRPC Service & Privacy Guard | `UpdatePresence`, `GetPresence`, `BatchGetPresence`, mutual-conversation filter |
@@ -166,4 +166,59 @@ $$\mathbf{Presence} \neq \mathbf{Delivery\ (Per\text{-}Device)} \neq \mathbf{Rea
 [----------] Global test environment tear-down
 [==========] 12 tests from 1 test suite ran. (0 ms total)
 [  PASSED  ] 12 tests.
+```
+
+### 5.2 MSG-010-T02 — Thread-Safe Multi-Device Presence Coordinator & Leased Ephemeral State Engine
+
+#### 1. Architectural Scope & Implementation Deliverables
+1. **`src/messaging/service/presence_coordinator_interface.hpp`**:
+   - `IPresenceCoordinator` pure virtual contract:
+     - `get_user_presence(user_id)`
+     - `batch_get_presence(user_ids)`
+     - `set_user_override(user_id, status, custom_message)`
+     - `clear_user_override(user_id)`
+     - `on_device_connected(user_id, device_id)`
+     - `on_device_disconnected(user_id, device_id)`
+     - `on_device_heartbeat(user_id, device_id)`
+     - `lease_timeout()`
+2. **`src/messaging/service/presence_coordinator.hpp` & `.cpp`**:
+   - Thread-safe production engine using `std::shared_mutex` for high-concurrency read operations (`std::shared_lock`).
+   - Bidirectional multi-device tracking index: `user_devices_` (`UserId -> std::unordered_set<DeviceId>`) and `device_states_` (`DeviceId -> DeviceEntry`).
+   - Explicit user override registry (`user_overrides_`) allowing manual statuses (`BUSY`, `AWAY`) to override default computed availability while active.
+   - Offline preservation (`user_last_seen_`) maintaining accurate last-active timestamps after full fleet disconnection.
+   - Dynamic ephemeral lease evaluation: automatic decay to `OFFLINE` if idle elapsed time exceeds `lease_timeout_` without persistent storage I/O.
+   - Inspection telemetry helpers: `tracked_users_count()`, `tracked_devices_count()`, and `online_users_count()`.
+3. **`tests/unit/messaging/presence_coordinator_test.cpp`**:
+   - Comprehensive 10-test suite validating single device lifecycle, multi-device aggregation, explicit overrides, lease timeout decay, heartbeat refresh, batch queries, and a 12-thread concurrent read/write stress test.
+
+#### 2. Unit Test Verification Transcript
+```text
+[==========] Running 10 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 10 tests from PresenceCoordinatorTest
+[ RUN      ] PresenceCoordinatorTest.UnobservedUserReturnsUnspecified
+[       OK ] PresenceCoordinatorTest.UnobservedUserReturnsUnspecified (0 ms)
+[ RUN      ] PresenceCoordinatorTest.SingleDeviceConnectAndDisconnect
+[       OK ] PresenceCoordinatorTest.SingleDeviceConnectAndDisconnect (0 ms)
+[ RUN      ] PresenceCoordinatorTest.MultiDeviceAggregationIndependentTransitions
+[       OK ] PresenceCoordinatorTest.MultiDeviceAggregationIndependentTransitions (0 ms)
+[ RUN      ] PresenceCoordinatorTest.UserStatusOverrideWhileConnected
+[       OK ] PresenceCoordinatorTest.UserStatusOverrideWhileConnected (0 ms)
+[ RUN      ] PresenceCoordinatorTest.StatusOverrideDecaysWhenAllDevicesDisconnect
+[       OK ] PresenceCoordinatorTest.StatusOverrideDecaysWhenAllDevicesDisconnect (0 ms)
+[ RUN      ] PresenceCoordinatorTest.LeaseTimeoutDecaysInactiveDeviceToOffline
+[       OK ] PresenceCoordinatorTest.LeaseTimeoutDecaysInactiveDeviceToOffline (75 ms)
+[ RUN      ] PresenceCoordinatorTest.HeartbeatRefreshesLeaseWindow
+[       OK ] PresenceCoordinatorTest.HeartbeatRefreshesLeaseWindow (80 ms)
+[ RUN      ] PresenceCoordinatorTest.BatchGetPresenceEvaluation
+[       OK ] PresenceCoordinatorTest.BatchGetPresenceEvaluation (0 ms)
+[ RUN      ] PresenceCoordinatorTest.OperationalInspectionCounts
+[       OK ] PresenceCoordinatorTest.OperationalInspectionCounts (0 ms)
+[ RUN      ] PresenceCoordinatorTest.ConcurrentReadWriteStressTest
+[       OK ] PresenceCoordinatorTest.ConcurrentReadWriteStressTest (150 ms)
+[----------] 10 tests from PresenceCoordinatorTest (306 ms total)
+
+[----------] Global test environment tear-down
+[==========] 10 tests from 1 test suite ran. (306 ms total)
+[  PASSED  ] 10 tests.
 ```

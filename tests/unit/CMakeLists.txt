@@ -2604,3 +2604,19 @@ target_link_libraries(securecloud_messaging_presence_types_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_messaging_presence_types_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Multi-Device Presence Coordinator Test Suite (MSG-010-T02)
+add_executable(securecloud_presence_coordinator_test
+    messaging/presence_coordinator_test.cpp
+)
+
+target_link_libraries(securecloud_presence_coordinator_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_presence_coordinator_test ${SECURECLOUD_TEST_PROPERTIES})
