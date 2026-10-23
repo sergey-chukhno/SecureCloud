@@ -24,6 +24,8 @@ add_library(securecloud_messaging_config STATIC
     service/protocol_version_policy.cpp
     service/recipient_device_resolution_service.cpp
     service/e2e_envelope_validator.cpp
+    service/sync_cursor_manager.cpp
+    service/message_sync_service.cpp
     util/zero_plaintext_guard.cpp
     client/auth_crypto_directory_client.cpp
     service/message_submission_service.cpp
