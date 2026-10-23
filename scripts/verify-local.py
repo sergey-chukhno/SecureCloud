@@ -181,6 +181,13 @@ class VerificationOrchestrator:
         total_start = time.monotonic()
 
         # Stage 1: Configure
+        if platform.system() == "Windows":
+            for stale_file in (self.repo_root / "build").glob("**/.ninja_log.restat"):
+                try:
+                    stale_file.unlink(missing_ok=True)
+                except OSError:
+                    pass
+
         cmd_config = ["cmake", "--preset", self.preset]
         if run_tidy:
             cmd_config.append("-DENABLE_CLANG_TIDY=ON")

@@ -4,6 +4,10 @@ if(WIN32)
     set(X_VCPKG_APPLOCAL_DEPS_SERIALIZED ON CACHE BOOL "Serialize vcpkg applocal dependency copying to prevent parallel link file-lock contention")
     # Target Windows 10 (0x0A00) baseline across all Windows toolchains (MSVC and MinGW-w64)
     add_compile_definitions(_WIN32_WINNT=0x0A00 WINVER=0x0A00)
+    # Restrict parallel linker jobs under Ninja to 1 to eliminate MSVC LNK1102 (out of memory)
+    # and prevent concurrent vcpkg z-applocal DLL file-lock collisions in shared directories
+    set_property(GLOBAL PROPERTY JOB_POOLS link_pool=1)
+    set(CMAKE_JOB_POOL_LINK link_pool)
 endif()
 
 project(SecureCloud
@@ -12,10 +16,21 @@ project(SecureCloud
     LANGUAGES CXX
 )
 
+if(MSVC)
+    # Optimize debug build disk footprint:
+    # /DEBUG:FASTLINK indexes symbols in .obj files instead of duplicating into each .pdb (~20 GB saved)
+    # /INCREMENTAL:NO eliminates .ilk database files across 150+ test binaries (~17.5 GB saved)
+    add_link_options(
+        "$<$<CONFIG:Debug>:/DEBUG:FASTLINK>"
+        "$<$<CONFIG:Debug>:/INCREMENTAL:NO>"
+    )
+endif()
+
 # Global standard enforcement for C++20 baseline
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # Enforce 64-bit architecture requirement across all platforms
 if(CMAKE_SIZEOF_VOID_P EQUAL 4)
