@@ -2518,3 +2518,73 @@ target_link_libraries(securecloud_messaging_service_impl_sync_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_service_impl_sync_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Audit Service Domain Event Model Unit Test Suite (AUDIT-002-T06)
+add_executable(securecloud_audit_event_model_test
+        audit/audit_event_model_test.cpp
+)
+
+target_link_libraries(securecloud_audit_event_model_test PRIVATE
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_event_model_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Domain Validator Unit Test Suite (AUDIT-002-T06)
+add_executable(securecloud_audit_event_validator_test
+        audit/audit_event_validator_test.cpp
+)
+
+target_link_libraries(securecloud_audit_event_validator_test PRIVATE
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_event_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Security Guard Unit Test Suite (AUDIT-002-T06)
+add_executable(securecloud_audit_security_guard_test
+        audit/sensitive_data_guard_test.cpp
+)
+
+target_link_libraries(securecloud_audit_security_guard_test PRIVATE
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_security_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Producer Identity Validator Unit Test Suite (AUDIT-002-T06)
+add_executable(securecloud_audit_producer_identity_validator_test
+        audit/producer_identity_validator_test.cpp
+)
+
+target_link_libraries(securecloud_audit_producer_identity_validator_test PRIVATE
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_producer_identity_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Protobuf Domain Mapper Unit Test Suite (AUDIT-002-T06)
+add_executable(securecloud_audit_event_mapper_test
+        audit/audit_event_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_audit_event_mapper_test PRIVATE
+        securecloud::audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_event_mapper_test ${SECURECLOUD_TEST_PROPERTIES})

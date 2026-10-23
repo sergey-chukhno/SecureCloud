@@ -1,3 +1,26 @@
+add_library(securecloud_audit_domain STATIC
+        domain/enums.cpp
+        domain/event_id.cpp
+        domain/validation_result.cpp
+        domain/audit_event_validator.cpp
+        domain/sensitive_data_guard.cpp
+        domain/producer_identity_validator.cpp
+        domain/audit_event_mapper.cpp
+)
+
+add_library(securecloud::audit_domain ALIAS securecloud_audit_domain)
+
+target_include_directories(securecloud_audit_domain PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(securecloud_audit_domain PUBLIC
+        securecloud::common
+        securecloud_proto
+        securecloud::compiler_flags
+        OpenSSL::Crypto
+)
+
 add_library(securecloud_audit_config STATIC
         audit_config.cpp
 )
@@ -25,6 +48,7 @@ target_include_directories(securecloud_audit_server PUBLIC
 
 target_link_libraries(securecloud_audit_server PUBLIC
         securecloud_audit_config
+        securecloud_audit_domain
         securecloud::common
         securecloud::compiler_flags
 )
