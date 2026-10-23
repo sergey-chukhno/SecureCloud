@@ -6,6 +6,9 @@
 #include <iostream>
 #include <utility>
 
+#include "files/domain/metadata_validator.hpp"
+#include "files/repository/file_transfer_repository.hpp"
+
 #ifdef DeleteFile
 #undef DeleteFile
 #endif
@@ -41,17 +44,22 @@ class RpcScopeLogger {
 } // namespace
 
 FilesServiceImpl::FilesServiceImpl(FilesServiceDependencies deps, std::string expected_client_identity)
-    : deps_(std::move(deps)), expected_client_identity_(std::move(expected_client_identity)) {}
+    : deps_(std::move(deps)), expected_client_identity_(std::move(expected_client_identity)) {
+    if (!deps_.lifecycle_service && deps_.db_pool) {
+        deps_.lifecycle_service = std::make_shared<FileLifecycleService>(deps_.db_pool);
+    }
+}
 
 FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db_pool,
                                    std::shared_ptr<storage::S3Client> s3_client, std::string expected_client_identity)
     : deps_{
-          .db_pool = std::move(db_pool),
+          .db_pool = db_pool,
           .s3_client = std::move(s3_client),
           .upload_session_manager = std::make_shared<UploadSessionManager>(),
           .download_manager = std::make_shared<DownloadManager>(),
           .storage_engine = std::make_shared<StorageEngine>(),
-          .metadata_manager = std::make_shared<MetadataManager>(),
+          .metadata_manager = std::make_shared<MetadataManager>(db_pool),
+          .lifecycle_service = std::make_shared<FileLifecycleService>(db_pool),
       },
       expected_client_identity_(std::move(expected_client_identity)) {}
 
@@ -140,7 +148,88 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
               << "' owner_user_id='" << request->owner_user_id()
               << "' (expected_chunks=" << request->expected_chunk_count() << ")\n";
 
-    auto status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, std::string(k_unimplemented_skeleton_message));
+    if (!deps_.lifecycle_service) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, "FileLifecycleService is not initialized");
+        logger.finish(status);
+        return status;
+    }
+
+    std::string target_file_id = request->file_id().empty() ? generate_uuid_v7() : request->file_id();
+
+    CreateFileRequestDto dto{
+        .file_id = target_file_id,
+        .owner_user_id = request->owner_user_id(),
+        .owner_device_id = request->owner_device_id(),
+        .conversation_id = request->conversation_id().empty() ? std::nullopt : std::make_optional(request->conversation_id()),
+        .encrypted_size_bytes = request->encrypted_size_bytes(),
+        .expected_chunk_count = request->expected_chunk_count(),
+        .encryption_algorithm = request->encryption_version().empty() ? std::string(k_approved_encryption_algorithm)
+                                                                      : request->encryption_version(),
+    };
+
+    if (!request->client_crypto_metadata().empty()) {
+        auto unpack_res = unpack_client_crypto_metadata(request->client_crypto_metadata(), dto);
+        if (!unpack_res) {
+            auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
+                                       "Invalid client_crypto_metadata: " + unpack_res.error_message);
+            logger.finish(status);
+            return status;
+        }
+    } else {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "client_crypto_metadata is required");
+        logger.finish(status);
+        return status;
+    }
+
+    auto now = std::chrono::system_clock::now();
+    try {
+        deps_.lifecycle_service->create_file(dto, now);
+    } catch (const FileLifecycleValidationException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::exception& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, ex.what());
+        logger.finish(status);
+        return status;
+    }
+
+    std::string upload_id = generate_uuid_v7();
+    auto expiry_tp = now + std::chrono::hours(24);
+    int64_t expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(expiry_tp.time_since_epoch()).count();
+
+    // If db pool is present, persist transfer session record
+    if (deps_.db_pool) {
+        try {
+            auto conn = deps_.db_pool->acquire_connection();
+            pqxx::work tx(*conn);
+            FileTransferRepository transfer_repo(deps_.db_pool);
+            FileTransferEntity transfer{
+                .transfer_id = upload_id,
+                .file_id = target_file_id,
+                .transfer_type = TransferType::Upload,
+                .initiator_user_id = request->owner_user_id(),
+                .initiator_device_id = request->owner_device_id(),
+                .status = TransferStatus::Pending,
+                .total_chunks = static_cast<int32_t>(dto.expected_chunk_count),
+                .accepted_chunks = 0,
+                .created_at = now,
+                .updated_at = now,
+                .expires_at = expiry_tp,
+            };
+            transfer_repo.create_transfer(transfer, tx);
+            tx.commit();
+        } catch (const std::exception& ex) {
+            std::cerr << "[SecureCloud] [files] Warning: Failed to persist transfer record: " << ex.what() << "\n";
+        }
+    }
+
+    response->set_upload_id(upload_id);
+    response->set_file_id(target_file_id);
+    response->set_status(v1::TRANSFER_STATUS_PENDING);
+    response->set_expires_at_unix_ms(expires_ms);
+
+    auto status = grpc::Status::OK;
     logger.finish(status);
     return status;
 }
@@ -208,6 +297,20 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
         return status;
     }
 
+    if (!request->file_id().empty() && !is_valid_uuid(request->file_id())) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format");
+        logger.finish(status);
+        return status;
+    }
+
+    // Lifecycle validation hook (FILES-004-T04): verify that UPLOADING -> FINALIZING is legal
+    if (!is_valid_state_transition(FileStatus::Uploading, FileStatus::Finalizing)) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
+                                   "State transition from UPLOADING to FINALIZING is disallowed");
+        logger.finish(status);
+        return status;
+    }
+
     std::cout << "[SecureCloud] [files] RPC FinalizeFileUpload request received for upload_id='" << request->upload_id()
               << "' file_id='" << request->file_id() << "'\n";
 
@@ -246,7 +349,69 @@ grpc::Status FilesServiceImpl::GetFileMetadata(const grpc::AuthContext* auth_ctx
     std::cout << "[SecureCloud] [files] RPC GetFileMetadata request received for file_id='" << request->file_id()
               << "'\n";
 
-    auto status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, std::string(k_unimplemented_skeleton_message));
+    if (!is_valid_uuid(request->file_id())) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "file_id is not a valid UUIDv7 format");
+        logger.finish(status);
+        return status;
+    }
+
+    if (!deps_.lifecycle_service) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, "FileLifecycleService is not initialized");
+        logger.finish(status);
+        return status;
+    }
+
+    std::optional<FileMetadataSummary> summary_opt;
+    try {
+        summary_opt = deps_.lifecycle_service->get_file_metadata(request->file_id(), peer_identity);
+    } catch (const UnauthorizedFileAccessException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::exception& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, ex.what());
+        logger.finish(status);
+        return status;
+    }
+
+    if (!summary_opt.has_value()) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, "File not found: " + request->file_id());
+        logger.finish(status);
+        return status;
+    }
+
+    const auto& summary = *summary_opt;
+    response->set_file_id(summary.file.file_id);
+    response->set_lifecycle_state(to_proto(summary.file.status));
+    response->set_encrypted_size_bytes(static_cast<uint64_t>(summary.file.encrypted_size));
+    response->set_chunk_count(summary.expected_chunk_count);
+    response->set_encryption_version(summary.file.encryption_algorithm);
+
+    if (summary.active_version.has_value()) {
+        response->set_ciphertext_integrity_hash(summary.active_version->checksum_sha256);
+        auto avail_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                            summary.active_version->created_at.time_since_epoch())
+                            .count();
+        response->set_available_at_unix_ms(avail_ms);
+    } else {
+        response->set_ciphertext_integrity_hash("");
+        response->set_available_at_unix_ms(0);
+    }
+
+    auto created_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          summary.file.created_at.time_since_epoch())
+                          .count();
+    response->set_created_at_unix_ms(created_ms);
+
+    int64_t expires_ms = 0;
+    if (summary.file.retention_until.has_value()) {
+        expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         summary.file.retention_until->time_since_epoch())
+                         .count();
+    }
+    response->set_expires_at_unix_ms(expires_ms);
+
+    auto status = grpc::Status::OK;
     logger.finish(status);
     return status;
 }
@@ -349,7 +514,43 @@ grpc::Status FilesServiceImpl::DeleteFile(const grpc::AuthContext* auth_ctx, con
 
     std::cout << "[SecureCloud] [files] RPC DeleteFile request received for file_id='" << request->file_id() << "'\n";
 
-    auto status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, std::string(k_unimplemented_skeleton_message));
+    if (!is_valid_uuid(request->file_id())) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "file_id is not a valid UUIDv7 format");
+        logger.finish(status);
+        return status;
+    }
+
+    if (!deps_.lifecycle_service) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, "FileLifecycleService is not initialized");
+        logger.finish(status);
+        return status;
+    }
+
+    try {
+        deps_.lifecycle_service->delete_file(request->file_id(), peer_identity, "Client requested deletion");
+    } catch (const FileNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const UnauthorizedFileAccessException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const InvalidLifecycleTransitionException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::exception& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, ex.what());
+        logger.finish(status);
+        return status;
+    }
+
+    response->set_file_id(request->file_id());
+    response->set_lifecycle_state(v1::FILE_LIFECYCLE_STATE_DELETED);
+    response->set_deleted(true);
+
+    auto status = grpc::Status::OK;
     logger.finish(status);
     return status;
 }
