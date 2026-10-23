@@ -4,7 +4,6 @@
 
 #include <chrono>
 #include <mutex>
-#include <shared_mutex>
 #include <unordered_map>
 #include <vector>
 
@@ -12,7 +11,7 @@ namespace securecloud::messaging::delivery {
 
 /// Production implementation of IDeviceConnectionRegistry.
 /// Provides thread-safe, high-concurrency tracking of connected client devices
-/// using read-write synchronization (std::shared_mutex).
+/// using std::mutex synchronization.
 class DeviceConnectionRegistry final : public IDeviceConnectionRegistry {
   public:
     explicit DeviceConnectionRegistry(std::chrono::milliseconds default_lease_timeout = std::chrono::seconds(60));
@@ -55,7 +54,7 @@ class DeviceConnectionRegistry final : public IDeviceConnectionRegistry {
     void notify_disconnect(const domain::DeviceId& device_id);
 
     const std::chrono::milliseconds default_lease_timeout_;
-    mutable std::shared_mutex mutex_;
+    mutable std::mutex mutex_;
     std::unordered_map<domain::DeviceId, ChannelEntry> channels_;
 
     mutable std::mutex callback_mutex_;

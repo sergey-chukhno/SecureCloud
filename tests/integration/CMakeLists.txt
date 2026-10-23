@@ -797,3 +797,34 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_audit_service_lifecycle_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Online Sync Integration Test Suite (MSG-009-T06)
+add_executable(securecloud_messaging_online_sync_integration_test
+    messaging_online_sync_integration_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_online_sync_integration_test PRIVATE
+    securecloud::messaging
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_config
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    OpenSSL::Crypto
+    OpenSSL::SSL
+    securecloud::compiler_flags
+    GTest::gtest_main
+    GTest::gmock
+)
+
+target_compile_definitions(securecloud_messaging_online_sync_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_messaging_online_sync_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_messaging_online_sync_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
