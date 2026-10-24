@@ -2652,3 +2652,19 @@ target_link_libraries(securecloud_realtime_delivery_accelerator_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_realtime_delivery_accelerator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Service Presence RPCs & Mutual-Conversation Privacy Guard Test Suite (MSG-010-T05)
+add_executable(securecloud_messaging_service_presence_test
+    messaging/messaging_service_presence_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_service_presence_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_service_presence_test ${SECURECLOUD_TEST_PROPERTIES})

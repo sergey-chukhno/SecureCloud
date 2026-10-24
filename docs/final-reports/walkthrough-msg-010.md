@@ -155,6 +155,59 @@ While safe, waiting up to several seconds after coming back online causes notice
 
 ---
 
+### 2.6 gRPC Messaging Service Presence Handlers & Mutual-Conversation Privacy Guard
+
+#### 1. Threat Model & Privacy Invariants
+In a Zero-Knowledge, Zero-Plaintext messaging architecture (ADR-004, ADR-008), the server cannot read message content. However, **presence signaling inherently leaks user behavioral metadata**:
+- Observing when a user toggles between `ONLINE`, `AWAY`, and `OFFLINE` allows adversaries to infer timezone, sleeping patterns, work habits, and active communication intervals.
+- Unrestricted presence scraping would allow attackers to build mass surveillance profiles across the entire user base.
+
+To eliminate this threat vector without degrading legitimate user experience, SecureCloud enforces the **Mutual-Conversation Privacy Guard**:
+
+$$\text{CanObservePresence}(u_{\text{caller}}, u_{\text{target}}) = (u_{\text{caller}} = u_{\text{target}}) \lor \left(\exists c \in \text{Conversations} : u_{\text{caller}} \in \text{ActiveParticipants}(c) \land u_{\text{target}} \in \text{ActiveParticipants}(c)\right)$$
+
+```text
+ Client (mTLS / Gateway)               MessagingServiceImpl            ConversationService / Auth       PresenceCoordinator
+        │                                       │                                     │                           │
+        │ 1. UpdatePresence(status, message)    │                                     │                           │
+        ├──────────────────────────────────────►│                                     │                           │
+        │                                       │ 2. Validate Caller & Rate Limit     │                           │
+        │                                       │    (max 12/min, sanitize 140 chars) │                           │
+        │                                       │ 3. Set In-Memory Lease Override     │                           │
+        │                                       ├────────────────────────────────────────────────────────────────►│
+        │ 4. Return Updated UserPresence        │                                     │                           │
+        │◄──────────────────────────────────────┤                                     │                           │
+        │                                       │                                     │                           │
+        │ 5. GetPresence(target_user_id)        │                                     │                           │
+        ├──────────────────────────────────────►│                                     │                           │
+        │                                       │ 6. Mutual-Conversation Guard       │                           │
+        │                                       │    (target == caller? Or shared?)   │                           │
+        │                                       ├────────────────────────────────────►│                           │
+        │                                       │◄────────────────────────────────────┤                           │
+        │                                       │    [If Non-Mutual Stranger]         │                           │
+        │                                       │    -> Privacy Shield: OFFLINE       │                           │
+        │                                       │    [If Mutual Active Participant]   │                           │
+        │                                       │    -> Query Ephemeral Presence      │                           │
+        │                                       ├────────────────────────────────────────────────────────────────►│
+        │ 7. Return (Real or Shielded) Presence │                                     │                           │
+        │◄──────────────────────────────────────┤                                     │                           │
+```
+
+#### 2. Key Architectural Guarantees:
+1. **Privacy Shielding vs. Error Oracle Prevention**:
+   - If an unauthorized user attempts to query a target with whom they do not share an active conversation, returning `PERMISSION_DENIED` or `NOT_FOUND` would act as an **existence oracle** confirming user identity and relationship boundaries.
+   - Instead, the server returns `grpc::Status::OK` with a synthetic **shielded `PRESENCE_STATUS_OFFLINE` record** (empty custom status message, zero timestamp, 0 active devices). A scraper cannot determine whether the target user exists, is genuinely offline, or is simply hidden.
+2. **Impersonation Prevention**:
+   - `UpdatePresence` binds strictly to the authenticated `caller_ctx.user_id()` extracted from validated mTLS / gateway headers. Callers cannot update another user's status.
+3. **Sliding-Window Rate Bounding**:
+   - `UpdatePresence` is strictly rate-limited to **12 updates per minute per user** via an in-memory sliding window. Requests exceeding this threshold are rejected with `v1::MESSAGING_ERROR_CODE_RATE_LIMITED` (`RESOURCE_EXHAUSTED`).
+4. **Strict Payload Sanitization**:
+   - Custom status messages are sanitized via `domain::sanitize_custom_status_message` (trimming whitespace and enforcing a hard 140 UTF-8 character limit).
+5. **Batch Query Hard Cap**:
+   - `BatchGetPresence` enforces `user_ids.size() <= 100`. Requests exceeding 100 targets are rejected with `INVALID_ARGUMENT`.
+
+---
+
 ## 3. The Non-Conflation Axiom
 
 SecureCloud strictly enforces orthogonal separation across all state planes:
@@ -176,7 +229,7 @@ $$\mathbf{Presence} \neq \mathbf{Delivery\ (Per\text{-}Device)} \neq \mathbf{Rea
 | **MSG-010-T02** | **COMPLETED** | Presence Coordinator Engine | `PresenceCoordinator`, multi-device aggregation, in-memory lease decay, 10 unit tests (100% pass) |
 | **MSG-010-T03** | **COMPLETED** | Connection Lifecycle & Reaper | `ConnectionLifecycleManager`, capacity guards, background stale reaper, 22 unit tests (100% pass) |
 | **MSG-010-T04** | **COMPLETED** | Reconnect Fast-Track Pipeline | `RealtimeDeliveryAccelerator`, fast-track hook, 9 unit tests (100% pass) |
-| **MSG-010-T05** | PENDING | gRPC Service & Privacy Guard | `UpdatePresence`, `GetPresence`, `BatchGetPresence`, mutual-conversation filter |
+| **MSG-010-T05** | **COMPLETED** | gRPC Service & Privacy Guard | `UpdatePresence`, `GetPresence`, `BatchGetPresence`, mutual-conversation guard, 10 unit tests (100% pass) |
 | **MSG-010-T06** | PENDING | Gateway REST Proxy Routing | `MessagingProxyHandler` routes, OpenAPI documentation |
 | **MSG-010-T07** | PENDING | Verification & Telemetry | Integration test suite, Prometheus metrics, chaos reconnect tests |
 
@@ -446,5 +499,103 @@ Running main() from /private/tmp/googletest-20260810-2279-a5yc4x/googletest-1.18
 [==========] 9 tests from 1 test suite ran. (3 ms total)
 [  PASSED  ] 9 tests.
 ```
+
+---
+
+### 5.5 MSG-010-T05 — MessagingService gRPC Presence RPCs & Mutual-Conversation Privacy Guard
+
+#### 1. Architectural Scope & Implementation Deliverables
+1. **`src/messaging/service/conversation_authorization_service.hpp` & `.cpp`**:
+   - Implemented `shares_mutual_conversation(caller, target)`:
+     - Direct identity evaluation: returns `true` if `caller == target`.
+     - Queries caller's conversation roster via `membership_repo_.list_user_conversations(caller, 100, std::nullopt)`.
+     - For each active conversation, checks `membership_repo_.find_participant(c.conversation_id, target)`.
+     - Returns `true` if target is an `Active` member of any mutual active direct or group conversation.
+2. **`src/messaging/service/conversation_service.hpp`**:
+   - Forwarded `shares_mutual_conversation` method to delegate to `auth_service_`.
+3. **`src/messaging/service/messaging_service_impl.hpp` & `.cpp`**:
+   - Updated constructor to accept `std::shared_ptr<IPresenceCoordinator> presence_coordinator = nullptr`.
+   - Added thread-safe sliding window rate limiter (`check_and_record_presence_rate_limit`) enforcing a hard limit of **12 updates per minute per user**, rejecting excesses with `RESOURCE_EXHAUSTED` (`v1::MESSAGING_ERROR_CODE_QUEUE_CAPACITY_EXCEEDED`).
+   - Implemented `UpdatePresence`:
+     - Enforces caller authentication context (`kRequireUserId`).
+     - Trims and sanitizes `custom_status_message` ($\le 140$ UTF-8 chars via `domain::sanitize_status_message`).
+     - Handles explicit user override clearing (`ONLINE` with empty message or `UNSPECIFIED`) vs explicit overrides (`BUSY`, `AWAY`).
+     - Returns updated Protobuf `UserPresence` message.
+   - Implemented `GetPresence`:
+     - Enforces caller authentication context.
+     - Enforces **Mutual-Conversation Privacy Guard**: if target does not share an active conversation with caller, returns a synthetic `PRESENCE_STATUS_OFFLINE` record with `user_id = target_id.str()`, preventing timing or relationship discovery oracles.
+     - Returns actual computed ephemeral presence if caller is target or a mutual participant.
+   - Implemented `BatchGetPresence`:
+     - Enforces batch query hard bound ($\le 100$ user IDs), rejecting excesses with `INVALID_ARGUMENT`.
+     - Iterates through target IDs, applying the privacy guard to each contact.
+     - Returns batch array of `UserPresence` records.
+4. **`tests/unit/messaging/messaging_service_presence_test.cpp`**:
+   - Dedicated 10-test suite verifying:
+     - `UpdatePresence` success and whitespace trimming / length bounding.
+     - Explicit override clearing via `Online` + empty status message.
+     - Rejection of unauthenticated requests (`UNAUTHENTICATED`).
+     - Rejection of 13th update within 60 seconds with `RESOURCE_EXHAUSTED`.
+     - Self presence query always allowed without conversation check.
+     - Mutual participant receives accurate real-time presence.
+     - Non-mutual stranger is shielded to `OFFLINE` with `grpc::Status::OK`.
+     - Batch query up to 100 items with mixed mutual and shielded strangers.
+     - Batch query exceeding 100 items rejected with `INVALID_ARGUMENT`.
+     - Backward compatibility: unconfigured coordinator returns `UNIMPLEMENTED`.
+
+#### 2. Unit Test Verification Transcript
+```text
+Running main() from /private/tmp/googletest-20260810-2279-a5yc4x/googletest-1.18.0/googletest/src/gtest_main.cc
+[==========] Running 10 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 10 tests from MessagingServicePresenceTest
+[ RUN      ] MessagingServicePresenceTest.UpdatePresenceSuccessAndSanitization
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-update-pres-01', peer='anonymous')
+[       OK ] MessagingServicePresenceTest.UpdatePresenceSuccessAndSanitization (8 ms)
+[ RUN      ] MessagingServicePresenceTest.UpdatePresenceClearOverride
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-clear-01', peer='anonymous')
+[       OK ] MessagingServicePresenceTest.UpdatePresenceClearOverride (0 ms)
+[ RUN      ] MessagingServicePresenceTest.UpdatePresenceUnauthenticatedReturnsError
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='', peer='anonymous')
+[       OK ] MessagingServicePresenceTest.UpdatePresenceUnauthenticatedReturnsError (0 ms)
+[ RUN      ] MessagingServicePresenceTest.UpdatePresenceRateLimitExceeded
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-0', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-1', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-2', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-3', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-4', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-5', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-6', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-7', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-8', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-9', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-10', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-11', peer='anonymous')
+[DEBUG] [messaging] UpdatePresence invoked (correlation_id='corr-rate-13', peer='anonymous')
+[       OK ] MessagingServicePresenceTest.UpdatePresenceRateLimitExceeded (1 ms)
+[ RUN      ] MessagingServicePresenceTest.GetPresenceSelfAlwaysReturnsTrueStatus
+[DEBUG] [messaging] GetPresence invoked (correlation_id='', peer='anonymous')
+[       OK ] MessagingServicePresenceTest.GetPresenceSelfAlwaysReturnsTrueStatus (0 ms)
+[ RUN      ] MessagingServicePresenceTest.GetPresenceMutualConversationReturnsRealStatus
+[DEBUG] [messaging] GetPresence invoked (correlation_id='', peer='anonymous')
+[       OK ] MessagingServicePresenceTest.GetPresenceMutualConversationReturnsRealStatus (0 ms)
+[ RUN      ] MessagingServicePresenceTest.GetPresenceNonMutualStrangerShieldedToOffline
+[DEBUG] [messaging] GetPresence invoked (correlation_id='', peer='anonymous')
+[       OK ] MessagingServicePresenceTest.GetPresenceNonMutualStrangerShieldedToOffline (0 ms)
+[ RUN      ] MessagingServicePresenceTest.BatchGetPresenceUpTo100WithPrivacyShielding
+[DEBUG] [messaging] BatchGetPresence invoked (correlation_id='', peer='anonymous')
+[       OK ] MessagingServicePresenceTest.BatchGetPresenceUpTo100WithPrivacyShielding (0 ms)
+[ RUN      ] MessagingServicePresenceTest.BatchGetPresenceExceeding100ReturnsInvalidArgument
+[DEBUG] [messaging] BatchGetPresence invoked (correlation_id='', peer='anonymous')
+[       OK ] MessagingServicePresenceTest.BatchGetPresenceExceeding100ReturnsInvalidArgument (0 ms)
+[ RUN      ] MessagingServicePresenceTest.UnimplementedWhenCoordinatorNull
+[DEBUG] [messaging] GetPresence invoked (correlation_id='', peer='anonymous')
+[       OK ] MessagingServicePresenceTest.UnimplementedWhenCoordinatorNull (0 ms)
+[----------] 10 tests from MessagingServicePresenceTest (15 ms total)
+
+[----------] Global test environment tear-down
+[==========] 10 tests from 1 test suite ran. (15 ms total)
+[  PASSED  ] 10 tests.
+```
+
 
 
