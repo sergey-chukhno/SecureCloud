@@ -7,6 +7,7 @@ add_library(securecloud_messaging_config STATIC
     service/delivery_retry_policy.cpp
     service/delivery_state_transition_guard.cpp
     delivery/device_connection_registry.cpp
+    delivery/connection_lifecycle_manager.cpp
     delivery/bounded_delivery_scheduler.cpp
     delivery/delivery_worker.cpp
     delivery/outbox_delivery_consumer.cpp

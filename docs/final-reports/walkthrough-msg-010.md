@@ -222,3 +222,93 @@ $$\mathbf{Presence} \neq \mathbf{Delivery\ (Per\text{-}Device)} \neq \mathbf{Rea
 [==========] 10 tests from 1 test suite ran. (306 ms total)
 [  PASSED  ] 10 tests.
 ```
+
+---
+
+### 5.3 MSG-010-T03 — Connection Lifecycle Manager, Heartbeat Reaper & Resource Capacity Controller
+
+#### 1. Architectural Scope & Implementation Deliverables
+1. **`src/messaging/delivery/device_connection_registry.hpp` & `.cpp`**:
+   - `ConnectionCapacityConfig`:
+     - `max_devices_per_user` (default: 10 devices per user).
+     - `max_global_connections` (default: 100,000 global connections).
+     - `default_lease_timeout` (default: 60s).
+   - `ConnectionLimitExceededException`: typed exception thrown when capacity boundaries are breached.
+   - Enforced per-user device tracking via `user_to_devices_` and atomic superseding of existing devices without dropping or corrupting user device counts.
+   - `user_device_count(user_id)` inspection method.
+2. **`src/messaging/delivery/connection_lifecycle_manager.hpp` & `.cpp`**:
+   - High-level coordinator linking physical delivery channels, session metadata, heartbeats, and presence.
+   - `establish_connection`: registers channel in registry, creates rich `ConnectionSession`, and notifies `PresenceCoordinator::on_device_connected`.
+   - `terminate_connection`: unregisters channel from registry and cascades disconnect notifications.
+   - `record_heartbeat`: touches active channel, updates session timestamps, and notifies `PresenceCoordinator::on_device_heartbeat`.
+   - Background reaper thread (`reaper_loop`): runs on configurable interval (e.g., $15\,\text{s}$), calls `registry_->evict_stale_channels(lease_timeout_)`, and cleanly cleans up expired sessions without resource leaks.
+   - Graceful thread lifecycle management: `start()`, `stop()`, and `sweep_stale_connections()`.
+3. **`tests/unit/messaging/connection_lifecycle_manager_test.cpp` & `device_connection_registry_test.cpp`**:
+   - 9 new unit tests for `ConnectionLifecycleManager` verifying session population, null channel rejection, termination cascade, atomic superseding, heartbeat refresh, background reaper eviction, and thread safety.
+   - 3 new unit tests in `DeviceConnectionRegistryTest` validating per-user limits, global connection capacity, and atomic superseding.
+
+#### 2. Unit Test Verification Transcript
+```text
+[==========] Running 13 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 13 tests from DeviceConnectionRegistryTest
+[ RUN      ] DeviceConnectionRegistryTest.RegisterAndLookupLifecycle
+[       OK ] DeviceConnectionRegistryTest.RegisterAndLookupLifecycle (0 ms)
+[ RUN      ] DeviceConnectionRegistryTest.IgnoresNullChannelRegistration
+[       OK ] DeviceConnectionRegistryTest.IgnoresNullChannelRegistration (0 ms)
+[ RUN      ] DeviceConnectionRegistryTest.UnregisterLifecycle
+[       OK ] DeviceConnectionRegistryTest.UnregisterLifecycle (0 ms)
+[ RUN      ] DeviceConnectionRegistryTest.BatchOnlineFilter
+[       OK ] DeviceConnectionRegistryTest.BatchOnlineFilter (0 ms)
+[ RUN      ] DeviceConnectionRegistryTest.DeviceReconnectReplacesPreviousChannel
+[       OK ] DeviceConnectionRegistryTest.DeviceReconnectReplacesPreviousChannel (0 ms)
+[ RUN      ] DeviceConnectionRegistryTest.InactiveChannelTreatedAsOffline
+[       OK ] DeviceConnectionRegistryTest.InactiveChannelTreatedAsOffline (0 ms)
+[ RUN      ] DeviceConnectionRegistryTest.HeartbeatAndStaleEviction
+[       OK ] DeviceConnectionRegistryTest.HeartbeatAndStaleEviction (125 ms)
+[ RUN      ] DeviceConnectionRegistryTest.DisconnectCallbackNotification
+[       OK ] DeviceConnectionRegistryTest.DisconnectCallbackNotification (105 ms)
+[ RUN      ] DeviceConnectionRegistryTest.ConcurrentReadWriteStress
+[       OK ] DeviceConnectionRegistryTest.ConcurrentReadWriteStress (154 ms)
+[ RUN      ] DeviceConnectionRegistryTest.MockChannelDispatchAndInspection
+[       OK ] DeviceConnectionRegistryTest.MockChannelDispatchAndInspection (4 ms)
+[ RUN      ] DeviceConnectionRegistryTest.EnforcesMaxDevicesPerUserCapacityLimit
+[       OK ] DeviceConnectionRegistryTest.EnforcesMaxDevicesPerUserCapacityLimit (0 ms)
+[ RUN      ] DeviceConnectionRegistryTest.EnforcesGlobalCapacityLimit
+[       OK ] DeviceConnectionRegistryTest.EnforcesGlobalCapacityLimit (0 ms)
+[ RUN      ] DeviceConnectionRegistryTest.AtomicSupersedingDoesNotIncrementUserDeviceCount
+[       OK ] DeviceConnectionRegistryTest.AtomicSupersedingDoesNotIncrementUserDeviceCount (0 ms)
+[----------] 13 tests from DeviceConnectionRegistryTest (390 ms total)
+
+[----------] Global test environment tear-down
+[==========] 13 tests from 1 test suite ran. (390 ms total)
+[  PASSED  ] 13 tests.
+
+[==========] Running 9 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 9 tests from ConnectionLifecycleManagerTest
+[ RUN      ] ConnectionLifecycleManagerTest.EstablishConnectionPopulatesSessionAndPresence
+[       OK ] ConnectionLifecycleManagerTest.EstablishConnectionPopulatesSessionAndPresence (0 ms)
+[ RUN      ] ConnectionLifecycleManagerTest.RejectEstablishWithNullChannel
+[       OK ] ConnectionLifecycleManagerTest.RejectEstablishWithNullChannel (0 ms)
+[ RUN      ] ConnectionLifecycleManagerTest.TerminateConnectionEvictsSessionAndUpdatesPresence
+[       OK ] ConnectionLifecycleManagerTest.TerminateConnectionEvictsSessionAndUpdatesPresence (0 ms)
+[ RUN      ] ConnectionLifecycleManagerTest.AtomicSupersedingMaintainsPresenceAndUpdatesSession
+[       OK ] ConnectionLifecycleManagerTest.AtomicSupersedingMaintainsPresenceAndUpdatesSession (0 ms)
+[ RUN      ] ConnectionLifecycleManagerTest.HeartbeatTouchesRegistryAndRefreshesSessionTimestamp
+[       OK ] ConnectionLifecycleManagerTest.HeartbeatTouchesRegistryAndRefreshesSessionTimestamp (12 ms)
+[ RUN      ] ConnectionLifecycleManagerTest.BackgroundReaperEvictsStaleConnection
+[       OK ] ConnectionLifecycleManagerTest.BackgroundReaperEvictsStaleConnection (302 ms)
+[ RUN      ] ConnectionLifecycleManagerTest.HeartbeatKeepsConnectionAliveDuringReaperCycles
+[       OK ] ConnectionLifecycleManagerTest.HeartbeatKeepsConnectionAliveDuringReaperCycles (333 ms)
+[ RUN      ] ConnectionLifecycleManagerTest.ManualSweepStaleConnections
+[       OK ] ConnectionLifecycleManagerTest.ManualSweepStaleConnections (225 ms)
+[ RUN      ] ConnectionLifecycleManagerTest.CleanStartAndStop
+[       OK ] ConnectionLifecycleManagerTest.CleanStartAndStop (0 ms)
+[----------] 9 tests from ConnectionLifecycleManagerTest (874 ms total)
+
+[----------] Global test environment tear-down
+[==========] 9 tests from 1 test suite ran. (874 ms total)
+[  PASSED  ] 9 tests.
+```
+

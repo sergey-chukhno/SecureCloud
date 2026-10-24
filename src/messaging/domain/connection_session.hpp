@@ -101,4 +101,7 @@ struct DeviceConnection {
     bool operator==(const DeviceConnection& other) const noexcept = default;
 };
 
+/// Type alias for ConnectionSession mapping to DeviceConnection
+using ConnectionSession = DeviceConnection;
+
 } // namespace securecloud::messaging::domain
