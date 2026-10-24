@@ -2668,3 +2668,21 @@ target_link_libraries(securecloud_messaging_service_presence_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_messaging_service_presence_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Messaging Proxy Presence Endpoints Test Suite (MSG-010-T06)
+add_executable(securecloud_messaging_proxy_presence_test
+    gateway/messaging_proxy_presence_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_proxy_presence_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_proxy_presence_test ${SECURECLOUD_TEST_PROPERTIES})

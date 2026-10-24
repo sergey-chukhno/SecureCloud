@@ -208,6 +208,69 @@ $$\text{CanObservePresence}(u_{\text{caller}}, u_{\text{target}}) = (u_{\text{ca
 
 ---
 
+### 2.7 Gateway REST Integration & Resilience Proxies (MSG-010-T06)
+
+#### 1. REST-to-gRPC Invariant & Architectural Topology
+In strict alignment with **ADR-001** and **ADR-005**, the API Gateway acts as an edge reverse-proxy and protocol translation engine. It **never performs database access directly**. For user presence, the Gateway translates client REST HTTP/JSON requests into typed downstream gRPC calls to the Messaging microservice (`securecloud.messaging.v1.MessagingService`):
+
+```text
+ Client (Browser / Mobile / Desktop)
+        │
+        │ HTTP/1.1 or HTTP/2 + TLS 1.3 (Bearer JWT)
+        ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ SecureCloud API Gateway (src/gateway)                                  │
+│                                                                        │
+│  1. Authenticate RequestContext (extract user_id, device_id, session) │
+│  2. Path Parameter Validation & Caller Ownership Enforcement           │
+│  3. Resilience Guards:                                                 │
+│     - BulkheadManager::acquire(WorkloadCategory::Messaging)           │
+│     - CircuitBreaker::allow_request()                                  │
+│  4. Downstream gRPC Client: IMessagingClient                           │
+│     - Inject Metadata: x-user-id, x-device-id, x-correlation-id       │
+│  5. Translate Result: ErrorMapper / UserPresence JSON Serialization     │
+└──────────────────────────────────┬─────────────────────────────────────┘
+                                   │
+                                   │ gRPC / Protobuf over Internal mTLS
+                                   ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│ SecureCloud Messaging Microservice (src/messaging)                     │
+│                                                                        │
+│  • Mutual-Conversation Privacy Guard (Shielding strangers to OFFLINE)  │
+│  • Sliding-Window Rate Limiter (12 updates/min/user)                   │
+│  • In-Memory Ephemeral PresenceCoordinator                             │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 2. REST Route Matrix & Security Enforcement
+The Gateway registers the following routes across both `/v1/...` and `/api/v1/...` prefixes:
+
+1. **`PUT /v1/users/:userId/presence` (and `PUT /v1/presence/me`)**:
+   - **Authentication**: Requires valid Bearer JWT.
+   - **Authorization Guard**: For `/users/:userId/presence`, Gateway enforces `caller_user_id == route_user_id`. Mismatched callers receive immediate **HTTP 403 Forbidden** (`PERMISSION_DENIED`), preventing impersonation before downstream RPCs are issued.
+   - **Convenience Alias**: `/v1/presence/me` automatically defaults `target_user_id` to authenticated `ctx.user_id()`.
+   - **Input Validation**: Parses JSON `status` (`online`, `away`, `busy`, `offline`) and optional `custom_status_message` ($\le 140$ chars). Malformed JSON or invalid status strings return **HTTP 400 Bad Request** (`INVALID_ARGUMENT`).
+   - **Rate Limiting Mapping**: When downstream returns `RESOURCE_EXHAUSTED` (rate cap of 12 updates/min exceeded), Gateway writes **HTTP 429 Too Many Requests** (`RESOURCE_EXHAUSTED`).
+
+2. **`GET /v1/users/:userId/presence` (and `GET /v1/presence/me`)**:
+   - **Authentication**: Requires valid Bearer JWT.
+   - **Downstream Query**: Calls `MessagingServiceClient::get_presence()`.
+   - **Privacy Shielding**: If caller and target do not share a mutual conversation, downstream returns shielded `OFFLINE` status, preventing user existence scraping. Gateway maps this transparently into **HTTP 200 OK** with `UserPresence` JSON.
+
+3. **`POST /v1/users/presence/batch` (and `POST /v1/presence/batch`)**:
+   - **Authentication**: Requires valid Bearer JWT.
+   - **Payload**: Accepts `{"user_ids": ["uuid1", "uuid2"]}` or raw array `["uuid1", "uuid2"]`.
+   - **Bounds Checking**: Enforces batch ceiling of $\le 100$ user IDs. Payloads exceeding 100 items return **HTTP 400 Bad Request** without calling downstream.
+   - **Response**: Returns **HTTP 200 OK** with a JSON array of `UserPresence` objects.
+
+#### 3. Gateway Resilience Integration
+Every presence route executes through dual resilience gates:
+- **Bulkhead Isolation**: Acquires a concurrency slot from [`BulkheadManager`](file:///Users/sergeychukhno/Desktop/C:C++/SecureCloud/src/gateway/http/resilience/bulkhead_manager.hpp) (`WorkloadCategory::Messaging`). Saturated bulkheads immediately return **HTTP 503 Service Unavailable** (`BULKHEAD_LIMIT_EXCEEDED`) with a `Retry-After` header.
+- **Circuit Breaker**: Evaluates [`CircuitBreaker::allow_request()`](file:///Users/sergeychukhno/Desktop/C:C++/SecureCloud/src/gateway/http/resilience/circuit_breaker.hpp). Open circuits immediately fail fast with **HTTP 503 Service Unavailable** (`CIRCUIT_BREAKER_OPEN`), protecting backend service stability.
+- **OpenAPI 3.0 Documentation**: Complete, schema-validated documentation in [`openapi/openapi.yaml`](file:///Users/sergeychukhno/Desktop/C:C++/SecureCloud/openapi/openapi.yaml).
+
+---
+
 ## 3. The Non-Conflation Axiom
 
 SecureCloud strictly enforces orthogonal separation across all state planes:
@@ -230,7 +293,7 @@ $$\mathbf{Presence} \neq \mathbf{Delivery\ (Per\text{-}Device)} \neq \mathbf{Rea
 | **MSG-010-T03** | **COMPLETED** | Connection Lifecycle & Reaper | `ConnectionLifecycleManager`, capacity guards, background stale reaper, 22 unit tests (100% pass) |
 | **MSG-010-T04** | **COMPLETED** | Reconnect Fast-Track Pipeline | `RealtimeDeliveryAccelerator`, fast-track hook, 9 unit tests (100% pass) |
 | **MSG-010-T05** | **COMPLETED** | gRPC Service & Privacy Guard | `UpdatePresence`, `GetPresence`, `BatchGetPresence`, mutual-conversation guard, 10 unit tests (100% pass) |
-| **MSG-010-T06** | PENDING | Gateway REST Proxy Routing | `MessagingProxyHandler` routes, OpenAPI documentation |
+| **MSG-010-T06** | **COMPLETED** | Gateway REST Proxy Routing | `MessagingProxyHandler` routes, `openapi/openapi.yaml`, 14 unit tests (100% pass) |
 | **MSG-010-T07** | PENDING | Verification & Telemetry | Integration test suite, Prometheus metrics, chaos reconnect tests |
 
 ---
@@ -596,6 +659,69 @@ Running main() from /private/tmp/googletest-20260810-2279-a5yc4x/googletest-1.18
 [==========] 10 tests from 1 test suite ran. (15 ms total)
 [  PASSED  ] 10 tests.
 ```
+
+### 5.6 MSG-010-T06 — Gateway REST Proxy Routing, OpenAPI Specification & Resilience Integration
+
+#### 1. Architectural Scope & Implementation Deliverables
+1. **`src/gateway/http/proxy/messaging_proxy_handler.hpp` & `.cpp`**:
+   - Route registrations:
+     - `PUT /v1/users/:userId/presence` & `/api/v1/users/:userId/presence`
+     - `PUT /v1/presence/me` & `/api/v1/presence/me`
+     - `GET /v1/users/:userId/presence` & `/api/v1/users/:userId/presence`
+     - `GET /v1/presence/me` & `/api/v1/presence/me`
+     - `POST /v1/users/presence/batch` & `/api/v1/users/presence/batch`
+     - `POST /v1/presence/batch` & `/api/v1/presence/batch`
+   - Route handlers:
+     - `handle_update_presence`: Caller ID boundary enforcement (HTTP 403 on mismatch), JSON status parsing, custom status message extraction, Bulkhead + CircuitBreaker protection, RPC dispatch, and error mapping (mapping downstream `RESOURCE_EXHAUSTED` to HTTP 429).
+     - `handle_get_presence`: Path parameter extraction, default to caller ID for `/me`, Bulkhead + CircuitBreaker protection, RPC dispatch, and `UserPresence` JSON serialization.
+     - `handle_batch_get_presence`: Array/object body parsing, $\le 100$ user IDs boundary enforcement (HTTP 400 on violation), RPC dispatch, and JSON array serialization.
+   - Serialization helpers: `presence_status_to_string()`, `parse_presence_status_str()`, and `user_presence_to_json()`.
+2. **`openapi/openapi.yaml`**:
+   - Complete OpenAPI 3.0.3 specification documenting all presence endpoints, HTTP request/response schemas (`UserPresence`, `PresenceStatus`, `UpdatePresenceRequest`, `BatchGetPresenceRequest`, `ErrorResponse`), security requirements (`bearerAuth`), and HTTP status codes (200, 400, 401, 403, 429, 503).
+3. **`tests/unit/gateway/messaging_proxy_presence_test.cpp`**:
+   - Comprehensive 14-test unit test suite covering single-user and `/me` presence updates, caller authorization mismatches (403), JSON validation failures (400), rate limiting error mapping (429), presence retrieval, downstream error mapping (404), batch presence retrieval, batch bounds checking ($>100 \to 400$), circuit breaker trip rejection (503), and bulkhead saturation rejection (503).
+
+#### 2. Unit Test Verification Transcript
+```text
+Running main() from /private/tmp/googletest-20260810-2279-a5yc4x/googletest-1.18.0/googletest/src/gtest_main.cc
+[==========] Running 14 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 14 tests from MessagingProxyPresenceTest
+[ RUN      ] MessagingProxyPresenceTest.UpdatePresenceSuccessWithUserId
+[       OK ] MessagingProxyPresenceTest.UpdatePresenceSuccessWithUserId (2 ms)
+[ RUN      ] MessagingProxyPresenceTest.UpdatePresenceSuccessWithPresenceMe
+[       OK ] MessagingProxyPresenceTest.UpdatePresenceSuccessWithPresenceMe (0 ms)
+[ RUN      ] MessagingProxyPresenceTest.UpdatePresenceMismatchedCallerForbidden403
+[       OK ] MessagingProxyPresenceTest.UpdatePresenceMismatchedCallerForbidden403 (0 ms)
+[ RUN      ] MessagingProxyPresenceTest.UpdatePresenceInvalidJsonBadRequest400
+[       OK ] MessagingProxyPresenceTest.UpdatePresenceInvalidJsonBadRequest400 (1 ms)
+[ RUN      ] MessagingProxyPresenceTest.UpdatePresenceMissingStatusBadRequest400
+[       OK ] MessagingProxyPresenceTest.UpdatePresenceMissingStatusBadRequest400 (0 ms)
+[ RUN      ] MessagingProxyPresenceTest.UpdatePresenceInvalidStatusValueBadRequest400
+[       OK ] MessagingProxyPresenceTest.UpdatePresenceInvalidStatusValueBadRequest400 (0 ms)
+[ RUN      ] MessagingProxyPresenceTest.UpdatePresenceRateLimitedDownstream429
+[       OK ] MessagingProxyPresenceTest.UpdatePresenceRateLimitedDownstream429 (0 ms)
+[ RUN      ] MessagingProxyPresenceTest.GetPresenceSuccessWithUserId
+[       OK ] MessagingProxyPresenceTest.GetPresenceSuccessWithUserId (0 ms)
+[ RUN      ] MessagingProxyPresenceTest.GetPresenceSuccessWithPresenceMe
+[       OK ] MessagingProxyPresenceTest.GetPresenceSuccessWithPresenceMe (0 ms)
+[ RUN      ] MessagingProxyPresenceTest.GetPresenceDownstreamNotFoundMapped
+[       OK ] MessagingProxyPresenceTest.GetPresenceDownstreamNotFoundMapped (0 ms)
+[ RUN      ] MessagingProxyPresenceTest.BatchGetPresenceSuccess
+[       OK ] MessagingProxyPresenceTest.BatchGetPresenceSuccess (0 ms)
+[ RUN      ] MessagingProxyPresenceTest.BatchGetPresenceExceedsMaxBatchSizeBadRequest400
+[       OK ] MessagingProxyPresenceTest.BatchGetPresenceExceedsMaxBatchSizeBadRequest400 (1 ms)
+[ RUN      ] MessagingProxyPresenceTest.CircuitBreakerOpenRejection503
+[       OK ] MessagingProxyPresenceTest.CircuitBreakerOpenRejection503 (0 ms)
+[ RUN      ] MessagingProxyPresenceTest.BulkheadLimitExceededRejection503
+[       OK ] MessagingProxyPresenceTest.BulkheadLimitExceededRejection503 (0 ms)
+[----------] 14 tests from MessagingProxyPresenceTest (12 ms total)
+
+[----------] Global test environment tear-down
+[==========] 14 tests from 1 test suite ran. (12 ms total)
+[  PASSED  ] 14 tests.
+```
+
 
 
 
