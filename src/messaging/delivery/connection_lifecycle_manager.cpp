@@ -1,5 +1,7 @@
 #include "delivery/connection_lifecycle_manager.hpp"
 
+#include "telemetry/presence_metrics.hpp"
+
 #include <iostream>
 #include <random>
 #include <sstream>
@@ -76,7 +78,10 @@ ConnectionLifecycleManager::establish_connection(std::shared_ptr<IDeviceDelivery
     // 1. Register channel in underlying registry (enforces capacity limits & atomic superseding)
     if (registry_) {
         registry_->register_channel(channel);
+        telemetry::PresenceMetrics::instance().set_active_connections(
+            static_cast<int64_t>(registry_->connected_device_count()));
     }
+    telemetry::PresenceMetrics::instance().record_connection_churn(telemetry::ConnectionChurnEvent::Connected);
 
     // 2. Track / update rich connection session
     domain::ConnectionSession session{
@@ -174,7 +179,15 @@ size_t ConnectionLifecycleManager::sweep_stale_connections() {
     if (!registry_) {
         return 0;
     }
-    return registry_->evict_stale_channels(lease_timeout_);
+    const auto evicted = registry_->evict_stale_channels(lease_timeout_);
+    if (evicted > 0) {
+        for (size_t i = 0; i < evicted; ++i) {
+            telemetry::PresenceMetrics::instance().record_connection_churn(telemetry::ConnectionChurnEvent::Evicted);
+        }
+        telemetry::PresenceMetrics::instance().set_active_connections(
+            static_cast<int64_t>(registry_->connected_device_count()));
+    }
+    return evicted;
 }
 
 void ConnectionLifecycleManager::reaper_loop() {
@@ -212,6 +225,12 @@ void ConnectionLifecycleManager::on_registry_disconnect(const domain::DeviceId& 
 
     if (had_session && presence_coordinator_) {
         presence_coordinator_->on_device_disconnected(uid, device_id);
+    }
+
+    telemetry::PresenceMetrics::instance().record_connection_churn(telemetry::ConnectionChurnEvent::Disconnected);
+    if (registry_) {
+        telemetry::PresenceMetrics::instance().set_active_connections(
+            static_cast<int64_t>(registry_->connected_device_count()));
     }
 }
 

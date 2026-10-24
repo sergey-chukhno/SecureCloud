@@ -2686,3 +2686,20 @@ target_link_libraries(securecloud_messaging_proxy_presence_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_messaging_proxy_presence_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Presence Privacy Guard & Telemetry Test Suite (MSG-010-T07)
+add_executable(securecloud_presence_privacy_guard_test
+    messaging/presence_privacy_guard_test.cpp
+)
+
+target_link_libraries(securecloud_presence_privacy_guard_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_presence_privacy_guard_test ${SECURECLOUD_TEST_PROPERTIES})

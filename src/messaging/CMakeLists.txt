@@ -29,6 +29,7 @@ add_library(securecloud_messaging_config STATIC
     service/sync_cursor_manager.cpp
     service/message_sync_service.cpp
     service/presence_coordinator.cpp
+    telemetry/presence_metrics.cpp
     util/zero_plaintext_guard.cpp
     client/auth_crypto_directory_client.cpp
     service/message_submission_service.cpp

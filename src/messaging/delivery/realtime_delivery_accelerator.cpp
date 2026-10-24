@@ -1,6 +1,7 @@
 #include "delivery/realtime_delivery_accelerator.hpp"
 
 #include "domain/message_bucket.hpp"
+#include "telemetry/presence_metrics.hpp"
 
 #include <utility>
 
@@ -89,6 +90,9 @@ size_t RealtimeDeliveryAccelerator::on_device_connected(const domain::DeviceId& 
     }
 
     total_accelerated_.fetch_add(enqueued_count, std::memory_order_relaxed);
+    if (enqueued_count > 0) {
+        telemetry::PresenceMetrics::instance().increment_fast_track_dispatches(enqueued_count);
+    }
     return enqueued_count;
 }
 
