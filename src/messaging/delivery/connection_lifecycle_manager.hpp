@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -77,6 +78,12 @@ class ConnectionLifecycleManager {
     /// Returns the number of evicted channels.
     size_t sweep_stale_connections();
 
+    /// Reconnection event callback hook invoked when a device channel is successfully established.
+    using DeviceConnectedCallback = std::function<void(const domain::DeviceId&, const domain::UserId&)>;
+
+    /// Registers a listener for device connection establishment (e.g. RealtimeDeliveryAccelerator).
+    void register_connected_callback(DeviceConnectedCallback cb);
+
   private:
     void reaper_loop();
     void on_registry_disconnect(const domain::DeviceId& device_id);
@@ -93,6 +100,9 @@ class ConnectionLifecycleManager {
 
     mutable std::mutex session_mutex_;
     std::unordered_map<domain::DeviceId, domain::ConnectionSession> sessions_;
+
+    mutable std::mutex callback_mutex_;
+    std::vector<DeviceConnectedCallback> connected_callbacks_;
 };
 
 } // namespace securecloud::messaging::delivery

@@ -2636,3 +2636,19 @@ target_link_libraries(securecloud_connection_lifecycle_manager_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_connection_lifecycle_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Realtime Delivery Accelerator Test Suite (MSG-010-T04)
+add_executable(securecloud_realtime_delivery_accelerator_test
+    messaging/realtime_delivery_accelerator_test.cpp
+)
+
+target_link_libraries(securecloud_realtime_delivery_accelerator_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_realtime_delivery_accelerator_test ${SECURECLOUD_TEST_PROPERTIES})

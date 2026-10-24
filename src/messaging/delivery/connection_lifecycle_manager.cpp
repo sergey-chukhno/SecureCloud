@@ -101,6 +101,20 @@ ConnectionLifecycleManager::establish_connection(std::shared_ptr<IDeviceDelivery
         presence_coordinator_->on_device_connected(uid, dev_id);
     }
 
+    // 4. Notify registered connected callbacks (e.g. RealtimeDeliveryAccelerator)
+    {
+        std::vector<DeviceConnectedCallback> callbacks;
+        {
+            std::lock_guard<std::mutex> lock(callback_mutex_);
+            callbacks = connected_callbacks_;
+        }
+        for (const auto& cb : callbacks) {
+            if (cb) {
+                cb(dev_id, uid);
+            }
+        }
+    }
+
     return session;
 }
 
@@ -199,6 +213,14 @@ void ConnectionLifecycleManager::on_registry_disconnect(const domain::DeviceId& 
     if (had_session && presence_coordinator_) {
         presence_coordinator_->on_device_disconnected(uid, device_id);
     }
+}
+
+void ConnectionLifecycleManager::register_connected_callback(DeviceConnectedCallback cb) {
+    if (!cb) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(callback_mutex_);
+    connected_callbacks_.push_back(std::move(cb));
 }
 
 } // namespace securecloud::messaging::delivery
