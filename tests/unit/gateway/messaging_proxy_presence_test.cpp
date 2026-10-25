@@ -253,9 +253,11 @@ TEST_F(MessagingProxyPresenceTest, UpdatePresenceRateLimitedDownstream429) {
     req.path = "/v1/presence/me";
     req.body = R"({"status": "offline"})";
 
-    grpc::DependencyError rate_limited_error(grpc::DependencyErrorKind::Internal,
-                                             "Presence update rate limit exceeded (max 12 per minute)",
-                                             ::grpc::StatusCode::RESOURCE_EXHAUSTED);
+    grpc::DependencyError rate_limited_error{
+        .kind = grpc::DependencyErrorKind::Internal,
+        .message = "Presence update rate limit exceeded (max 12 per minute)",
+        .grpc_code = ::grpc::StatusCode::RESOURCE_EXHAUSTED,
+    };
 
     EXPECT_CALL(*mock_client_, update_presence(_, _))
         .WillOnce(Return(grpc::Result<securecloud::messaging::v1::UpdatePresenceResponse>(rate_limited_error)));
@@ -334,8 +336,11 @@ TEST_F(MessagingProxyPresenceTest, GetPresenceDownstreamNotFoundMapped) {
     req.path = "/v1/users/0191ec4d-91b4-7b4d-b6a9-8e41e3d36002/presence";
     req.path_params["userId"] = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002";
 
-    grpc::DependencyError not_found_error(grpc::DependencyErrorKind::NotFound, "User not found",
-                                          ::grpc::StatusCode::NOT_FOUND);
+    grpc::DependencyError not_found_error{
+        .kind = grpc::DependencyErrorKind::NotFound,
+        .message = "User not found",
+        .grpc_code = ::grpc::StatusCode::NOT_FOUND,
+    };
 
     EXPECT_CALL(*mock_client_, get_presence(_, _))
         .WillOnce(Return(grpc::Result<securecloud::messaging::v1::GetPresenceResponse>(not_found_error)));

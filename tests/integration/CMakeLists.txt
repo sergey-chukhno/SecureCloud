@@ -839,6 +839,7 @@ target_link_libraries(securecloud_messaging_presence_integration_test PRIVATE
     securecloud::gateway_grpc
     securecloud::gateway_config
     securecloud::common
+    securecloud::httplib
     securecloud_proto
     securecloud::json
     OpenSSL::Crypto

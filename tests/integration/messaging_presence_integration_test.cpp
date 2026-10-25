@@ -45,8 +45,40 @@
 #include "service/presence_coordinator.hpp"
 #include "telemetry/presence_metrics.hpp"
 
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+// clang-format off
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+// clang-format on
+
+#ifdef SendMessage
+#undef SendMessage
+#endif
+#ifdef GetMessage
+#undef GetMessage
+#endif
+
+inline void ensure_integration_winsock() noexcept {
+    static const bool initialized = []() noexcept {
+        WSADATA wsa{};
+        return ::WSAStartup(MAKEWORD(2, 2), &wsa) == 0;
+    }();
+    (void)initialized;
+}
+#else
+inline void ensure_integration_winsock() noexcept {}
+#endif
+
 #include <chrono>
 #include <gmock/gmock.h>
+#include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
 #include <httplib.h>
 #include <memory>
@@ -54,6 +86,13 @@
 #include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
+
+#ifdef SendMessage
+#undef SendMessage
+#endif
+#ifdef GetMessage
+#undef GetMessage
+#endif
 
 namespace securecloud::messaging {
 namespace {
@@ -168,6 +207,7 @@ class InMemoryDeliveryStateRepository final : public repository::IDeliveryStateR
 class MessagingPresenceIntegrationTest : public ::testing::Test {
   protected:
     void SetUp() override {
+        ensure_integration_winsock();
         telemetry::PresenceMetrics::instance().reset();
 
         u1_ = *UserId::from_string("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
@@ -338,9 +378,9 @@ TEST_F(MessagingPresenceIntegrationTest, StrictNonConflationInvariantUnderConnec
         .accepted_at = now,
         .message_id = m1,
         .conversation_id = conv_id_,
+        .message_priority = MessagePriority::Normal,
         .delivery_state = DeliveryState::Queued,
         .attempt_count = 0,
-        .message_priority = MessagePriority::Normal,
         .ciphertext_blob = "encrypted-payload-bytes",
         .protocol_version = domain::E2EProtocolVersion::V1_Signal_PQXDH_DoubleRatchet,
     };
