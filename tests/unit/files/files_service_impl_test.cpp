@@ -1027,5 +1027,144 @@ TEST(FilesServiceImplDownloadTest, MapsPreconditionFailed) {
     EXPECT_EQ(status.error_code(), grpc::StatusCode::FAILED_PRECONDITION);
 }
 
+// ==========================================
+// Capability Authorization Unit Tests (FILES-008-T05)
+// ==========================================
+
+class MockCapabilityManager : public IFileCapabilityManager {
+  public:
+    std::string issue_capability(
+        const std::string&,
+        const std::string&,
+        const std::string&,
+        FileCapabilityOperation,
+        int32_t,
+        std::chrono::seconds) override {
+        return "mock.valid.token";
+    }
+
+    FileAccessCapabilityClaims authorize_capability(
+        std::string_view token,
+        const std::string& caller_user_id,
+        const std::string& caller_device_id,
+        const std::string& target_file_id,
+        FileCapabilityOperation op,
+        int32_t version) override {
+        last_token = token;
+        last_caller_user_id = caller_user_id;
+        last_caller_device_id = caller_device_id;
+        last_target_file_id = target_file_id;
+
+        if (should_throw_invalid) {
+            throw InvalidCapabilityException("Invalid capability signature");
+        }
+        if (should_throw_unauthorized) {
+            throw UnauthorizedFileAccessException("Unauthorized capability access");
+        }
+
+        return FileAccessCapabilityClaims{
+            .capability_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099",
+            .user_id = caller_user_id,
+            .device_id = caller_device_id,
+            .file_id = target_file_id,
+            .file_version = version,
+            .operation = op
+        };
+    }
+
+    std::string last_token;
+    std::string last_caller_user_id;
+    std::string last_caller_device_id;
+    std::string last_target_file_id;
+
+    bool should_throw_invalid{false};
+    bool should_throw_unauthorized{false};
+};
+
+TEST(FilesServiceImplCapabilityTest, AuthorizesValidCapabilityInMetadata) {
+    auto mock_cap_mgr = std::make_shared<MockCapabilityManager>();
+    auto mock_dl_mgr = std::make_shared<MockDownloadManager>();
+    FilesServiceDependencies deps{
+        .download_manager = mock_dl_mgr,
+        .capability_manager = mock_cap_mgr
+    };
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::DownloadChunkRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+
+    v1::DownloadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    std::multimap<grpc::string_ref, grpc::string_ref> metadata = {
+        {"x-user-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001"},
+        {"x-device-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002"},
+        {"x-file-access-capability", "valid.signed.capability"}
+    };
+
+    auto status = service.DownloadChunk(&gateway_ctx, &req, &resp, metadata);
+    EXPECT_TRUE(status.ok()) << status.error_message();
+    EXPECT_EQ(mock_cap_mgr->last_token, "valid.signed.capability");
+    EXPECT_EQ(mock_cap_mgr->last_caller_user_id, "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+    EXPECT_EQ(mock_cap_mgr->last_caller_device_id, "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002");
+    EXPECT_EQ(mock_cap_mgr->last_target_file_id, "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+}
+
+TEST(FilesServiceImplCapabilityTest, MapsMalformedCapabilityToUnauthenticated) {
+    auto mock_cap_mgr = std::make_shared<MockCapabilityManager>();
+    mock_cap_mgr->should_throw_invalid = true;
+    auto mock_dl_mgr = std::make_shared<MockDownloadManager>();
+    FilesServiceDependencies deps{
+        .download_manager = mock_dl_mgr,
+        .capability_manager = mock_cap_mgr
+    };
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::DownloadChunkRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+
+    v1::DownloadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    std::multimap<grpc::string_ref, grpc::string_ref> metadata = {
+        {"x-user-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001"},
+        {"x-device-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002"},
+        {"x-file-access-capability", "corrupted.token"}
+    };
+
+    auto status = service.DownloadChunk(&gateway_ctx, &req, &resp, metadata);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
+}
+
+TEST(FilesServiceImplCapabilityTest, MapsUnauthorizedCapabilityToPermissionDenied) {
+    auto mock_cap_mgr = std::make_shared<MockCapabilityManager>();
+    mock_cap_mgr->should_throw_unauthorized = true;
+    auto mock_dl_mgr = std::make_shared<MockDownloadManager>();
+    FilesServiceDependencies deps{
+        .download_manager = mock_dl_mgr,
+        .capability_manager = mock_cap_mgr
+    };
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::DownloadChunkRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+
+    v1::DownloadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    std::multimap<grpc::string_ref, grpc::string_ref> metadata = {
+        {"x-user-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001"},
+        {"x-device-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002"},
+        {"x-file-access-capability", "valid.token.wrong.user"}
+    };
+
+    auto status = service.DownloadChunk(&gateway_ctx, &req, &resp, metadata);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
+}
+
 } // namespace
+
 } // namespace securecloud::files::service
