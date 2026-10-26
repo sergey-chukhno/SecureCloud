@@ -13,7 +13,7 @@ namespace securecloud::files {
 
 /// Authoritative file metadata constraints (Files Design 6.13, 6.14, 6.18)
 inline constexpr uint64_t k_max_file_size_bytes = 5ULL * 1024ULL * 1024ULL * 1024ULL; // 5 GiB maximum
-inline constexpr uint32_t k_standard_chunk_size = 4U * 1024U * 1024U;                  // 4 MiB logical chunk
+inline constexpr uint32_t k_standard_chunk_size = 4U * 1024U * 1024U;                 // 4 MiB logical chunk
 inline constexpr size_t k_xchacha20_nonce_bytes = 24;
 inline constexpr size_t k_poly1305_tag_bytes = 16;
 inline constexpr std::string_view k_approved_encryption_algorithm = "XChaCha20-Poly1305";

@@ -1,13 +1,12 @@
 #include "files/service/files_service_impl.hpp"
 
+#include "files/domain/metadata_validator.hpp"
+#include "files/repository/file_transfer_repository.hpp"
 #include "securecloud/security/mtls_config.hpp"
 
 #include <chrono>
 #include <iostream>
 #include <utility>
-
-#include "files/domain/metadata_validator.hpp"
-#include "files/repository/file_transfer_repository.hpp"
 
 #ifdef DeleteFile
 #undef DeleteFile
@@ -160,7 +159,8 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
         .file_id = target_file_id,
         .owner_user_id = request->owner_user_id(),
         .owner_device_id = request->owner_device_id(),
-        .conversation_id = request->conversation_id().empty() ? std::nullopt : std::make_optional(request->conversation_id()),
+        .conversation_id =
+            request->conversation_id().empty() ? std::nullopt : std::make_optional(request->conversation_id()),
         .encrypted_size_bytes = request->encrypted_size_bytes(),
         .expected_chunk_count = request->expected_chunk_count(),
         .encryption_algorithm = request->encryption_version().empty() ? std::string(k_approved_encryption_algorithm)
@@ -201,8 +201,7 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
     // If db pool is present, persist transfer session record
     if (deps_.db_pool) {
         try {
-            auto conn = deps_.db_pool->acquire_connection();
-            pqxx::work tx(*conn);
+            pqxx::work tx;
             FileTransferRepository transfer_repo(deps_.db_pool);
             FileTransferEntity transfer{
                 .transfer_id = upload_id,
@@ -210,7 +209,7 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
                 .transfer_type = TransferType::Upload,
                 .initiator_user_id = request->owner_user_id(),
                 .initiator_device_id = request->owner_device_id(),
-                .status = TransferStatus::Pending,
+                .status = TransferStatus::Created,
                 .total_chunks = static_cast<int32_t>(dto.expected_chunk_count),
                 .accepted_chunks = 0,
                 .created_at = now,
@@ -350,7 +349,7 @@ grpc::Status FilesServiceImpl::GetFileMetadata(const grpc::AuthContext* auth_ctx
               << "'\n";
 
     if (!is_valid_uuid(request->file_id())) {
-        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "file_id is not a valid UUIDv7 format");
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format");
         logger.finish(status);
         return status;
     }
@@ -389,25 +388,24 @@ grpc::Status FilesServiceImpl::GetFileMetadata(const grpc::AuthContext* auth_ctx
 
     if (summary.active_version.has_value()) {
         response->set_ciphertext_integrity_hash(summary.active_version->checksum_sha256);
-        auto avail_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            summary.active_version->created_at.time_since_epoch())
-                            .count();
+        auto avail_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(summary.active_version->created_at.time_since_epoch())
+                .count();
         response->set_available_at_unix_ms(avail_ms);
     } else {
         response->set_ciphertext_integrity_hash("");
         response->set_available_at_unix_ms(0);
     }
 
-    auto created_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          summary.file.created_at.time_since_epoch())
-                          .count();
+    auto created_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(summary.file.created_at.time_since_epoch()).count();
     response->set_created_at_unix_ms(created_ms);
 
     int64_t expires_ms = 0;
     if (summary.file.retention_until.has_value()) {
-        expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                         summary.file.retention_until->time_since_epoch())
-                         .count();
+        expires_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(summary.file.retention_until->time_since_epoch())
+                .count();
     }
     response->set_expires_at_unix_ms(expires_ms);
 
@@ -515,7 +513,7 @@ grpc::Status FilesServiceImpl::DeleteFile(const grpc::AuthContext* auth_ctx, con
     std::cout << "[SecureCloud] [files] RPC DeleteFile request received for file_id='" << request->file_id() << "'\n";
 
     if (!is_valid_uuid(request->file_id())) {
-        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "file_id is not a valid UUIDv7 format");
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format");
         logger.finish(status);
         return status;
     }

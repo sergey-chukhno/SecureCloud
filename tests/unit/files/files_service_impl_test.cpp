@@ -1,7 +1,7 @@
-#include "files/service/files_service_impl.hpp"
 #include "files/domain/lifecycle_state_machine.hpp"
 #include "files/domain/metadata_validator.hpp"
 #include "files/service/file_lifecycle_service.hpp"
+#include "files/service/files_service_impl.hpp"
 #include "securecloud/files/v1/files.grpc.pb.h"
 #include "securecloud/files/v1/files.pb.h"
 
@@ -83,7 +83,7 @@ class TestMockLifecycleService : public FileLifecycleService {
     }
 
     std::optional<FileMetadataSummary> get_file_metadata(const std::string& file_id,
-                                                         const std::string& caller_user_id) override {
+                                                         const std::string& /*caller_user_id*/) override {
         if (throw_unauthorized_) {
             throw UnauthorizedFileAccessException("Caller not authorized");
         }
@@ -93,14 +93,13 @@ class TestMockLifecycleService : public FileLifecycleService {
         return mock_summary_;
     }
 
-    bool delete_file(const std::string& file_id,
-                     const std::string& caller_user_id,
+    bool delete_file(const std::string& file_id, const std::string& /*caller_user_id*/,
                      const std::string& /*reason*/) override {
         if (throw_unauthorized_) {
             throw UnauthorizedFileAccessException("Caller not authorized");
         }
         if (file_id != mock_summary_.file.file_id) {
-            return false;
+            throw FileNotFoundException("File not found: " + file_id);
         }
         mock_summary_.file.status = FileStatus::Deleted;
         return true;
@@ -308,10 +307,9 @@ TEST_F(FilesServiceInProcessTest, GetFileMetadataSuccess) {
         .file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
         .owner_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
         .owner_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
+        .encrypted_size = 4194304,
+        .encryption_algorithm = "XChaCha20-Poly1305",
         .status = FileStatus::Available,
-        .encryption_version = "XChaCha20-Poly1305",
-        .encrypted_size_bytes = 4194304,
-        .chunk_count = 1,
     };
     EncryptedFileMetadataEntity enc_meta{
         .file_id = file_entity.file_id,
@@ -330,6 +328,7 @@ TEST_F(FilesServiceInProcessTest, GetFileMetadataSuccess) {
         .file = file_entity,
         .encrypted_meta = enc_meta,
         .active_version = active_ver,
+        .expected_chunk_count = 1,
     });
 
     grpc::ClientContext context;
@@ -344,8 +343,7 @@ TEST_F(FilesServiceInProcessTest, GetFileMetadataSuccess) {
     EXPECT_EQ(response.encrypted_size_bytes(), 4194304);
     EXPECT_EQ(response.chunk_count(), 1);
     EXPECT_EQ(response.encryption_version(), "XChaCha20-Poly1305");
-    EXPECT_EQ(response.ciphertext_integrity_hash(),
-              "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    EXPECT_EQ(response.ciphertext_integrity_hash(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 }
 
 TEST_F(FilesServiceInProcessTest, DeleteFileRejectsInvalidFileId) {
@@ -388,7 +386,7 @@ TEST_F(FilesServiceInProcessTest, DeleteFileSuccess) {
 
     EXPECT_TRUE(status.ok()) << status.error_message();
     EXPECT_EQ(response.file_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
-    EXPECT_EQ(response.state(), v1::FILE_LIFECYCLE_STATE_DELETED);
+    EXPECT_EQ(response.lifecycle_state(), v1::FILE_LIFECYCLE_STATE_DELETED);
     EXPECT_TRUE(response.deleted());
 }
 

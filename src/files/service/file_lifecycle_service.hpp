@@ -57,12 +57,11 @@ struct FileMetadataSummary {
 /// Authoritative domain service managing file metadata, versioning, and lifecycle state.
 class FileLifecycleService {
   public:
-    explicit FileLifecycleService(
-        std::shared_ptr<db::FilesDbConnectionPool> pool,
-        std::shared_ptr<FileRepository> file_repo = nullptr,
-        std::shared_ptr<FileVersionRepository> version_repo = nullptr,
-        std::shared_ptr<FileAccessRepository> access_repo = nullptr,
-        std::shared_ptr<FilesOutboxRepository> outbox_repo = nullptr);
+    explicit FileLifecycleService(std::shared_ptr<db::FilesDbConnectionPool> pool,
+                                  std::shared_ptr<FileRepository> file_repo = nullptr,
+                                  std::shared_ptr<FileVersionRepository> version_repo = nullptr,
+                                  std::shared_ptr<FileAccessRepository> access_repo = nullptr,
+                                  std::shared_ptr<FilesOutboxRepository> outbox_repo = nullptr);
 
     virtual ~FileLifecycleService() = default;
 
@@ -75,25 +74,19 @@ class FileLifecycleService {
                                                   const std::string& caller_user_id);
 
     /// Transitions file lifecycle state using optimistic locking and atomically records the outbox event.
-    virtual bool transition_lifecycle(const std::string& file_id,
-                                      FileStatus expected_current,
-                                      FileStatus new_status,
-                                      const std::string& caller_user_id,
-                                      const std::string& reason = "");
+    virtual bool transition_lifecycle(const std::string& file_id, FileStatus expected_current, FileStatus new_status,
+                                      const std::string& caller_user_id, const std::string& reason = "");
 
     /// Retrieves aggregated operational and encrypted metadata for a file.
     virtual std::optional<FileMetadataSummary> get_file_metadata(const std::string& file_id,
                                                                  const std::string& caller_user_id);
 
     /// Validates whether the caller is the file owner or holds an active access grant.
-    virtual bool check_ownership_or_access(const FileEntity& file,
-                                           const std::string& caller_user_id,
-                                           std::string_view permission,
-                                           pqxx::work& tx);
+    virtual bool check_ownership_or_access(const FileEntity& file, const std::string& caller_user_id,
+                                           std::string_view permission, pqxx::work& tx);
 
     /// Logically deletes a file (AVAILABLE / EXPIRED / CREATED / UPLOADING -> DELETED).
-    virtual bool delete_file(const std::string& file_id,
-                             const std::string& caller_user_id,
+    virtual bool delete_file(const std::string& file_id, const std::string& caller_user_id,
                              const std::string& reason = "");
 
     /// Scans and transitions files past their retention deadline to EXPIRED.

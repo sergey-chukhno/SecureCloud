@@ -34,7 +34,6 @@ class EntityNotFoundException : public RepositoryException {
     using RepositoryException::RepositoryException;
 };
 
-
 /// Authoritative repository managing persistent storage and state transitions for files
 /// and their client-encrypted metadata (ADR-005, Files Design 6.3, 6.18, 6.19).
 class FileRepository {
