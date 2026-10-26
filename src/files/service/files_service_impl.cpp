@@ -57,6 +57,12 @@ FilesServiceImpl::FilesServiceImpl(FilesServiceDependencies deps, std::string ex
     if (!deps_.chunk_storage_service) {
         deps_.chunk_storage_service = std::make_shared<ChunkStorageService>(deps_.db_pool, deps_.s3_client);
     }
+    if (!deps_.object_assembly_engine && deps_.s3_client) {
+        deps_.object_assembly_engine = std::make_shared<ObjectAssemblyEngine>(deps_.s3_client);
+    }
+    if (!deps_.finalization_service && deps_.object_assembly_engine && deps_.db_pool) {
+        deps_.finalization_service = std::make_shared<FileFinalizationService>(deps_.db_pool, deps_.object_assembly_engine);
+    }
 }
 
 FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db_pool,
@@ -70,6 +76,11 @@ FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db
           .metadata_manager = std::make_shared<MetadataManager>(db_pool),
           .lifecycle_service = std::make_shared<FileLifecycleService>(db_pool),
           .chunk_storage_service = std::make_shared<ChunkStorageService>(db_pool, s3_client),
+          .object_assembly_engine = s3_client ? std::make_shared<ObjectAssemblyEngine>(s3_client) : nullptr,
+          .finalization_service = (db_pool && s3_client)
+                                      ? std::make_shared<FileFinalizationService>(
+                                            db_pool, std::make_shared<ObjectAssemblyEngine>(s3_client))
+                                      : nullptr,
       },
       expected_client_identity_(std::move(expected_client_identity)) {}
 
@@ -434,20 +445,68 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
         return status;
     }
 
-    // Lifecycle validation hook (FILES-004-T04): verify that UPLOADING -> FINALIZING is legal
-    if (!is_valid_state_transition(FileStatus::Uploading, FileStatus::Finalizing)) {
-        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
-                                   "State transition from UPLOADING to FINALIZING is disallowed");
+    if (!deps_.finalization_service) {
+        auto status = grpc::Status(grpc::StatusCode::UNAVAILABLE, "Finalization service uninitialized");
         logger.finish(status);
         return status;
     }
 
-    std::cout << "[SecureCloud] [files] RPC FinalizeFileUpload request received for upload_id='" << request->upload_id()
-              << "' file_id='" << request->file_id() << "'\n";
+    FinalizeUploadRequestDto dto{
+        .upload_id = request->upload_id(),
+        .file_id = request->file_id(),
+        .caller_user_id = peer_identity,
+        .expected_ciphertext_sha256 = request->expected_ciphertext_sha256(),
+    };
 
-    auto status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, std::string(k_unimplemented_skeleton_message));
-    logger.finish(status);
-    return status;
+    try {
+        auto result = deps_.finalization_service->finalize_file_upload(dto);
+        response->set_file_id(result.file_id);
+        response->set_lifecycle_state(v1::FILE_LIFECYCLE_STATE_AVAILABLE);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                      result.available_at.time_since_epoch())
+                      .count();
+        response->set_available_at_unix_ms(ms);
+
+        auto status = grpc::Status::OK;
+        logger.finish(status);
+        return status;
+    } catch (const EntityNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const FinalizationPreconditionException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const ChunkIntegrityException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3IntegrityException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3ObjectNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3TimeoutException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3AuthenticationException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::invalid_argument& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::exception& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, ex.what());
+        logger.finish(status);
+        return status;
+    }
 }
 
 // ==========================================

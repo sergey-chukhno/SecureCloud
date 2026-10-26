@@ -22,6 +22,9 @@
 #include "files/service/upload_session_manager.hpp"
 #include "files/storage/s3_client.hpp"
 
+#include "files/service/file_finalization_service.hpp"
+#include "files/service/object_assembly_engine.hpp"
+
 #include <memory>
 #include <optional>
 #include <string>
@@ -43,6 +46,8 @@ struct FilesServiceDependencies {
     std::shared_ptr<IMetadataManager> metadata_manager{nullptr};
     std::shared_ptr<FileLifecycleService> lifecycle_service{nullptr};
     std::shared_ptr<ChunkStorageService> chunk_storage_service{nullptr};
+    std::shared_ptr<ObjectAssemblyEngine> object_assembly_engine{nullptr};
+    std::shared_ptr<FileFinalizationService> finalization_service{nullptr};
 };
 
 /// Implementation of the securecloud.files.v1.FilesService gRPC interface.
