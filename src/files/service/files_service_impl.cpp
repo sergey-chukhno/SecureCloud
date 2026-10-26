@@ -165,6 +165,12 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
         .expected_chunk_count = request->expected_chunk_count(),
         .encryption_algorithm = request->encryption_version().empty() ? std::string(k_approved_encryption_algorithm)
                                                                       : request->encryption_version(),
+        .encrypted_filename = {},
+        .encrypted_mime_type = std::nullopt,
+        .metadata_nonce = {},
+        .metadata_tag = {},
+        .client_encryption_metadata_json = "{}",
+        .retention_until = std::nullopt,
     };
 
     if (!request->client_crypto_metadata().empty()) {

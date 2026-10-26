@@ -20,28 +20,28 @@ inline constexpr std::string_view k_approved_encryption_algorithm = "XChaCha20-P
 
 /// Domain DTO carrying validated attributes for creating a new logical file.
 struct CreateFileRequestDto {
-    std::string file_id;
-    std::string owner_user_id;
-    std::string owner_device_id;
+    std::string file_id{};
+    std::string owner_user_id{};
+    std::string owner_device_id{};
     std::optional<std::string> conversation_id{std::nullopt};
     uint64_t encrypted_size_bytes{0};
     uint32_t expected_chunk_count{0};
     std::string encryption_algorithm{std::string(k_approved_encryption_algorithm)};
-    std::vector<uint8_t> encrypted_filename;
+    std::vector<uint8_t> encrypted_filename{};
     std::optional<std::vector<uint8_t>> encrypted_mime_type{std::nullopt};
-    std::vector<uint8_t> metadata_nonce;
-    std::vector<uint8_t> metadata_tag;
+    std::vector<uint8_t> metadata_nonce{};
+    std::vector<uint8_t> metadata_tag{};
     std::string client_encryption_metadata_json{"{}"};
     std::optional<std::chrono::system_clock::time_point> retention_until{std::nullopt};
 };
 
 /// Domain DTO carrying validated attributes for creating a new immutable file version.
 struct CreateFileVersionRequestDto {
-    std::string file_id;
+    std::string file_id{};
     int32_t version_number{1};
     uint64_t encrypted_size_bytes{0};
-    std::string minio_object_key;
-    std::string checksum_sha256;
+    std::string minio_object_key{};
+    std::string checksum_sha256{};
 };
 
 /// Result of metadata validation checking.
