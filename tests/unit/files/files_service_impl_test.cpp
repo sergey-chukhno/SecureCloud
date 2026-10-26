@@ -823,5 +823,209 @@ TEST(FilesServiceImplFinalizeTest, MapsIntegrityMismatchToFailedPrecondition) {
     EXPECT_EQ(status.error_code(), grpc::StatusCode::FAILED_PRECONDITION);
 }
 
+// ==========================================
+// DownloadChunk Unit Tests (FILES-007-T05)
+// ==========================================
+
+class MockDownloadManager : public IDownloadManager {
+  public:
+    bool authorize_download(const std::string&, const std::string&) override {
+        return !should_deny_permission;
+    }
+
+    std::optional<DownloadChunkResult> get_chunk(const std::string&, uint32_t) override {
+        return std::nullopt;
+    }
+
+    DownloadChunkResult get_chunk_versioned(
+        const std::string& file_id,
+        int32_t version_number,
+        uint32_t chunk_index,
+        const std::string& caller_user_id) override {
+        last_file_id = file_id;
+        last_version_number = version_number;
+        last_chunk_index = chunk_index;
+        last_caller_user_id = caller_user_id;
+
+        if (should_deny_permission) {
+            throw UnauthorizedFileAccessException("Permission denied");
+        }
+        if (should_throw_not_found) {
+            throw FileNotFoundException("File not found");
+        }
+        if (should_throw_out_of_range) {
+            throw std::out_of_range("Chunk out of range");
+        }
+        if (should_throw_precondition) {
+            throw InvalidDownloadPreconditionException("File is not available");
+        }
+
+        std::string payload = "Encrypted chunk data";
+        return DownloadChunkResult{
+            .file_id = file_id,
+            .version_number = version_number == 0 ? 1 : version_number,
+            .chunk_index = chunk_index,
+            .encrypted_data = payload,
+            .chunk_size_bytes = static_cast<uint32_t>(payload.size()),
+            .ciphertext_sha256 = compute_sha256_hex(payload)
+        };
+    }
+
+    DownloadResumeModel prepare_resume_session(
+        const std::string& file_id,
+        int32_t version_number,
+        uint32_t starting_chunk,
+        const std::string&) override {
+        return DownloadResumeModel{
+            .file_id = file_id,
+            .version_number = version_number,
+            .starting_chunk = starting_chunk,
+            .total_chunks = 5,
+            .total_bytes = 20 * 1024 * 1024,
+            .ciphertext_sha256 = "dummy"
+        };
+    }
+
+    std::string last_file_id;
+    int32_t last_version_number{0};
+    uint32_t last_chunk_index{0};
+    std::string last_caller_user_id;
+
+    bool should_deny_permission{false};
+    bool should_throw_not_found{false};
+    bool should_throw_out_of_range{false};
+    bool should_throw_precondition{false};
+};
+
+TEST(FilesServiceImplDownloadTest, RejectsUnauthorizedPeer) {
+    FilesServiceImpl service({}, "gateway");
+    v1::DownloadChunkRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+
+    v1::DownloadChunkResponse resp;
+    TestAuthContext untrusted_ctx(true, {{"x509_subject_alternative_name", "DNS:untrusted"}});
+
+    auto status = service.DownloadChunk(&untrusted_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
+}
+
+TEST(FilesServiceImplDownloadTest, RejectsInvalidFileId) {
+    FilesServiceImpl service({}, "gateway");
+    v1::DownloadChunkRequest req;
+    req.set_file_id("bad-uuid");
+    req.set_chunk_index(0);
+
+    v1::DownloadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.DownloadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+}
+
+TEST(FilesServiceImplDownloadTest, ReturnsUnavailableWhenManagerNull) {
+    FilesServiceDependencies deps{.download_manager = nullptr};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::DownloadChunkRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+
+    v1::DownloadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.DownloadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE);
+}
+
+TEST(FilesServiceImplDownloadTest, DownloadChunkSuccess) {
+    auto mock_mgr = std::make_shared<MockDownloadManager>();
+    FilesServiceDependencies deps{.download_manager = mock_mgr};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::DownloadChunkRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(2);
+
+    v1::DownloadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.DownloadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_TRUE(status.ok()) << status.error_message();
+    EXPECT_EQ(resp.file_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    EXPECT_EQ(resp.chunk_index(), 2);
+    EXPECT_EQ(resp.encrypted_data(), "Encrypted chunk data");
+    EXPECT_EQ(resp.chunk_size_bytes(), 20);
+    EXPECT_EQ(resp.ciphertext_sha256(), compute_sha256_hex("Encrypted chunk data"));
+}
+
+TEST(FilesServiceImplDownloadTest, MapsPermissionDenied) {
+    auto mock_mgr = std::make_shared<MockDownloadManager>();
+    mock_mgr->should_deny_permission = true;
+    FilesServiceDependencies deps{.download_manager = mock_mgr};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::DownloadChunkRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+
+    v1::DownloadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.DownloadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
+}
+
+TEST(FilesServiceImplDownloadTest, MapsFileNotFound) {
+    auto mock_mgr = std::make_shared<MockDownloadManager>();
+    mock_mgr->should_throw_not_found = true;
+    FilesServiceDependencies deps{.download_manager = mock_mgr};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::DownloadChunkRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+
+    v1::DownloadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.DownloadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::NOT_FOUND);
+}
+
+TEST(FilesServiceImplDownloadTest, MapsOutOfRange) {
+    auto mock_mgr = std::make_shared<MockDownloadManager>();
+    mock_mgr->should_throw_out_of_range = true;
+    FilesServiceDependencies deps{.download_manager = mock_mgr};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::DownloadChunkRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(999);
+
+    v1::DownloadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.DownloadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::OUT_OF_RANGE);
+}
+
+TEST(FilesServiceImplDownloadTest, MapsPreconditionFailed) {
+    auto mock_mgr = std::make_shared<MockDownloadManager>();
+    mock_mgr->should_throw_precondition = true;
+    FilesServiceDependencies deps{.download_manager = mock_mgr};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::DownloadChunkRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+
+    v1::DownloadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.DownloadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::FAILED_PRECONDITION);
+}
+
 } // namespace
 } // namespace securecloud::files::service
