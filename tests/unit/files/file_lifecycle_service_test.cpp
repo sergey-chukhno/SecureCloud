@@ -238,21 +238,35 @@ TEST(FileLifecycleServiceMockTest, EnforcesOwnershipAccessControl) {
     service.set_expected_owner("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
     service.set_allow_access(false);
 
+    const auto now = std::chrono::system_clock::now();
     FileEntity file_entity{
         .file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
         .owner_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
         .owner_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
+        .conversation_id = std::nullopt,
+        .encrypted_size = 0,
+        .content_type = std::nullopt,
+        .encryption_algorithm = "XChaCha20-Poly1305",
         .status = FileStatus::Available,
+        .retention_until = std::nullopt,
+        .created_at = now,
+        .updated_at = now,
     };
     EncryptedFileMetadataEntity enc_meta{
         .file_id = file_entity.file_id,
         .encrypted_filename = {0x01, 0x02},
+        .encrypted_mime_type = std::nullopt,
         .metadata_nonce = std::vector<uint8_t>(24, 0x01),
         .metadata_tag = std::vector<uint8_t>(16, 0x02),
+        .client_encryption_metadata_json = "{}",
+        .updated_at = now,
     };
     service.set_mock_summary(FileMetadataSummary{
         .file = file_entity,
         .encrypted_meta = enc_meta,
+        .active_version = std::nullopt,
+        .all_versions = {},
+        .expected_chunk_count = 0,
     });
 
     // 1. Authorized owner access succeeds
@@ -282,13 +296,27 @@ TEST(FileLifecycleServiceMockTest, LogicalDeletionMarksFileAsDeleted) {
     const std::string owner_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001";
     service.set_expected_owner(owner_id);
 
+    const auto now = std::chrono::system_clock::now();
     FileEntity file_entity{
         .file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
         .owner_user_id = owner_id,
         .owner_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
+        .conversation_id = std::nullopt,
+        .encrypted_size = 0,
+        .content_type = std::nullopt,
+        .encryption_algorithm = "XChaCha20-Poly1305",
         .status = FileStatus::Available,
+        .retention_until = std::nullopt,
+        .created_at = now,
+        .updated_at = now,
     };
-    service.set_mock_summary(FileMetadataSummary{.file = file_entity});
+    service.set_mock_summary(FileMetadataSummary{
+        .file = file_entity,
+        .encrypted_meta = {},
+        .active_version = std::nullopt,
+        .all_versions = {},
+        .expected_chunk_count = 0,
+    });
 
     bool deleted = service.delete_file("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000", owner_id, "User requested");
     EXPECT_TRUE(deleted);

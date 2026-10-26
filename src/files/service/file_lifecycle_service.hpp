@@ -47,10 +47,10 @@ class FileLifecycleValidationException : public FileServiceException {
 
 /// Summary aggregation of file metadata, client-encrypted fields, and active versions.
 struct FileMetadataSummary {
-    FileEntity file;
-    EncryptedFileMetadataEntity encrypted_meta;
-    std::optional<FileVersionEntity> active_version;
-    std::vector<FileVersionEntity> all_versions;
+    FileEntity file{};
+    EncryptedFileMetadataEntity encrypted_meta{};
+    std::optional<FileVersionEntity> active_version{std::nullopt};
+    std::vector<FileVersionEntity> all_versions{};
     uint32_t expected_chunk_count{0};
 };
 

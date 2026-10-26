@@ -303,31 +303,44 @@ TEST_F(FilesServiceInProcessTest, GetFileMetadataReturnsNotFound) {
 }
 
 TEST_F(FilesServiceInProcessTest, GetFileMetadataSuccess) {
+    const auto now = std::chrono::system_clock::now();
     FileEntity file_entity{
         .file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
         .owner_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
         .owner_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
+        .conversation_id = std::nullopt,
         .encrypted_size = 4194304,
+        .content_type = std::nullopt,
         .encryption_algorithm = "XChaCha20-Poly1305",
         .status = FileStatus::Available,
+        .retention_until = std::nullopt,
+        .created_at = now,
+        .updated_at = now,
     };
     EncryptedFileMetadataEntity enc_meta{
         .file_id = file_entity.file_id,
         .encrypted_filename = {0x01, 0x02},
+        .encrypted_mime_type = std::nullopt,
         .metadata_nonce = std::vector<uint8_t>(24, 0x01),
         .metadata_tag = std::vector<uint8_t>(16, 0x02),
         .client_encryption_metadata_json = "{}",
+        .updated_at = now,
     };
     FileVersionEntity active_ver{
         .version_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36010",
         .file_id = file_entity.file_id,
         .version_number = 1,
+        .encrypted_size = 4194304,
+        .minio_object_key = "files/test-object-key",
         .checksum_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        .created_at = now,
+        .is_active = true,
     };
     mock_lifecycle_->set_mock_summary(FileMetadataSummary{
         .file = file_entity,
         .encrypted_meta = enc_meta,
         .active_version = active_ver,
+        .all_versions = {active_ver},
         .expected_chunk_count = 1,
     });
 
@@ -370,12 +383,27 @@ TEST_F(FilesServiceInProcessTest, DeleteFileReturnsNotFound) {
 }
 
 TEST_F(FilesServiceInProcessTest, DeleteFileSuccess) {
+    const auto now = std::chrono::system_clock::now();
     FileEntity file_entity{
         .file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
         .owner_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
+        .owner_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
+        .conversation_id = std::nullopt,
+        .encrypted_size = 0,
+        .content_type = std::nullopt,
+        .encryption_algorithm = "XChaCha20-Poly1305",
         .status = FileStatus::Available,
+        .retention_until = std::nullopt,
+        .created_at = now,
+        .updated_at = now,
     };
-    mock_lifecycle_->set_mock_summary(FileMetadataSummary{.file = file_entity});
+    mock_lifecycle_->set_mock_summary(FileMetadataSummary{
+        .file = file_entity,
+        .encrypted_meta = {},
+        .active_version = std::nullopt,
+        .all_versions = {},
+        .expected_chunk_count = 0,
+    });
 
     grpc::ClientContext context;
     v1::DeleteFileRequest request;
