@@ -687,5 +687,141 @@ TEST(FilesServiceImplCancelTest, CancelFileUploadNotFound) {
     EXPECT_EQ(status.error_code(), grpc::StatusCode::NOT_FOUND);
 }
 
+// ==========================================
+// FinalizeFileUpload Unit Tests (FILES-006-T05)
+// ==========================================
+
+class MockFinalizationService : public FileFinalizationService {
+  public:
+    MockFinalizationService() : FileFinalizationService(nullptr, nullptr) {}
+
+    FinalizeUploadResultDto finalize_file_upload(const FinalizeUploadRequestDto& req) override {
+        last_request = req;
+        if (should_throw_not_found) {
+            throw EntityNotFoundException("Session not found");
+        }
+        if (should_throw_precondition) {
+            throw FinalizationPreconditionException("Missing chunk 1");
+        }
+        if (should_throw_integrity) {
+            throw ChunkIntegrityException("SHA-256 whole-ciphertext mismatch");
+        }
+        return FinalizeUploadResultDto{
+            .file_id = req.file_id.empty() ? "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000" : req.file_id,
+            .version_number = 1,
+            .total_bytes = 1024,
+            .checksum_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            .available_at = std::chrono::system_clock::now(),
+            .is_idempotent_replay = false,
+        };
+    }
+
+    FinalizeUploadRequestDto last_request;
+    bool should_throw_not_found{false};
+    bool should_throw_precondition{false};
+    bool should_throw_integrity{false};
+};
+
+TEST(FilesServiceImplFinalizeTest, RejectsUnauthorizedPeer) {
+    FilesServiceImpl service({}, "gateway");
+    v1::FinalizeFileUploadRequest req;
+    v1::FinalizeFileUploadResponse resp;
+    TestAuthContext untrusted_ctx(true, {{"x509_subject_alternative_name", "DNS:untrusted"}});
+
+    auto status = service.FinalizeFileUpload(&untrusted_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
+}
+
+TEST(FilesServiceImplFinalizeTest, RejectsInvalidFileIdFormat) {
+    FilesServiceImpl service({}, "gateway");
+    v1::FinalizeFileUploadRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_file_id("invalid-format");
+    v1::FinalizeFileUploadResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.FinalizeFileUpload(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+}
+
+TEST(FilesServiceImplFinalizeTest, ReturnsUnavailableWhenServiceNull) {
+    FilesServiceImpl service({}, "gateway");
+    v1::FinalizeFileUploadRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    v1::FinalizeFileUploadResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.FinalizeFileUpload(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE);
+}
+
+TEST(FilesServiceImplFinalizeTest, FinalizeSuccessSetsAvailableState) {
+    auto mock_fin = std::make_shared<MockFinalizationService>();
+    FilesServiceDependencies deps{.finalization_service = mock_fin};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::FinalizeFileUploadRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+    req.set_expected_ciphertext_sha256("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+
+    v1::FinalizeFileUploadResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.FinalizeFileUpload(&gateway_ctx, &req, &resp);
+    EXPECT_TRUE(status.ok()) << status.error_message();
+    EXPECT_EQ(resp.file_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+    EXPECT_EQ(resp.lifecycle_state(), v1::FILE_LIFECYCLE_STATE_AVAILABLE);
+    EXPECT_GT(resp.available_at_unix_ms(), 0);
+}
+
+TEST(FilesServiceImplFinalizeTest, MapsEntityNotFoundToNotFound) {
+    auto mock_fin = std::make_shared<MockFinalizationService>();
+    mock_fin->should_throw_not_found = true;
+    FilesServiceDependencies deps{.finalization_service = mock_fin};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::FinalizeFileUploadRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+
+    v1::FinalizeFileUploadResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.FinalizeFileUpload(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::NOT_FOUND);
+}
+
+TEST(FilesServiceImplFinalizeTest, MapsPreconditionFailureToFailedPrecondition) {
+    auto mock_fin = std::make_shared<MockFinalizationService>();
+    mock_fin->should_throw_precondition = true;
+    FilesServiceDependencies deps{.finalization_service = mock_fin};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::FinalizeFileUploadRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+
+    v1::FinalizeFileUploadResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.FinalizeFileUpload(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::FAILED_PRECONDITION);
+}
+
+TEST(FilesServiceImplFinalizeTest, MapsIntegrityMismatchToFailedPrecondition) {
+    auto mock_fin = std::make_shared<MockFinalizationService>();
+    mock_fin->should_throw_integrity = true;
+    FilesServiceDependencies deps{.finalization_service = mock_fin};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::FinalizeFileUploadRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+
+    v1::FinalizeFileUploadResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.FinalizeFileUpload(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::FAILED_PRECONDITION);
+}
+
 } // namespace
 } // namespace securecloud::files::service
