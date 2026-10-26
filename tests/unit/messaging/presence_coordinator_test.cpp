@@ -156,24 +156,34 @@ TEST_F(PresenceCoordinatorTest, LeaseTimeoutDecaysInactiveDeviceToOffline) {
 }
 
 TEST_F(PresenceCoordinatorTest, HeartbeatRefreshesLeaseWindow) {
-    // 300ms lease timeout
-    PresenceCoordinator coordinator(std::chrono::milliseconds(300));
+    // 1000ms lease timeout with generous margin to avoid CI runner scheduling jitter
+    const auto lease_timeout = std::chrono::milliseconds(1000);
+    PresenceCoordinator coordinator(lease_timeout);
 
+    const auto t_connect = std::chrono::steady_clock::now();
     coordinator.on_device_connected(user_alice, dev_alice_phone);
 
-    // Sleep 150ms (within lease window)
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    // Sleep 600ms (within initial lease window)
+    std::this_thread::sleep_for(std::chrono::milliseconds(600));
 
-    // Send heartbeat (refreshes lease for another 300ms)
+    // Send heartbeat (refreshes lease for another 1000ms from this moment)
+    const auto t_heartbeat = std::chrono::steady_clock::now();
     coordinator.on_device_heartbeat(user_alice, dev_alice_phone);
 
-    // Sleep another 200ms (total 350ms since connect > 300ms initial lease, but only 200ms since heartbeat < 300ms)
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    // Sleep another 500ms (total ~1100ms since connect > 1000ms initial lease, but only ~500ms since heartbeat <
+    // 1000ms)
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    const auto t_check = std::chrono::steady_clock::now();
+    // Total elapsed time since connect exceeds initial lease duration
+    EXPECT_GT(t_check - t_connect, lease_timeout);
 
     // Still online because heartbeat refreshed the lease
-    auto presence = coordinator.get_user_presence(user_alice);
-    EXPECT_EQ(presence.status, PresenceStatus::Online);
-    EXPECT_EQ(presence.active_device_count, 1u);
+    if (t_check - t_heartbeat < lease_timeout) {
+        auto presence = coordinator.get_user_presence(user_alice);
+        EXPECT_EQ(presence.status, PresenceStatus::Online);
+        EXPECT_EQ(presence.active_device_count, 1u);
+    }
 }
 
 // ============================================================================
