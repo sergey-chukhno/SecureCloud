@@ -24,6 +24,7 @@ add_library(securecloud_files_db STATIC
     domain/metadata_validator.cpp
     domain/chunk_validator.cpp
     domain/finalization_validator.cpp
+    domain/download_validator.cpp
     repository/file_repository.cpp
     repository/file_version_repository.cpp
     repository/file_transfer_repository.cpp
