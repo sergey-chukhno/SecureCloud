@@ -80,6 +80,7 @@ add_library(securecloud_files_service STATIC
     service/object_assembly_engine.cpp
     service/file_finalization_service.cpp
     service/chunk_download_engine.cpp
+    service/download_manager.cpp
 )
 
 add_library(securecloud::files_service ALIAS securecloud_files_service)
