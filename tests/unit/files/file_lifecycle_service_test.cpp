@@ -152,10 +152,11 @@ class MockFileLifecycleService : public FileLifecycleService {
             .version_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099",
             .file_id = dto.file_id,
             .version_number = dto.version_number,
-            .minio_object_key = dto.minio_object_key,
             .encrypted_size = static_cast<int64_t>(dto.encrypted_size_bytes),
+            .minio_object_key = dto.minio_object_key,
             .checksum_sha256 = dto.checksum_sha256,
             .created_at = std::chrono::system_clock::now(),
+            .is_active = true,
         };
     }
 
