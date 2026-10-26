@@ -1760,6 +1760,55 @@ target_link_libraries(securecloud_files_chunk_storage_service_test PRIVATE
 
 gtest_discover_tests(securecloud_files_chunk_storage_service_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Finalization Precondition Validator Unit Test Suite (FILES-006-T01)
+add_executable(securecloud_files_finalization_validator_test
+    files/finalization_validator_test.cpp
+)
+
+target_link_libraries(securecloud_files_finalization_validator_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_finalization_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Object Assembly Engine Unit Test Suite (FILES-006-T02)
+add_executable(securecloud_files_object_assembly_engine_test
+    files/object_assembly_engine_test.cpp
+)
+
+target_link_libraries(securecloud_files_object_assembly_engine_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_object_assembly_engine_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Finalization Service Unit Test Suite (FILES-006-T03)
+add_executable(securecloud_files_finalization_service_test
+    files/file_finalization_service_test.cpp
+)
+
+target_link_libraries(securecloud_files_finalization_service_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_finalization_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Files Lifecycle Service Unit Test Suite (FILES-004-T05)
 add_executable(securecloud_files_lifecycle_service_test
     files/file_lifecycle_service_test.cpp
