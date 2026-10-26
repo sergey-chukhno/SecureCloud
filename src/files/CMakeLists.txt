@@ -32,6 +32,7 @@ add_library(securecloud_files_db STATIC
     repository/file_transfer_repository.cpp
     repository/file_chunk_repository.cpp
     repository/file_access_repository.cpp
+    repository/device_revocation_provider.cpp
     repository/files_outbox_repository.cpp
 )
 
