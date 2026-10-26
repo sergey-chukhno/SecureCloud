@@ -161,7 +161,7 @@ class FilesServiceInProcessTest : public ::testing::Test {
 // RPC In-Process Tests: Unimplemented Skeleton Endpoints
 // ============================================================================
 
-TEST_F(FilesServiceInProcessTest, UploadChunkReturnsUnimplemented) {
+TEST_F(FilesServiceInProcessTest, UploadChunkReturnsNotFoundWhenSessionDoesNotExist) {
     grpc::ClientContext context;
     v1::UploadChunkRequest request;
     request.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
@@ -173,8 +173,8 @@ TEST_F(FilesServiceInProcessTest, UploadChunkReturnsUnimplemented) {
     v1::UploadChunkResponse response;
     auto status = stub_->UploadChunk(&context, request, &response);
 
-    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
-    EXPECT_EQ(status.error_message(), FilesServiceImpl::k_unimplemented_skeleton_message);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::NOT_FOUND);
+    EXPECT_EQ(status.error_message(), "Transfer session not found: 0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
 }
 
 TEST_F(FilesServiceInProcessTest, FinalizeFileUploadChecksPreconditionsAndReturnsUnimplemented) {
@@ -218,7 +218,7 @@ TEST_F(FilesServiceInProcessTest, DownloadChunkReturnsUnimplemented) {
     EXPECT_EQ(status.error_message(), FilesServiceImpl::k_unimplemented_skeleton_message);
 }
 
-TEST_F(FilesServiceInProcessTest, CancelFileUploadReturnsUnimplemented) {
+TEST_F(FilesServiceInProcessTest, CancelFileUploadReturnsNotFoundWhenSessionManagerNotConfigured) {
     grpc::ClientContext context;
     v1::CancelFileUploadRequest request;
     request.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
@@ -227,8 +227,8 @@ TEST_F(FilesServiceInProcessTest, CancelFileUploadReturnsUnimplemented) {
     v1::CancelFileUploadResponse response;
     auto status = stub_->CancelFileUpload(&context, request, &response);
 
-    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
-    EXPECT_EQ(status.error_message(), FilesServiceImpl::k_unimplemented_skeleton_message);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::NOT_FOUND);
+    EXPECT_EQ(status.error_message(), "Upload session not found: 0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
 }
 
 // ============================================================================

@@ -383,18 +383,18 @@ TEST_F(FilesIntegrationTest, AllSevenRpcMethodsReturnDeterministicStatus) {
         EXPECT_EQ(st.error_message(), "client_crypto_metadata is required");
     }
 
-    // 2. UploadChunk (FILES-005)
+    // 2. UploadChunk (implemented in FILES-005: validates input)
     {
         grpc::ClientContext ctx;
         ctx.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
         v1::UploadChunkRequest req;
         v1::UploadChunkResponse resp;
         auto st = stub->UploadChunk(&ctx, req, &resp);
-        EXPECT_EQ(st.error_code(), grpc::StatusCode::UNIMPLEMENTED);
-        EXPECT_EQ(st.error_message(), expected_msg);
+        EXPECT_EQ(st.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+        EXPECT_EQ(st.error_message(), "upload_id must be a valid RFC 4122 / UUIDv7 string");
     }
 
-    // 3. FinalizeFileUpload (FILES-005)
+    // 3. FinalizeFileUpload (FILES-006)
     {
         grpc::ClientContext ctx;
         ctx.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
@@ -427,15 +427,15 @@ TEST_F(FilesIntegrationTest, AllSevenRpcMethodsReturnDeterministicStatus) {
         EXPECT_EQ(st.error_message(), expected_msg);
     }
 
-    // 6. CancelFileUpload (FILES-005)
+    // 6. CancelFileUpload (implemented in FILES-005: validates input)
     {
         grpc::ClientContext ctx;
         ctx.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
         v1::CancelFileUploadRequest req;
         v1::CancelFileUploadResponse resp;
         auto st = stub->CancelFileUpload(&ctx, req, &resp);
-        EXPECT_EQ(st.error_code(), grpc::StatusCode::UNIMPLEMENTED);
-        EXPECT_EQ(st.error_message(), expected_msg);
+        EXPECT_EQ(st.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+        EXPECT_EQ(st.error_message(), "upload_id must be a valid RFC 4122 / UUIDv7 string");
     }
 
     // 7. DeleteFile (implemented in FILES-004: validates input)

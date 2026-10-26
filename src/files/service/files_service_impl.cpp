@@ -1,16 +1,15 @@
 #include "files/service/files_service_impl.hpp"
 
+#include "files/domain/chunk_validator.hpp"
 #include "files/domain/metadata_validator.hpp"
 #include "files/repository/file_transfer_repository.hpp"
+#include "files/service/chunk_storage_service.hpp"
+#include "files/service/upload_session_manager.hpp"
 #include "securecloud/security/mtls_config.hpp"
 
 #include <chrono>
 #include <iostream>
 #include <utility>
-
-#include "files/domain/chunk_validator.hpp"
-#include "files/service/chunk_storage_service.hpp"
-#include "files/service/upload_session_manager.hpp"
 
 #ifdef DeleteFile
 #undef DeleteFile
@@ -215,8 +214,20 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
     auto expiry_tp = now + std::chrono::hours(24);
     int64_t expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(expiry_tp.time_since_epoch()).count();
 
-    // If db pool is present, persist transfer session record
-    if (deps_.db_pool) {
+    if (deps_.upload_session_manager) {
+        v1::CreateFileUploadRequest session_req = *request;
+        session_req.set_file_id(target_file_id);
+        auto session = deps_.upload_session_manager->create_session(session_req);
+        if (session) {
+            upload_id = session->upload_id;
+            expiry_tp = session->expires_at;
+            expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(expiry_tp.time_since_epoch()).count();
+        } else {
+            auto status = grpc::Status(grpc::StatusCode::INTERNAL, "Failed to create upload session");
+            logger.finish(status);
+            return status;
+        }
+    } else if (deps_.db_pool) {
         try {
             pqxx::work tx;
             FileTransferRepository transfer_repo(deps_.db_pool);
@@ -229,6 +240,8 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
                 .status = TransferStatus::Created,
                 .total_chunks = static_cast<int32_t>(dto.expected_chunk_count),
                 .accepted_chunks = 0,
+                .total_bytes = static_cast<int64_t>(dto.encrypted_size_bytes),
+                .transferred_bytes = 0,
                 .created_at = now,
                 .updated_at = now,
                 .expires_at = expiry_tp,
@@ -281,7 +294,8 @@ grpc::Status FilesServiceImpl::UploadChunk(const grpc::AuthContext* auth_ctx, co
               << "' chunk_index=" << request->chunk_index() << " size=" << request->chunk_size_bytes() << " bytes\n";
 
     if (!is_valid_uuid(request->upload_id())) {
-        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
+        auto status =
+            grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
         logger.finish(status);
         return status;
     }
@@ -341,7 +355,8 @@ grpc::Status FilesServiceImpl::UploadChunk(const grpc::AuthContext* auth_ctx, co
         }
     } else {
         if (dto.chunk_size_bytes != dto.encrypted_data.size()) {
-            auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "chunk_size_bytes does not match payload size");
+            auto status =
+                grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "chunk_size_bytes does not match payload size");
             logger.finish(status);
             return status;
         }
@@ -372,7 +387,8 @@ grpc::Status FilesServiceImpl::UploadChunk(const grpc::AuthContext* auth_ctx, co
         response->set_received_sha256(store_result.received_sha256);
 
         if (deps_.upload_session_manager) {
-            deps_.upload_session_manager->record_chunk_upload(dto.upload_id, dto.chunk_index, store_result.received_sha256);
+            deps_.upload_session_manager->record_chunk_upload(dto.upload_id, dto.chunk_index,
+                                                              store_result.received_sha256);
         }
 
         auto status = grpc::Status::OK;
@@ -618,7 +634,8 @@ grpc::Status FilesServiceImpl::CancelFileUpload(const grpc::AuthContext* auth_ct
               << "'\n";
 
     if (!is_valid_uuid(request->upload_id())) {
-        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid upload_id format");
+        auto status =
+            grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
         logger.finish(status);
         return status;
     }
@@ -631,7 +648,7 @@ grpc::Status FilesServiceImpl::CancelFileUpload(const grpc::AuthContext* auth_ct
 
     bool cancelled = deps_.upload_session_manager->cancel_session(request->upload_id(), request->reason());
     if (!cancelled) {
-        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, "Upload transfer session not found");
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, "Upload session not found: " + request->upload_id());
         logger.finish(status);
         return status;
     }

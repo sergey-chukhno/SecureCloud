@@ -29,9 +29,7 @@ struct ChunkValidationResult {
 
     [[nodiscard]] explicit operator bool() const noexcept { return is_valid; }
 
-    static ChunkValidationResult success(std::string computed_hash) {
-        return {true, "", std::move(computed_hash)};
-    }
+    static ChunkValidationResult success(std::string computed_hash) { return {true, "", std::move(computed_hash)}; }
 
     static ChunkValidationResult failure(std::string message, std::string computed_hash = "") {
         return {false, std::move(message), std::move(computed_hash)};
@@ -42,8 +40,7 @@ struct ChunkValidationResult {
 [[nodiscard]] std::string compute_sha256_hex(std::string_view data);
 
 /// Validates chunk payload metadata, size constraints, and cryptographic SHA-256 digest.
-[[nodiscard]] ChunkValidationResult validate_chunk_payload(const ChunkPayloadDto& dto,
-                                                          uint32_t total_chunks,
-                                                          uint64_t total_file_size_bytes);
+[[nodiscard]] ChunkValidationResult validate_chunk_payload(const ChunkPayloadDto& dto, uint32_t total_chunks,
+                                                           uint64_t total_file_size_bytes);
 
 } // namespace securecloud::files

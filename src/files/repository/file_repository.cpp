@@ -96,6 +96,15 @@ bool FileRepository::update_status(const std::string& file_id, FileStatus expect
     return res.affected_rows() > 0;
 }
 
+bool FileRepository::update_status(const std::string& file_id, FileStatus expected_current, FileStatus new_status) {
+    pqxx::work tx;
+    bool updated = update_status(file_id, expected_current, new_status, tx);
+    if (updated) {
+        tx.commit();
+    }
+    return updated;
+}
+
 bool FileRepository::delete_file_logical(const std::string& file_id, pqxx::work& tx) {
     auto now_str = db::to_iso8601(std::chrono::system_clock::now());
     auto res =

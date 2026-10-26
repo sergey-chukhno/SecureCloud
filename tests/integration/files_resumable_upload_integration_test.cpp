@@ -13,7 +13,7 @@
 #include "files/service/files_service_impl.hpp"
 #include "files/service/upload_session_manager.hpp"
 #include "files/storage/s3_client.hpp"
-#include "securecloud/common/configuration/secret_string.hpp"
+#include "securecloud/configuration/secret_string.hpp"
 #include "securecloud/files/v1/files.grpc.pb.h"
 #include "securecloud/files/v1/files.pb.h"
 #include "securecloud/health/transport_probe.hpp"
@@ -21,7 +21,9 @@
 #include <chrono>
 #include <gtest/gtest.h>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #ifdef _WIN32
@@ -46,6 +48,49 @@ using service::UploadSessionManager;
 using storage::S3Client;
 using storage::S3ClientConfig;
 
+class MockHttpTransport : public storage::IHttpTransport {
+  public:
+    storage::HttpResponse execute(const storage::HttpRequest& req) override {
+        std::lock_guard<std::mutex> lock(mu_);
+        if (req.method == "PUT") {
+            storage_[req.path] = req.body;
+            return storage::HttpResponse{
+                .status_code = 200,
+                .status_message = "OK",
+                .headers = {{"ETag", "\"d41d8cd98f00b204e9800998ecf8427e\""}},
+                .body = "",
+            };
+        } else if (req.method == "GET") {
+            auto it = storage_.find(req.path);
+            if (it != storage_.end()) {
+                return storage::HttpResponse{
+                    .status_code = 200,
+                    .status_message = "OK",
+                    .headers = {{"Content-Length", std::to_string(it->second.size())}},
+                    .body = it->second,
+                };
+            }
+            return storage::HttpResponse{.status_code = 404, .status_message = "Not Found"};
+        } else if (req.method == "HEAD") {
+            auto it = storage_.find(req.path);
+            if (it != storage_.end()) {
+                return storage::HttpResponse{
+                    .status_code = 200,
+                    .status_message = "OK",
+                    .headers = {{"Content-Length", std::to_string(it->second.size())}},
+                    .body = "",
+                };
+            }
+            return storage::HttpResponse{.status_code = 404, .status_message = "Not Found"};
+        }
+        return storage::HttpResponse{.status_code = 200, .status_message = "OK"};
+    }
+
+  private:
+    std::mutex mu_;
+    std::unordered_map<std::string, std::string> storage_;
+};
+
 #ifdef _WIN32
 inline void ensure_integration_winsock() noexcept {
     static const bool initialized = []() noexcept {
@@ -57,6 +102,11 @@ inline void ensure_integration_winsock() noexcept {
 #else
 inline void ensure_integration_winsock() noexcept {}
 #endif
+
+class TestAuthPropertyIterator : public grpc::AuthPropertyIterator {
+  public:
+    TestAuthPropertyIterator() = default;
+};
 
 class TestIntegrationAuthContext : public grpc::AuthContext {
   public:
@@ -73,8 +123,8 @@ class TestIntegrationAuthContext : public grpc::AuthContext {
         }
         return {};
     }
-    [[nodiscard]] grpc::AuthPropertyIterator begin() const override { return {}; }
-    [[nodiscard]] grpc::AuthPropertyIterator end() const override { return {}; }
+    [[nodiscard]] grpc::AuthPropertyIterator begin() const override { return TestAuthPropertyIterator{}; }
+    [[nodiscard]] grpc::AuthPropertyIterator end() const override { return TestAuthPropertyIterator{}; }
     void AddProperty(const std::string&, const grpc::string_ref&) override {}
     bool SetPeerIdentityPropertyName(const std::string&) override { return false; }
 
@@ -108,10 +158,12 @@ class FilesResumableUploadIntegrationTest : public ::testing::Test {
         s3_cfg_.access_key = "files_minio_user";
         s3_cfg_.secret_key = common::configuration::SecretString("files_minio_secret");
         s3_cfg_.default_timeout = std::chrono::milliseconds(2000);
-        s3_client_ = std::make_shared<S3Client>(s3_cfg_);
+        auto transport = std::make_shared<MockHttpTransport>();
+        s3_client_ = std::make_shared<S3Client>(s3_cfg_, transport);
 
         session_mgr_ = std::make_shared<UploadSessionManager>(pool_, transfer_repo_, chunk_repo_);
-        chunk_storage_ = std::make_shared<ChunkStorageService>(pool_, s3_client_, transfer_repo_, chunk_repo_, file_repo_);
+        chunk_storage_ =
+            std::make_shared<ChunkStorageService>(pool_, s3_client_, transfer_repo_, chunk_repo_, file_repo_);
         lifecycle_service_ = std::make_shared<FileLifecycleService>(pool_, file_repo_);
 
         FilesServiceDependencies deps{
@@ -158,15 +210,15 @@ TEST_F(FilesResumableUploadIntegrationTest, TC1_MultiChunkOutOfOrderUploadProgre
 
     v1::CreateFileUploadRequest init_req;
     init_req.set_file_id(generate_uuid_v7());
-    init_req.set_owner_user_id("user-alice");
-    init_req.set_owner_device_id("device-desktop");
+    init_req.set_owner_user_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d40");
+    init_req.set_owner_device_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d41");
     init_req.set_encrypted_size_bytes(total_size);
     init_req.set_expected_chunk_count(total_chunks);
     init_req.set_encryption_version("XChaCha20-Poly1305");
     std::string nonce_hex(48, 'a');
     std::string tag_hex(32, 'b');
     init_req.set_client_crypto_metadata("{\"encrypted_filename_hex\":\"0102\",\"metadata_nonce_hex\":\"" + nonce_hex +
-                                       "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
+                                        "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
     auto init_status = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp);
@@ -213,15 +265,15 @@ TEST_F(FilesResumableUploadIntegrationTest, TC2_IdempotentDuplicateChunkReplay) 
     uint64_t total_size = 3ULL * 4ULL * 1024ULL * 1024ULL;
     v1::CreateFileUploadRequest init_req;
     init_req.set_file_id(generate_uuid_v7());
-    init_req.set_owner_user_id("user-alice");
-    init_req.set_owner_device_id("device-desktop");
+    init_req.set_owner_user_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d40");
+    init_req.set_owner_device_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d41");
     init_req.set_encrypted_size_bytes(total_size);
     init_req.set_expected_chunk_count(3);
     init_req.set_encryption_version("XChaCha20-Poly1305");
     std::string nonce_hex(48, 'a');
     std::string tag_hex(32, 'b');
     init_req.set_client_crypto_metadata("{\"encrypted_filename_hex\":\"0102\",\"metadata_nonce_hex\":\"" + nonce_hex +
-                                       "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
+                                        "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
     auto init_status = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp);
@@ -264,15 +316,15 @@ TEST_F(FilesResumableUploadIntegrationTest, TC3_ContentHashCollisionConflictReje
     uint64_t total_size = 2ULL * 4ULL * 1024ULL * 1024ULL;
     v1::CreateFileUploadRequest init_req;
     init_req.set_file_id(generate_uuid_v7());
-    init_req.set_owner_user_id("user-alice");
-    init_req.set_owner_device_id("device-desktop");
+    init_req.set_owner_user_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d40");
+    init_req.set_owner_device_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d41");
     init_req.set_encrypted_size_bytes(total_size);
     init_req.set_expected_chunk_count(2);
     init_req.set_encryption_version("XChaCha20-Poly1305");
     std::string nonce_hex(48, 'a');
     std::string tag_hex(32, 'b');
     init_req.set_client_crypto_metadata("{\"encrypted_filename_hex\":\"0102\",\"metadata_nonce_hex\":\"" + nonce_hex +
-                                       "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
+                                        "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
     auto init_status = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp);
@@ -319,15 +371,15 @@ TEST_F(FilesResumableUploadIntegrationTest, TC4_ServiceRestartCrashRecovery) {
     uint64_t total_size = 6ULL * 4ULL * 1024ULL * 1024ULL;
     v1::CreateFileUploadRequest init_req;
     init_req.set_file_id(generate_uuid_v7());
-    init_req.set_owner_user_id("user-alice");
-    init_req.set_owner_device_id("device-desktop");
+    init_req.set_owner_user_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d40");
+    init_req.set_owner_device_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d41");
     init_req.set_encrypted_size_bytes(total_size);
     init_req.set_expected_chunk_count(6);
     init_req.set_encryption_version("XChaCha20-Poly1305");
     std::string nonce_hex(48, 'a');
     std::string tag_hex(32, 'b');
     init_req.set_client_crypto_metadata("{\"encrypted_filename_hex\":\"0102\",\"metadata_nonce_hex\":\"" + nonce_hex +
-                                       "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
+                                        "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
     auto init_status = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp);
@@ -357,7 +409,8 @@ TEST_F(FilesResumableUploadIntegrationTest, TC4_ServiceRestartCrashRecovery) {
 
     // Create fresh new service instances with clean in-memory cache
     auto new_session_mgr = std::make_shared<UploadSessionManager>(pool_, transfer_repo_, chunk_repo_);
-    auto new_chunk_storage = std::make_shared<ChunkStorageService>(pool_, s3_client_, transfer_repo_, chunk_repo_, file_repo_);
+    auto new_chunk_storage =
+        std::make_shared<ChunkStorageService>(pool_, s3_client_, transfer_repo_, chunk_repo_, file_repo_);
     auto new_lifecycle = std::make_shared<FileLifecycleService>(pool_, file_repo_);
 
     FilesServiceDependencies new_deps{
@@ -406,15 +459,15 @@ TEST_F(FilesResumableUploadIntegrationTest, TC5_ClientReconnectAndResumeWorkflow
     uint64_t total_size = 4ULL * 4ULL * 1024ULL * 1024ULL;
     v1::CreateFileUploadRequest init_req;
     init_req.set_file_id(generate_uuid_v7());
-    init_req.set_owner_user_id("user-alice");
-    init_req.set_owner_device_id("device-desktop");
+    init_req.set_owner_user_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d40");
+    init_req.set_owner_device_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d41");
     init_req.set_encrypted_size_bytes(total_size);
     init_req.set_expected_chunk_count(4);
     init_req.set_encryption_version("XChaCha20-Poly1305");
     std::string nonce_hex(48, 'a');
     std::string tag_hex(32, 'b');
     init_req.set_client_crypto_metadata("{\"encrypted_filename_hex\":\"0102\",\"metadata_nonce_hex\":\"" + nonce_hex +
-                                       "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
+                                        "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
     auto init_status = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp);
@@ -473,15 +526,15 @@ TEST_F(FilesResumableUploadIntegrationTest, TC6_ExplicitCancellation) {
     uint64_t total_size = 3ULL * 4ULL * 1024ULL * 1024ULL;
     v1::CreateFileUploadRequest init_req;
     init_req.set_file_id(generate_uuid_v7());
-    init_req.set_owner_user_id("user-alice");
-    init_req.set_owner_device_id("device-desktop");
+    init_req.set_owner_user_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d40");
+    init_req.set_owner_device_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d41");
     init_req.set_encrypted_size_bytes(total_size);
     init_req.set_expected_chunk_count(3);
     init_req.set_encryption_version("XChaCha20-Poly1305");
     std::string nonce_hex(48, 'a');
     std::string tag_hex(32, 'b');
     init_req.set_client_crypto_metadata("{\"encrypted_filename_hex\":\"0102\",\"metadata_nonce_hex\":\"" + nonce_hex +
-                                       "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
+                                        "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
     ASSERT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp).ok());
@@ -524,15 +577,15 @@ TEST_F(FilesResumableUploadIntegrationTest, TC7_EndToEndGrpcRoundtrip) {
     uint64_t total_size = 4ULL * 1024ULL * 1024ULL; // 1 standard chunk
     v1::CreateFileUploadRequest init_req;
     init_req.set_file_id(generate_uuid_v7());
-    init_req.set_owner_user_id("user-alice");
-    init_req.set_owner_device_id("device-desktop");
+    init_req.set_owner_user_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d40");
+    init_req.set_owner_device_id("018f6e80-7b23-74d1-81f8-8a8b1a2c3d41");
     init_req.set_encrypted_size_bytes(total_size);
     init_req.set_expected_chunk_count(1);
     init_req.set_encryption_version("XChaCha20-Poly1305");
     std::string nonce_hex(48, 'a');
     std::string tag_hex(32, 'b');
     init_req.set_client_crypto_metadata("{\"encrypted_filename_hex\":\"0102\",\"metadata_nonce_hex\":\"" + nonce_hex +
-                                       "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
+                                        "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
     ASSERT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp).ok());
