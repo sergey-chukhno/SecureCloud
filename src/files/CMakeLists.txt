@@ -25,6 +25,7 @@ add_library(securecloud_files_db STATIC
     domain/chunk_validator.cpp
     domain/finalization_validator.cpp
     domain/download_validator.cpp
+    domain/file_capability_serializer.cpp
     repository/file_repository.cpp
     repository/file_version_repository.cpp
     repository/file_transfer_repository.cpp
@@ -46,6 +47,8 @@ target_link_libraries(securecloud_files_db PUBLIC
     securecloud::compiler_flags
     securecloud_proto
     OpenSSL::Crypto
+    securecloud::json
+    securecloud::auth
 )
 
 add_library(securecloud_files_storage STATIC
