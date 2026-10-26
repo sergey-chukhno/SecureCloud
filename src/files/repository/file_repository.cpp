@@ -4,7 +4,6 @@
 
 namespace securecloud::files {
 
-
 FileRepository::FileRepository(std::shared_ptr<db::FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
 
 void FileRepository::create_file(const FileEntity& file, const EncryptedFileMetadataEntity& metadata, pqxx::work& tx) {

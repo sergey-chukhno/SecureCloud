@@ -7,10 +7,12 @@ add_library(securecloud_messaging_config STATIC
     service/delivery_retry_policy.cpp
     service/delivery_state_transition_guard.cpp
     delivery/device_connection_registry.cpp
+    delivery/connection_lifecycle_manager.cpp
     delivery/bounded_delivery_scheduler.cpp
     delivery/delivery_worker.cpp
     delivery/outbox_delivery_consumer.cpp
     delivery/durable_delivery_recovery_service.cpp
+    delivery/realtime_delivery_accelerator.cpp
     service/delivery_service.cpp
     service/read_receipt_service.cpp
     service/messaging_error_mapper.cpp
@@ -26,6 +28,8 @@ add_library(securecloud_messaging_config STATIC
     service/e2e_envelope_validator.cpp
     service/sync_cursor_manager.cpp
     service/message_sync_service.cpp
+    service/presence_coordinator.cpp
+    telemetry/presence_metrics.cpp
     util/zero_plaintext_guard.cpp
     client/auth_crypto_directory_client.cpp
     service/message_submission_service.cpp

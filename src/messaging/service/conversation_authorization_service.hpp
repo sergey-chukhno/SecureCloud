@@ -94,6 +94,10 @@ class ConversationAuthorizationService {
 
     [[nodiscard]] repository::IMembershipRepository& membership_repository() const noexcept { return membership_repo_; }
 
+    /// Evaluates the Mutual-Conversation Privacy Guard (MSG-010):
+    /// Returns true if caller is the target user or if both share at least one mutual active conversation.
+    [[nodiscard]] bool shares_mutual_conversation(const domain::UserId& caller, const domain::UserId& target) const;
+
   private:
     repository::IConversationRepository& conversation_repo_;
     repository::IMembershipRepository& membership_repo_;
