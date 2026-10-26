@@ -115,6 +115,8 @@ jobs:
           "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CMAKE_C_COMPILER_LAUNCHER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CMAKE_CXX_COMPILER_LAUNCHER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          sccache --start-server
+          sccache --show-stats
 
       - name: Restore vcpkg binary archives and downloads
         id: vcpkg-cache
@@ -123,8 +125,9 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v2-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
+            vcpkg-msvc-v2-
             vcpkg-msvc-
 
       - name: Ensure vcpkg cache directories exist
@@ -205,7 +208,7 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v2-${{ hashFiles('vcpkg.json') }}
 
       - name: Build All Targets
         shell: pwsh
@@ -252,6 +255,15 @@ jobs:
           restore-keys: |
             msys2-pacman-${{ runner.os }}-
 
+      - name: Expose GitHub Actions Cache Credentials for sccache
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', process.env.ACTIONS_CACHE_SERVICE_V2 || 'on');
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+
       - name: Set up MSYS2 MINGW64 Environment
         uses: msys2/setup-msys2@v2
         with:
@@ -296,10 +308,28 @@ jobs:
             exit 1
           fi
 
+      - name: Initialize sccache Daemon (MinGW MINGW64)
+        shell: msys2 {0}
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          ACTIONS_CACHE_URL: ${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: ${{ env.ACTIONS_CACHE_SERVICE_V2 }}
+          ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
+          MSYS2_ENV_CONV_EXCL: "ACTIONS_CACHE_URL;ACTIONS_RESULTS_URL"
+        run: |
+          sccache --start-server
+          sccache --show-stats
+
       - name: Configure CMake (MinGW MINGW64)
         shell: msys2 {0}
         env:
           SCCACHE_GHA_ENABLED: "true"
+          ACTIONS_CACHE_URL: ${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: ${{ env.ACTIONS_CACHE_SERVICE_V2 }}
+          ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
+          MSYS2_ENV_CONV_EXCL: "ACTIONS_CACHE_URL;ACTIONS_RESULTS_URL"
           CMAKE_C_COMPILER_LAUNCHER: "sccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
         run: |
@@ -309,6 +339,11 @@ jobs:
         shell: msys2 {0}
         env:
           SCCACHE_GHA_ENABLED: "true"
+          ACTIONS_CACHE_URL: ${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: ${{ env.ACTIONS_CACHE_SERVICE_V2 }}
+          ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
+          MSYS2_ENV_CONV_EXCL: "ACTIONS_CACHE_URL;ACTIONS_RESULTS_URL"
         run: |
           cmake --build --preset ci-windows-mingw
 
