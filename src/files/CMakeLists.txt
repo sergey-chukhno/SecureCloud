@@ -14,12 +14,15 @@ target_link_libraries(securecloud_files_config PUBLIC
     securecloud::compiler_flags
 )
 
+find_package(OpenSSL REQUIRED)
+
 add_library(securecloud_files_db STATIC
     db/files_connection_pool.cpp
     db/migration_runner.cpp
     db/pqxx_mappers.cpp
     domain/lifecycle_state_machine.cpp
     domain/metadata_validator.cpp
+    domain/chunk_validator.cpp
     repository/file_repository.cpp
     repository/file_version_repository.cpp
     repository/file_transfer_repository.cpp
@@ -40,9 +43,8 @@ target_link_libraries(securecloud_files_db PUBLIC
     securecloud::common
     securecloud::compiler_flags
     securecloud_proto
+    OpenSSL::Crypto
 )
-
-find_package(OpenSSL REQUIRED)
 
 add_library(securecloud_files_storage STATIC
     storage/s3_client.cpp
@@ -71,6 +73,8 @@ add_library(securecloud_files_service STATIC
     service/files_service_impl.cpp
     service/storage_engine.cpp
     service/file_lifecycle_service.cpp
+    service/upload_session_manager.cpp
+    service/chunk_storage_service.cpp
 )
 
 add_library(securecloud::files_service ALIAS securecloud_files_service)

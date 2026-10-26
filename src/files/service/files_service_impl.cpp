@@ -6,8 +6,11 @@
 #include <iostream>
 #include <utility>
 
+#include "files/domain/chunk_validator.hpp"
 #include "files/domain/metadata_validator.hpp"
 #include "files/repository/file_transfer_repository.hpp"
+#include "files/service/chunk_storage_service.hpp"
+#include "files/service/upload_session_manager.hpp"
 
 #ifdef DeleteFile
 #undef DeleteFile
@@ -48,18 +51,25 @@ FilesServiceImpl::FilesServiceImpl(FilesServiceDependencies deps, std::string ex
     if (!deps_.lifecycle_service && deps_.db_pool) {
         deps_.lifecycle_service = std::make_shared<FileLifecycleService>(deps_.db_pool);
     }
+    if (!deps_.upload_session_manager) {
+        deps_.upload_session_manager = std::make_shared<UploadSessionManager>(deps_.db_pool);
+    }
+    if (!deps_.chunk_storage_service) {
+        deps_.chunk_storage_service = std::make_shared<ChunkStorageService>(deps_.db_pool, deps_.s3_client);
+    }
 }
 
 FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db_pool,
                                    std::shared_ptr<storage::S3Client> s3_client, std::string expected_client_identity)
     : deps_{
           .db_pool = db_pool,
-          .s3_client = std::move(s3_client),
-          .upload_session_manager = std::make_shared<UploadSessionManager>(),
+          .s3_client = s3_client,
+          .upload_session_manager = std::make_shared<UploadSessionManager>(db_pool),
           .download_manager = std::make_shared<DownloadManager>(),
           .storage_engine = std::make_shared<StorageEngine>(),
           .metadata_manager = std::make_shared<MetadataManager>(db_pool),
           .lifecycle_service = std::make_shared<FileLifecycleService>(db_pool),
+          .chunk_storage_service = std::make_shared<ChunkStorageService>(db_pool, s3_client),
       },
       expected_client_identity_(std::move(expected_client_identity)) {}
 
@@ -264,9 +274,130 @@ grpc::Status FilesServiceImpl::UploadChunk(const grpc::AuthContext* auth_ctx, co
     std::cout << "[SecureCloud] [files] RPC UploadChunk request received for upload_id='" << request->upload_id()
               << "' chunk_index=" << request->chunk_index() << " size=" << request->chunk_size_bytes() << " bytes\n";
 
-    auto status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, std::string(k_unimplemented_skeleton_message));
-    logger.finish(status);
-    return status;
+    if (!is_valid_uuid(request->upload_id())) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
+        logger.finish(status);
+        return status;
+    }
+
+    ChunkPayloadDto dto{
+        .upload_id = request->upload_id(),
+        .chunk_index = request->chunk_index(),
+        .encrypted_data = request->encrypted_data(),
+        .chunk_size_bytes = request->chunk_size_bytes(),
+        .claimed_sha256 = request->ciphertext_sha256(),
+    };
+
+    uint32_t total_chunks = 0;
+    uint64_t total_bytes = 0;
+
+    if (deps_.upload_session_manager) {
+        try {
+            auto progress = deps_.upload_session_manager->get_transfer_progress(dto.upload_id);
+            total_chunks = progress.total_chunks;
+            total_bytes = static_cast<uint64_t>(progress.total_bytes);
+
+            if (progress.status == TransferStatus::Cancelled) {
+                auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, "Upload session has been cancelled");
+                logger.finish(status);
+                return status;
+            }
+            if (progress.status == TransferStatus::Expired || progress.is_expired) {
+                auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, "Upload session lease expired");
+                logger.finish(status);
+                return status;
+            }
+        } catch (const TransferNotFoundException& ex) {
+            auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+            logger.finish(status);
+            return status;
+        } catch (const TransferCancelledException& ex) {
+            auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+            logger.finish(status);
+            return status;
+        } catch (const TransferExpiredException& ex) {
+            auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, ex.what());
+            logger.finish(status);
+            return status;
+        } catch (const std::exception& ex) {
+            auto status = grpc::Status(grpc::StatusCode::INTERNAL, ex.what());
+            logger.finish(status);
+            return status;
+        }
+    }
+
+    if (total_chunks > 0) {
+        auto val_result = validate_chunk_payload(dto, total_chunks, total_bytes);
+        if (!val_result.is_valid) {
+            auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, val_result.error_message);
+            logger.finish(status);
+            return status;
+        }
+    } else {
+        if (dto.chunk_size_bytes != dto.encrypted_data.size()) {
+            auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "chunk_size_bytes does not match payload size");
+            logger.finish(status);
+            return status;
+        }
+        if (!is_valid_sha256_hex(dto.claimed_sha256)) {
+            auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "claimed_sha256 format is invalid");
+            logger.finish(status);
+            return status;
+        }
+        std::string computed_hash = compute_sha256_hex(dto.encrypted_data);
+        if (computed_hash != dto.claimed_sha256) {
+            auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "SHA-256 digest mismatch");
+            logger.finish(status);
+            return status;
+        }
+    }
+
+    if (!deps_.chunk_storage_service) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, "ChunkStorageService is not configured");
+        logger.finish(status);
+        return status;
+    }
+
+    try {
+        auto store_result = deps_.chunk_storage_service->store_chunk(dto, peer_identity);
+        response->set_upload_id(dto.upload_id);
+        response->set_chunk_index(dto.chunk_index);
+        response->set_accepted(store_result.accepted);
+        response->set_received_sha256(store_result.received_sha256);
+
+        if (deps_.upload_session_manager) {
+            deps_.upload_session_manager->record_chunk_upload(dto.upload_id, dto.chunk_index, store_result.received_sha256);
+        }
+
+        auto status = grpc::Status::OK;
+        logger.finish(status);
+        return status;
+    } catch (const ChunkIntegrityException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
+                                   std::string("Chunk content conflicts with previously accepted chunk: ") + ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const TransferNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const TransferExpiredException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const TransferCancelledException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const UnauthorizedTransferException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::exception& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, ex.what());
+        logger.finish(status);
+        return status;
+    }
 }
 
 // ==========================================
@@ -481,7 +612,29 @@ grpc::Status FilesServiceImpl::CancelFileUpload(const grpc::AuthContext* auth_ct
     std::cout << "[SecureCloud] [files] RPC CancelFileUpload request received for upload_id='" << request->upload_id()
               << "'\n";
 
-    auto status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, std::string(k_unimplemented_skeleton_message));
+    if (!is_valid_uuid(request->upload_id())) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid upload_id format");
+        logger.finish(status);
+        return status;
+    }
+
+    if (!deps_.upload_session_manager) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, "UploadSessionManager is not configured");
+        logger.finish(status);
+        return status;
+    }
+
+    bool cancelled = deps_.upload_session_manager->cancel_session(request->upload_id(), request->reason());
+    if (!cancelled) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, "Upload transfer session not found");
+        logger.finish(status);
+        return status;
+    }
+
+    response->set_upload_id(request->upload_id());
+    response->set_status(v1::TRANSFER_STATUS_CANCELLED);
+
+    auto status = grpc::Status::OK;
     logger.finish(status);
     return status;
 }

@@ -14,6 +14,7 @@
 #endif
 
 #include "files/db/files_connection_pool.hpp"
+#include "files/service/chunk_storage_service.hpp"
 #include "files/service/download_manager.hpp"
 #include "files/service/file_lifecycle_service.hpp"
 #include "files/service/metadata_manager.hpp"
@@ -41,6 +42,7 @@ struct FilesServiceDependencies {
     std::shared_ptr<IStorageEngine> storage_engine{nullptr};
     std::shared_ptr<IMetadataManager> metadata_manager{nullptr};
     std::shared_ptr<FileLifecycleService> lifecycle_service{nullptr};
+    std::shared_ptr<ChunkStorageService> chunk_storage_service{nullptr};
 };
 
 /// Implementation of the securecloud.files.v1.FilesService gRPC interface.
