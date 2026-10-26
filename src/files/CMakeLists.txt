@@ -26,6 +26,7 @@ add_library(securecloud_files_db STATIC
     domain/finalization_validator.cpp
     domain/download_validator.cpp
     domain/file_capability_serializer.cpp
+    domain/capability_validator.cpp
     repository/file_repository.cpp
     repository/file_version_repository.cpp
     repository/file_transfer_repository.cpp
