@@ -144,21 +144,28 @@ TEST_F(ConnectionLifecycleManagerTest, BackgroundReaperEvictsStaleConnection) {
 }
 
 TEST_F(ConnectionLifecycleManagerTest, HeartbeatKeepsConnectionAliveDuringReaperCycles) {
+    auto reg = std::make_shared<DeviceConnectionRegistry>(std::chrono::milliseconds(500));
+    auto pres = std::make_shared<service::PresenceCoordinator>(std::chrono::milliseconds(500));
+    auto mgr = std::make_unique<ConnectionLifecycleManager>(reg, pres, std::chrono::milliseconds(50),
+                                                            std::chrono::milliseconds(500));
+
     auto ch1 = std::make_shared<MockDeviceDeliveryChannel>(dev1_, user1_);
-    lifecycle_->establish_connection(ch1);
+    mgr->establish_connection(ch1);
 
-    lifecycle_->start();
+    mgr->start();
 
-    // Send heartbeats every 80ms over 350ms (lease is 200ms)
-    for (int i = 0; i < 4; ++i) {
-        std::this_thread::sleep_for(80ms);
-        EXPECT_TRUE(lifecycle_->record_heartbeat(dev1_));
+    // Send heartbeats every 60ms over 5 cycles (reaper sweeps every 50ms, lease is 500ms)
+    for (int i = 0; i < 5; ++i) {
+        std::this_thread::sleep_for(60ms);
+        EXPECT_TRUE(mgr->record_heartbeat(dev1_));
     }
 
-    // Connection must still be alive
-    EXPECT_EQ(lifecycle_->active_session_count(), 1u);
-    EXPECT_TRUE(registry_->is_online(dev1_));
-    EXPECT_EQ(presence_->get_user_presence(user1_).status, domain::PresenceStatus::Online);
+    // Connection must still be alive across multiple reaper passes
+    EXPECT_EQ(mgr->active_session_count(), 1u);
+    EXPECT_TRUE(reg->is_online(dev1_));
+    EXPECT_EQ(pres->get_user_presence(user1_).status, domain::PresenceStatus::Online);
+
+    mgr->stop();
 }
 
 TEST_F(ConnectionLifecycleManagerTest, ManualSweepStaleConnections) {

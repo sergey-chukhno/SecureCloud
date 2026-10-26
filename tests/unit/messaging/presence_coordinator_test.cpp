@@ -156,19 +156,19 @@ TEST_F(PresenceCoordinatorTest, LeaseTimeoutDecaysInactiveDeviceToOffline) {
 }
 
 TEST_F(PresenceCoordinatorTest, HeartbeatRefreshesLeaseWindow) {
-    // 60ms lease timeout
-    PresenceCoordinator coordinator(std::chrono::milliseconds(60));
+    // 300ms lease timeout
+    PresenceCoordinator coordinator(std::chrono::milliseconds(300));
 
     coordinator.on_device_connected(user_alice, dev_alice_phone);
 
-    // Sleep 35ms (within lease window)
-    std::this_thread::sleep_for(std::chrono::milliseconds(35));
+    // Sleep 150ms (within lease window)
+    std::this_thread::sleep_for(std::chrono::milliseconds(150));
 
-    // Send heartbeat
+    // Send heartbeat (refreshes lease for another 300ms)
     coordinator.on_device_heartbeat(user_alice, dev_alice_phone);
 
-    // Sleep another 35ms (total 70ms since connect, but only 35ms since heartbeat)
-    std::this_thread::sleep_for(std::chrono::milliseconds(35));
+    // Sleep another 200ms (total 350ms since connect > 300ms initial lease, but only 200ms since heartbeat < 300ms)
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
 
     // Still online because heartbeat refreshed the lease
     auto presence = coordinator.get_user_presence(user_alice);
