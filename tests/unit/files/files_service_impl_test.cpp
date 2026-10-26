@@ -508,5 +508,184 @@ TEST(FilesServiceImplModularTest, InjectsSubComponentDependencies) {
     EXPECT_EQ(service.expected_client_identity(), "custom_gateway");
 }
 
+// ============================================================================
+// FILES-005: UploadChunk & CancelFileUpload Tests
+// ============================================================================
+
+class MockHttpTransport : public storage::IHttpTransport {
+  public:
+    storage::HttpResponse execute(const storage::HttpRequest& /*req*/) override {
+        return storage::HttpResponse{
+            .status_code = 200,
+            .status_message = "OK",
+            .headers = {{"ETag", "\"etag-12345\""}},
+            .body = "",
+        };
+    }
+};
+
+TEST(FilesServiceImplUploadChunkTest, UploadChunkSuccessWithValidPayload) {
+    auto session_mgr = std::make_shared<UploadSessionManager>(nullptr, nullptr, nullptr);
+    auto transport = std::make_shared<MockHttpTransport>();
+    storage::S3ClientConfig s3_cfg{
+        .endpoint = "http://127.0.0.1:9000",
+        .bucket = "securecloud-files-encrypted",
+        .access_key = "test_key",
+        .secret_key = common::configuration::SecretString("test_secret"),
+    };
+    auto s3_client = std::make_shared<storage::S3Client>(s3_cfg, transport);
+    auto chunk_storage = std::make_shared<ChunkStorageService>(nullptr, s3_client, nullptr, nullptr, nullptr);
+
+    FilesServiceDependencies deps{
+        .upload_session_manager = session_mgr,
+        .chunk_storage_service = chunk_storage,
+    };
+    FilesServiceImpl service(deps, "gateway");
+
+    // Create session for 1 chunk of size 100 bytes
+    std::string payload(100, 'z');
+    std::string sha = compute_sha256_hex(payload);
+
+    v1::CreateFileUploadRequest init_req;
+    init_req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    init_req.set_owner_user_id("user-alice");
+    init_req.set_owner_device_id("device-alice");
+    init_req.set_encrypted_size_bytes(payload.size());
+    init_req.set_expected_chunk_count(1);
+    auto session = session_mgr->create_session(init_req);
+    ASSERT_TRUE(session.has_value());
+
+    v1::UploadChunkRequest req;
+    req.set_upload_id(session->upload_id);
+    req.set_chunk_index(0);
+    req.set_encrypted_data(payload);
+    req.set_chunk_size_bytes(static_cast<uint32_t>(payload.size()));
+    req.set_ciphertext_sha256(sha);
+
+    v1::UploadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.UploadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_TRUE(status.ok()) << status.error_message();
+    EXPECT_EQ(resp.upload_id(), session->upload_id);
+    EXPECT_EQ(resp.chunk_index(), 0);
+    EXPECT_TRUE(resp.accepted());
+    EXPECT_EQ(resp.received_sha256(), sha);
+}
+
+TEST(FilesServiceImplUploadChunkTest, UploadChunkRejectsInvalidUuid) {
+    FilesServiceImpl service({}, "gateway");
+
+    v1::UploadChunkRequest req;
+    req.set_upload_id("malformed-uuid");
+    req.set_chunk_index(0);
+    req.set_encrypted_data("data");
+    req.set_chunk_size_bytes(4);
+    req.set_ciphertext_sha256(compute_sha256_hex("data"));
+
+    v1::UploadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.UploadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+}
+
+TEST(FilesServiceImplUploadChunkTest, UploadChunkRejectsNotFoundSession) {
+    auto session_mgr = std::make_shared<UploadSessionManager>(nullptr, nullptr, nullptr);
+    FilesServiceDependencies deps{.upload_session_manager = session_mgr};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::UploadChunkRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+    req.set_encrypted_data("data");
+    req.set_chunk_size_bytes(4);
+    req.set_ciphertext_sha256(compute_sha256_hex("data"));
+
+    v1::UploadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.UploadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::NOT_FOUND);
+}
+
+TEST(FilesServiceImplUploadChunkTest, UploadChunkRejectsSha256Mismatch) {
+    auto session_mgr = std::make_shared<UploadSessionManager>(nullptr, nullptr, nullptr);
+    FilesServiceDependencies deps{.upload_session_manager = session_mgr};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::CreateFileUploadRequest init_req;
+    init_req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    init_req.set_encrypted_size_bytes(10);
+    init_req.set_expected_chunk_count(1);
+    auto session = session_mgr->create_session(init_req);
+    ASSERT_TRUE(session.has_value());
+
+    v1::UploadChunkRequest req;
+    req.set_upload_id(session->upload_id);
+    req.set_chunk_index(0);
+    req.set_encrypted_data("0123456789");
+    req.set_chunk_size_bytes(10);
+    req.set_ciphertext_sha256("0000000000000000000000000000000000000000000000000000000000000000");
+
+    v1::UploadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.UploadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+}
+
+TEST(FilesServiceImplCancelTest, CancelFileUploadSuccess) {
+    auto session_mgr = std::make_shared<UploadSessionManager>(nullptr, nullptr, nullptr);
+    FilesServiceDependencies deps{.upload_session_manager = session_mgr};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::CreateFileUploadRequest init_req;
+    init_req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    init_req.set_expected_chunk_count(2);
+    auto session = session_mgr->create_session(init_req);
+    ASSERT_TRUE(session.has_value());
+
+    v1::CancelFileUploadRequest req;
+    req.set_upload_id(session->upload_id);
+    req.set_reason("Client user aborted");
+
+    v1::CancelFileUploadResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.CancelFileUpload(&gateway_ctx, &req, &resp);
+    EXPECT_TRUE(status.ok()) << status.error_message();
+    EXPECT_EQ(resp.upload_id(), session->upload_id);
+    EXPECT_EQ(resp.status(), v1::TRANSFER_STATUS_CANCELLED);
+}
+
+TEST(FilesServiceImplCancelTest, CancelFileUploadRejectsInvalidUuid) {
+    FilesServiceImpl service({}, "gateway");
+
+    v1::CancelFileUploadRequest req;
+    req.set_upload_id("bad-uuid");
+
+    v1::CancelFileUploadResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.CancelFileUpload(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+}
+
+TEST(FilesServiceImplCancelTest, CancelFileUploadNotFound) {
+    auto session_mgr = std::make_shared<UploadSessionManager>(nullptr, nullptr, nullptr);
+    FilesServiceDependencies deps{.upload_session_manager = session_mgr};
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::CancelFileUploadRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+
+    v1::CancelFileUploadResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.CancelFileUpload(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::NOT_FOUND);
+}
+
 } // namespace
 } // namespace securecloud::files::service
