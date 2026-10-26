@@ -63,6 +63,10 @@ FilesServiceImpl::FilesServiceImpl(FilesServiceDependencies deps, std::string ex
     if (!deps_.finalization_service && deps_.object_assembly_engine && deps_.db_pool) {
         deps_.finalization_service = std::make_shared<FileFinalizationService>(deps_.db_pool, deps_.object_assembly_engine);
     }
+    if (!deps_.download_manager && deps_.s3_client && deps_.db_pool) {
+        auto download_engine = std::make_shared<ChunkDownloadEngine>(deps_.s3_client);
+        deps_.download_manager = std::make_shared<DownloadManager>(deps_.db_pool, download_engine);
+    }
 }
 
 FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db_pool,
@@ -71,7 +75,10 @@ FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db
           .db_pool = db_pool,
           .s3_client = s3_client,
           .upload_session_manager = std::make_shared<UploadSessionManager>(db_pool),
-          .download_manager = std::make_shared<DownloadManager>(),
+          .download_manager = (db_pool && s3_client)
+                                  ? std::make_shared<DownloadManager>(
+                                        db_pool, std::make_shared<ChunkDownloadEngine>(s3_client))
+                                  : std::make_shared<DownloadManager>(),
           .storage_engine = std::make_shared<StorageEngine>(),
           .metadata_manager = std::make_shared<MetadataManager>(db_pool),
           .lifecycle_service = std::make_shared<FileLifecycleService>(db_pool),
@@ -632,12 +639,72 @@ grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, 
         return status;
     }
 
-    std::cout << "[SecureCloud] [files] RPC DownloadChunk request received for file_id='" << request->file_id()
-              << "' chunk_index=" << request->chunk_index() << "\n";
+    if (!is_valid_uuid(request->file_id())) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format: " + request->file_id());
+        logger.finish(status);
+        return status;
+    }
 
-    auto status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, std::string(k_unimplemented_skeleton_message));
-    logger.finish(status);
-    return status;
+    if (!deps_.download_manager) {
+        auto status = grpc::Status(grpc::StatusCode::UNAVAILABLE, "DownloadManager is not configured");
+        logger.finish(status);
+        return status;
+    }
+
+    try {
+        auto chunk_res = deps_.download_manager->get_chunk_versioned(
+            request->file_id(), 0, request->chunk_index(), peer_identity);
+
+        response->set_file_id(chunk_res.file_id);
+        response->set_chunk_index(chunk_res.chunk_index);
+        response->set_encrypted_data(chunk_res.encrypted_data);
+        response->set_chunk_size_bytes(chunk_res.chunk_size_bytes);
+        response->set_ciphertext_sha256(chunk_res.ciphertext_sha256);
+
+        auto status = grpc::Status::OK;
+        logger.finish(status);
+        return status;
+    } catch (const UnauthorizedFileAccessException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const FileNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const EntityNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const InvalidDownloadPreconditionException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::out_of_range& ex) {
+        auto status = grpc::Status(grpc::StatusCode::OUT_OF_RANGE, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3ObjectNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3TimeoutException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3AuthenticationException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::invalid_argument& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::exception& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, ex.what());
+        logger.finish(status);
+        return status;
+    }
 }
 
 // ==========================================
