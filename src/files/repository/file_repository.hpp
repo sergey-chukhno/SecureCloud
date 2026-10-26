@@ -5,6 +5,7 @@
 #include "files/db/pqxx_mappers.hpp"
 #include "files/domain/encrypted_file_metadata_entity.hpp"
 #include "files/domain/file_entity.hpp"
+#include "files/domain/lifecycle_state_machine.hpp"
 
 #include <chrono>
 #include <memory>
@@ -32,9 +33,6 @@ class UniqueConstraintViolationException : public RepositoryException {
 class EntityNotFoundException : public RepositoryException {
     using RepositoryException::RepositoryException;
 };
-
-/// Validates whether a file lifecycle status transition is legal (Files Design 6.3)
-bool is_valid_state_transition(FileStatus from, FileStatus to) noexcept;
 
 /// Authoritative repository managing persistent storage and state transitions for files
 /// and their client-encrypted metadata (ADR-005, Files Design 6.3, 6.18, 6.19).
