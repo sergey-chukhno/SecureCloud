@@ -18,34 +18,25 @@ void record_error(std::string* error_out, std::string msg) {
 
 } // namespace
 
-std::string FileCapabilitySerializer::serialize(
-    const FileAccessCapabilityClaims& claims,
-    const auth::crypto::ITokenSigner& signer) {
+std::string FileCapabilitySerializer::serialize(const FileAccessCapabilityClaims& claims,
+                                                const auth::crypto::ITokenSigner& signer) {
     // 1. Header JSON
-    json header_json = {
-        {"alg", "EdDSA"},
-        {"typ", "sc-file-cap/v1"},
-        {"kid", signer.get_key_id()}
-    };
+    json header_json = {{"alg", "EdDSA"}, {"typ", "sc-file-cap/v1"}, {"kid", signer.get_key_id()}};
     const std::string header_b64 = auth::crypto::Base64Url::encode(header_json.dump());
 
     // 2. Payload JSON
-    const auto iat_sec = std::chrono::duration_cast<std::chrono::seconds>(
-        claims.issued_at.time_since_epoch()).count();
-    const auto exp_sec = std::chrono::duration_cast<std::chrono::seconds>(
-        claims.expires_at.time_since_epoch()).count();
+    const auto iat_sec = std::chrono::duration_cast<std::chrono::seconds>(claims.issued_at.time_since_epoch()).count();
+    const auto exp_sec = std::chrono::duration_cast<std::chrono::seconds>(claims.expires_at.time_since_epoch()).count();
 
-    json payload_json = {
-        {"cap_id", claims.capability_id},
-        {"uid", claims.user_id},
-        {"did", claims.device_id},
-        {"fid", claims.file_id},
-        {"ver", claims.file_version},
-        {"op", std::string(to_string(claims.operation))},
-        {"iat", iat_sec},
-        {"exp", exp_sec},
-        {"iss", claims.issuer}
-    };
+    json payload_json = {{"cap_id", claims.capability_id},
+                         {"uid", claims.user_id},
+                         {"did", claims.device_id},
+                         {"fid", claims.file_id},
+                         {"ver", claims.file_version},
+                         {"op", std::string(to_string(claims.operation))},
+                         {"iat", iat_sec},
+                         {"exp", exp_sec},
+                         {"iss", claims.issuer}};
     const std::string payload_b64 = auth::crypto::Base64Url::encode(payload_json.dump());
 
     // 3. Signing Input and Cryptographic Signature
@@ -55,10 +46,9 @@ std::string FileCapabilitySerializer::serialize(
     return signing_input + "." + signature_b64;
 }
 
-std::optional<FileAccessCapabilityClaims> FileCapabilitySerializer::deserialize_and_verify(
-    std::string_view token,
-    const auth::crypto::ITokenVerifier& verifier,
-    std::string* error_out) {
+std::optional<FileAccessCapabilityClaims>
+FileCapabilitySerializer::deserialize_and_verify(std::string_view token, const auth::crypto::ITokenVerifier& verifier,
+                                                 std::string* error_out) {
     // 1. Structural validation: token must consist of exactly three dot-separated parts
     const auto first_dot = token.find('.');
     if (first_dot == std::string_view::npos) {
@@ -157,12 +147,12 @@ std::optional<FileAccessCapabilityClaims> FileCapabilitySerializer::deserialize_
         claims.file_id = payload_json["fid"].get<std::string>();
         claims.file_version = payload_json.value("ver", 0);
         claims.operation = *op_opt;
-        
+
         int64_t iat_sec = payload_json["iat"].get<int64_t>();
         int64_t exp_sec = payload_json["exp"].get<int64_t>();
         claims.issued_at = std::chrono::system_clock::time_point(std::chrono::seconds(iat_sec));
         claims.expires_at = std::chrono::system_clock::time_point(std::chrono::seconds(exp_sec));
-        
+
         claims.issuer = payload_json.value("iss", "securecloud-files");
     } catch (const std::exception& ex) {
         record_error(error_out, std::string("Error reading capability claims: ") + ex.what());

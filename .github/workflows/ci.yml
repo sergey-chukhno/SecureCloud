@@ -61,6 +61,30 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Expose GitHub Actions Cache Credentials for sccache
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', process.env.ACTIONS_CACHE_SERVICE_V2 || 'on');
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Configure sccache Environment
+        run: |
+          echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+          echo "ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> "$GITHUB_ENV"
+          echo "ACTIONS_RUNTIME_TOKEN=${ACTIONS_RUNTIME_TOKEN}" >> "$GITHUB_ENV"
+          echo "ACTIONS_CACHE_SERVICE_V2=on" >> "$GITHUB_ENV"
+          echo "ACTIONS_RESULTS_URL=${ACTIONS_RESULTS_URL}" >> "$GITHUB_ENV"
+          echo "CMAKE_C_COMPILER_LAUNCHER=sccache" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache" >> "$GITHUB_ENV"
+          sccache --start-server
+          sccache --show-stats
+
       - name: Install Homebrew dependencies
         env:
           HOMEBREW_NO_AUTO_UPDATE: 1
@@ -76,15 +100,19 @@ jobs:
 
       - name: Configure CMake
         run: |
-          cmake --preset ci-macos
+          cmake --preset ci-macos -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build All Targets
         run: |
-          cmake --build --preset ci-macos
+          cmake --build --preset ci-macos --parallel
+
+      - name: Show sccache Stats
+        run: |
+          sccache --show-stats
 
       - name: Execute CTest Suite
         run: |
-          ctest --preset ci-macos --output-on-failure
+          ctest --preset ci-macos --output-on-failure --parallel 4
 
   # ============================================================================
   # Native Windows MSVC Build & Test Job (MSVC 2022 / vcpkg)
@@ -99,6 +127,38 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Configure Windows Defender Exclusions
+        shell: pwsh
+        run: |
+          Write-Host "Disabling Windows Defender Realtime Monitoring for CI build performance..."
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Add-MpPreference -ExclusionPath "${{ github.workspace }}", "C:\vcpkg", "D:\a", "$env:TEMP"
+
+      - name: Expose GitHub Actions Cache Credentials for sccache
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', process.env.ACTIONS_CACHE_SERVICE_V2 || 'on');
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.11
+
+      - name: Configure sccache Environment
+        shell: pwsh
+        run: |
+          "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ACTIONS_CACHE_URL=$env:ACTIONS_CACHE_URL" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ACTIONS_RUNTIME_TOKEN=$env:ACTIONS_RUNTIME_TOKEN" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ACTIONS_CACHE_SERVICE_V2=on" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "ACTIONS_RESULTS_URL=$env:ACTIONS_RESULTS_URL" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CMAKE_C_COMPILER_LAUNCHER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CMAKE_CXX_COMPILER_LAUNCHER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          sccache --start-server
+          sccache --show-stats
+
       - name: Restore vcpkg binary archives and downloads
         id: vcpkg-cache
         uses: actions/cache/restore@v4
@@ -106,8 +166,9 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v2-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
+            vcpkg-msvc-v2-
             vcpkg-msvc-
 
       - name: Ensure vcpkg cache directories exist
@@ -172,7 +233,7 @@ jobs:
           $attempt = 1
           while ($attempt -le $maxAttempts) {
             Write-Host "Configuring CMake with vcpkg (attempt $attempt of $maxAttempts)..."
-            cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_MAKE_PROGRAM="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe" -DX_VCPKG_APPLOCAL_DEPS_SERIALIZED=ON
+            cmake --preset ci-windows-msvc -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake" -DCMAKE_MAKE_PROGRAM="C:/Program Files/Microsoft Visual Studio/2022/Enterprise/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe" -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
             if ($LASTEXITCODE -eq 0) { break }
             if ($attempt -eq $maxAttempts) { exit $LASTEXITCODE }
             Write-Host "CMake configuration failed, retrying in 10s..."
@@ -188,12 +249,17 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v2-${{ hashFiles('vcpkg.json') }}
 
       - name: Build All Targets
         shell: pwsh
         run: |
           cmake --build --preset ci-windows-msvc --parallel
+
+      - name: Show sccache Stats
+        shell: pwsh
+        run: |
+          sccache --show-stats
 
       - name: Generate Development PKI Certificates
         shell: bash
@@ -215,11 +281,40 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Configure Windows Defender Exclusions & Pacman Settings
+        shell: pwsh
+        run: |
+          Write-Host "Disabling Windows Defender Realtime Monitoring for CI build performance..."
+          Set-MpPreference -DisableRealtimeMonitoring $true
+          Add-MpPreference -ExclusionPath "${{ github.workspace }}", "C:\msys64", "D:\a", "$env:TEMP"
+          if (Test-Path "C:\msys64\etc\pacman.conf") {
+            Write-Host "Configuring DisableDownloadTimeout in pre-installed MSYS2..."
+            (Get-Content "C:\msys64\etc\pacman.conf") -replace '^#DisableDownloadTimeout', 'DisableDownloadTimeout' | Set-Content "C:\msys64\etc\pacman.conf"
+          }
+
+      - name: Restore MSYS2 Pacman Cache
+        uses: actions/cache@v4
+        with:
+          path: C:\msys64\var\cache\pacman\pkg
+          key: msys2-pacman-${{ runner.os }}-${{ hashFiles('.github/workflows/ci.yml') }}
+          restore-keys: |
+            msys2-pacman-${{ runner.os }}-
+
+      - name: Expose GitHub Actions Cache Credentials for sccache
+        uses: actions/github-script@v7
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+            core.exportVariable('ACTIONS_CACHE_SERVICE_V2', process.env.ACTIONS_CACHE_SERVICE_V2 || 'on');
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+
       - name: Set up MSYS2 MINGW64 Environment
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: true
+          release: false
+          update: false
           path-type: minimal
 
       - name: Install MinGW64 Dependencies with Retries
@@ -233,6 +328,8 @@ jobs:
             mingw-w64-x86_64-toolchain
             mingw-w64-x86_64-cmake
             mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-lld
+            mingw-w64-x86_64-sccache
             mingw-w64-x86_64-protobuf
             mingw-w64-x86_64-grpc
             mingw-w64-x86_64-gtest
@@ -244,7 +341,7 @@ jobs:
           installed=0
           for attempt in 1 2 3 4 5; do
             echo "Attempt $attempt of 5: Installing MinGW64 packages..."
-            if pacman -S --needed --noconfirm --disable-download-timeout "${PACKAGES[@]}"; then
+            if pacman -Sy --needed --noconfirm --disable-download-timeout "${PACKAGES[@]}"; then
               installed=1
               break
             fi
@@ -257,15 +354,49 @@ jobs:
             exit 1
           fi
 
+      - name: Initialize sccache Daemon (MinGW MINGW64)
+        shell: msys2 {0}
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          ACTIONS_CACHE_URL: ${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: ${{ env.ACTIONS_CACHE_SERVICE_V2 }}
+          ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
+          MSYS2_ENV_CONV_EXCL: "ACTIONS_CACHE_URL;ACTIONS_RESULTS_URL"
+        run: |
+          sccache --start-server
+          sccache --show-stats
+
       - name: Configure CMake (MinGW MINGW64)
         shell: msys2 {0}
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          ACTIONS_CACHE_URL: ${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: ${{ env.ACTIONS_CACHE_SERVICE_V2 }}
+          ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
+          MSYS2_ENV_CONV_EXCL: "ACTIONS_CACHE_URL;ACTIONS_RESULTS_URL"
+          CMAKE_C_COMPILER_LAUNCHER: "sccache"
+          CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
         run: |
-          cmake --preset ci-windows-mingw
+          cmake --preset ci-windows-mingw -DCMAKE_NO_SYSTEM_FROM_IMPORTED=ON
 
       - name: Build All Targets (MinGW MINGW64)
         shell: msys2 {0}
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          ACTIONS_CACHE_URL: ${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: ${{ env.ACTIONS_CACHE_SERVICE_V2 }}
+          ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
+          MSYS2_ENV_CONV_EXCL: "ACTIONS_CACHE_URL;ACTIONS_RESULTS_URL"
         run: |
-          cmake --build --preset ci-windows-mingw
+          cmake --build --preset ci-windows-mingw --parallel
+
+      - name: Show sccache Stats
+        shell: msys2 {0}
+        run: |
+          sccache --show-stats
 
       - name: Generate Development PKI Certificates (MinGW MINGW64)
         shell: msys2 {0}

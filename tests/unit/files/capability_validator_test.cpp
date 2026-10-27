@@ -17,13 +17,11 @@ class CapabilityValidatorTest : public ::testing::Test {
         validator_ = std::make_unique<CapabilityValidator>(verifier_);
     }
 
-    FileAccessCapabilityClaims make_claims(
-        std::string uid = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
-        std::string did = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
-        std::string fid = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36003",
-        FileCapabilityOperation op = FileCapabilityOperation::Read,
-        int32_t ver = 0,
-        int ttl_minutes = 15) {
+    FileAccessCapabilityClaims make_claims(std::string uid = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
+                                           std::string did = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
+                                           std::string fid = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36003",
+                                           FileCapabilityOperation op = FileCapabilityOperation::Read, int32_t ver = 0,
+                                           int ttl_minutes = 15) {
         auto now = std::chrono::system_clock::now();
         return FileAccessCapabilityClaims{
             .capability_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
@@ -34,8 +32,7 @@ class CapabilityValidatorTest : public ::testing::Test {
             .operation = op,
             .issued_at = std::chrono::time_point_cast<std::chrono::seconds>(now - std::chrono::seconds(10)),
             .expires_at = std::chrono::time_point_cast<std::chrono::seconds>(now + std::chrono::minutes(ttl_minutes)),
-            .issuer = "securecloud-files"
-        };
+            .issuer = "securecloud-files"};
     }
 
     std::string generate_token(const FileAccessCapabilityClaims& claims) {
@@ -51,15 +48,13 @@ TEST_F(CapabilityValidatorTest, ValidCapabilitySucceeds) {
     auto claims = make_claims();
     std::string token = generate_token(claims);
 
-    CapabilityValidationInput input{
-        .presented_token = token,
-        .caller_user_id = claims.user_id,
-        .caller_device_id = claims.device_id,
-        .target_file_id = claims.file_id,
-        .requested_version = 0,
-        .requested_operation = FileCapabilityOperation::Read,
-        .is_device_revoked = false
-    };
+    CapabilityValidationInput input{.presented_token = token,
+                                    .caller_user_id = claims.user_id,
+                                    .caller_device_id = claims.device_id,
+                                    .target_file_id = claims.file_id,
+                                    .requested_version = 0,
+                                    .requested_operation = FileCapabilityOperation::Read,
+                                    .is_device_revoked = false};
 
     auto result = validator_->validate(input);
     EXPECT_TRUE(result.is_valid);
@@ -76,16 +71,14 @@ TEST_F(CapabilityValidatorTest, RejectsExpiredCapability) {
     claims.expires_at = now - std::chrono::hours(1);
     std::string token = generate_token(claims);
 
-    CapabilityValidationInput input{
-        .presented_token = token,
-        .caller_user_id = claims.user_id,
-        .caller_device_id = claims.device_id,
-        .target_file_id = claims.file_id,
-        .requested_version = 0,
-        .requested_operation = FileCapabilityOperation::Read,
-        .is_device_revoked = false,
-        .current_time = now
-    };
+    CapabilityValidationInput input{.presented_token = token,
+                                    .caller_user_id = claims.user_id,
+                                    .caller_device_id = claims.device_id,
+                                    .target_file_id = claims.file_id,
+                                    .requested_version = 0,
+                                    .requested_operation = FileCapabilityOperation::Read,
+                                    .is_device_revoked = false,
+                                    .current_time = now};
 
     auto result = validator_->validate(input);
     EXPECT_FALSE(result.is_valid);
@@ -96,15 +89,13 @@ TEST_F(CapabilityValidatorTest, RejectsWrongUser) {
     auto claims = make_claims("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
     std::string token = generate_token(claims);
 
-    CapabilityValidationInput input{
-        .presented_token = token,
-        .caller_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099", // User B
-        .caller_device_id = claims.device_id,
-        .target_file_id = claims.file_id,
-        .requested_version = 0,
-        .requested_operation = FileCapabilityOperation::Read,
-        .is_device_revoked = false
-    };
+    CapabilityValidationInput input{.presented_token = token,
+                                    .caller_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099", // User B
+                                    .caller_device_id = claims.device_id,
+                                    .target_file_id = claims.file_id,
+                                    .requested_version = 0,
+                                    .requested_operation = FileCapabilityOperation::Read,
+                                    .is_device_revoked = false};
 
     auto result = validator_->validate(input);
     EXPECT_FALSE(result.is_valid);
@@ -115,15 +106,13 @@ TEST_F(CapabilityValidatorTest, RejectsWrongDevice) {
     auto claims = make_claims();
     std::string token = generate_token(claims);
 
-    CapabilityValidationInput input{
-        .presented_token = token,
-        .caller_user_id = claims.user_id,
-        .caller_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099", // Device B
-        .target_file_id = claims.file_id,
-        .requested_version = 0,
-        .requested_operation = FileCapabilityOperation::Read,
-        .is_device_revoked = false
-    };
+    CapabilityValidationInput input{.presented_token = token,
+                                    .caller_user_id = claims.user_id,
+                                    .caller_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099", // Device B
+                                    .target_file_id = claims.file_id,
+                                    .requested_version = 0,
+                                    .requested_operation = FileCapabilityOperation::Read,
+                                    .is_device_revoked = false};
 
     auto result = validator_->validate(input);
     EXPECT_FALSE(result.is_valid);
@@ -134,15 +123,13 @@ TEST_F(CapabilityValidatorTest, RejectsWrongFile) {
     auto claims = make_claims();
     std::string token = generate_token(claims);
 
-    CapabilityValidationInput input{
-        .presented_token = token,
-        .caller_user_id = claims.user_id,
-        .caller_device_id = claims.device_id,
-        .target_file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099", // File B
-        .requested_version = 0,
-        .requested_operation = FileCapabilityOperation::Read,
-        .is_device_revoked = false
-    };
+    CapabilityValidationInput input{.presented_token = token,
+                                    .caller_user_id = claims.user_id,
+                                    .caller_device_id = claims.device_id,
+                                    .target_file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099", // File B
+                                    .requested_version = 0,
+                                    .requested_operation = FileCapabilityOperation::Read,
+                                    .is_device_revoked = false};
 
     auto result = validator_->validate(input);
     EXPECT_FALSE(result.is_valid);
@@ -154,15 +141,14 @@ TEST_F(CapabilityValidatorTest, RejectsWrongOperation) {
     claims.operation = FileCapabilityOperation::Read;
     std::string token = generate_token(claims);
 
-    CapabilityValidationInput input{
-        .presented_token = token,
-        .caller_user_id = claims.user_id,
-        .caller_device_id = claims.device_id,
-        .target_file_id = claims.file_id,
-        .requested_version = 0,
-        .requested_operation = FileCapabilityOperation::Delete, // Asking for Delete with Read cap
-        .is_device_revoked = false
-    };
+    CapabilityValidationInput input{.presented_token = token,
+                                    .caller_user_id = claims.user_id,
+                                    .caller_device_id = claims.device_id,
+                                    .target_file_id = claims.file_id,
+                                    .requested_version = 0,
+                                    .requested_operation =
+                                        FileCapabilityOperation::Delete, // Asking for Delete with Read cap
+                                    .is_device_revoked = false};
 
     auto result = validator_->validate(input);
     EXPECT_FALSE(result.is_valid);
@@ -189,15 +175,13 @@ TEST_F(CapabilityValidatorTest, RejectsRevokedDevice) {
 }
 
 TEST_F(CapabilityValidatorTest, RejectsMalformedToken) {
-    CapabilityValidationInput input{
-        .presented_token = "invalid.garbage.token",
-        .caller_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
-        .caller_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
-        .target_file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36003",
-        .requested_version = 0,
-        .requested_operation = FileCapabilityOperation::Read,
-        .is_device_revoked = false
-    };
+    CapabilityValidationInput input{.presented_token = "invalid.garbage.token",
+                                    .caller_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
+                                    .caller_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
+                                    .target_file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36003",
+                                    .requested_version = 0,
+                                    .requested_operation = FileCapabilityOperation::Read,
+                                    .is_device_revoked = false};
 
     auto result = validator_->validate(input);
     EXPECT_FALSE(result.is_valid);
@@ -212,16 +196,14 @@ TEST_F(CapabilityValidatorTest, RejectsPrematureTimestampReplay) {
     claims.expires_at = now + std::chrono::hours(2);
     std::string token = generate_token(claims);
 
-    CapabilityValidationInput input{
-        .presented_token = token,
-        .caller_user_id = claims.user_id,
-        .caller_device_id = claims.device_id,
-        .target_file_id = claims.file_id,
-        .requested_version = 0,
-        .requested_operation = FileCapabilityOperation::Read,
-        .is_device_revoked = false,
-        .current_time = now
-    };
+    CapabilityValidationInput input{.presented_token = token,
+                                    .caller_user_id = claims.user_id,
+                                    .caller_device_id = claims.device_id,
+                                    .target_file_id = claims.file_id,
+                                    .requested_version = 0,
+                                    .requested_operation = FileCapabilityOperation::Read,
+                                    .is_device_revoked = false,
+                                    .current_time = now};
 
     auto result = validator_->validate(input);
     EXPECT_FALSE(result.is_valid);
@@ -234,27 +216,23 @@ TEST_F(CapabilityValidatorTest, PinnedVersionMatching) {
     std::string token = generate_token(claims);
 
     // Requesting version 2 -> success
-    CapabilityValidationInput input_ok{
-        .presented_token = token,
-        .caller_user_id = claims.user_id,
-        .caller_device_id = claims.device_id,
-        .target_file_id = claims.file_id,
-        .requested_version = 2,
-        .requested_operation = FileCapabilityOperation::Read,
-        .is_device_revoked = false
-    };
+    CapabilityValidationInput input_ok{.presented_token = token,
+                                       .caller_user_id = claims.user_id,
+                                       .caller_device_id = claims.device_id,
+                                       .target_file_id = claims.file_id,
+                                       .requested_version = 2,
+                                       .requested_operation = FileCapabilityOperation::Read,
+                                       .is_device_revoked = false};
     EXPECT_TRUE(validator_->validate(input_ok).is_valid);
 
     // Requesting version 3 -> mismatch
-    CapabilityValidationInput input_bad{
-        .presented_token = token,
-        .caller_user_id = claims.user_id,
-        .caller_device_id = claims.device_id,
-        .target_file_id = claims.file_id,
-        .requested_version = 3,
-        .requested_operation = FileCapabilityOperation::Read,
-        .is_device_revoked = false
-    };
+    CapabilityValidationInput input_bad{.presented_token = token,
+                                        .caller_user_id = claims.user_id,
+                                        .caller_device_id = claims.device_id,
+                                        .target_file_id = claims.file_id,
+                                        .requested_version = 3,
+                                        .requested_operation = FileCapabilityOperation::Read,
+                                        .is_device_revoked = false};
     auto bad_res = validator_->validate(input_bad);
     EXPECT_FALSE(bad_res.is_valid);
     EXPECT_NE(bad_res.error_message.find("version mismatch"), std::string::npos);

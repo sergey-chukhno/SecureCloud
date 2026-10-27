@@ -70,25 +70,23 @@ TEST(DownloadValidatorTest, CalculateByteRangeZeroSizeFile) {
 }
 
 FileEntity make_test_file(std::string file_id = "018f6e80-7b23-74d1-81f8-000000000001",
-                          FileStatus status = FileStatus::Available,
-                          std::string owner = "user-alice",
+                          FileStatus status = FileStatus::Available, std::string owner = "user-alice",
                           uint64_t size = 1000) {
     FileEntity f;
     f.file_id = std::move(file_id);
     f.owner_user_id = std::move(owner);
     f.status = status;
-    f.encrypted_size = size;
+    f.encrypted_size = static_cast<int64_t>(size);
     return f;
 }
 
 FileVersionEntity make_test_version(std::string file_id = "018f6e80-7b23-74d1-81f8-000000000001",
-                                    int32_t version_number = 1,
-                                    uint64_t size = 1000) {
+                                    int32_t version_number = 1, uint64_t size = 1000) {
     FileVersionEntity v;
     v.version_id = "018f6e80-7b23-74d1-81f8-000000000002";
     v.file_id = std::move(file_id);
     v.version_number = version_number;
-    v.encrypted_size = size;
+    v.encrypted_size = static_cast<int64_t>(size);
     v.minio_object_key = "objects/" + v.file_id + "/" + std::to_string(version_number);
     v.checksum_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     v.is_active = true;
@@ -119,23 +117,20 @@ TEST(DownloadValidatorTest, ValidPreconditionsGranteeWithReadPermission) {
         .file = make_test_file("018f6e80-7b23-74d1-81f8-000000000001", FileStatus::Available, "user-alice"),
         .version = make_test_version("018f6e80-7b23-74d1-81f8-000000000001", 1),
         .caller_user_id = "user-bob",
-        .has_read_permission = true
-    };
+        .has_read_permission = true};
 
     auto res = validate_download_preconditions(input);
     EXPECT_TRUE(res.is_valid);
 }
 
 TEST(DownloadValidatorTest, RejectInvalidFileId) {
-    DownloadValidationInput input{
-        .file_id = "bad-uuid",
-        .requested_version = 0,
-        .chunk_index = 0,
-        .file = make_test_file("bad-uuid"),
-        .version = make_test_version("bad-uuid"),
-        .caller_user_id = "user-alice",
-        .has_read_permission = true
-    };
+    DownloadValidationInput input{.file_id = "bad-uuid",
+                                  .requested_version = 0,
+                                  .chunk_index = 0,
+                                  .file = make_test_file("bad-uuid"),
+                                  .version = make_test_version("bad-uuid"),
+                                  .caller_user_id = "user-alice",
+                                  .has_read_permission = true};
 
     auto res = validate_download_preconditions(input);
     EXPECT_FALSE(res.is_valid);
@@ -150,8 +145,7 @@ TEST(DownloadValidatorTest, RejectUnauthorizedUser) {
         .file = make_test_file("018f6e80-7b23-74d1-81f8-000000000001", FileStatus::Available, "user-alice"),
         .version = make_test_version(),
         .caller_user_id = "user-eve",
-        .has_read_permission = false
-    };
+        .has_read_permission = false};
 
     auto res = validate_download_preconditions(input);
     EXPECT_FALSE(res.is_valid);
@@ -162,15 +156,13 @@ TEST(DownloadValidatorTest, RejectUnavailableFileState) {
     auto file = make_test_file();
     file.status = FileStatus::Uploading;
 
-    DownloadValidationInput input{
-        .file_id = "018f6e80-7b23-74d1-81f8-000000000001",
-        .requested_version = 0,
-        .chunk_index = 0,
-        .file = file,
-        .version = make_test_version(),
-        .caller_user_id = "user-alice",
-        .has_read_permission = true
-    };
+    DownloadValidationInput input{.file_id = "018f6e80-7b23-74d1-81f8-000000000001",
+                                  .requested_version = 0,
+                                  .chunk_index = 0,
+                                  .file = file,
+                                  .version = make_test_version(),
+                                  .caller_user_id = "user-alice",
+                                  .has_read_permission = true};
 
     auto res = validate_download_preconditions(input);
     EXPECT_FALSE(res.is_valid);
@@ -184,15 +176,13 @@ TEST(DownloadValidatorTest, RejectUnavailableFileState) {
 }
 
 TEST(DownloadValidatorTest, RejectMissingVersionSnapshot) {
-    DownloadValidationInput input{
-        .file_id = "018f6e80-7b23-74d1-81f8-000000000001",
-        .requested_version = 0,
-        .chunk_index = 0,
-        .file = make_test_file(),
-        .version = std::nullopt,
-        .caller_user_id = "user-alice",
-        .has_read_permission = true
-    };
+    DownloadValidationInput input{.file_id = "018f6e80-7b23-74d1-81f8-000000000001",
+                                  .requested_version = 0,
+                                  .chunk_index = 0,
+                                  .file = make_test_file(),
+                                  .version = std::nullopt,
+                                  .caller_user_id = "user-alice",
+                                  .has_read_permission = true};
 
     auto res = validate_download_preconditions(input);
     EXPECT_FALSE(res.is_valid);
@@ -200,15 +190,13 @@ TEST(DownloadValidatorTest, RejectMissingVersionSnapshot) {
 }
 
 TEST(DownloadValidatorTest, RejectVersionMismatch) {
-    DownloadValidationInput input{
-        .file_id = "018f6e80-7b23-74d1-81f8-000000000001",
-        .requested_version = 2, // Requested v2, but only v1 exists
-        .chunk_index = 0,
-        .file = make_test_file(),
-        .version = make_test_version("018f6e80-7b23-74d1-81f8-000000000001", 1),
-        .caller_user_id = "user-alice",
-        .has_read_permission = true
-    };
+    DownloadValidationInput input{.file_id = "018f6e80-7b23-74d1-81f8-000000000001",
+                                  .requested_version = 2, // Requested v2, but only v1 exists
+                                  .chunk_index = 0,
+                                  .file = make_test_file(),
+                                  .version = make_test_version("018f6e80-7b23-74d1-81f8-000000000001", 1),
+                                  .caller_user_id = "user-alice",
+                                  .has_read_permission = true};
 
     auto res = validate_download_preconditions(input);
     EXPECT_FALSE(res.is_valid);
@@ -216,15 +204,13 @@ TEST(DownloadValidatorTest, RejectVersionMismatch) {
 }
 
 TEST(DownloadValidatorTest, RejectOutOfBoundsChunkIndex) {
-    DownloadValidationInput input{
-        .file_id = "018f6e80-7b23-74d1-81f8-000000000001",
-        .requested_version = 0,
-        .chunk_index = 5, // File has size 1000, so only 1 chunk (index 0)
-        .file = make_test_file(),
-        .version = make_test_version(),
-        .caller_user_id = "user-alice",
-        .has_read_permission = true
-    };
+    DownloadValidationInput input{.file_id = "018f6e80-7b23-74d1-81f8-000000000001",
+                                  .requested_version = 0,
+                                  .chunk_index = 5, // File has size 1000, so only 1 chunk (index 0)
+                                  .file = make_test_file(),
+                                  .version = make_test_version(),
+                                  .caller_user_id = "user-alice",
+                                  .has_read_permission = true};
 
     auto res = validate_download_preconditions(input);
     EXPECT_FALSE(res.is_valid);

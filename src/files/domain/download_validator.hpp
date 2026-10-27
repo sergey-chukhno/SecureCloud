@@ -42,10 +42,9 @@ struct DownloadValidationResult {
 
 /// Computes exact byte offsets and chunk size for a given chunk index.
 /// Throws std::invalid_argument or returns std::nullopt if total_file_size is 0 or chunk_index is out of range.
-[[nodiscard]] std::optional<ChunkByteRange> calculate_chunk_byte_range(
-    uint64_t total_file_size,
-    uint32_t chunk_index,
-    uint32_t standard_chunk_size = k_standard_chunk_size) noexcept;
+[[nodiscard]] std::optional<ChunkByteRange>
+calculate_chunk_byte_range(uint64_t total_file_size, uint32_t chunk_index,
+                           uint32_t standard_chunk_size = k_standard_chunk_size) noexcept;
 
 /// Validates all download preconditions:
 /// 1. file_id format (UUIDv7 / RFC 4122)
@@ -53,7 +52,6 @@ struct DownloadValidationResult {
 /// 3. File status is FileStatus::Available
 /// 4. Version snapshot exists and is active/valid
 /// 5. chunk_index is within bounds [0, total_chunks - 1]
-[[nodiscard]] DownloadValidationResult validate_download_preconditions(
-    const DownloadValidationInput& input);
+[[nodiscard]] DownloadValidationResult validate_download_preconditions(const DownloadValidationInput& input);
 
 } // namespace securecloud::files

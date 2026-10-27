@@ -34,18 +34,15 @@ class ObjectAssemblyEngine {
     /// verifies cumulative whole-object SHA-256 digest, and writes the assembled
     /// whole object to objects/{file_id}/{target_version}.
     /// Throws S3Exception derivatives on retrieval or upload failures.
-    virtual AssemblyResult assemble_version_object(
-        const std::string& file_id,
-        uint32_t target_version,
-        const std::string& transfer_id,
-        const std::vector<FileChunkEntity>& ordered_chunks);
+    virtual AssemblyResult assemble_version_object(const std::string& file_id, uint32_t target_version,
+                                                   const std::string& transfer_id,
+                                                   const std::vector<FileChunkEntity>& ordered_chunks);
 
     /// Cleans up temporary staged chunks from S3 after durable persistence.
     /// Safe, idempotent, best-effort: failure to delete a staging chunk logs a warning
     /// and does not fail the operation.
-    virtual void cleanup_staging_chunks(
-        const std::string& transfer_id,
-        const std::vector<FileChunkEntity>& ordered_chunks) noexcept;
+    virtual void cleanup_staging_chunks(const std::string& transfer_id,
+                                        const std::vector<FileChunkEntity>& ordered_chunks) noexcept;
 
     /// Derives canonical version object key: objects/{file_id}/{target_version}
     [[nodiscard]] static std::string build_version_key(const std::string& file_id, uint32_t target_version);

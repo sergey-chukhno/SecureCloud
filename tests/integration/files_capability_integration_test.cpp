@@ -1,16 +1,17 @@
-#include "files/service/file_capability_manager.hpp"
-#include "files/service/download_manager.hpp"
-#include "files/service/files_service_impl.hpp"
 #include "files/domain/file_capability_serializer.hpp"
+#include "files/service/download_manager.hpp"
+#include "files/service/file_capability_manager.hpp"
+#include "files/service/files_service_impl.hpp"
 
 #include <gtest/gtest.h>
-#include <openssl/sha.h>
 #include <iomanip>
+#include <openssl/sha.h>
 #include <sstream>
 
 namespace securecloud::files {
 namespace {
 
+using namespace securecloud::files::service;
 using auth::crypto::Ed25519TokenSigner;
 using auth::crypto::Ed25519TokenVerifier;
 
@@ -24,46 +25,61 @@ std::string compute_sha256(std::string_view data) {
     return ss.str();
 }
 
+class TestAuthPropertyIterator : public grpc::AuthPropertyIterator {
+  public:
+    TestAuthPropertyIterator() = default;
+};
+
+class TestIntegrationAuthContext : public grpc::AuthContext {
+  public:
+    explicit TestIntegrationAuthContext(std::string san) : san_(std::move(san)) {}
+
+    [[nodiscard]] bool IsPeerAuthenticated() const override { return true; }
+    [[nodiscard]] std::string GetPeerIdentityPropertyName() const override { return "x509_subject_alternative_name"; }
+    [[nodiscard]] std::vector<grpc::string_ref> GetPeerIdentity() const override {
+        return {grpc::string_ref(san_.data(), san_.size())};
+    }
+    [[nodiscard]] std::vector<grpc::string_ref> FindPropertyValues(const std::string& name) const override {
+        if (name == "x509_subject_alternative_name") {
+            return {grpc::string_ref(san_.data(), san_.size())};
+        }
+        return {};
+    }
+    [[nodiscard]] grpc::AuthPropertyIterator begin() const override { return TestAuthPropertyIterator{}; }
+    [[nodiscard]] grpc::AuthPropertyIterator end() const override { return TestAuthPropertyIterator{}; }
+    void AddProperty(const std::string&, const grpc::string_ref&) override {}
+    bool SetPeerIdentityPropertyName(const std::string&) override { return false; }
+
+  private:
+    std::string san_;
+};
+
 class FakeDownloadManager : public IDownloadManager {
   public:
-    bool authorize_download(const std::string&, const std::string&) override {
-        return true;
-    }
+    bool authorize_download(const std::string&, const std::string&) override { return true; }
 
-    std::optional<DownloadChunkResult> get_chunk(const std::string&, uint32_t) override {
-        return std::nullopt;
-    }
+    std::optional<DownloadChunkResult> get_chunk(const std::string&, uint32_t) override { return std::nullopt; }
 
-    DownloadChunkResult get_chunk_versioned(
-        const std::string& file_id,
-        int32_t version_number,
-        uint32_t chunk_index,
-        const std::string&) override {
+    DownloadChunkResult get_chunk_versioned(const std::string& file_id, int32_t version_number, uint32_t chunk_index,
+                                            const std::string&) override {
         // Deterministic ciphertext payload simulation
         std::string ciphertext = "ENCRYPTED_CIPHERTEXT_CHUNK_" + std::to_string(chunk_index);
-        return DownloadChunkResult{
-            .file_id = file_id,
-            .version_number = version_number == 0 ? 1 : version_number,
-            .chunk_index = chunk_index,
-            .encrypted_data = ciphertext,
-            .chunk_size_bytes = static_cast<uint32_t>(ciphertext.size()),
-            .ciphertext_sha256 = compute_sha256(ciphertext)
-        };
+        return DownloadChunkResult{.file_id = file_id,
+                                   .version_number = version_number == 0 ? 1 : version_number,
+                                   .chunk_index = chunk_index,
+                                   .encrypted_data = ciphertext,
+                                   .chunk_size_bytes = static_cast<uint32_t>(ciphertext.size()),
+                                   .ciphertext_sha256 = compute_sha256(ciphertext)};
     }
 
-    DownloadResumeModel prepare_resume_session(
-        const std::string& file_id,
-        int32_t version_number,
-        uint32_t starting_chunk,
-        const std::string&) override {
-        return DownloadResumeModel{
-            .file_id = file_id,
-            .version_number = version_number,
-            .starting_chunk = starting_chunk,
-            .total_chunks = 3,
-            .total_bytes = 1024,
-            .ciphertext_sha256 = "dummy"
-        };
+    DownloadResumeModel prepare_resume_session(const std::string& file_id, int32_t version_number,
+                                               uint32_t starting_chunk, const std::string&) override {
+        return DownloadResumeModel{.file_id = file_id,
+                                   .version_number = version_number,
+                                   .starting_chunk = starting_chunk,
+                                   .total_chunks = 3,
+                                   .total_bytes = 1024,
+                                   .ciphertext_sha256 = "dummy"};
     }
 };
 
@@ -74,47 +90,35 @@ class FilesCapabilityIntegrationTest : public ::testing::Test {
         verifier_ = Ed25519TokenVerifier::from_signer(*signer_);
         revocation_provider_ = std::make_shared<DeviceRevocationProvider>(nullptr);
 
-        capability_manager_ = std::make_shared<FileCapabilityManager>(
-            nullptr, signer_, verifier_, revocation_provider_, nullptr);
+        capability_manager_ =
+            std::make_shared<FileCapabilityManager>(nullptr, signer_, verifier_, revocation_provider_, nullptr);
 
         download_manager_ = std::make_shared<FakeDownloadManager>();
 
-        service::FilesServiceDependencies deps{
-            .download_manager = download_manager_,
-            .capability_manager = capability_manager_
-        };
+        service::FilesServiceDependencies deps{.download_manager = download_manager_,
+                                               .capability_manager = capability_manager_};
 
         service_ = std::make_unique<service::FilesServiceImpl>(deps, "gateway");
     }
 
-    std::string issue_token(
-        const std::string& uid,
-        const std::string& did,
-        const std::string& fid,
-        FileCapabilityOperation op = FileCapabilityOperation::Read,
-        int32_t ver = 0,
-        std::chrono::seconds ttl = std::chrono::minutes(15)) {
+    std::string issue_token(const std::string& uid, const std::string& did, const std::string& fid,
+                            FileCapabilityOperation op = FileCapabilityOperation::Read, int32_t ver = 0,
+                            std::chrono::seconds ttl = std::chrono::minutes(15)) {
         return capability_manager_->issue_capability(uid, did, fid, op, ver, ttl);
     }
 
-    grpc::Status execute_download(
-        const std::string& fid,
-        uint32_t chunk_idx,
-        const std::string& uid,
-        const std::string& did,
-        const std::string& capability_token,
-        v1::DownloadChunkResponse& resp) {
+    grpc::Status execute_download(const std::string& fid, uint32_t chunk_idx, const std::string& uid,
+                                  const std::string& did, const std::string& capability_token,
+                                  v1::DownloadChunkResponse& resp) {
         v1::DownloadChunkRequest req;
         req.set_file_id(fid);
         req.set_chunk_index(chunk_idx);
 
         std::multimap<grpc::string_ref, grpc::string_ref> metadata = {
-            {"x-user-id", uid},
-            {"x-device-id", did},
-            {"x-file-access-capability", capability_token}
-        };
+            {"x-user-id", uid}, {"x-device-id", did}, {"x-file-access-capability", capability_token}};
 
-        return service_->DownloadChunk(nullptr, &req, &resp, metadata);
+        TestIntegrationAuthContext auth_ctx("DNS:gateway");
+        return service_->DownloadChunk(&auth_ctx, &req, &resp, metadata);
     }
 
     std::shared_ptr<Ed25519TokenSigner> signer_;
@@ -259,17 +263,15 @@ TEST_F(FilesCapabilityIntegrationTest, TC9_PrematureReplayRejected) {
     const std::string fid = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36003";
 
     auto now = std::chrono::system_clock::now();
-    FileAccessCapabilityClaims claims{
-        .capability_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
-        .user_id = uid,
-        .device_id = did,
-        .file_id = fid,
-        .file_version = 0,
-        .operation = FileCapabilityOperation::Read,
-        .issued_at = now + std::chrono::hours(1), // 1 hour in future
-        .expires_at = now + std::chrono::hours(2),
-        .issuer = "securecloud-files"
-    };
+    FileAccessCapabilityClaims claims{.capability_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
+                                      .user_id = uid,
+                                      .device_id = did,
+                                      .file_id = fid,
+                                      .file_version = 0,
+                                      .operation = FileCapabilityOperation::Read,
+                                      .issued_at = now + std::chrono::hours(1), // 1 hour in future
+                                      .expires_at = now + std::chrono::hours(2),
+                                      .issuer = "securecloud-files"};
 
     std::string token = FileCapabilitySerializer::serialize(claims, *signer_);
 

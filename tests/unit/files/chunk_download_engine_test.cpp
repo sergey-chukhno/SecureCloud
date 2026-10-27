@@ -1,5 +1,5 @@
-#include "files/service/chunk_download_engine.hpp"
 #include "files/domain/chunk_validator.hpp"
+#include "files/service/chunk_download_engine.hpp"
 #include "files/storage/s3_client.hpp"
 #include "files/storage/s3_exceptions.hpp"
 
@@ -36,7 +36,10 @@ class RangeSupportingHttpTransport : public storage::IHttpTransport {
         const std::string& full_body = it->second;
 
         // Check for Range header
-        auto range_it = req.headers.find("Range");
+        auto range_it = req.headers.find("range");
+        if (range_it == req.headers.end()) {
+            range_it = req.headers.find("Range");
+        }
         if (range_it != req.headers.end()) {
             std::string range_val = range_it->second; // format: "bytes=start-end" or "bytes=start-"
             if (range_val.rfind("bytes=", 0) == 0) {
@@ -54,10 +57,10 @@ class RangeSupportingHttpTransport : public storage::IHttpTransport {
                         return storage::HttpResponse{
                             .status_code = 206,
                             .status_message = "Partial Content",
-                            .headers = {
-                                {"Content-Range", "bytes " + std::to_string(start) + "-" + std::to_string(actual_end) + "/" + std::to_string(full_body.size())},
-                                {"Content-Length", std::to_string(slice.size())}
-                            },
+                            .headers = {{"Content-Range", "bytes " + std::to_string(start) + "-" +
+                                                              std::to_string(actual_end) + "/" +
+                                                              std::to_string(full_body.size())},
+                                        {"Content-Length", std::to_string(slice.size())}},
                             .body = slice,
                         };
                     }

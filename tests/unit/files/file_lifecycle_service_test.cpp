@@ -1,9 +1,9 @@
-#include "files/service/file_lifecycle_service.hpp"
 #include "files/domain/lifecycle_state_machine.hpp"
 #include "files/domain/metadata_validator.hpp"
+#include "files/service/file_lifecycle_service.hpp"
 
-#include <gtest/gtest.h>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -62,7 +62,7 @@ TEST(FileLifecycleServiceValidationTest, CreateFileRejectsMismatchedChunkCount) 
         .owner_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
         .owner_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
         .encrypted_size_bytes = 10 * 1024 * 1024, // 10 MiB -> expects 3 chunks
-        .expected_chunk_count = 1,                 // Wrong: says 1 chunk
+        .expected_chunk_count = 1,                // Wrong: says 1 chunk
         .encryption_algorithm = std::string(k_approved_encryption_algorithm),
         .encrypted_filename = {0x01, 0x02, 0x03},
         .metadata_nonce = std::vector<uint8_t>(24, 0xAA),
@@ -104,24 +104,18 @@ TEST(FileLifecycleServiceValidationTest, TransitionLifecycleRejectsDisallowedTra
     FileLifecycleService service(nullptr);
 
     // AVAILABLE -> CREATED is strictly illegal
-    EXPECT_THROW(service.transition_lifecycle("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
-                                              FileStatus::Available,
-                                              FileStatus::Created,
-                                              "user-1"),
+    EXPECT_THROW(service.transition_lifecycle("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000", FileStatus::Available,
+                                              FileStatus::Created, "user-1"),
                  InvalidLifecycleTransitionException);
 
     // DELETED is terminal -> cannot transition to AVAILABLE
-    EXPECT_THROW(service.transition_lifecycle("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
-                                              FileStatus::Deleted,
-                                              FileStatus::Available,
-                                              "user-1"),
+    EXPECT_THROW(service.transition_lifecycle("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000", FileStatus::Deleted,
+                                              FileStatus::Available, "user-1"),
                  InvalidLifecycleTransitionException);
 
     // FAILED is terminal -> cannot transition to UPLOADING
-    EXPECT_THROW(service.transition_lifecycle("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
-                                              FileStatus::Failed,
-                                              FileStatus::Uploading,
-                                              "user-1"),
+    EXPECT_THROW(service.transition_lifecycle("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000", FileStatus::Failed,
+                                              FileStatus::Uploading, "user-1"),
                  InvalidLifecycleTransitionException);
 }
 
@@ -158,18 +152,16 @@ class MockFileLifecycleService : public FileLifecycleService {
             .version_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099",
             .file_id = dto.file_id,
             .version_number = dto.version_number,
+            .encrypted_size = static_cast<int64_t>(dto.encrypted_size_bytes),
             .minio_object_key = dto.minio_object_key,
-            .encrypted_size_bytes = static_cast<int64_t>(dto.encrypted_size_bytes),
             .checksum_sha256 = dto.checksum_sha256,
             .created_at = std::chrono::system_clock::now(),
+            .is_active = true,
         };
     }
 
-    bool transition_lifecycle(const std::string& file_id,
-                              FileStatus expected_current,
-                              FileStatus new_status,
-                              const std::string& caller_user_id,
-                              const std::string& /*reason*/) override {
+    bool transition_lifecycle(const std::string& /*file_id*/, FileStatus expected_current, FileStatus new_status,
+                              const std::string& caller_user_id, const std::string& /*reason*/) override {
         assert_valid_state_transition(expected_current, new_status);
         if (caller_user_id != expected_owner_id_ && !allow_access_) {
             throw UnauthorizedFileAccessException("User " + caller_user_id + " not authorized to transition file");
@@ -189,9 +181,8 @@ class MockFileLifecycleService : public FileLifecycleService {
         return mock_summary_;
     }
 
-    bool delete_file(const std::string& file_id,
-                     const std::string& caller_user_id,
-                     const std::string& /*reason*/) override {
+    bool delete_file(const std::string& file_id, const std::string& caller_user_id,
+                     const std::string& /*reason*/ = "") override {
         if (file_id != mock_summary_.file.file_id) {
             return false;
         }
@@ -248,43 +239,56 @@ TEST(FileLifecycleServiceMockTest, EnforcesOwnershipAccessControl) {
     service.set_expected_owner("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
     service.set_allow_access(false);
 
+    const auto now = std::chrono::system_clock::now();
     FileEntity file_entity{
         .file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
         .owner_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
         .owner_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
+        .conversation_id = std::nullopt,
+        .encrypted_size = 0,
+        .content_type = std::nullopt,
+        .encryption_algorithm = "XChaCha20-Poly1305",
         .status = FileStatus::Available,
+        .retention_until = std::nullopt,
+        .created_at = now,
+        .updated_at = now,
     };
     EncryptedFileMetadataEntity enc_meta{
         .file_id = file_entity.file_id,
         .encrypted_filename = {0x01, 0x02},
+        .encrypted_mime_type = std::nullopt,
         .metadata_nonce = std::vector<uint8_t>(24, 0x01),
         .metadata_tag = std::vector<uint8_t>(16, 0x02),
+        .client_encryption_metadata_json = "{}",
+        .updated_at = now,
     };
     service.set_mock_summary(FileMetadataSummary{
         .file = file_entity,
         .encrypted_meta = enc_meta,
+        .active_version = std::nullopt,
+        .all_versions = {},
+        .expected_chunk_count = 0,
     });
 
     // 1. Authorized owner access succeeds
-    auto owner_meta = service.get_file_metadata("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
-                                                "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+    auto owner_meta =
+        service.get_file_metadata("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
     ASSERT_TRUE(owner_meta.has_value());
     EXPECT_EQ(owner_meta->file.file_id, "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
 
     // 2. Unauthorized caller (different user ID) is rejected with UnauthorizedFileAccessException
-    EXPECT_THROW(service.get_file_metadata("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
-                                           "0191ec4d-91b4-7b4d-b6a9-8e41e3d36999"),
-                 UnauthorizedFileAccessException);
+    EXPECT_THROW(
+        service.get_file_metadata("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36999"),
+        UnauthorizedFileAccessException);
 
     // 3. Unauthorized caller cannot delete file
-    EXPECT_THROW(service.delete_file("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
-                                     "0191ec4d-91b4-7b4d-b6a9-8e41e3d36999"),
+    EXPECT_THROW(service.delete_file("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36999"),
                  UnauthorizedFileAccessException);
 
     // 4. Granting access allows read
     service.set_allow_access(true);
-    auto grantee_meta = service.get_file_metadata("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
-                                                  "0191ec4d-91b4-7b4d-b6a9-8e41e3d36999");
+    auto grantee_meta =
+        service.get_file_metadata("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36999");
     ASSERT_TRUE(grantee_meta.has_value());
 }
 
@@ -293,13 +297,27 @@ TEST(FileLifecycleServiceMockTest, LogicalDeletionMarksFileAsDeleted) {
     const std::string owner_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001";
     service.set_expected_owner(owner_id);
 
+    const auto now = std::chrono::system_clock::now();
     FileEntity file_entity{
         .file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
         .owner_user_id = owner_id,
         .owner_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
+        .conversation_id = std::nullopt,
+        .encrypted_size = 0,
+        .content_type = std::nullopt,
+        .encryption_algorithm = "XChaCha20-Poly1305",
         .status = FileStatus::Available,
+        .retention_until = std::nullopt,
+        .created_at = now,
+        .updated_at = now,
     };
-    service.set_mock_summary(FileMetadataSummary{.file = file_entity});
+    service.set_mock_summary(FileMetadataSummary{
+        .file = file_entity,
+        .encrypted_meta = {},
+        .active_version = std::nullopt,
+        .all_versions = {},
+        .expected_chunk_count = 0,
+    });
 
     bool deleted = service.delete_file("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000", owner_id, "User requested");
     EXPECT_TRUE(deleted);

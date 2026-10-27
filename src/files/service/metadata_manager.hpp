@@ -63,10 +63,12 @@ class MetadataManager : public IMetadataManager {
                 .file_id = record.file_id,
                 .owner_user_id = record.owner_user_id,
                 .owner_device_id = record.owner_device_id,
-                .conversation_id = record.conversation_id.empty() ? std::nullopt : std::make_optional(record.conversation_id),
+                .conversation_id =
+                    record.conversation_id.empty() ? std::nullopt : std::make_optional(record.conversation_id),
                 .encrypted_size_bytes = record.encrypted_size_bytes,
                 .expected_chunk_count = record.chunk_count,
-                .encryption_algorithm = record.encryption_version.empty() ? "XChaCha20-Poly1305" : record.encryption_version,
+                .encryption_algorithm =
+                    record.encryption_version.empty() ? "XChaCha20-Poly1305" : record.encryption_version,
                 .encrypted_filename = {0x01},
                 .encrypted_mime_type = std::nullopt,
                 .metadata_nonce = std::vector<uint8_t>(24, 0),
@@ -91,7 +93,8 @@ class MetadataManager : public IMetadataManager {
                 return false;
             }
             FileStatus target_status = from_proto(new_state);
-            return lifecycle_service_->transition_lifecycle(file_id, current_meta->file.status, target_status, "system");
+            return lifecycle_service_->transition_lifecycle(file_id, current_meta->file.status, target_status,
+                                                            "system");
         } catch (...) {
             return false;
         }
@@ -103,14 +106,13 @@ class MetadataManager : public IMetadataManager {
             if (!summary) {
                 return std::nullopt;
             }
-            auto created_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                  summary->file.created_at.time_since_epoch())
-                                  .count();
-            int64_t expires_ms = summary->file.retention_until
-                                     ? std::chrono::duration_cast<std::chrono::milliseconds>(
-                                           summary->file.retention_until->time_since_epoch())
-                                           .count()
-                                     : 0;
+            auto created_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(summary->file.created_at.time_since_epoch())
+                    .count();
+            int64_t expires_ms = summary->file.retention_until ? std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                                     summary->file.retention_until->time_since_epoch())
+                                                                     .count()
+                                                               : 0;
             int64_t available_ms = 0;
             std::string hash;
             if (summary->active_version) {

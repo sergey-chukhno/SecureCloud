@@ -36,9 +36,7 @@ struct CapabilityValidationResult {
         return {true, "", std::move(claims)};
     }
 
-    static CapabilityValidationResult failure(std::string message) {
-        return {false, std::move(message), std::nullopt};
-    }
+    static CapabilityValidationResult failure(std::string message) { return {false, std::move(message), std::nullopt}; }
 };
 
 /**

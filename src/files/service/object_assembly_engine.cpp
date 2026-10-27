@@ -1,4 +1,5 @@
 #include "files/service/object_assembly_engine.hpp"
+
 #include "files/domain/chunk_validator.hpp"
 #include "files/storage/s3_exceptions.hpp"
 
@@ -14,11 +15,9 @@ std::string ObjectAssemblyEngine::build_version_key(const std::string& file_id, 
     return "objects/" + file_id + "/" + std::to_string(target_version);
 }
 
-AssemblyResult ObjectAssemblyEngine::assemble_version_object(
-    const std::string& file_id,
-    uint32_t target_version,
-    const std::string& transfer_id,
-    const std::vector<FileChunkEntity>& ordered_chunks) {
+AssemblyResult ObjectAssemblyEngine::assemble_version_object(const std::string& file_id, uint32_t target_version,
+                                                             const std::string& transfer_id,
+                                                             const std::vector<FileChunkEntity>& ordered_chunks) {
     (void)transfer_id;
 
     if (!s3_client_) {
@@ -30,22 +29,16 @@ AssemblyResult ObjectAssemblyEngine::assemble_version_object(
     if (ordered_chunks.empty()) {
         std::string empty_hash = compute_sha256_hex("");
         s3_client_->put_object(target_key, "", "application/octet-stream", empty_hash);
-        return AssemblyResult{
-            .target_object_key = target_key,
-            .total_bytes = 0,
-            .computed_sha256 = empty_hash
-        };
+        return AssemblyResult{.target_object_key = target_key, .total_bytes = 0, .computed_sha256 = empty_hash};
     }
 
     auto sorted_chunks = ordered_chunks;
     std::sort(sorted_chunks.begin(), sorted_chunks.end(),
-              [](const FileChunkEntity& a, const FileChunkEntity& b) {
-                  return a.chunk_index < b.chunk_index;
-              });
+              [](const FileChunkEntity& a, const FileChunkEntity& b) { return a.chunk_index < b.chunk_index; });
 
     size_t total_expected_bytes = 0;
     for (const auto& c : sorted_chunks) {
-        total_expected_bytes += c.chunk_size;
+        total_expected_bytes += static_cast<size_t>(std::max(0, c.chunk_size));
     }
 
     std::string assembled_payload;
@@ -53,7 +46,7 @@ AssemblyResult ObjectAssemblyEngine::assemble_version_object(
 
     for (const auto& chunk : sorted_chunks) {
         auto resp = s3_client_->get_object(chunk.minio_chunk_key);
-        
+
         // Verify retrieved chunk hash matches recorded chunk hash
         std::string chunk_hash = compute_sha256_hex(resp.body);
         bool match = (chunk_hash.size() == chunk.chunk_hash_sha256.size());
@@ -68,10 +61,9 @@ AssemblyResult ObjectAssemblyEngine::assemble_version_object(
         }
 
         if (!match) {
-            throw storage::S3IntegrityException(
-                "Staged chunk corrupted: computed hash (" + chunk_hash +
-                ") does not match recorded chunk hash (" + chunk.chunk_hash_sha256 +
-                ") for key " + chunk.minio_chunk_key);
+            throw storage::S3IntegrityException("Staged chunk corrupted: computed hash (" + chunk_hash +
+                                                ") does not match recorded chunk hash (" + chunk.chunk_hash_sha256 +
+                                                ") for key " + chunk.minio_chunk_key);
         }
 
         assembled_payload.append(resp.body);
@@ -81,16 +73,13 @@ AssemblyResult ObjectAssemblyEngine::assemble_version_object(
 
     s3_client_->put_object(target_key, assembled_payload, "application/octet-stream", computed_whole_sha256);
 
-    return AssemblyResult{
-        .target_object_key = target_key,
-        .total_bytes = static_cast<uint64_t>(assembled_payload.size()),
-        .computed_sha256 = computed_whole_sha256
-    };
+    return AssemblyResult{.target_object_key = target_key,
+                          .total_bytes = static_cast<uint64_t>(assembled_payload.size()),
+                          .computed_sha256 = computed_whole_sha256};
 }
 
-void ObjectAssemblyEngine::cleanup_staging_chunks(
-    const std::string& transfer_id,
-    const std::vector<FileChunkEntity>& ordered_chunks) noexcept {
+void ObjectAssemblyEngine::cleanup_staging_chunks(const std::string& transfer_id,
+                                                  const std::vector<FileChunkEntity>& ordered_chunks) noexcept {
     (void)transfer_id;
     if (!s3_client_) {
         return;
@@ -102,8 +91,8 @@ void ObjectAssemblyEngine::cleanup_staging_chunks(
                 s3_client_->delete_object(chunk.minio_chunk_key);
             }
         } catch (const std::exception& e) {
-            std::cerr << "[ObjectAssemblyEngine] Warning: failed to delete staging chunk "
-                      << chunk.minio_chunk_key << ": " << e.what() << "\n";
+            std::cerr << "[ObjectAssemblyEngine] Warning: failed to delete staging chunk " << chunk.minio_chunk_key
+                      << ": " << e.what() << "\n";
         } catch (...) {
             std::cerr << "[ObjectAssemblyEngine] Warning: unknown failure deleting staging chunk "
                       << chunk.minio_chunk_key << "\n";

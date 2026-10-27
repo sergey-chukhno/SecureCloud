@@ -1,7 +1,7 @@
-#include "files/service/files_service_impl.hpp"
 #include "files/domain/lifecycle_state_machine.hpp"
 #include "files/domain/metadata_validator.hpp"
 #include "files/service/file_lifecycle_service.hpp"
+#include "files/service/files_service_impl.hpp"
 #include "securecloud/files/v1/files.grpc.pb.h"
 #include "securecloud/files/v1/files.pb.h"
 
@@ -83,7 +83,7 @@ class TestMockLifecycleService : public FileLifecycleService {
     }
 
     std::optional<FileMetadataSummary> get_file_metadata(const std::string& file_id,
-                                                         const std::string& caller_user_id) override {
+                                                         const std::string& /*caller_user_id*/) override {
         if (throw_unauthorized_) {
             throw UnauthorizedFileAccessException("Caller not authorized");
         }
@@ -93,14 +93,13 @@ class TestMockLifecycleService : public FileLifecycleService {
         return mock_summary_;
     }
 
-    bool delete_file(const std::string& file_id,
-                     const std::string& caller_user_id,
+    bool delete_file(const std::string& file_id, const std::string& /*caller_user_id*/,
                      const std::string& /*reason*/) override {
         if (throw_unauthorized_) {
             throw UnauthorizedFileAccessException("Caller not authorized");
         }
         if (file_id != mock_summary_.file.file_id) {
-            return false;
+            throw FileNotFoundException("File not found: " + file_id);
         }
         mock_summary_.file.status = FileStatus::Deleted;
         return true;
@@ -162,7 +161,7 @@ class FilesServiceInProcessTest : public ::testing::Test {
 // RPC In-Process Tests: Unimplemented Skeleton Endpoints
 // ============================================================================
 
-TEST_F(FilesServiceInProcessTest, UploadChunkReturnsUnimplemented) {
+TEST_F(FilesServiceInProcessTest, UploadChunkReturnsNotFoundWhenSessionDoesNotExist) {
     grpc::ClientContext context;
     v1::UploadChunkRequest request;
     request.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
@@ -174,11 +173,11 @@ TEST_F(FilesServiceInProcessTest, UploadChunkReturnsUnimplemented) {
     v1::UploadChunkResponse response;
     auto status = stub_->UploadChunk(&context, request, &response);
 
-    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
-    EXPECT_EQ(status.error_message(), FilesServiceImpl::k_unimplemented_skeleton_message);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::NOT_FOUND);
+    EXPECT_EQ(status.error_message(), "Transfer session not found: 0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
 }
 
-TEST_F(FilesServiceInProcessTest, FinalizeFileUploadChecksPreconditionsAndReturnsUnimplemented) {
+TEST_F(FilesServiceInProcessTest, FinalizeFileUploadReturnsUnavailableWhenServiceUninitialized) {
     grpc::ClientContext context;
     v1::FinalizeFileUploadRequest request;
     request.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
@@ -188,9 +187,8 @@ TEST_F(FilesServiceInProcessTest, FinalizeFileUploadChecksPreconditionsAndReturn
     v1::FinalizeFileUploadResponse response;
     auto status = stub_->FinalizeFileUpload(&context, request, &response);
 
-    // Passed UUID validation and lifecycle hook check, now returns skeleton unimplemented until FILE-006
-    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
-    EXPECT_EQ(status.error_message(), FilesServiceImpl::k_unimplemented_skeleton_message);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE);
+    EXPECT_EQ(status.error_message(), "Finalization service uninitialized");
 }
 
 TEST_F(FilesServiceInProcessTest, FinalizeFileUploadRejectsInvalidFileId) {
@@ -206,7 +204,7 @@ TEST_F(FilesServiceInProcessTest, FinalizeFileUploadRejectsInvalidFileId) {
     EXPECT_EQ(status.error_message(), "Invalid file_id format");
 }
 
-TEST_F(FilesServiceInProcessTest, DownloadChunkReturnsUnimplemented) {
+TEST_F(FilesServiceInProcessTest, DownloadChunkReturnsUnavailableWhenDownloadManagerNotConfigured) {
     grpc::ClientContext context;
     v1::DownloadChunkRequest request;
     request.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
@@ -215,11 +213,11 @@ TEST_F(FilesServiceInProcessTest, DownloadChunkReturnsUnimplemented) {
     v1::DownloadChunkResponse response;
     auto status = stub_->DownloadChunk(&context, request, &response);
 
-    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
-    EXPECT_EQ(status.error_message(), FilesServiceImpl::k_unimplemented_skeleton_message);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE);
+    EXPECT_EQ(status.error_message(), "DownloadManager is not configured");
 }
 
-TEST_F(FilesServiceInProcessTest, CancelFileUploadReturnsUnimplemented) {
+TEST_F(FilesServiceInProcessTest, CancelFileUploadReturnsNotFoundWhenSessionManagerNotConfigured) {
     grpc::ClientContext context;
     v1::CancelFileUploadRequest request;
     request.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
@@ -228,8 +226,8 @@ TEST_F(FilesServiceInProcessTest, CancelFileUploadReturnsUnimplemented) {
     v1::CancelFileUploadResponse response;
     auto status = stub_->CancelFileUpload(&context, request, &response);
 
-    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
-    EXPECT_EQ(status.error_message(), FilesServiceImpl::k_unimplemented_skeleton_message);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::NOT_FOUND);
+    EXPECT_EQ(status.error_message(), "Upload session not found: 0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
 }
 
 // ============================================================================
@@ -304,32 +302,45 @@ TEST_F(FilesServiceInProcessTest, GetFileMetadataReturnsNotFound) {
 }
 
 TEST_F(FilesServiceInProcessTest, GetFileMetadataSuccess) {
+    const auto now = std::chrono::system_clock::now();
     FileEntity file_entity{
         .file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
         .owner_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
         .owner_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
+        .conversation_id = std::nullopt,
+        .encrypted_size = 4194304,
+        .content_type = std::nullopt,
+        .encryption_algorithm = "XChaCha20-Poly1305",
         .status = FileStatus::Available,
-        .encryption_version = "XChaCha20-Poly1305",
-        .encrypted_size_bytes = 4194304,
-        .chunk_count = 1,
+        .retention_until = std::nullopt,
+        .created_at = now,
+        .updated_at = now,
     };
     EncryptedFileMetadataEntity enc_meta{
         .file_id = file_entity.file_id,
         .encrypted_filename = {0x01, 0x02},
+        .encrypted_mime_type = std::nullopt,
         .metadata_nonce = std::vector<uint8_t>(24, 0x01),
         .metadata_tag = std::vector<uint8_t>(16, 0x02),
         .client_encryption_metadata_json = "{}",
+        .updated_at = now,
     };
     FileVersionEntity active_ver{
         .version_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36010",
         .file_id = file_entity.file_id,
         .version_number = 1,
+        .encrypted_size = 4194304,
+        .minio_object_key = "files/test-object-key",
         .checksum_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        .created_at = now,
+        .is_active = true,
     };
     mock_lifecycle_->set_mock_summary(FileMetadataSummary{
         .file = file_entity,
         .encrypted_meta = enc_meta,
         .active_version = active_ver,
+        .all_versions = {active_ver},
+        .expected_chunk_count = 1,
     });
 
     grpc::ClientContext context;
@@ -344,8 +355,7 @@ TEST_F(FilesServiceInProcessTest, GetFileMetadataSuccess) {
     EXPECT_EQ(response.encrypted_size_bytes(), 4194304);
     EXPECT_EQ(response.chunk_count(), 1);
     EXPECT_EQ(response.encryption_version(), "XChaCha20-Poly1305");
-    EXPECT_EQ(response.ciphertext_integrity_hash(),
-              "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+    EXPECT_EQ(response.ciphertext_integrity_hash(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
 }
 
 TEST_F(FilesServiceInProcessTest, DeleteFileRejectsInvalidFileId) {
@@ -372,12 +382,27 @@ TEST_F(FilesServiceInProcessTest, DeleteFileReturnsNotFound) {
 }
 
 TEST_F(FilesServiceInProcessTest, DeleteFileSuccess) {
+    const auto now = std::chrono::system_clock::now();
     FileEntity file_entity{
         .file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000",
         .owner_user_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001",
+        .owner_device_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002",
+        .conversation_id = std::nullopt,
+        .encrypted_size = 0,
+        .content_type = std::nullopt,
+        .encryption_algorithm = "XChaCha20-Poly1305",
         .status = FileStatus::Available,
+        .retention_until = std::nullopt,
+        .created_at = now,
+        .updated_at = now,
     };
-    mock_lifecycle_->set_mock_summary(FileMetadataSummary{.file = file_entity});
+    mock_lifecycle_->set_mock_summary(FileMetadataSummary{
+        .file = file_entity,
+        .encrypted_meta = {},
+        .active_version = std::nullopt,
+        .all_versions = {},
+        .expected_chunk_count = 0,
+    });
 
     grpc::ClientContext context;
     v1::DeleteFileRequest request;
@@ -388,7 +413,7 @@ TEST_F(FilesServiceInProcessTest, DeleteFileSuccess) {
 
     EXPECT_TRUE(status.ok()) << status.error_message();
     EXPECT_EQ(response.file_id(), "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
-    EXPECT_EQ(response.state(), v1::FILE_LIFECYCLE_STATE_DELETED);
+    EXPECT_EQ(response.lifecycle_state(), v1::FILE_LIFECYCLE_STATE_DELETED);
     EXPECT_TRUE(response.deleted());
 }
 
@@ -829,19 +854,12 @@ TEST(FilesServiceImplFinalizeTest, MapsIntegrityMismatchToFailedPrecondition) {
 
 class MockDownloadManager : public IDownloadManager {
   public:
-    bool authorize_download(const std::string&, const std::string&) override {
-        return !should_deny_permission;
-    }
+    bool authorize_download(const std::string&, const std::string&) override { return !should_deny_permission; }
 
-    std::optional<DownloadChunkResult> get_chunk(const std::string&, uint32_t) override {
-        return std::nullopt;
-    }
+    std::optional<DownloadChunkResult> get_chunk(const std::string&, uint32_t) override { return std::nullopt; }
 
-    DownloadChunkResult get_chunk_versioned(
-        const std::string& file_id,
-        int32_t version_number,
-        uint32_t chunk_index,
-        const std::string& caller_user_id) override {
+    DownloadChunkResult get_chunk_versioned(const std::string& file_id, int32_t version_number, uint32_t chunk_index,
+                                            const std::string& caller_user_id) override {
         last_file_id = file_id;
         last_version_number = version_number;
         last_chunk_index = chunk_index;
@@ -861,29 +879,22 @@ class MockDownloadManager : public IDownloadManager {
         }
 
         std::string payload = "Encrypted chunk data";
-        return DownloadChunkResult{
-            .file_id = file_id,
-            .version_number = version_number == 0 ? 1 : version_number,
-            .chunk_index = chunk_index,
-            .encrypted_data = payload,
-            .chunk_size_bytes = static_cast<uint32_t>(payload.size()),
-            .ciphertext_sha256 = compute_sha256_hex(payload)
-        };
+        return DownloadChunkResult{.file_id = file_id,
+                                   .version_number = version_number == 0 ? 1 : version_number,
+                                   .chunk_index = chunk_index,
+                                   .encrypted_data = payload,
+                                   .chunk_size_bytes = static_cast<uint32_t>(payload.size()),
+                                   .ciphertext_sha256 = compute_sha256_hex(payload)};
     }
 
-    DownloadResumeModel prepare_resume_session(
-        const std::string& file_id,
-        int32_t version_number,
-        uint32_t starting_chunk,
-        const std::string&) override {
-        return DownloadResumeModel{
-            .file_id = file_id,
-            .version_number = version_number,
-            .starting_chunk = starting_chunk,
-            .total_chunks = 5,
-            .total_bytes = 20 * 1024 * 1024,
-            .ciphertext_sha256 = "dummy"
-        };
+    DownloadResumeModel prepare_resume_session(const std::string& file_id, int32_t version_number,
+                                               uint32_t starting_chunk, const std::string&) override {
+        return DownloadResumeModel{.file_id = file_id,
+                                   .version_number = version_number,
+                                   .starting_chunk = starting_chunk,
+                                   .total_chunks = 5,
+                                   .total_bytes = 20 * 1024 * 1024,
+                                   .ciphertext_sha256 = "dummy"};
     }
 
     std::string last_file_id;
@@ -1033,23 +1044,15 @@ TEST(FilesServiceImplDownloadTest, MapsPreconditionFailed) {
 
 class MockCapabilityManager : public IFileCapabilityManager {
   public:
-    std::string issue_capability(
-        const std::string&,
-        const std::string&,
-        const std::string&,
-        FileCapabilityOperation,
-        int32_t,
-        std::chrono::seconds) override {
+    std::string issue_capability(const std::string&, const std::string&, const std::string&, FileCapabilityOperation,
+                                 int32_t, std::chrono::seconds) override {
         return "mock.valid.token";
     }
 
-    FileAccessCapabilityClaims authorize_capability(
-        std::string_view token,
-        const std::string& caller_user_id,
-        const std::string& caller_device_id,
-        const std::string& target_file_id,
-        FileCapabilityOperation op,
-        int32_t version) override {
+    FileAccessCapabilityClaims authorize_capability(std::string_view token, const std::string& caller_user_id,
+                                                    const std::string& caller_device_id,
+                                                    const std::string& target_file_id, FileCapabilityOperation op,
+                                                    int32_t version) override {
         last_token = token;
         last_caller_user_id = caller_user_id;
         last_caller_device_id = caller_device_id;
@@ -1062,14 +1065,16 @@ class MockCapabilityManager : public IFileCapabilityManager {
             throw UnauthorizedFileAccessException("Unauthorized capability access");
         }
 
-        return FileAccessCapabilityClaims{
-            .capability_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099",
-            .user_id = caller_user_id,
-            .device_id = caller_device_id,
-            .file_id = target_file_id,
-            .file_version = version,
-            .operation = op
-        };
+        const auto now = std::chrono::system_clock::now();
+        return FileAccessCapabilityClaims{.capability_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099",
+                                          .user_id = caller_user_id,
+                                          .device_id = caller_device_id,
+                                          .file_id = target_file_id,
+                                          .file_version = version,
+                                          .operation = op,
+                                          .issued_at = now,
+                                          .expires_at = now + std::chrono::minutes(15),
+                                          .issuer = "securecloud-files"};
     }
 
     std::string last_token;
@@ -1084,10 +1089,7 @@ class MockCapabilityManager : public IFileCapabilityManager {
 TEST(FilesServiceImplCapabilityTest, AuthorizesValidCapabilityInMetadata) {
     auto mock_cap_mgr = std::make_shared<MockCapabilityManager>();
     auto mock_dl_mgr = std::make_shared<MockDownloadManager>();
-    FilesServiceDependencies deps{
-        .download_manager = mock_dl_mgr,
-        .capability_manager = mock_cap_mgr
-    };
+    FilesServiceDependencies deps{.download_manager = mock_dl_mgr, .capability_manager = mock_cap_mgr};
     FilesServiceImpl service(deps, "gateway");
 
     v1::DownloadChunkRequest req;
@@ -1100,8 +1102,7 @@ TEST(FilesServiceImplCapabilityTest, AuthorizesValidCapabilityInMetadata) {
     std::multimap<grpc::string_ref, grpc::string_ref> metadata = {
         {"x-user-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001"},
         {"x-device-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002"},
-        {"x-file-access-capability", "valid.signed.capability"}
-    };
+        {"x-file-access-capability", "valid.signed.capability"}};
 
     auto status = service.DownloadChunk(&gateway_ctx, &req, &resp, metadata);
     EXPECT_TRUE(status.ok()) << status.error_message();
@@ -1115,10 +1116,7 @@ TEST(FilesServiceImplCapabilityTest, MapsMalformedCapabilityToUnauthenticated) {
     auto mock_cap_mgr = std::make_shared<MockCapabilityManager>();
     mock_cap_mgr->should_throw_invalid = true;
     auto mock_dl_mgr = std::make_shared<MockDownloadManager>();
-    FilesServiceDependencies deps{
-        .download_manager = mock_dl_mgr,
-        .capability_manager = mock_cap_mgr
-    };
+    FilesServiceDependencies deps{.download_manager = mock_dl_mgr, .capability_manager = mock_cap_mgr};
     FilesServiceImpl service(deps, "gateway");
 
     v1::DownloadChunkRequest req;
@@ -1131,8 +1129,7 @@ TEST(FilesServiceImplCapabilityTest, MapsMalformedCapabilityToUnauthenticated) {
     std::multimap<grpc::string_ref, grpc::string_ref> metadata = {
         {"x-user-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001"},
         {"x-device-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002"},
-        {"x-file-access-capability", "corrupted.token"}
-    };
+        {"x-file-access-capability", "corrupted.token"}};
 
     auto status = service.DownloadChunk(&gateway_ctx, &req, &resp, metadata);
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
@@ -1142,10 +1139,7 @@ TEST(FilesServiceImplCapabilityTest, MapsUnauthorizedCapabilityToPermissionDenie
     auto mock_cap_mgr = std::make_shared<MockCapabilityManager>();
     mock_cap_mgr->should_throw_unauthorized = true;
     auto mock_dl_mgr = std::make_shared<MockDownloadManager>();
-    FilesServiceDependencies deps{
-        .download_manager = mock_dl_mgr,
-        .capability_manager = mock_cap_mgr
-    };
+    FilesServiceDependencies deps{.download_manager = mock_dl_mgr, .capability_manager = mock_cap_mgr};
     FilesServiceImpl service(deps, "gateway");
 
     v1::DownloadChunkRequest req;
@@ -1158,8 +1152,7 @@ TEST(FilesServiceImplCapabilityTest, MapsUnauthorizedCapabilityToPermissionDenie
     std::multimap<grpc::string_ref, grpc::string_ref> metadata = {
         {"x-user-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001"},
         {"x-device-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36002"},
-        {"x-file-access-capability", "valid.token.wrong.user"}
-    };
+        {"x-file-access-capability", "valid.token.wrong.user"}};
 
     auto status = service.DownloadChunk(&gateway_ctx, &req, &resp, metadata);
     EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
