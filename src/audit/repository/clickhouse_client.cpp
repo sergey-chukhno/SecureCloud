@@ -1,6 +1,6 @@
 #include "clickhouse_client.hpp"
+#include "audit_repository_exceptions.hpp"
 
-// Assuming standard httplib include available via CMake target
 #include <httplib.h>
 
 #include <queue>
@@ -64,7 +64,9 @@ bool ClickHouseClient::execute_query(const std::string& query,
                                       std::string* out_response,
                                       std::chrono::milliseconds timeout) {
     auto cli = impl_->acquire_connection(timeout);
-    if (!cli) return false;
+    if (!cli) {
+        throw ClickHouseConnectionException("Connection pool exhausted or timeout");
+    }
 
     httplib::Params params;
     params.emplace("query", query);
@@ -73,23 +75,36 @@ bool ClickHouseClient::execute_query(const std::string& query,
     std::string path = "/?" + httplib::detail::params_to_query_str(params);
     auto res = cli->Get(path.c_str(), impl_->build_headers());
 
-    bool success = false;
-    if (res && res->status == 200) {
-        if (out_response) {
-            *out_response = res->body;
+    // Release the connection back to the pool before potentially throwing
+    impl_->release_connection(std::move(cli));
+
+    if (!res) {
+        if (res.error() == httplib::Error::Read || res.error() == httplib::Error::Write) {
+            throw ClickHouseTimeoutException("ClickHouse request timed out");
         }
-        success = true;
+        throw ClickHouseConnectionException("Failed to reach ClickHouse: httplib error code " +
+                                            std::to_string(static_cast<int>(res.error())));
     }
 
-    impl_->release_connection(std::move(cli));
-    return success;
+    if (res->status != 200) {
+        // Strict Error Logging Taxonomy: Do NOT append raw query/payload to avoid leaking PII/secrets.
+        throw ClickHouseQueryException("ClickHouse rejected the query", res->status);
+    }
+
+    if (out_response) {
+        *out_response = res->body;
+    }
+
+    return true;
 }
 
 bool ClickHouseClient::execute_insert(const std::string& query,
                                        const std::string& body_data,
                                        std::chrono::milliseconds timeout) {
     auto cli = impl_->acquire_connection(timeout);
-    if (!cli) return false;
+    if (!cli) {
+        throw ClickHouseConnectionException("Connection pool exhausted or timeout");
+    }
 
     httplib::Params params;
     params.emplace("query", query);
@@ -98,15 +113,32 @@ bool ClickHouseClient::execute_insert(const std::string& query,
     std::string path = "/?" + httplib::detail::params_to_query_str(params);
     auto res = cli->Post(path.c_str(), impl_->build_headers(), body_data, "application/json");
 
-    bool success = (res && res->status == 200);
-
+    // Release the connection back to the pool before potentially throwing
     impl_->release_connection(std::move(cli));
-    return success;
+
+    if (!res) {
+        if (res.error() == httplib::Error::Read || res.error() == httplib::Error::Write) {
+            throw ClickHouseTimeoutException("ClickHouse request timed out");
+        }
+        throw ClickHouseConnectionException("Failed to reach ClickHouse: httplib error code " +
+                                            std::to_string(static_cast<int>(res.error())));
+    }
+
+    if (res->status != 200) {
+        // Strict Error Logging Taxonomy: Do NOT append raw body_data to avoid leaking PII/secrets.
+        throw ClickHouseQueryException("ClickHouse rejected the insertion", res->status);
+    }
+
+    return true;
 }
 
 bool ClickHouseClient::ping(std::chrono::milliseconds timeout) {
-    std::string response;
-    return execute_query("SELECT 1", &response, timeout) && !response.empty();
+    try {
+        std::string response;
+        return execute_query("SELECT 1", &response, timeout) && !response.empty();
+    } catch (const ClickHouseException&) {
+        return false;
+    }
 }
 
 } // namespace securecloud::audit::repository
