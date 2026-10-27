@@ -377,6 +377,59 @@ endif()
 
 gtest_discover_tests(securecloud_files_minio_storage_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Lifecycle Integration Test Suite (FILES-004-T06)
+add_executable(securecloud_files_lifecycle_integration_test
+    files_lifecycle_integration_test.cpp
+)
+
+target_link_libraries(securecloud_files_lifecycle_integration_test PRIVATE
+    securecloud::files_service
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud_proto
+    gRPC::grpc++
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_files_lifecycle_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_files_lifecycle_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_files_lifecycle_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Resumable Upload Integration Test Suite (FILES-005-T06)
+add_executable(securecloud_files_resumable_upload_integration_test
+    files_resumable_upload_integration_test.cpp
+)
+
+target_link_libraries(securecloud_files_resumable_upload_integration_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud_proto
+    gRPC::grpc++
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_files_resumable_upload_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_files_resumable_upload_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_files_resumable_upload_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Streaming TLS 1.3 / mTLS Integration Test Suite (GW-010-T04)
 add_executable(securecloud_gateway_streaming_integration_test
     gateway_streaming_integration_test.cpp
@@ -827,4 +880,35 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_messaging_online_sync_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Presence & Non-Conflation Invariant Integration Test Suite (MSG-010-T07)
+add_executable(securecloud_messaging_presence_integration_test
+    messaging_presence_integration_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_presence_integration_test PRIVATE
+    securecloud::messaging
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_config
+    securecloud::common
+    securecloud::httplib
+    securecloud_proto
+    securecloud::json
+    OpenSSL::Crypto
+    OpenSSL::SSL
+    securecloud::compiler_flags
+    GTest::gtest_main
+    GTest::gmock
+)
+
+target_compile_definitions(securecloud_messaging_presence_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_messaging_presence_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_messaging_presence_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 

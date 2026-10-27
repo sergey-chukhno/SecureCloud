@@ -1682,6 +1682,100 @@ target_link_libraries(securecloud_access_outbox_repository_test PRIVATE
 
 gtest_discover_tests(securecloud_access_outbox_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Lifecycle State Machine Unit Test Suite (FILES-004-T01)
+add_executable(securecloud_files_lifecycle_state_machine_test
+    files/lifecycle_state_machine_test.cpp
+)
+
+target_link_libraries(securecloud_files_lifecycle_state_machine_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_lifecycle_state_machine_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Metadata Validator Unit Test Suite (FILES-004-T02)
+add_executable(securecloud_files_metadata_validator_test
+    files/metadata_validator_test.cpp
+)
+
+target_link_libraries(securecloud_files_metadata_validator_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_metadata_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Chunk Validator Unit Test Suite (FILES-005-T01)
+add_executable(securecloud_files_chunk_validator_test
+    files/chunk_validator_test.cpp
+)
+
+target_link_libraries(securecloud_files_chunk_validator_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_chunk_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Upload Session Manager Unit Test Suite (FILES-005-T02)
+add_executable(securecloud_files_upload_session_manager_test
+    files/upload_session_manager_test.cpp
+)
+
+target_link_libraries(securecloud_files_upload_session_manager_test PRIVATE
+    securecloud::files_service
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_upload_session_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Chunk Storage Service Unit Test Suite (FILES-005-T03)
+add_executable(securecloud_files_chunk_storage_service_test
+    files/chunk_storage_service_test.cpp
+)
+
+target_link_libraries(securecloud_files_chunk_storage_service_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_chunk_storage_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Lifecycle Service Unit Test Suite (FILES-004-T05)
+add_executable(securecloud_files_lifecycle_service_test
+    files/file_lifecycle_service_test.cpp
+)
+
+target_link_libraries(securecloud_files_lifecycle_service_test PRIVATE
+    securecloud::files_service
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_lifecycle_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
 # Messaging Service Configuration Unit Test Suite (MSG-001-T02)
 add_executable(securecloud_messaging_config_test
@@ -2588,3 +2682,118 @@ target_link_libraries(securecloud_audit_event_mapper_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_event_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Presence & Connection Session Domain Types Test Suite (MSG-010-T01)
+add_executable(securecloud_messaging_presence_types_test
+    messaging/presence_types_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_presence_types_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_presence_types_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Multi-Device Presence Coordinator Test Suite (MSG-010-T02)
+add_executable(securecloud_presence_coordinator_test
+    messaging/presence_coordinator_test.cpp
+)
+
+target_link_libraries(securecloud_presence_coordinator_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_presence_coordinator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Connection Lifecycle Manager & Reaper Test Suite (MSG-010-T03)
+add_executable(securecloud_connection_lifecycle_manager_test
+    messaging/connection_lifecycle_manager_test.cpp
+)
+
+target_link_libraries(securecloud_connection_lifecycle_manager_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_connection_lifecycle_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Realtime Delivery Accelerator Test Suite (MSG-010-T04)
+add_executable(securecloud_realtime_delivery_accelerator_test
+    messaging/realtime_delivery_accelerator_test.cpp
+)
+
+target_link_libraries(securecloud_realtime_delivery_accelerator_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_realtime_delivery_accelerator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Service Presence RPCs & Mutual-Conversation Privacy Guard Test Suite (MSG-010-T05)
+add_executable(securecloud_messaging_service_presence_test
+    messaging/messaging_service_presence_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_service_presence_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_service_presence_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Messaging Proxy Presence Endpoints Test Suite (MSG-010-T06)
+add_executable(securecloud_messaging_proxy_presence_test
+    gateway/messaging_proxy_presence_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_proxy_presence_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_proxy_presence_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Presence Privacy Guard & Telemetry Test Suite (MSG-010-T07)
+add_executable(securecloud_presence_privacy_guard_test
+    messaging/presence_privacy_guard_test.cpp
+)
+
+target_link_libraries(securecloud_presence_privacy_guard_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_presence_privacy_guard_test ${SECURECLOUD_TEST_PROPERTIES})

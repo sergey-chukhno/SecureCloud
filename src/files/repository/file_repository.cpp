@@ -4,25 +4,6 @@
 
 namespace securecloud::files {
 
-bool is_valid_state_transition(FileStatus from, FileStatus to) noexcept {
-    switch (from) {
-    case FileStatus::Created:
-        return to == FileStatus::Uploading || to == FileStatus::Failed;
-    case FileStatus::Uploading:
-        return to == FileStatus::Finalizing || to == FileStatus::Failed;
-    case FileStatus::Finalizing:
-        return to == FileStatus::Available || to == FileStatus::Failed;
-    case FileStatus::Available:
-        return to == FileStatus::Expired || to == FileStatus::Deleted;
-    case FileStatus::Expired:
-        return to == FileStatus::Deleted;
-    case FileStatus::Deleted:
-    case FileStatus::Failed:
-        return false;
-    }
-    return false;
-}
-
 FileRepository::FileRepository(std::shared_ptr<db::FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
 
 void FileRepository::create_file(const FileEntity& file, const EncryptedFileMetadataEntity& metadata, pqxx::work& tx) {
@@ -113,6 +94,15 @@ bool FileRepository::update_status(const std::string& file_id, FileStatus expect
                               db::to_string(new_status), now_str, file_id, db::to_string(expected_current));
 
     return res.affected_rows() > 0;
+}
+
+bool FileRepository::update_status(const std::string& file_id, FileStatus expected_current, FileStatus new_status) {
+    pqxx::work tx;
+    bool updated = update_status(file_id, expected_current, new_status, tx);
+    if (updated) {
+        tx.commit();
+    }
+    return updated;
 }
 
 bool FileRepository::delete_file_logical(const std::string& file_id, pqxx::work& tx) {
