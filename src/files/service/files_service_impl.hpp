@@ -16,6 +16,7 @@
 #include "files/db/files_connection_pool.hpp"
 #include "files/service/chunk_storage_service.hpp"
 #include "files/service/download_manager.hpp"
+#include "files/service/file_capability_manager.hpp"
 #include "files/service/file_finalization_service.hpp"
 #include "files/service/file_lifecycle_service.hpp"
 #include "files/service/metadata_manager.hpp"
@@ -47,6 +48,7 @@ struct FilesServiceDependencies {
     std::shared_ptr<ChunkStorageService> chunk_storage_service{nullptr};
     std::shared_ptr<ObjectAssemblyEngine> object_assembly_engine{nullptr};
     std::shared_ptr<FileFinalizationService> finalization_service{nullptr};
+    std::shared_ptr<IFileCapabilityManager> capability_manager{nullptr};
 };
 
 /// Implementation of the securecloud.files.v1.FilesService gRPC interface.
@@ -115,6 +117,10 @@ class FilesServiceImpl final : public v1::FilesService::Service {
 
     grpc::Status DownloadChunk(const grpc::AuthContext* auth_ctx, const v1::DownloadChunkRequest* request,
                                v1::DownloadChunkResponse* response);
+
+    grpc::Status DownloadChunk(const grpc::AuthContext* auth_ctx, const v1::DownloadChunkRequest* request,
+                               v1::DownloadChunkResponse* response,
+                               const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
 
     grpc::Status CancelFileUpload(const grpc::AuthContext* auth_ctx, const v1::CancelFileUploadRequest* request,
                                   v1::CancelFileUploadResponse* response);

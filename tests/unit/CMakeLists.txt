@@ -1858,6 +1858,73 @@ target_link_libraries(securecloud_files_download_manager_test PRIVATE
 
 gtest_discover_tests(securecloud_files_download_manager_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Capability Serializer Unit Test Suite (FILES-008-T01)
+add_executable(securecloud_files_file_capability_serializer_test
+    files/file_capability_serializer_test.cpp
+)
+
+target_link_libraries(securecloud_files_file_capability_serializer_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::auth
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_file_capability_serializer_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Capability Validator Unit Test Suite (FILES-008-T02)
+add_executable(securecloud_files_capability_validator_test
+    files/capability_validator_test.cpp
+)
+
+target_link_libraries(securecloud_files_capability_validator_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::auth
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_capability_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Device Revocation Provider Unit Test Suite (FILES-008-T03)
+add_executable(securecloud_files_device_revocation_provider_test
+    files/device_revocation_provider_test.cpp
+)
+
+target_link_libraries(securecloud_files_device_revocation_provider_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_device_revocation_provider_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Capability Manager Unit Test Suite (FILES-008-T04)
+add_executable(securecloud_files_file_capability_manager_test
+    files/file_capability_manager_test.cpp
+)
+
+target_link_libraries(securecloud_files_file_capability_manager_test PRIVATE
+    securecloud::files_service
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::auth
+    securecloud::json
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_file_capability_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Files Lifecycle Service Unit Test Suite (FILES-004-T05)
 add_executable(securecloud_files_lifecycle_service_test
     files/file_lifecycle_service_test.cpp

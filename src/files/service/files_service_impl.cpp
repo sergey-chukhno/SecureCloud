@@ -67,6 +67,11 @@ FilesServiceImpl::FilesServiceImpl(FilesServiceDependencies deps, std::string ex
         auto download_engine = std::make_shared<ChunkDownloadEngine>(deps_.s3_client);
         deps_.download_manager = std::make_shared<DownloadManager>(deps_.db_pool, download_engine);
     }
+    if (!deps_.capability_manager && deps_.db_pool) {
+        auto signer = std::make_shared<auth::crypto::Ed25519TokenSigner>("sc-files-v1");
+        auto verifier = auth::crypto::Ed25519TokenVerifier::from_signer(*signer);
+        deps_.capability_manager = std::make_shared<FileCapabilityManager>(deps_.db_pool, signer, std::move(verifier));
+    }
 }
 
 FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db_pool,
@@ -88,7 +93,13 @@ FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db
                                             db_pool, std::make_shared<ObjectAssemblyEngine>(s3_client))
                                       : nullptr,
       },
-      expected_client_identity_(std::move(expected_client_identity)) {}
+      expected_client_identity_(std::move(expected_client_identity)) {
+    if (deps_.db_pool && !deps_.capability_manager) {
+        auto signer = std::make_shared<auth::crypto::Ed25519TokenSigner>("sc-files-v1");
+        auto verifier = auth::crypto::Ed25519TokenVerifier::from_signer(*signer);
+        deps_.capability_manager = std::make_shared<FileCapabilityManager>(deps_.db_pool, signer, std::move(verifier));
+    }
+}
 
 const std::string& FilesServiceImpl::expected_client_identity() const noexcept {
     return expected_client_identity_;
@@ -646,11 +657,20 @@ grpc::Status FilesServiceImpl::GetFileMetadata(const grpc::AuthContext* auth_ctx
 grpc::Status FilesServiceImpl::DownloadChunk(grpc::ServerContext* context, const v1::DownloadChunkRequest* request,
                                              v1::DownloadChunkResponse* response) {
     const grpc::AuthContext* auth_ctx = (context != nullptr) ? context->auth_context().get() : nullptr;
-    return DownloadChunk(auth_ctx, request, response);
+    static const std::multimap<grpc::string_ref, grpc::string_ref> k_empty_metadata;
+    const auto& metadata = (context != nullptr) ? context->client_metadata() : k_empty_metadata;
+    return DownloadChunk(auth_ctx, request, response, metadata);
 }
 
 grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, const v1::DownloadChunkRequest* request,
                                              v1::DownloadChunkResponse* response) {
+    static const std::multimap<grpc::string_ref, grpc::string_ref> k_empty_metadata;
+    return DownloadChunk(auth_ctx, request, response, k_empty_metadata);
+}
+
+grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, const v1::DownloadChunkRequest* request,
+                                             v1::DownloadChunkResponse* response,
+                                             const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata) {
     std::string peer_identity;
     auto auth_status = check_peer_authorization(auth_ctx, "DownloadChunk", peer_identity);
     if (!auth_status.ok()) {
@@ -669,6 +689,45 @@ grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, 
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format: " + request->file_id());
         logger.finish(status);
         return status;
+    }
+
+    // Extract caller identity and capability token from client metadata
+    std::string user_id;
+    std::string device_id;
+    std::string capability_token;
+
+    for (const auto& [key_ref, val_ref] : client_metadata) {
+        std::string key(key_ref.data(), key_ref.size());
+        for (char& c : key)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+        if (key == "x-user-id" && user_id.empty()) {
+            user_id = std::string(val_ref.data(), val_ref.size());
+        } else if (key == "x-device-id" && device_id.empty()) {
+            device_id = std::string(val_ref.data(), val_ref.size());
+        } else if ((key == "x-file-access-capability" || key == "x-file-capability") && capability_token.empty()) {
+            capability_token = std::string(val_ref.data(), val_ref.size());
+        }
+    }
+
+    // If capability manager is configured and a capability token is presented, authorize it
+    if (deps_.capability_manager && !capability_token.empty()) {
+        try {
+            deps_.capability_manager->authorize_capability(capability_token, user_id, device_id, request->file_id(),
+                                                           FileCapabilityOperation::Read, 0);
+        } catch (const InvalidCapabilityException& ex) {
+            auto status = grpc::Status(grpc::StatusCode::UNAUTHENTICATED, ex.what());
+            logger.finish(status);
+            return status;
+        } catch (const UnauthorizedFileAccessException& ex) {
+            auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+            logger.finish(status);
+            return status;
+        } catch (const std::exception& ex) {
+            auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+            logger.finish(status);
+            return status;
+        }
     }
 
     if (!deps_.download_manager) {
