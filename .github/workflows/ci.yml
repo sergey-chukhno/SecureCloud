@@ -281,12 +281,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure Windows Defender Exclusions
+      - name: Configure Windows Defender Exclusions & Pacman Settings
         shell: pwsh
         run: |
           Write-Host "Disabling Windows Defender Realtime Monitoring for CI build performance..."
           Set-MpPreference -DisableRealtimeMonitoring $true
           Add-MpPreference -ExclusionPath "${{ github.workspace }}", "C:\msys64", "D:\a", "$env:TEMP"
+          if (Test-Path "C:\msys64\etc\pacman.conf") {
+            Write-Host "Configuring DisableDownloadTimeout in pre-installed MSYS2..."
+            (Get-Content "C:\msys64\etc\pacman.conf") -replace '^#DisableDownloadTimeout', 'DisableDownloadTimeout' | Set-Content "C:\msys64\etc\pacman.conf"
+          }
 
       - name: Restore MSYS2 Pacman Cache
         uses: actions/cache@v4
@@ -309,7 +313,8 @@ jobs:
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
-          update: true
+          release: false
+          update: false
           path-type: minimal
 
       - name: Install MinGW64 Dependencies with Retries
@@ -336,7 +341,7 @@ jobs:
           installed=0
           for attempt in 1 2 3 4 5; do
             echo "Attempt $attempt of 5: Installing MinGW64 packages..."
-            if pacman -S --needed --noconfirm --disable-download-timeout "${PACKAGES[@]}"; then
+            if pacman -Sy --needed --noconfirm --disable-download-timeout "${PACKAGES[@]}"; then
               installed=1
               break
             fi
