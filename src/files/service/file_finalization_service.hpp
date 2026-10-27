@@ -50,14 +50,13 @@ struct FinalizeUploadResultDto {
 /// machine transitions, and anti-split-brain idempotency.
 class FileFinalizationService {
   public:
-    explicit FileFinalizationService(
-        std::shared_ptr<db::FilesDbConnectionPool> pool,
-        std::shared_ptr<ObjectAssemblyEngine> assembly_engine,
-        std::shared_ptr<FileTransferRepository> transfer_repo = nullptr,
-        std::shared_ptr<FileRepository> file_repo = nullptr,
-        std::shared_ptr<FileVersionRepository> version_repo = nullptr,
-        std::shared_ptr<FileChunkRepository> chunk_repo = nullptr,
-        std::shared_ptr<FilesOutboxRepository> outbox_repo = nullptr);
+    explicit FileFinalizationService(std::shared_ptr<db::FilesDbConnectionPool> pool,
+                                     std::shared_ptr<ObjectAssemblyEngine> assembly_engine,
+                                     std::shared_ptr<FileTransferRepository> transfer_repo = nullptr,
+                                     std::shared_ptr<FileRepository> file_repo = nullptr,
+                                     std::shared_ptr<FileVersionRepository> version_repo = nullptr,
+                                     std::shared_ptr<FileChunkRepository> chunk_repo = nullptr,
+                                     std::shared_ptr<FilesOutboxRepository> outbox_repo = nullptr);
 
     virtual ~FileFinalizationService() = default;
 

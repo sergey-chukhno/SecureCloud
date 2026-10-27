@@ -1,5 +1,5 @@
-#include "files/service/object_assembly_engine.hpp"
 #include "files/domain/chunk_validator.hpp"
+#include "files/service/object_assembly_engine.hpp"
 #include "files/storage/s3_exceptions.hpp"
 
 #include <gtest/gtest.h>
@@ -75,8 +75,7 @@ class InMemoryHttpTransport : public storage::IHttpTransport {
 TEST(ObjectAssemblyEngineTest, CanonicalVersionKeyConstruction) {
     EXPECT_EQ(ObjectAssemblyEngine::build_version_key("018f6e80-7b23-74d1-81f8-000000000001", 1),
               "objects/018f6e80-7b23-74d1-81f8-000000000001/1");
-    EXPECT_EQ(ObjectAssemblyEngine::build_version_key("file-42", 5),
-              "objects/file-42/5");
+    EXPECT_EQ(ObjectAssemblyEngine::build_version_key("file-42", 5), "objects/file-42/5");
 }
 
 TEST(ObjectAssemblyEngineTest, AssembleMultiChunkObject) {
@@ -103,14 +102,14 @@ TEST(ObjectAssemblyEngineTest, AssembleMultiChunkObject) {
     FileChunkEntity c0;
     c0.transfer_id = transfer_id;
     c0.chunk_index = 0;
-    c0.chunk_size = chunk0_data.size();
+    c0.chunk_size = static_cast<int32_t>(chunk0_data.size());
     c0.chunk_hash_sha256 = compute_sha256_hex(chunk0_data);
     c0.minio_chunk_key = key0;
 
     FileChunkEntity c1;
     c1.transfer_id = transfer_id;
     c1.chunk_index = 1;
-    c1.chunk_size = chunk1_data.size();
+    c1.chunk_size = static_cast<int32_t>(chunk1_data.size());
     c1.chunk_hash_sha256 = compute_sha256_hex(chunk1_data);
     c1.minio_chunk_key = key1;
 
@@ -150,9 +149,7 @@ TEST(ObjectAssemblyEngineTest, RejectCorruptedStagedChunk) {
     c0.chunk_hash_sha256 = compute_sha256_hex("Original valid payload");
     c0.minio_chunk_key = key0;
 
-    EXPECT_THROW(
-        engine.assemble_version_object("file-1", 1, transfer_id, {c0}),
-        storage::S3IntegrityException);
+    EXPECT_THROW(engine.assemble_version_object("file-1", 1, transfer_id, {c0}), storage::S3IntegrityException);
 }
 
 TEST(ObjectAssemblyEngineTest, AssembleEmptyFileObject) {

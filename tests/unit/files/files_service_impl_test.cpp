@@ -177,7 +177,7 @@ TEST_F(FilesServiceInProcessTest, UploadChunkReturnsNotFoundWhenSessionDoesNotEx
     EXPECT_EQ(status.error_message(), "Transfer session not found: 0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
 }
 
-TEST_F(FilesServiceInProcessTest, FinalizeFileUploadChecksPreconditionsAndReturnsUnimplemented) {
+TEST_F(FilesServiceInProcessTest, FinalizeFileUploadReturnsUnavailableWhenServiceUninitialized) {
     grpc::ClientContext context;
     v1::FinalizeFileUploadRequest request;
     request.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
@@ -187,9 +187,8 @@ TEST_F(FilesServiceInProcessTest, FinalizeFileUploadChecksPreconditionsAndReturn
     v1::FinalizeFileUploadResponse response;
     auto status = stub_->FinalizeFileUpload(&context, request, &response);
 
-    // Passed UUID validation and lifecycle hook check, now returns skeleton unimplemented until FILE-006
-    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
-    EXPECT_EQ(status.error_message(), FilesServiceImpl::k_unimplemented_skeleton_message);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE);
+    EXPECT_EQ(status.error_message(), "Finalization service uninitialized");
 }
 
 TEST_F(FilesServiceInProcessTest, FinalizeFileUploadRejectsInvalidFileId) {

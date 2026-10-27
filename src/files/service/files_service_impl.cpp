@@ -60,7 +60,8 @@ FilesServiceImpl::FilesServiceImpl(FilesServiceDependencies deps, std::string ex
         deps_.object_assembly_engine = std::make_shared<ObjectAssemblyEngine>(deps_.s3_client);
     }
     if (!deps_.finalization_service && deps_.object_assembly_engine && deps_.db_pool) {
-        deps_.finalization_service = std::make_shared<FileFinalizationService>(deps_.db_pool, deps_.object_assembly_engine);
+        deps_.finalization_service =
+            std::make_shared<FileFinalizationService>(deps_.db_pool, deps_.object_assembly_engine);
     }
 }
 
@@ -461,6 +462,13 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
         return status;
     }
 
+    if (!is_valid_uuid(request->upload_id())) {
+        auto status =
+            grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
+        logger.finish(status);
+        return status;
+    }
+
     if (!request->file_id().empty() && !is_valid_uuid(request->file_id())) {
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format");
         logger.finish(status);
@@ -476,7 +484,7 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
     FinalizeUploadRequestDto dto{
         .upload_id = request->upload_id(),
         .file_id = request->file_id(),
-        .caller_user_id = peer_identity,
+        .caller_user_id = "",
         .expected_ciphertext_sha256 = request->expected_ciphertext_sha256(),
     };
 
@@ -484,9 +492,7 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
         auto result = deps_.finalization_service->finalize_file_upload(dto);
         response->set_file_id(result.file_id);
         response->set_lifecycle_state(v1::FILE_LIFECYCLE_STATE_AVAILABLE);
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                      result.available_at.time_since_epoch())
-                      .count();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(result.available_at.time_since_epoch()).count();
         response->set_available_at_unix_ms(ms);
 
         auto status = grpc::Status::OK;
@@ -512,12 +518,12 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
         auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
         logger.finish(status);
         return status;
-    } catch (const storage::S3TimeoutException& ex) {
-        auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, ex.what());
-        logger.finish(status);
-        return status;
     } catch (const storage::S3AuthenticationException& ex) {
         auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3ConnectionException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, ex.what());
         logger.finish(status);
         return status;
     } catch (const std::invalid_argument& ex) {
