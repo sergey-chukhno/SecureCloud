@@ -182,6 +182,27 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
         return status;
     }
 
+    BulkheadPermit upload_permit;
+    if (deps_.upload_bulkhead) {
+        upload_permit = deps_.upload_bulkhead->acquire_with_default_timeout();
+        if (!upload_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Upload concurrency capacity exhausted (domain: " + deps_.upload_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
+    }
+
+    if (request->encrypted_size_bytes() > 0) {
+        std::string size_err;
+        if (!validate_file_transfer_size(request->encrypted_size_bytes(), deps_.max_file_transfer_bytes, size_err)) {
+            auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, size_err);
+            logger.finish(status);
+            return status;
+        }
+    }
+
     std::cout << "[SecureCloud] [files] RPC CreateFileUpload request received for file_id='" << request->file_id()
               << "' owner_user_id='" << request->owner_user_id()
               << "' (expected_chunks=" << request->expected_chunk_count() << ")\n";
@@ -318,16 +339,50 @@ grpc::Status FilesServiceImpl::UploadChunk(const grpc::AuthContext* auth_ctx, co
         return status;
     }
 
-    // Zero-Plaintext Invariant: log upload_id, chunk_index, and size only; never log encrypted_data bytes
-    std::cout << "[SecureCloud] [files] RPC UploadChunk request received for upload_id='" << request->upload_id()
-              << "' chunk_index=" << request->chunk_index() << " size=" << request->chunk_size_bytes() << " bytes\n";
-
     if (!is_valid_uuid(request->upload_id())) {
         auto status =
             grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
         logger.finish(status);
         return status;
     }
+
+    BulkheadPermit upload_permit;
+    if (deps_.upload_bulkhead) {
+        upload_permit = deps_.upload_bulkhead->acquire_with_default_timeout();
+        if (!upload_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Upload concurrency capacity exhausted (domain: " + deps_.upload_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
+    }
+
+    // Chunk Request Size Cap (5 MiB default)
+    size_t chunk_bytes =
+        request->chunk_size_bytes() > 0 ? request->chunk_size_bytes() : request->encrypted_data().size();
+    std::string chunk_size_err;
+    if (!validate_chunk_request_size(chunk_bytes, deps_.max_chunk_request_bytes, chunk_size_err)) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, chunk_size_err);
+        logger.finish(status);
+        return status;
+    }
+
+    // Global Memory Buffer Reservation (Backpressure / Bounded Budget)
+    MemoryBufferReservation mem_reservation;
+    if (deps_.memory_tracker) {
+        mem_reservation = deps_.memory_tracker->try_reserve(chunk_bytes);
+        if (!mem_reservation) {
+            auto status = grpc::Status(grpc::StatusCode::RESOURCE_EXHAUSTED,
+                                       "Global memory buffer budget exhausted for incoming chunk");
+            logger.finish(status);
+            return status;
+        }
+    }
+
+    // Zero-Plaintext Invariant: log upload_id, chunk_index, and size only; never log encrypted_data bytes
+    std::cout << "[SecureCloud] [files] RPC UploadChunk request received for upload_id='" << request->upload_id()
+              << "' chunk_index=" << request->chunk_index() << " size=" << request->chunk_size_bytes() << " bytes\n";
 
     ChunkPayloadDto dto{
         .upload_id = request->upload_id(),
@@ -486,6 +541,18 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
         return status;
     }
 
+    BulkheadPermit upload_permit;
+    if (deps_.upload_bulkhead) {
+        upload_permit = deps_.upload_bulkhead->acquire_with_default_timeout();
+        if (!upload_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Upload concurrency capacity exhausted (domain: " + deps_.upload_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
+    }
+
     if (!request->file_id().empty() && !is_valid_uuid(request->file_id())) {
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format");
         logger.finish(status);
@@ -579,6 +646,18 @@ grpc::Status FilesServiceImpl::GetFileMetadata(const grpc::AuthContext* auth_ctx
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid request or response pointer");
         logger.finish(status);
         return status;
+    }
+
+    BulkheadPermit metadata_permit;
+    if (deps_.metadata_bulkhead) {
+        metadata_permit = deps_.metadata_bulkhead->acquire_with_default_timeout();
+        if (!metadata_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Metadata concurrency capacity exhausted (domain: " + deps_.metadata_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
     }
 
     std::cout << "[SecureCloud] [files] RPC GetFileMetadata request received for file_id='" << request->file_id()
@@ -685,6 +764,18 @@ grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, 
         return status;
     }
 
+    BulkheadPermit download_permit;
+    if (deps_.download_bulkhead) {
+        download_permit = deps_.download_bulkhead->acquire_with_default_timeout();
+        if (!download_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Download concurrency capacity exhausted (domain: " + deps_.download_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
+    }
+
     if (!is_valid_uuid(request->file_id())) {
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format: " + request->file_id());
         logger.finish(status);
@@ -739,6 +830,26 @@ grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, 
     try {
         auto chunk_res =
             deps_.download_manager->get_chunk_versioned(request->file_id(), 0, request->chunk_index(), peer_identity);
+
+        // Validate chunk size bounds
+        std::string chunk_size_err;
+        if (!validate_chunk_request_size(chunk_res.chunk_size_bytes, deps_.max_chunk_request_bytes, chunk_size_err)) {
+            auto status = grpc::Status(grpc::StatusCode::OUT_OF_RANGE, chunk_size_err);
+            logger.finish(status);
+            return status;
+        }
+
+        // Reserve memory buffer budget for downstream transfer (Backpressure pipeline)
+        MemoryBufferReservation mem_reservation;
+        if (deps_.memory_tracker) {
+            mem_reservation = deps_.memory_tracker->try_reserve(chunk_res.chunk_size_bytes);
+            if (!mem_reservation) {
+                auto status = grpc::Status(grpc::StatusCode::RESOURCE_EXHAUSTED,
+                                           "Global memory buffer budget exhausted during chunk download");
+                logger.finish(status);
+                return status;
+            }
+        }
 
         response->set_file_id(chunk_res.file_id);
         response->set_chunk_index(chunk_res.chunk_index);
@@ -820,6 +931,18 @@ grpc::Status FilesServiceImpl::CancelFileUpload(const grpc::AuthContext* auth_ct
         return status;
     }
 
+    BulkheadPermit metadata_permit;
+    if (deps_.metadata_bulkhead) {
+        metadata_permit = deps_.metadata_bulkhead->acquire_with_default_timeout();
+        if (!metadata_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Metadata concurrency capacity exhausted (domain: " + deps_.metadata_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
+    }
+
     std::cout << "[SecureCloud] [files] RPC CancelFileUpload request received for upload_id='" << request->upload_id()
               << "'\n";
 
@@ -875,6 +998,18 @@ grpc::Status FilesServiceImpl::DeleteFile(const grpc::AuthContext* auth_ctx, con
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid request or response pointer");
         logger.finish(status);
         return status;
+    }
+
+    BulkheadPermit metadata_permit;
+    if (deps_.metadata_bulkhead) {
+        metadata_permit = deps_.metadata_bulkhead->acquire_with_default_timeout();
+        if (!metadata_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Metadata concurrency capacity exhausted (domain: " + deps_.metadata_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
     }
 
     std::cout << "[SecureCloud] [files] RPC DeleteFile request received for file_id='" << request->file_id() << "'\n";

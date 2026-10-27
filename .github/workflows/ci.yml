@@ -123,6 +123,8 @@ jobs:
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg_archives
       VCPKG_DOWNLOADS: ${{ github.workspace }}/.vcpkg_downloads
+      SCCACHE_GHA_ENABLED: "true"
+      ACTIONS_CACHE_SERVICE_V2: "on"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -142,12 +144,25 @@ jobs:
             core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', process.env.ACTIONS_CACHE_SERVICE_V2 || 'on');
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('SCCACHE_GHA_ENABLED', 'true');
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.11
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          ACTIONS_CACHE_URL: ${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: "on"
+          ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
 
       - name: Configure sccache Environment
         shell: pwsh
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          ACTIONS_CACHE_URL: ${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: "on"
+          ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
         run: |
           "SCCACHE_GHA_ENABLED=true" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "ACTIONS_CACHE_URL=$env:ACTIONS_CACHE_URL" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
@@ -156,8 +171,9 @@ jobs:
           "ACTIONS_RESULTS_URL=$env:ACTIONS_RESULTS_URL" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CMAKE_C_COMPILER_LAUNCHER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "CMAKE_CXX_COMPILER_LAUNCHER=sccache" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          sccache --start-server
-          sccache --show-stats
+          & sccache --stop-server 2>$null
+          & sccache --start-server
+          & sccache --show-stats
 
       - name: Restore vcpkg binary archives and downloads
         id: vcpkg-cache
@@ -253,6 +269,12 @@ jobs:
 
       - name: Build All Targets
         shell: pwsh
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          ACTIONS_CACHE_URL: ${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: "on"
+          ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
         run: |
           cmake --build --preset ci-windows-msvc --parallel
 

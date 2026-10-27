@@ -1,5 +1,8 @@
 add_library(securecloud_files_config STATIC
     files_config.cpp
+    concurrency/resource_config.cpp
+    concurrency/concurrency_bulkhead.cpp
+    concurrency/memory_buffer_tracker.cpp
 )
 
 add_library(securecloud::files_config ALIAS securecloud_files_config)
@@ -55,6 +58,7 @@ target_link_libraries(securecloud_files_db PUBLIC
 
 add_library(securecloud_files_storage STATIC
     storage/s3_client.cpp
+    storage/bounded_storage_engine.cpp
 )
 
 add_library(securecloud::files_storage ALIAS securecloud_files_storage)
