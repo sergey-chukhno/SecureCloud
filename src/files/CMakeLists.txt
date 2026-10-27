@@ -2,6 +2,7 @@ add_library(securecloud_files_config STATIC
     files_config.cpp
     concurrency/resource_config.cpp
     concurrency/concurrency_bulkhead.cpp
+    concurrency/memory_buffer_tracker.cpp
 )
 
 add_library(securecloud::files_config ALIAS securecloud_files_config)

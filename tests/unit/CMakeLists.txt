@@ -1935,6 +1935,20 @@ target_link_libraries(securecloud_files_bounded_storage_engine_test PRIVATE
 
 gtest_discover_tests(securecloud_files_bounded_storage_engine_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Memory Buffer Tracker Unit Test Suite (FILES-009-T04)
+add_executable(securecloud_files_memory_buffer_tracker_test
+    files/memory_buffer_tracker_test.cpp
+)
+
+target_link_libraries(securecloud_files_memory_buffer_tracker_test PRIVATE
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_memory_buffer_tracker_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Files Device Revocation Provider Unit Test Suite (FILES-008-T03)
 add_executable(securecloud_files_device_revocation_provider_test
     files/device_revocation_provider_test.cpp
