@@ -1,32 +1,25 @@
 #pragma once
 
 #include "domain/enums.hpp"
+#include "domain/producer_identity_validator.hpp"
+#include "securecloud/audit/v1/audit.grpc.pb.h"
 
-#include <grpcpp/server_context.hpp>
-#include <grpcpp/support/status.hpp>
-
-#include <optional>
 #include <string>
-#include <string_view>
 
 namespace securecloud::audit::security {
 
-    class ProducerIdentityValidator {
+    class GrpcProducerIdentityValidator {
     public:
-        // Extracts client certificate identity (SAN or CN) from gRPC ServerContext
-        [[nodiscard]] static std::optional<std::string> extract_peer_identity(
+        /// Extracts mTLS peer credentials from gRPC ServerContext into domain PeerIdentity.
+        [[nodiscard]] static domain::PeerIdentity extract_peer_identity(
             const grpc::ServerContext& context);
 
-        // Maps an FQDN (e.g., auth.securecloud.internal) to a canonical service name (e.g., auth)
-        [[nodiscard]] static std::optional<std::string> map_san_to_producer_service(
-            std::string_view san_identity);
+        /// Validates gRPC peer context against the declared producer service enum.
+        [[nodiscard]] static grpc::Status validate_peer_context(
+            const grpc::ServerContext& context,
+            domain::ProducerService declared_producer);
 
-        // Validates whether the certificate identity matches the declared producer_service
-        [[nodiscard]] static bool validate_producer_identity(
-            const std::string& cert_identity,
-            const std::string& declared_producer);
-
-        // Performs full gRPC verification and returns appropriate status (OK, UNAUTHENTICATED, PERMISSION_DENIED)
+        /// Validates gRPC peer context against the declared producer service string.
         [[nodiscard]] static grpc::Status validate_peer_context(
             const grpc::ServerContext& context,
             const std::string& declared_producer);
