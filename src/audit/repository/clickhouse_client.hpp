@@ -10,28 +10,31 @@
 
 namespace securecloud::audit::repository {
 
-    /// Client HTTP bas niveau ClickHouse avec gestion du pool de connexions et keep-alive.
+    /// Low-level ClickHouse HTTP client with connection pooling and keep-alive support.
     class ClickHouseClient {
     public:
         explicit ClickHouseClient(const ClickHouseConfig& config);
-        ~ClickHouseClient();
+        virtual ~ClickHouseClient();
 
         // Prevent copying to maintain connection state safety
         ClickHouseClient(const ClickHouseClient&) = delete;
         ClickHouseClient& operator=(const ClickHouseClient&) = delete;
 
-        /// Exécute une requête SQL en lecture/commande (ex: SELECT, ALTER).
-        [[nodiscard]] bool execute_query(const std::string& query,
-                                         std::string* out_response = nullptr,
-                                         std::chrono::milliseconds timeout = std::chrono::milliseconds(3000));
+        /// Executes a read/command SQL query (e.g. SELECT, ALTER).
+        [[nodiscard]] virtual bool execute_query(
+            const std::string& query,
+            std::string* out_response = nullptr,
+            std::chrono::milliseconds timeout = std::chrono::milliseconds(3000));
 
-        /// Exécute une requête d'insertion avec données brutes en body (ex: JSONEachRow).
-        [[nodiscard]] bool execute_insert(const std::string& query,
-                                          const std::string& body_data,
-                                          std::chrono::milliseconds timeout = std::chrono::milliseconds(3000));
+        /// Executes an insert query with raw data payload in HTTP body.
+        [[nodiscard]] virtual bool execute_insert(
+            const std::string& query,
+            const std::string& body_data,
+            std::chrono::milliseconds timeout = std::chrono::milliseconds(3000));
 
-        /// Healthcheck rapide (exécute `SELECT 1` avec timeout sub-seconde).
-        [[nodiscard]] bool ping(std::chrono::milliseconds timeout = std::chrono::milliseconds(800));
+        /// Rapid healthcheck probe (executes `SELECT 1` with sub-second deadline).
+        [[nodiscard]] virtual bool ping(
+            std::chrono::milliseconds timeout = std::chrono::milliseconds(800));
 
     private:
         struct Impl;

@@ -926,3 +926,20 @@ target_link_libraries(securecloud_audit_clickhouse_integration_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_clickhouse_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Ingestion Integration Test Suite (AUDIT-004-T06)
+add_executable(securecloud_audit_ingestion_integration_test
+        audit_ingestion_integration_test.cpp
+)
+
+target_link_libraries(securecloud_audit_ingestion_integration_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_ingestion_integration_test ${SECURECLOUD_TEST_PROPERTIES})
