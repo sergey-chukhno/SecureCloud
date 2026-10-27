@@ -1,16 +1,15 @@
 #include "files/service/files_service_impl.hpp"
 
-#include "securecloud/security/mtls_config.hpp"
-
-#include <chrono>
-#include <iostream>
-#include <utility>
-
 #include "files/domain/chunk_validator.hpp"
 #include "files/domain/metadata_validator.hpp"
 #include "files/repository/file_transfer_repository.hpp"
 #include "files/service/chunk_storage_service.hpp"
 #include "files/service/upload_session_manager.hpp"
+#include "securecloud/security/mtls_config.hpp"
+
+#include <chrono>
+#include <iostream>
+#include <utility>
 
 #ifdef DeleteFile
 #undef DeleteFile
@@ -61,7 +60,8 @@ FilesServiceImpl::FilesServiceImpl(FilesServiceDependencies deps, std::string ex
         deps_.object_assembly_engine = std::make_shared<ObjectAssemblyEngine>(deps_.s3_client);
     }
     if (!deps_.finalization_service && deps_.object_assembly_engine && deps_.db_pool) {
-        deps_.finalization_service = std::make_shared<FileFinalizationService>(deps_.db_pool, deps_.object_assembly_engine);
+        deps_.finalization_service =
+            std::make_shared<FileFinalizationService>(deps_.db_pool, deps_.object_assembly_engine);
     }
     if (!deps_.download_manager && deps_.s3_client && deps_.db_pool) {
         auto download_engine = std::make_shared<ChunkDownloadEngine>(deps_.s3_client);
@@ -188,11 +188,18 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
         .file_id = target_file_id,
         .owner_user_id = request->owner_user_id(),
         .owner_device_id = request->owner_device_id(),
-        .conversation_id = request->conversation_id().empty() ? std::nullopt : std::make_optional(request->conversation_id()),
+        .conversation_id =
+            request->conversation_id().empty() ? std::nullopt : std::make_optional(request->conversation_id()),
         .encrypted_size_bytes = request->encrypted_size_bytes(),
         .expected_chunk_count = request->expected_chunk_count(),
         .encryption_algorithm = request->encryption_version().empty() ? std::string(k_approved_encryption_algorithm)
                                                                       : request->encryption_version(),
+        .encrypted_filename = {},
+        .encrypted_mime_type = std::nullopt,
+        .metadata_nonce = {},
+        .metadata_tag = {},
+        .client_encryption_metadata_json = "{}",
+        .retention_until = std::nullopt,
     };
 
     if (!request->client_crypto_metadata().empty()) {
@@ -226,11 +233,22 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
     auto expiry_tp = now + std::chrono::hours(24);
     int64_t expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(expiry_tp.time_since_epoch()).count();
 
-    // If db pool is present, persist transfer session record
-    if (deps_.db_pool) {
+    if (deps_.upload_session_manager) {
+        v1::CreateFileUploadRequest session_req = *request;
+        session_req.set_file_id(target_file_id);
+        auto session = deps_.upload_session_manager->create_session(session_req);
+        if (session) {
+            upload_id = session->upload_id;
+            expiry_tp = session->expires_at;
+            expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(expiry_tp.time_since_epoch()).count();
+        } else {
+            auto status = grpc::Status(grpc::StatusCode::INTERNAL, "Failed to create upload session");
+            logger.finish(status);
+            return status;
+        }
+    } else if (deps_.db_pool) {
         try {
-            auto conn = deps_.db_pool->acquire_connection();
-            pqxx::work tx(*conn);
+            pqxx::work tx;
             FileTransferRepository transfer_repo(deps_.db_pool);
             FileTransferEntity transfer{
                 .transfer_id = upload_id,
@@ -238,9 +256,11 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
                 .transfer_type = TransferType::Upload,
                 .initiator_user_id = request->owner_user_id(),
                 .initiator_device_id = request->owner_device_id(),
-                .status = TransferStatus::Pending,
+                .status = TransferStatus::Created,
                 .total_chunks = static_cast<int32_t>(dto.expected_chunk_count),
                 .accepted_chunks = 0,
+                .total_bytes = static_cast<int64_t>(dto.encrypted_size_bytes),
+                .transferred_bytes = 0,
                 .created_at = now,
                 .updated_at = now,
                 .expires_at = expiry_tp,
@@ -293,7 +313,8 @@ grpc::Status FilesServiceImpl::UploadChunk(const grpc::AuthContext* auth_ctx, co
               << "' chunk_index=" << request->chunk_index() << " size=" << request->chunk_size_bytes() << " bytes\n";
 
     if (!is_valid_uuid(request->upload_id())) {
-        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
+        auto status =
+            grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
         logger.finish(status);
         return status;
     }
@@ -353,7 +374,8 @@ grpc::Status FilesServiceImpl::UploadChunk(const grpc::AuthContext* auth_ctx, co
         }
     } else {
         if (dto.chunk_size_bytes != dto.encrypted_data.size()) {
-            auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "chunk_size_bytes does not match payload size");
+            auto status =
+                grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "chunk_size_bytes does not match payload size");
             logger.finish(status);
             return status;
         }
@@ -384,7 +406,8 @@ grpc::Status FilesServiceImpl::UploadChunk(const grpc::AuthContext* auth_ctx, co
         response->set_received_sha256(store_result.received_sha256);
 
         if (deps_.upload_session_manager) {
-            deps_.upload_session_manager->record_chunk_upload(dto.upload_id, dto.chunk_index, store_result.received_sha256);
+            deps_.upload_session_manager->record_chunk_upload(dto.upload_id, dto.chunk_index,
+                                                              store_result.received_sha256);
         }
 
         auto status = grpc::Status::OK;
@@ -446,6 +469,13 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
         return status;
     }
 
+    if (!is_valid_uuid(request->upload_id())) {
+        auto status =
+            grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
+        logger.finish(status);
+        return status;
+    }
+
     if (!request->file_id().empty() && !is_valid_uuid(request->file_id())) {
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format");
         logger.finish(status);
@@ -461,7 +491,7 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
     FinalizeUploadRequestDto dto{
         .upload_id = request->upload_id(),
         .file_id = request->file_id(),
-        .caller_user_id = peer_identity,
+        .caller_user_id = "",
         .expected_ciphertext_sha256 = request->expected_ciphertext_sha256(),
     };
 
@@ -469,9 +499,7 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
         auto result = deps_.finalization_service->finalize_file_upload(dto);
         response->set_file_id(result.file_id);
         response->set_lifecycle_state(v1::FILE_LIFECYCLE_STATE_AVAILABLE);
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                      result.available_at.time_since_epoch())
-                      .count();
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(result.available_at.time_since_epoch()).count();
         response->set_available_at_unix_ms(ms);
 
         auto status = grpc::Status::OK;
@@ -497,12 +525,12 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
         auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
         logger.finish(status);
         return status;
-    } catch (const storage::S3TimeoutException& ex) {
-        auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, ex.what());
-        logger.finish(status);
-        return status;
     } catch (const storage::S3AuthenticationException& ex) {
         auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3ConnectionException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, ex.what());
         logger.finish(status);
         return status;
     } catch (const std::invalid_argument& ex) {
@@ -547,7 +575,7 @@ grpc::Status FilesServiceImpl::GetFileMetadata(const grpc::AuthContext* auth_ctx
               << "'\n";
 
     if (!is_valid_uuid(request->file_id())) {
-        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "file_id is not a valid UUIDv7 format");
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format");
         logger.finish(status);
         return status;
     }
@@ -586,25 +614,24 @@ grpc::Status FilesServiceImpl::GetFileMetadata(const grpc::AuthContext* auth_ctx
 
     if (summary.active_version.has_value()) {
         response->set_ciphertext_integrity_hash(summary.active_version->checksum_sha256);
-        auto avail_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                            summary.active_version->created_at.time_since_epoch())
-                            .count();
+        auto avail_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(summary.active_version->created_at.time_since_epoch())
+                .count();
         response->set_available_at_unix_ms(avail_ms);
     } else {
         response->set_ciphertext_integrity_hash("");
         response->set_available_at_unix_ms(0);
     }
 
-    auto created_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                          summary.file.created_at.time_since_epoch())
-                          .count();
+    auto created_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(summary.file.created_at.time_since_epoch()).count();
     response->set_created_at_unix_ms(created_ms);
 
     int64_t expires_ms = 0;
     if (summary.file.retention_until.has_value()) {
-        expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                         summary.file.retention_until->time_since_epoch())
-                         .count();
+        expires_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(summary.file.retention_until->time_since_epoch())
+                .count();
     }
     response->set_expires_at_unix_ms(expires_ms);
 
@@ -739,7 +766,8 @@ grpc::Status FilesServiceImpl::CancelFileUpload(const grpc::AuthContext* auth_ct
               << "'\n";
 
     if (!is_valid_uuid(request->upload_id())) {
-        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid upload_id format");
+        auto status =
+            grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
         logger.finish(status);
         return status;
     }
@@ -752,7 +780,7 @@ grpc::Status FilesServiceImpl::CancelFileUpload(const grpc::AuthContext* auth_ct
 
     bool cancelled = deps_.upload_session_manager->cancel_session(request->upload_id(), request->reason());
     if (!cancelled) {
-        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, "Upload transfer session not found");
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, "Upload session not found: " + request->upload_id());
         logger.finish(status);
         return status;
     }
@@ -794,7 +822,7 @@ grpc::Status FilesServiceImpl::DeleteFile(const grpc::AuthContext* auth_ctx, con
     std::cout << "[SecureCloud] [files] RPC DeleteFile request received for file_id='" << request->file_id() << "'\n";
 
     if (!is_valid_uuid(request->file_id())) {
-        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "file_id is not a valid UUIDv7 format");
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format");
         logger.finish(status);
         return status;
     }

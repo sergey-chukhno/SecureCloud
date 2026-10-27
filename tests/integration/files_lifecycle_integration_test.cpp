@@ -13,7 +13,7 @@
 #include "files/repository/files_outbox_repository.hpp"
 #include "files/service/file_lifecycle_service.hpp"
 #include "files/service/files_service_impl.hpp"
-#include "securecloud/common/configuration/secret_string.hpp"
+#include "securecloud/configuration/secret_string.hpp"
 #include "securecloud/files/v1/files.grpc.pb.h"
 #include "securecloud/files/v1/files.pb.h"
 #include "securecloud/health/transport_probe.hpp"
@@ -52,6 +52,11 @@ inline void ensure_integration_winsock() noexcept {
 inline void ensure_integration_winsock() noexcept {}
 #endif
 
+class TestAuthPropertyIterator : public grpc::AuthPropertyIterator {
+  public:
+    TestAuthPropertyIterator() = default;
+};
+
 // Mock AuthContext for gRPC testing
 class TestIntegrationAuthContext : public grpc::AuthContext {
   public:
@@ -68,8 +73,8 @@ class TestIntegrationAuthContext : public grpc::AuthContext {
         }
         return {};
     }
-    [[nodiscard]] grpc::AuthPropertyIterator begin() const override { return {}; }
-    [[nodiscard]] grpc::AuthPropertyIterator end() const override { return {}; }
+    [[nodiscard]] grpc::AuthPropertyIterator begin() const override { return TestAuthPropertyIterator{}; }
+    [[nodiscard]] grpc::AuthPropertyIterator end() const override { return TestAuthPropertyIterator{}; }
     void AddProperty(const std::string&, const grpc::string_ref&) override {}
     bool SetPeerIdentityPropertyName(const std::string&) override { return false; }
 
@@ -99,8 +104,8 @@ class FilesLifecycleIntegrationTest : public ::testing::Test {
         access_repo_ = std::make_shared<FileAccessRepository>(pool_);
         outbox_repo_ = std::make_shared<FilesOutboxRepository>(pool_);
 
-        lifecycle_service_ = std::make_shared<FileLifecycleService>(
-            pool_, file_repo_, version_repo_, access_repo_, outbox_repo_);
+        lifecycle_service_ =
+            std::make_shared<FileLifecycleService>(pool_, file_repo_, version_repo_, access_repo_, outbox_repo_);
     }
 
     void TearDown() override {
@@ -255,16 +260,16 @@ TEST_F(FilesLifecycleIntegrationTest, TC2_ImmutableVersioningAndMultiVersion) {
     // Verify v1 record in DB is completely untouched
     {
         pqxx::work tx;
-        auto stored_v1 = version_repo_->find_by_version(file_id, 1, tx);
-        ASSERT_TRUE(stored_v1.has_value());
-        EXPECT_EQ(stored_v1->minio_object_key, "objects/" + file_id + "/1");
-        EXPECT_EQ(stored_v1->checksum_sha256, sha256_v1);
-        EXPECT_EQ(stored_v1->encrypted_size_bytes, 1024);
+        auto versions = version_repo_->list_versions(file_id, tx);
+        ASSERT_GE(versions.size(), 2U);
+        EXPECT_EQ(versions[0].version_number, 1);
+        EXPECT_EQ(versions[0].minio_object_key, "objects/" + file_id + "/1");
+        EXPECT_EQ(versions[0].checksum_sha256, sha256_v1);
+        EXPECT_EQ(versions[0].encrypted_size, 1024);
 
-        auto stored_v2 = version_repo_->find_by_version(file_id, 2, tx);
-        ASSERT_TRUE(stored_v2.has_value());
-        EXPECT_EQ(stored_v2->minio_object_key, "objects/" + file_id + "/2");
-        EXPECT_EQ(stored_v2->checksum_sha256, sha256_v2);
+        EXPECT_EQ(versions[1].version_number, 2);
+        EXPECT_EQ(versions[1].minio_object_key, "objects/" + file_id + "/2");
+        EXPECT_EQ(versions[1].checksum_sha256, sha256_v2);
     }
 }
 
@@ -434,13 +439,14 @@ TEST_F(FilesLifecycleIntegrationTest, TC6_OwnershipAndAccessControl) {
     {
         pqxx::work tx;
         FileAccessEntity grant{
+            .access_id = generate_uuid_v7(),
             .file_id = file_id,
             .grantee_user_id = user_b,
             .permission = FilePermission::Read,
-            .granted_by_user_id = user_a,
+            .granted_by = user_a,
             .granted_at = now,
         };
-        access_repo_->create_grant(grant, tx);
+        access_repo_->grant_access(grant, tx);
         tx.commit();
     }
 
@@ -507,7 +513,7 @@ TEST_F(FilesLifecycleIntegrationTest, TC7_EndToEndGrpcServiceCalls) {
     status = files_service.DeleteFile(&auth_ctx, &del_req, &del_resp);
     EXPECT_TRUE(status.ok()) << status.error_message();
     EXPECT_EQ(del_resp.file_id(), file_id);
-    EXPECT_EQ(del_resp.state(), v1::FILE_LIFECYCLE_STATE_DELETED);
+    EXPECT_EQ(del_resp.lifecycle_state(), v1::FILE_LIFECYCLE_STATE_DELETED);
     EXPECT_TRUE(del_resp.deleted());
 }
 

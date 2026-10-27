@@ -34,7 +34,6 @@ class EntityNotFoundException : public RepositoryException {
     using RepositoryException::RepositoryException;
 };
 
-
 /// Authoritative repository managing persistent storage and state transitions for files
 /// and their client-encrypted metadata (ADR-005, Files Design 6.3, 6.18, 6.19).
 class FileRepository {
@@ -62,6 +61,9 @@ class FileRepository {
     /// Returns true if updated; returns false if row was not in `expected_current` status.
     /// Throws InvalidStateTransitionException if transition is illegal.
     bool update_status(const std::string& file_id, FileStatus expected_current, FileStatus new_status, pqxx::work& tx);
+
+    /// Enforces optimistic concurrency and valid lifecycle state transitions (creates autonomous work session).
+    bool update_status(const std::string& file_id, FileStatus expected_current, FileStatus new_status);
 
     /// Logically marks a file as DELETED within the given transaction.
     bool delete_file_logical(const std::string& file_id, pqxx::work& tx);

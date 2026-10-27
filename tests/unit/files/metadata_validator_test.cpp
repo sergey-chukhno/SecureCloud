@@ -99,20 +99,18 @@ TEST(MetadataValidatorTest, UnpackClientCryptoMetadataInvalid) {
 
 TEST(MetadataValidatorTest, ValidateCreateFileRequestValid) {
     auto now = std::chrono::system_clock::now();
-    CreateFileRequestDto dto{
-        .file_id = "0191ec4d-9a6a-7d9a-9e58-69315570c634",
-        .owner_user_id = "0191ec4d-9a6a-7d9a-9e58-69315570c635",
-        .owner_device_id = "0191ec4d-9a6a-7d9a-9e58-69315570c636",
-        .conversation_id = "0191ec4d-9a6a-7d9a-9e58-69315570c637",
-        .encrypted_size_bytes = 10 * 1024 * 1024, // 10 MiB
-        .expected_chunk_count = 3,                 // ceil(10 / 4) = 3
-        .encryption_algorithm = "XChaCha20-Poly1305",
-        .encrypted_filename = std::vector<uint8_t>(20, 0xAA),
-        .metadata_nonce = std::vector<uint8_t>(24, 0xBB),
-        .metadata_tag = std::vector<uint8_t>(16, 0xCC),
-        .client_encryption_metadata_json = "{}",
-        .retention_until = now + std::chrono::hours(24)
-    };
+    CreateFileRequestDto dto{.file_id = "0191ec4d-9a6a-7d9a-9e58-69315570c634",
+                             .owner_user_id = "0191ec4d-9a6a-7d9a-9e58-69315570c635",
+                             .owner_device_id = "0191ec4d-9a6a-7d9a-9e58-69315570c636",
+                             .conversation_id = "0191ec4d-9a6a-7d9a-9e58-69315570c637",
+                             .encrypted_size_bytes = 10 * 1024 * 1024, // 10 MiB
+                             .expected_chunk_count = 3,                // ceil(10 / 4) = 3
+                             .encryption_algorithm = "XChaCha20-Poly1305",
+                             .encrypted_filename = std::vector<uint8_t>(20, 0xAA),
+                             .metadata_nonce = std::vector<uint8_t>(24, 0xBB),
+                             .metadata_tag = std::vector<uint8_t>(16, 0xCC),
+                             .client_encryption_metadata_json = "{}",
+                             .retention_until = now + std::chrono::hours(24)};
 
     auto res = validate_create_file_request(dto, now);
     EXPECT_TRUE(res.is_valid) << res.error_message;
@@ -120,17 +118,15 @@ TEST(MetadataValidatorTest, ValidateCreateFileRequestValid) {
 
 TEST(MetadataValidatorTest, ValidateCreateFileRequestRejections) {
     auto now = std::chrono::system_clock::now();
-    CreateFileRequestDto base{
-        .file_id = "0191ec4d-9a6a-7d9a-9e58-69315570c634",
-        .owner_user_id = "0191ec4d-9a6a-7d9a-9e58-69315570c635",
-        .owner_device_id = "0191ec4d-9a6a-7d9a-9e58-69315570c636",
-        .encrypted_size_bytes = 4 * 1024 * 1024,
-        .expected_chunk_count = 1,
-        .encryption_algorithm = "XChaCha20-Poly1305",
-        .encrypted_filename = {1, 2, 3},
-        .metadata_nonce = std::vector<uint8_t>(24, 0),
-        .metadata_tag = std::vector<uint8_t>(16, 0)
-    };
+    CreateFileRequestDto base{.file_id = "0191ec4d-9a6a-7d9a-9e58-69315570c634",
+                              .owner_user_id = "0191ec4d-9a6a-7d9a-9e58-69315570c635",
+                              .owner_device_id = "0191ec4d-9a6a-7d9a-9e58-69315570c636",
+                              .encrypted_size_bytes = 4 * 1024 * 1024,
+                              .expected_chunk_count = 1,
+                              .encryption_algorithm = "XChaCha20-Poly1305",
+                              .encrypted_filename = {1, 2, 3},
+                              .metadata_nonce = std::vector<uint8_t>(24, 0),
+                              .metadata_tag = std::vector<uint8_t>(16, 0)};
 
     // Bad file UUID
     {
@@ -196,13 +192,12 @@ TEST(MetadataValidatorTest, ValidateCreateFileRequestRejections) {
 }
 
 TEST(MetadataValidatorTest, ValidateCreateVersionRequest) {
-    CreateFileVersionRequestDto valid_dto{
-        .file_id = "0191ec4d-9a6a-7d9a-9e58-69315570c634",
-        .version_number = 2,
-        .encrypted_size_bytes = 1024,
-        .minio_object_key = "objects/0191ec4d-9a6a-7d9a-9e58-69315570c634/2",
-        .checksum_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-    };
+    CreateFileVersionRequestDto valid_dto{.file_id = "0191ec4d-9a6a-7d9a-9e58-69315570c634",
+                                          .version_number = 2,
+                                          .encrypted_size_bytes = 1024,
+                                          .minio_object_key = "objects/0191ec4d-9a6a-7d9a-9e58-69315570c634/2",
+                                          .checksum_sha256 =
+                                              "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"};
 
     EXPECT_TRUE(validate_create_version_request(valid_dto).is_valid);
 

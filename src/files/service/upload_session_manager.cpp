@@ -1,4 +1,5 @@
 #include "files/service/upload_session_manager.hpp"
+
 #include "files/domain/metadata_validator.hpp"
 
 #include <algorithm>
@@ -7,13 +8,10 @@
 
 namespace securecloud::files::service {
 
-UploadSessionManager::UploadSessionManager(
-    std::shared_ptr<db::FilesDbConnectionPool> pool,
-    std::shared_ptr<FileTransferRepository> transfer_repo,
-    std::shared_ptr<FileChunkRepository> chunk_repo)
-    : pool_(std::move(pool)),
-      transfer_repo_(std::move(transfer_repo)),
-      chunk_repo_(std::move(chunk_repo)) {
+UploadSessionManager::UploadSessionManager(std::shared_ptr<db::FilesDbConnectionPool> pool,
+                                           std::shared_ptr<FileTransferRepository> transfer_repo,
+                                           std::shared_ptr<FileChunkRepository> chunk_repo)
+    : pool_(std::move(pool)), transfer_repo_(std::move(transfer_repo)), chunk_repo_(std::move(chunk_repo)) {
     if (!transfer_repo_ && pool_) {
         transfer_repo_ = std::make_shared<FileTransferRepository>(pool_);
     }
@@ -47,8 +45,7 @@ std::optional<UploadSession> UploadSessionManager::create_session(const v1::Crea
                 .expires_at = expires_at,
             };
             if (pool_) {
-                auto conn = pool_->acquire_connection();
-                pqxx::work tx(*conn);
+                pqxx::work tx;
                 transfer_repo_->create_transfer(transfer, tx);
                 tx.commit();
             } else {
@@ -111,33 +108,32 @@ UploadSession UploadSessionManager::reconstruct_session_from_storage(const std::
     v1::TransferStatus proto_status = v1::TRANSFER_STATUS_PENDING;
 
     switch (transfer.status) {
-        case TransferStatus::Created:
-            proto_status = v1::TRANSFER_STATUS_PENDING;
-            break;
-        case TransferStatus::Transferring:
-            proto_status = v1::TRANSFER_STATUS_UPLOADING;
-            break;
-        case TransferStatus::Finalizing:
-            proto_status = v1::TRANSFER_STATUS_COMPLETED; // closest proto match
-            break;
-        case TransferStatus::Completed:
-            proto_status = v1::TRANSFER_STATUS_COMPLETED;
-            break;
-        case TransferStatus::Expired:
-            proto_status = v1::TRANSFER_STATUS_EXPIRED;
-            break;
-        case TransferStatus::Cancelled:
-            proto_status = v1::TRANSFER_STATUS_CANCELLED;
-            break;
-        case TransferStatus::Failed:
-            proto_status = v1::TRANSFER_STATUS_FAILED;
-            break;
+    case TransferStatus::Created:
+        proto_status = v1::TRANSFER_STATUS_PENDING;
+        break;
+    case TransferStatus::Transferring:
+        proto_status = v1::TRANSFER_STATUS_IN_PROGRESS;
+        break;
+    case TransferStatus::Finalizing:
+        proto_status = v1::TRANSFER_STATUS_COMPLETED; // closest proto match
+        break;
+    case TransferStatus::Completed:
+        proto_status = v1::TRANSFER_STATUS_COMPLETED;
+        break;
+    case TransferStatus::Expired:
+        proto_status = v1::TRANSFER_STATUS_FAILED;
+        break;
+    case TransferStatus::Cancelled:
+        proto_status = v1::TRANSFER_STATUS_CANCELLED;
+        break;
+    case TransferStatus::Failed:
+        proto_status = v1::TRANSFER_STATUS_FAILED;
+        break;
     }
 
-    if (now > transfer.expires_at &&
-        transfer.status != TransferStatus::Cancelled &&
+    if (now > transfer.expires_at && transfer.status != TransferStatus::Cancelled &&
         transfer.status != TransferStatus::Completed) {
-        proto_status = v1::TRANSFER_STATUS_EXPIRED;
+        proto_status = v1::TRANSFER_STATUS_FAILED;
     }
 
     UploadSession session{
@@ -164,10 +160,9 @@ std::optional<UploadSession> UploadSessionManager::get_session(const std::string
     auto it = in_memory_cache_.find(upload_id);
     if (it != in_memory_cache_.end()) {
         auto now = std::chrono::system_clock::now();
-        if (now > it->second.expires_at &&
-            it->second.status != v1::TRANSFER_STATUS_CANCELLED &&
+        if (now > it->second.expires_at && it->second.status != v1::TRANSFER_STATUS_CANCELLED &&
             it->second.status != v1::TRANSFER_STATUS_COMPLETED) {
-            it->second.status = v1::TRANSFER_STATUS_EXPIRED;
+            it->second.status = v1::TRANSFER_STATUS_FAILED;
         }
         return it->second;
     }
@@ -197,14 +192,14 @@ TransferProgress UploadSessionManager::get_transfer_progress(const std::string& 
         auto transfer = *transfer_opt;
         bool is_expired = (transfer.expires_at <= now);
 
-        if (is_expired &&
-            transfer.status != TransferStatus::Cancelled &&
+        if (is_expired && transfer.status != TransferStatus::Cancelled &&
             transfer.status != TransferStatus::Completed) {
             transfer.status = TransferStatus::Expired;
             if (transfer_repo_) {
                 try {
                     transfer_repo_->update_status(upload_id, TransferStatus::Expired);
-                } catch (...) {}
+                } catch (...) {
+                }
             }
         }
 
@@ -226,8 +221,7 @@ TransferProgress UploadSessionManager::get_transfer_progress(const std::string& 
             }
         }
 
-        bool is_complete = (transfer.total_chunks > 0 &&
-                            accepted.size() == static_cast<size_t>(transfer.total_chunks));
+        bool is_complete = (transfer.total_chunks > 0 && accepted.size() == static_cast<size_t>(transfer.total_chunks));
 
         return TransferProgress{
             .transfer_id = transfer.transfer_id,
@@ -319,12 +313,12 @@ bool UploadSessionManager::cancel_session(const std::string& upload_id, const st
 }
 
 bool UploadSessionManager::record_chunk_upload(const std::string& upload_id, uint32_t /*chunk_index*/,
-                                              const std::string& /*ciphertext_sha256*/) {
+                                               const std::string& /*ciphertext_sha256*/) {
     std::lock_guard<std::mutex> lock(session_mutex_);
     auto it = in_memory_cache_.find(upload_id);
     if (it != in_memory_cache_.end()) {
         it->second.uploaded_chunk_count++;
-        it->second.status = v1::TRANSFER_STATUS_UPLOADING;
+        it->second.status = v1::TRANSFER_STATUS_IN_PROGRESS;
         return true;
     }
     return false;

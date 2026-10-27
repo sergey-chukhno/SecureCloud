@@ -373,4 +373,25 @@ ConversationAuthorizationService::can_close_conversation(const MessagingCallerCo
     return can_close_conversation(*caller_id, conv_id);
 }
 
+bool ConversationAuthorizationService::shares_mutual_conversation(const domain::UserId& caller,
+                                                                  const domain::UserId& target) const {
+    if (caller == target) {
+        return true;
+    }
+
+    auto conversations_page = membership_repo_.list_user_conversations(caller, 100, std::nullopt);
+    for (const auto& item : conversations_page.items) {
+        if (item.membership_status != domain::MembershipStatus::Active) {
+            continue;
+        }
+
+        auto target_part = membership_repo_.find_participant(item.conversation_id, target);
+        if (target_part && target_part->status == domain::MembershipStatus::Active) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 } // namespace securecloud::messaging::service

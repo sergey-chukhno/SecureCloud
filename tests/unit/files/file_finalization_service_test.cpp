@@ -1,5 +1,5 @@
-#include "files/service/file_finalization_service.hpp"
 #include "files/domain/chunk_validator.hpp"
+#include "files/service/file_finalization_service.hpp"
 #include "files/storage/s3_client.hpp"
 
 #include <gtest/gtest.h>
@@ -12,12 +12,10 @@ namespace {
 TEST(FileFinalizationServiceTest, RejectEmptyUploadId) {
     FileFinalizationService service(nullptr, nullptr);
 
-    FinalizeUploadRequestDto req{
-        .upload_id = "",
-        .file_id = "018f6e80-7b23-74d1-81f8-000000000001",
-        .caller_user_id = "user-123",
-        .expected_ciphertext_sha256 = ""
-    };
+    FinalizeUploadRequestDto req{.upload_id = "",
+                                 .file_id = "018f6e80-7b23-74d1-81f8-000000000001",
+                                 .caller_user_id = "user-123",
+                                 .expected_ciphertext_sha256 = ""};
 
     EXPECT_THROW(service.finalize_file_upload(req), FinalizationPreconditionException);
 }
@@ -25,12 +23,10 @@ TEST(FileFinalizationServiceTest, RejectEmptyUploadId) {
 TEST(FileFinalizationServiceTest, RejectUninitializedAssemblyEngine) {
     FileFinalizationService service(nullptr, nullptr);
 
-    FinalizeUploadRequestDto req{
-        .upload_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d4e",
-        .file_id = "018f6e80-7b23-74d1-81f8-000000000001",
-        .caller_user_id = "user-123",
-        .expected_ciphertext_sha256 = ""
-    };
+    FinalizeUploadRequestDto req{.upload_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d4e",
+                                 .file_id = "018f6e80-7b23-74d1-81f8-000000000001",
+                                 .caller_user_id = "user-123",
+                                 .expected_ciphertext_sha256 = ""};
 
     EXPECT_THROW(service.finalize_file_upload(req), std::runtime_error);
 }
@@ -47,12 +43,10 @@ TEST(FileFinalizationServiceTest, RejectUninitializedPool) {
 
     FileFinalizationService service(nullptr, assembly_engine);
 
-    FinalizeUploadRequestDto req{
-        .upload_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d4e",
-        .file_id = "018f6e80-7b23-74d1-81f8-000000000001",
-        .caller_user_id = "user-123",
-        .expected_ciphertext_sha256 = ""
-    };
+    FinalizeUploadRequestDto req{.upload_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d4e",
+                                 .file_id = "018f6e80-7b23-74d1-81f8-000000000001",
+                                 .caller_user_id = "user-123",
+                                 .expected_ciphertext_sha256 = ""};
 
     EXPECT_THROW(service.finalize_file_upload(req), std::runtime_error);
 }

@@ -68,6 +68,12 @@ class MessagingProxyHandler {
     void handle_update_sync_cursor(const httplib::Request& req, httplib::Response& res,
                                    const AuthenticatedContext& ctx);
 
+    // MSG-010 User Presence Endpoints
+    void handle_update_presence(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
+    void handle_get_presence(const httplib::Request& req, httplib::Response& res, const AuthenticatedContext& ctx);
+    void handle_batch_get_presence(const httplib::Request& req, httplib::Response& res,
+                                   const AuthenticatedContext& ctx);
+
   private:
     std::shared_ptr<grpc::IMessagingClient> messaging_client_;
     std::shared_ptr<DeadlineManager> deadline_manager_;

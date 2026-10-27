@@ -26,13 +26,9 @@ struct FinalizationValidationResult {
 
     [[nodiscard]] explicit operator bool() const noexcept { return is_valid; }
 
-    static FinalizationValidationResult success() noexcept {
-        return {true, ""};
-    }
+    static FinalizationValidationResult success() noexcept { return {true, ""}; }
 
-    static FinalizationValidationResult failure(std::string message) {
-        return {false, std::move(message)};
-    }
+    static FinalizationValidationResult failure(std::string message) { return {false, std::move(message)}; }
 };
 
 /// Authoritative precondition validator for whole-object finalization.
@@ -43,7 +39,7 @@ struct FinalizationValidationResult {
 /// 4. Chunk size summation matching parent file encrypted_size.
 /// 5. Valid storage keys and hashes for each chunk.
 /// 6. Expected SHA-256 digest format validity.
-[[nodiscard]] FinalizationValidationResult validate_finalization_preconditions(
-    const FinalizationValidationInput& input);
+[[nodiscard]] FinalizationValidationResult
+validate_finalization_preconditions(const FinalizationValidationInput& input);
 
 } // namespace securecloud::files
