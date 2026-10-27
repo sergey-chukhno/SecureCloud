@@ -70,7 +70,7 @@ class MockHttpTransport : public storage::IHttpTransport {
                     .body = it->second,
                 };
             }
-            return storage::HttpResponse{.status_code = 404, .status_message = "Not Found"};
+            return storage::HttpResponse{.status_code = 404, .status_message = "Not Found", .headers = {}, .body = ""};
         } else if (req.method == "HEAD") {
             auto it = storage_.find(req.path);
             if (it != storage_.end()) {
@@ -81,9 +81,9 @@ class MockHttpTransport : public storage::IHttpTransport {
                     .body = "",
                 };
             }
-            return storage::HttpResponse{.status_code = 404, .status_message = "Not Found"};
+            return storage::HttpResponse{.status_code = 404, .status_message = "Not Found", .headers = {}, .body = ""};
         }
-        return storage::HttpResponse{.status_code = 200, .status_message = "OK"};
+        return storage::HttpResponse{.status_code = 200, .status_message = "OK", .headers = {}, .body = ""};
     }
 
   private:
