@@ -1809,6 +1809,55 @@ target_link_libraries(securecloud_files_finalization_service_test PRIVATE
 
 gtest_discover_tests(securecloud_files_finalization_service_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Download Validator Unit Test Suite (FILES-007-T01)
+add_executable(securecloud_files_download_validator_test
+    files/download_validator_test.cpp
+)
+
+target_link_libraries(securecloud_files_download_validator_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_download_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Chunk Download Engine Unit Test Suite (FILES-007-T02)
+add_executable(securecloud_files_chunk_download_engine_test
+    files/chunk_download_engine_test.cpp
+)
+
+target_link_libraries(securecloud_files_chunk_download_engine_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_chunk_download_engine_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Download Manager Unit Test Suite (FILES-007-T03)
+add_executable(securecloud_files_download_manager_test
+    files/download_manager_test.cpp
+)
+
+target_link_libraries(securecloud_files_download_manager_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_download_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Files Lifecycle Service Unit Test Suite (FILES-004-T05)
 add_executable(securecloud_files_lifecycle_service_test
     files/file_lifecycle_service_test.cpp

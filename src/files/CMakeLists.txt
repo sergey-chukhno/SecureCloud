@@ -24,6 +24,7 @@ add_library(securecloud_files_db STATIC
     domain/metadata_validator.cpp
     domain/chunk_validator.cpp
     domain/finalization_validator.cpp
+    domain/download_validator.cpp
     repository/file_repository.cpp
     repository/file_version_repository.cpp
     repository/file_transfer_repository.cpp
@@ -78,6 +79,8 @@ add_library(securecloud_files_service STATIC
     service/chunk_storage_service.cpp
     service/object_assembly_engine.cpp
     service/file_finalization_service.cpp
+    service/chunk_download_engine.cpp
+    service/download_manager.cpp
 )
 
 add_library(securecloud::files_service ALIAS securecloud_files_service)
