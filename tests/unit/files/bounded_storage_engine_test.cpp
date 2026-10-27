@@ -1,8 +1,8 @@
 #include "files/storage/bounded_storage_engine.hpp"
 
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -18,49 +18,57 @@ class MockStorageEngine : public service::IStorageEngine {
 
     bool put_chunk(const std::string&, uint32_t, std::string_view, const std::string&) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return true;
     }
 
     std::optional<std::string> get_chunk(const std::string&, uint32_t) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return "encrypted_chunk_data";
     }
 
     bool delete_chunk(const std::string&, uint32_t) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return true;
     }
 
     bool put_file_object(const std::string&, uint32_t, std::string_view, const std::string&) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return true;
     }
 
-    std::optional<std::string> get_file_object(const std::string&, uint32_t, std::optional<storage::ByteRange>) override {
+    std::optional<std::string> get_file_object(const std::string&, uint32_t,
+                                               std::optional<storage::ByteRange>) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return "file_data";
     }
 
     bool delete_file_objects(const std::string&) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return true;
     }
 
     bool delete_transfer_chunks(const std::string&) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return true;
     }
@@ -69,12 +77,11 @@ class MockStorageEngine : public service::IStorageEngine {
     void record_enter() {
         size_t current = ++active_ops;
         size_t prev = max_concurrent_ops.load();
-        while (current > prev && !max_concurrent_ops.compare_exchange_weak(prev, current)) {}
+        while (current > prev && !max_concurrent_ops.compare_exchange_weak(prev, current)) {
+        }
     }
 
-    void record_exit() {
-        --active_ops;
-    }
+    void record_exit() { --active_ops; }
 };
 
 TEST(BoundedStorageEngineTest, RejectsNullArgumentsInConstructor) {
@@ -115,9 +122,7 @@ TEST(BoundedStorageEngineTest, EnforcesConcurrencyLimitAndThrottles) {
 
     std::vector<std::thread> workers;
     for (size_t i = 0; i < 10; ++i) {
-        workers.emplace_back([&engine] {
-            engine.put_chunk("tx", 0, "payload", "sha");
-        });
+        workers.emplace_back([&engine] { engine.put_chunk("tx", 0, "payload", "sha"); });
     }
 
     for (auto& w : workers) {

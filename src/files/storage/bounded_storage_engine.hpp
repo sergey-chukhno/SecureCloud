@@ -1,7 +1,7 @@
 #pragma once
 
-#include "files/service/storage_engine.hpp"
 #include "files/concurrency/concurrency_bulkhead.hpp"
+#include "files/service/storage_engine.hpp"
 #include "files/storage/s3_exceptions.hpp"
 
 #include <memory>
@@ -12,8 +12,7 @@ namespace securecloud::files::storage {
 /// Thrown when all storage permits are in use and acquisition times out (ADR-009, FILES-009).
 class StorageCapacityExhaustedException : public S3ClientException {
   public:
-    explicit StorageCapacityExhaustedException(const std::string& msg)
-        : S3ClientException(msg) {}
+    explicit StorageCapacityExhaustedException(const std::string& msg) : S3ClientException(msg) {}
 };
 
 /// Decorator around IStorageEngine that enforces strict bounded concurrency

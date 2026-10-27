@@ -91,31 +91,27 @@ size_t MemoryBufferTracker::available_bytes() const noexcept {
     return max_memory_bytes_ - current_reserved_bytes_;
 }
 
-bool validate_chunk_request_size(size_t chunk_bytes, size_t max_allowed_bytes,
-                                 std::string& out_error_message) {
+bool validate_chunk_request_size(size_t chunk_bytes, size_t max_allowed_bytes, std::string& out_error_message) {
     if (chunk_bytes == 0) {
         out_error_message = "Chunk request size cannot be zero";
         return false;
     }
     if (chunk_bytes > max_allowed_bytes) {
         out_error_message = "Chunk request size (" + std::to_string(chunk_bytes) +
-                            " bytes) exceeds maximum allowed size (" +
-                            std::to_string(max_allowed_bytes) + " bytes)";
+                            " bytes) exceeds maximum allowed size (" + std::to_string(max_allowed_bytes) + " bytes)";
         return false;
     }
     return true;
 }
 
-bool validate_file_transfer_size(uint64_t transfer_bytes, uint64_t max_allowed_bytes,
-                                 std::string& out_error_message) {
+bool validate_file_transfer_size(uint64_t transfer_bytes, uint64_t max_allowed_bytes, std::string& out_error_message) {
     if (transfer_bytes == 0) {
         out_error_message = "File transfer size cannot be zero";
         return false;
     }
     if (transfer_bytes > max_allowed_bytes) {
         out_error_message = "File transfer size (" + std::to_string(transfer_bytes) +
-                            " bytes) exceeds maximum allowed size (" +
-                            std::to_string(max_allowed_bytes) + " bytes)";
+                            " bytes) exceeds maximum allowed size (" + std::to_string(max_allowed_bytes) + " bytes)";
         return false;
     }
     return true;

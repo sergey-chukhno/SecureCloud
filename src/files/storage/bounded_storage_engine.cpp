@@ -19,9 +19,9 @@ BoundedStorageEngine::BoundedStorageEngine(std::shared_ptr<service::IStorageEngi
 BulkheadPermit BoundedStorageEngine::acquire_storage_permit() {
     auto permit = bulkhead_->acquire_with_default_timeout();
     if (!permit) {
-        throw StorageCapacityExhaustedException(
-            "Storage concurrency limit reached on domain '" + bulkhead_->domain_name() +
-            "' (limit=" + std::to_string(bulkhead_->max_concurrency()) + ")");
+        throw StorageCapacityExhaustedException("Storage concurrency limit reached on domain '" +
+                                                bulkhead_->domain_name() +
+                                                "' (limit=" + std::to_string(bulkhead_->max_concurrency()) + ")");
     }
     return permit;
 }

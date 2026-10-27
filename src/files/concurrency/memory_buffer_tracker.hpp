@@ -75,10 +75,10 @@ class MemoryBufferTracker : public std::enable_shared_from_this<MemoryBufferTrac
 
 /// Validates request chunk size against configured ceiling.
 [[nodiscard]] bool validate_chunk_request_size(size_t chunk_bytes, size_t max_allowed_bytes,
-                                              std::string& out_error_message);
+                                               std::string& out_error_message);
 
 /// Validates total file transfer size against configured ceiling.
 [[nodiscard]] bool validate_file_transfer_size(uint64_t transfer_bytes, uint64_t max_allowed_bytes,
-                                              std::string& out_error_message);
+                                               std::string& out_error_message);
 
 } // namespace securecloud::files

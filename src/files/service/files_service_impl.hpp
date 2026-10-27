@@ -13,6 +13,8 @@
 #undef DeleteFile
 #endif
 
+#include "files/concurrency/concurrency_bulkhead.hpp"
+#include "files/concurrency/memory_buffer_tracker.hpp"
 #include "files/db/files_connection_pool.hpp"
 #include "files/service/chunk_storage_service.hpp"
 #include "files/service/download_manager.hpp"
@@ -24,9 +26,6 @@
 #include "files/service/storage_engine.hpp"
 #include "files/service/upload_session_manager.hpp"
 #include "files/storage/s3_client.hpp"
-
-#include "files/concurrency/concurrency_bulkhead.hpp"
-#include "files/concurrency/memory_buffer_tracker.hpp"
 
 #include <memory>
 #include <optional>

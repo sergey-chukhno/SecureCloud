@@ -1,14 +1,14 @@
-#include "files/service/files_service_impl.hpp"
 #include "files/concurrency/concurrency_bulkhead.hpp"
 #include "files/concurrency/memory_buffer_tracker.hpp"
 #include "files/concurrency/resource_config.hpp"
+#include "files/service/files_service_impl.hpp"
 #include "files/storage/bounded_storage_engine.hpp"
 #include "securecloud/files/v1/files.grpc.pb.h"
 #include "securecloud/files/v1/files.pb.h"
 
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <thread>
@@ -31,9 +31,14 @@ namespace {
 
 using service::FilesServiceDependencies;
 using service::FilesServiceImpl;
+using service::IStorageEngine;
 using storage::BoundedStorageEngine;
-using storage::IStorageEngine;
 using storage::StorageCapacityExhaustedException;
+
+class TestAuthPropertyIterator : public grpc::AuthPropertyIterator {
+  public:
+    TestAuthPropertyIterator() = default;
+};
 
 // Mock peer auth context
 class TestAuthContext : public grpc::AuthContext {
@@ -51,8 +56,8 @@ class TestAuthContext : public grpc::AuthContext {
         }
         return {};
     }
-    [[nodiscard]] grpc::AuthPropertyIterator begin() const override { return grpc::AuthPropertyIterator{}; }
-    [[nodiscard]] grpc::AuthPropertyIterator end() const override { return grpc::AuthPropertyIterator{}; }
+    [[nodiscard]] grpc::AuthPropertyIterator begin() const override { return TestAuthPropertyIterator{}; }
+    [[nodiscard]] grpc::AuthPropertyIterator end() const override { return TestAuthPropertyIterator{}; }
     void AddProperty(const std::string&, const grpc::string_ref&) override {}
     bool SetPeerIdentityPropertyName(const std::string&) override { return false; }
 
@@ -69,49 +74,57 @@ class MockStorageEngine : public service::IStorageEngine {
 
     bool put_chunk(const std::string&, uint32_t, std::string_view, const std::string&) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return true;
     }
 
     std::optional<std::string> get_chunk(const std::string&, uint32_t) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return "mock_encrypted_chunk_bytes";
     }
 
     bool delete_chunk(const std::string&, uint32_t) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return true;
     }
 
     bool put_file_object(const std::string&, uint32_t, std::string_view, const std::string&) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return true;
     }
 
-    std::optional<std::string> get_file_object(const std::string&, uint32_t, std::optional<storage::ByteRange>) override {
+    std::optional<std::string> get_file_object(const std::string&, uint32_t,
+                                               std::optional<storage::ByteRange>) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return "mock_file_object_bytes";
     }
 
     bool delete_file_objects(const std::string&) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return true;
     }
 
     bool delete_transfer_chunks(const std::string&) override {
         record_enter();
-        if (artificial_delay.count() > 0) std::this_thread::sleep_for(artificial_delay);
+        if (artificial_delay.count() > 0)
+            std::this_thread::sleep_for(artificial_delay);
         record_exit();
         return true;
     }
@@ -120,12 +133,11 @@ class MockStorageEngine : public service::IStorageEngine {
     void record_enter() {
         size_t current = ++active_ops;
         size_t prev = max_concurrent_ops.load();
-        while (current > prev && !max_concurrent_ops.compare_exchange_weak(prev, current)) {}
+        while (current > prev && !max_concurrent_ops.compare_exchange_weak(prev, current)) {
+        }
     }
 
-    void record_exit() {
-        --active_ops;
-    }
+    void record_exit() { --active_ops; }
 };
 
 // ============================================================================
@@ -136,11 +148,9 @@ TEST(FilesConcurrencyIntegrationTest, BulkheadDomainIsolationUnderUploadSaturati
     auto upload_bulkhead = ConcurrencyBulkhead::create("upload", 2, std::chrono::milliseconds(50));
     auto download_bulkhead = ConcurrencyBulkhead::create("download", 10, std::chrono::milliseconds(500));
 
-    FilesServiceDependencies deps{
-        .metadata_bulkhead = metadata_bulkhead,
-        .upload_bulkhead = upload_bulkhead,
-        .download_bulkhead = download_bulkhead
-    };
+    FilesServiceDependencies deps{.metadata_bulkhead = metadata_bulkhead,
+                                  .upload_bulkhead = upload_bulkhead,
+                                  .download_bulkhead = download_bulkhead};
     FilesServiceImpl service(deps, "gateway");
 
     // Completely saturate upload bulkhead
@@ -180,10 +190,7 @@ TEST(FilesConcurrencyIntegrationTest, SaturatedDownloadDomainDoesNotDegradeMetad
     auto metadata_bulkhead = ConcurrencyBulkhead::create("metadata", 10, std::chrono::milliseconds(500));
     auto download_bulkhead = ConcurrencyBulkhead::create("download", 1, std::chrono::milliseconds(50));
 
-    FilesServiceDependencies deps{
-        .metadata_bulkhead = metadata_bulkhead,
-        .download_bulkhead = download_bulkhead
-    };
+    FilesServiceDependencies deps{.metadata_bulkhead = metadata_bulkhead, .download_bulkhead = download_bulkhead};
     FilesServiceImpl service(deps, "gateway");
 
     // Saturate download domain
@@ -217,14 +224,14 @@ TEST(FilesConcurrencyIntegrationTest, BoundedStorageCeilingUnderConcurrentLoad) 
     auto mock_s3 = std::make_shared<MockStorageEngine>();
     mock_s3->artificial_delay = std::chrono::milliseconds(15);
 
-    auto storage_bulkhead = ConcurrencyBulkhead::create("minio_storage", k_storage_limit, std::chrono::milliseconds(500));
+    auto storage_bulkhead =
+        ConcurrencyBulkhead::create("minio_storage", k_storage_limit, std::chrono::milliseconds(500));
     BoundedStorageEngine bounded_engine(mock_s3, storage_bulkhead);
 
     std::vector<std::thread> threads;
     for (size_t i = 0; i < 16; ++i) {
-        threads.emplace_back([&bounded_engine] {
-            bounded_engine.put_chunk("tx", 0, "encrypted_bytes", "expected_hash");
-        });
+        threads.emplace_back(
+            [&bounded_engine] { bounded_engine.put_chunk("tx", 0, "encrypted_bytes", "expected_hash"); });
     }
 
     for (auto& t : threads) {
@@ -242,10 +249,7 @@ TEST(FilesConcurrencyIntegrationTest, GlobalMemoryBudgetGuaranteesBoundedFootpri
     constexpr size_t k_total_memory_budget = 4096; // 4 KiB
     auto memory_tracker = MemoryBufferTracker::create(k_total_memory_budget);
 
-    FilesServiceDependencies deps{
-        .memory_tracker = memory_tracker,
-        .max_chunk_request_bytes = 4096
-    };
+    FilesServiceDependencies deps{.memory_tracker = memory_tracker, .max_chunk_request_bytes = 4096};
     FilesServiceImpl service(deps, "gateway");
     TestAuthContext gateway_ctx(true);
 
@@ -284,7 +288,7 @@ TEST(FilesConcurrencyIntegrationTest, RejectsOversizedChunkBeforeBufferAllocatio
     v1::UploadChunkRequest req;
     req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
     req.set_chunk_index(0);
-    req.set_chunk_size_bytes(6 * 1024 * 1024); // 6 MiB > 5 MiB
+    req.set_chunk_size_bytes(6 * 1024 * 1024);     // 6 MiB > 5 MiB
     req.set_encrypted_data(std::string(100, 'O')); // Claimed size is 6 MiB
     v1::UploadChunkResponse resp;
 
@@ -321,9 +325,7 @@ TEST(FilesConcurrencyIntegrationTest, RejectsOversizedFileTransferAtCreation) {
 // ============================================================================
 TEST(FilesConcurrencyIntegrationTest, NonBlockingBackpressurePreventsUnboundedQueues) {
     auto upload_bulkhead = ConcurrencyBulkhead::create("upload", 2, std::chrono::milliseconds(10));
-    FilesServiceDependencies deps{
-        .upload_bulkhead = upload_bulkhead
-    };
+    FilesServiceDependencies deps{.upload_bulkhead = upload_bulkhead};
     FilesServiceImpl service(deps, "gateway");
     TestAuthContext gateway_ctx(true);
 
@@ -337,7 +339,7 @@ TEST(FilesConcurrencyIntegrationTest, NonBlockingBackpressurePreventsUnboundedQu
     for (int i = 0; i < 10; ++i) {
         v1::UploadChunkRequest req;
         req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
-        req.set_chunk_index(i);
+        req.set_chunk_index(static_cast<uint32_t>(i));
         req.set_chunk_size_bytes(10);
         req.set_encrypted_data("0123456789");
         v1::UploadChunkResponse resp;
@@ -357,10 +359,13 @@ TEST(FilesConcurrencyIntegrationTest, NonBlockingBackpressurePreventsUnboundedQu
 TEST(FilesConcurrencyIntegrationTest, ConfigurationOverridesTakeImmediateEffect) {
     class MapConfigSource : public common::configuration::ConfigurationSource {
       public:
-        std::optional<std::string> get(const std::string& key) const override {
-            if (key == "SECURECLOUD_FILES_METADATA_MAX_CONCURRENCY") return "42";
-            if (key == "SECURECLOUD_FILES_UPLOAD_MAX_CONCURRENCY") return "7";
-            if (key == "SECURECLOUD_FILES_STORAGE_MAX_CONCURRENCY") return "18";
+        std::optional<std::string> get(std::string_view key) const override {
+            if (key == "SECURECLOUD_FILES_METADATA_MAX_CONCURRENCY")
+                return "42";
+            if (key == "SECURECLOUD_FILES_UPLOAD_MAX_CONCURRENCY")
+                return "7";
+            if (key == "SECURECLOUD_FILES_STORAGE_MAX_CONCURRENCY")
+                return "18";
             return std::nullopt;
         }
     };

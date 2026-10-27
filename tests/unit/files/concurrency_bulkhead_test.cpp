@@ -1,8 +1,8 @@
 #include "concurrency/concurrency_bulkhead.hpp"
 
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <thread>
 #include <vector>
 
@@ -132,7 +132,8 @@ TEST(ConcurrencyBulkheadTest, ConcurrentAcquiresAndReleasesMaintainCorrectAccoun
                 if (permit) {
                     size_t current = bulkhead->active_permits();
                     size_t prev_max = max_observed_concurrency.load();
-                    while (current > prev_max && !max_observed_concurrency.compare_exchange_weak(prev_max, current)) {}
+                    while (current > prev_max && !max_observed_concurrency.compare_exchange_weak(prev_max, current)) {
+                    }
                     std::this_thread::yield();
                 }
             }

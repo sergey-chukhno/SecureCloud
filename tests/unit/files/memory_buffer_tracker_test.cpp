@@ -1,7 +1,7 @@
 #include "concurrency/memory_buffer_tracker.hpp"
 
-#include <gtest/gtest.h>
 #include <atomic>
+#include <gtest/gtest.h>
 #include <thread>
 #include <vector>
 
@@ -87,7 +87,8 @@ TEST(MemoryBufferTrackerTest, ConcurrentReservationsNeverExceedMaximumBudget) {
                 if (res) {
                     size_t curr = tracker->current_reserved_bytes();
                     size_t prev = max_observed.load();
-                    while (curr > prev && !max_observed.compare_exchange_weak(prev, curr)) {}
+                    while (curr > prev && !max_observed.compare_exchange_weak(prev, curr)) {
+                    }
                     std::this_thread::yield();
                 }
             }

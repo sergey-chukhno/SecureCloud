@@ -1,10 +1,10 @@
 #pragma once
 
+#include "concurrency/resource_config.hpp"
 #include "securecloud/configuration/common_service_config.hpp"
 #include "securecloud/configuration/configuration_source.hpp"
 #include "securecloud/configuration/secret_string.hpp"
 #include "securecloud/configuration/validation_error.hpp"
-#include "concurrency/resource_config.hpp"
 
 #include <cstdint>
 #include <string>

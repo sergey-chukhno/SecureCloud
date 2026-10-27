@@ -1,5 +1,5 @@
-#include "files_config.hpp"
 #include "concurrency/resource_config.hpp"
+#include "files_config.hpp"
 
 #include <gtest/gtest.h>
 #include <map>
@@ -12,8 +12,8 @@ class MapConfigSource : public common::configuration::ConfigurationSource {
   public:
     explicit MapConfigSource(std::map<std::string, std::string> values) : values_(std::move(values)) {}
 
-    std::optional<std::string> get(const std::string& key) const override {
-        auto it = values_.find(key);
+    std::optional<std::string> get(std::string_view key) const override {
+        auto it = values_.find(std::string(key));
         if (it != values_.end()) {
             return it->second;
         }
@@ -59,7 +59,7 @@ TEST(ResourceConfigTest, LoadsCustomValuesFromSource) {
         {"SECURECLOUD_FILES_STORAGE_MAX_CONCURRENCY", "40"},
         {"SECURECLOUD_FILES_STORAGE_ACQUIRE_TIMEOUT_MS", "1500"},
         {"SECURECLOUD_FILES_DB_MAX_CONNECTIONS", "25"},
-        {"SECURECLOUD_FILES_MAX_MEMORY_BUFFER_BYTES", "134217728"}, // 128 MiB
+        {"SECURECLOUD_FILES_MAX_MEMORY_BUFFER_BYTES", "134217728"},  // 128 MiB
         {"SECURECLOUD_FILES_MAX_CHUNK_REQUEST_BYTES", "8388608"},    // 8 MiB
         {"SECURECLOUD_FILES_MAX_FILE_TRANSFER_BYTES", "21474836480"} // 20 GiB
     });
@@ -87,17 +87,16 @@ TEST(ResourceConfigTest, LoadsCustomValuesFromSource) {
 }
 
 TEST(ResourceConfigTest, ValidatesZeroValuesFailClosed) {
-    MapConfigSource source({
-        {"SECURECLOUD_FILES_METADATA_MAX_CONCURRENCY", "0"},
-        {"SECURECLOUD_FILES_STORAGE_MAX_CONCURRENCY", "0"},
-        {"SECURECLOUD_FILES_DB_MAX_CONNECTIONS", "0"},
-        {"SECURECLOUD_FILES_MAX_MEMORY_BUFFER_BYTES", "0"},
-        {"SECURECLOUD_FILES_MAX_CHUNK_REQUEST_BYTES", "0"},
-        {"SECURECLOUD_FILES_MAX_FILE_TRANSFER_BYTES", "0"}
-    });
+    MapConfigSource source({{"SECURECLOUD_FILES_METADATA_MAX_CONCURRENCY", "0"},
+                            {"SECURECLOUD_FILES_STORAGE_MAX_CONCURRENCY", "0"},
+                            {"SECURECLOUD_FILES_DB_MAX_CONNECTIONS", "0"},
+                            {"SECURECLOUD_FILES_MAX_MEMORY_BUFFER_BYTES", "0"},
+                            {"SECURECLOUD_FILES_MAX_CHUNK_REQUEST_BYTES", "0"},
+                            {"SECURECLOUD_FILES_MAX_FILE_TRANSFER_BYTES", "0"}});
 
     common::configuration::ValidationResult errors;
     auto config = FilesResourceConfig::load(source, errors);
+    (void)config;
 
     EXPECT_TRUE(errors.has_errors());
     EXPECT_GE(errors.errors().size(), 6);

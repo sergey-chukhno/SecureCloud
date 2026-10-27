@@ -39,8 +39,7 @@ class BulkheadPermit {
 /// Isolates execution domains and prevents resource starvation across workloads.
 class ConcurrencyBulkhead : public std::enable_shared_from_this<ConcurrencyBulkhead> {
   public:
-    explicit ConcurrencyBulkhead(std::string domain_name,
-                                 size_t max_concurrency,
+    explicit ConcurrencyBulkhead(std::string domain_name, size_t max_concurrency,
                                  std::chrono::milliseconds acquire_timeout = std::chrono::milliseconds(500));
     ~ConcurrencyBulkhead() = default;
 
@@ -48,9 +47,9 @@ class ConcurrencyBulkhead : public std::enable_shared_from_this<ConcurrencyBulkh
     ConcurrencyBulkhead& operator=(const ConcurrencyBulkhead&) = delete;
 
     /// Factory method to create a shared ConcurrencyBulkhead instance.
-    static std::shared_ptr<ConcurrencyBulkhead> create(std::string domain_name,
-                                                       size_t max_concurrency,
-                                                       std::chrono::milliseconds acquire_timeout = std::chrono::milliseconds(500));
+    static std::shared_ptr<ConcurrencyBulkhead>
+    create(std::string domain_name, size_t max_concurrency,
+           std::chrono::milliseconds acquire_timeout = std::chrono::milliseconds(500));
 
     /// Try to acquire a permit immediately without blocking.
     /// Returns a valid BulkheadPermit if acquired, or an empty BulkheadPermit if saturated.

@@ -1166,10 +1166,7 @@ TEST(FilesServiceImplBulkheadTest, MapsMetadataBulkheadSaturationToResourceExhau
     auto mock_lifecycle = std::make_shared<TestMockLifecycleService>();
     auto metadata_bulkhead = ConcurrencyBulkhead::create("metadata", 1, std::chrono::milliseconds(20));
 
-    FilesServiceDependencies deps{
-        .lifecycle_service = mock_lifecycle,
-        .metadata_bulkhead = metadata_bulkhead
-    };
+    FilesServiceDependencies deps{.lifecycle_service = mock_lifecycle, .metadata_bulkhead = metadata_bulkhead};
     FilesServiceImpl service(deps, "gateway");
 
     // Saturate the metadata domain with a held permit
@@ -1194,9 +1191,7 @@ TEST(FilesServiceImplBulkheadTest, MapsMetadataBulkheadSaturationToResourceExhau
 TEST(FilesServiceImplBulkheadTest, MapsUploadBulkheadSaturationToResourceExhausted) {
     auto upload_bulkhead = ConcurrencyBulkhead::create("upload", 1, std::chrono::milliseconds(20));
 
-    FilesServiceDependencies deps{
-        .upload_bulkhead = upload_bulkhead
-    };
+    FilesServiceDependencies deps{.upload_bulkhead = upload_bulkhead};
     FilesServiceImpl service(deps, "gateway");
 
     // Hold the only permit in upload domain
@@ -1219,9 +1214,7 @@ TEST(FilesServiceImplBulkheadTest, MapsUploadBulkheadSaturationToResourceExhaust
 TEST(FilesServiceImplBulkheadTest, MapsDownloadBulkheadSaturationToResourceExhausted) {
     auto download_bulkhead = ConcurrencyBulkhead::create("download", 1, std::chrono::milliseconds(20));
 
-    FilesServiceDependencies deps{
-        .download_bulkhead = download_bulkhead
-    };
+    FilesServiceDependencies deps{.download_bulkhead = download_bulkhead};
     FilesServiceImpl service(deps, "gateway");
 
     auto held_permit = download_bulkhead->try_acquire();
@@ -1279,10 +1272,7 @@ TEST(FilesServiceImplResourceTest, RejectsOversizedFileTransferRequest) {
 TEST(FilesServiceImplResourceTest, MapsMemoryBudgetExhaustionToResourceExhausted) {
     auto memory_tracker = MemoryBufferTracker::create(500); // 500 bytes budget
 
-    FilesServiceDependencies deps{
-        .memory_tracker = memory_tracker,
-        .max_chunk_request_bytes = 1000
-    };
+    FilesServiceDependencies deps{.memory_tracker = memory_tracker, .max_chunk_request_bytes = 1000};
     FilesServiceImpl service(deps, "gateway");
 
     // Exhaust memory budget manually

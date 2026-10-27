@@ -11,8 +11,7 @@ BulkheadPermit::~BulkheadPermit() {
     release();
 }
 
-BulkheadPermit::BulkheadPermit(BulkheadPermit&& other) noexcept
-    : bulkhead_(std::move(other.bulkhead_)) {
+BulkheadPermit::BulkheadPermit(BulkheadPermit&& other) noexcept : bulkhead_(std::move(other.bulkhead_)) {
     other.bulkhead_ = nullptr;
 }
 
@@ -36,15 +35,12 @@ bool BulkheadPermit::holds_permit() const noexcept {
     return bulkhead_ != nullptr;
 }
 
-ConcurrencyBulkhead::ConcurrencyBulkhead(std::string domain_name,
-                                         size_t max_concurrency,
+ConcurrencyBulkhead::ConcurrencyBulkhead(std::string domain_name, size_t max_concurrency,
                                          std::chrono::milliseconds acquire_timeout)
-    : domain_name_(std::move(domain_name)),
-      max_concurrency_(max_concurrency > 0 ? max_concurrency : 1),
+    : domain_name_(std::move(domain_name)), max_concurrency_(max_concurrency > 0 ? max_concurrency : 1),
       acquire_timeout_(acquire_timeout) {}
 
-std::shared_ptr<ConcurrencyBulkhead> ConcurrencyBulkhead::create(std::string domain_name,
-                                                                 size_t max_concurrency,
+std::shared_ptr<ConcurrencyBulkhead> ConcurrencyBulkhead::create(std::string domain_name, size_t max_concurrency,
                                                                  std::chrono::milliseconds acquire_timeout) {
     return std::make_shared<ConcurrencyBulkhead>(std::move(domain_name), max_concurrency, acquire_timeout);
 }
@@ -65,9 +61,7 @@ BulkheadPermit ConcurrencyBulkhead::acquire_with_timeout(std::chrono::millisecon
         return BulkheadPermit(shared_from_this());
     }
 
-    bool acquired = cv_.wait_for(lock, timeout, [this] {
-        return active_permits_ < max_concurrency_;
-    });
+    bool acquired = cv_.wait_for(lock, timeout, [this] { return active_permits_ < max_concurrency_; });
 
     if (acquired) {
         ++active_permits_;
