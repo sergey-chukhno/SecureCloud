@@ -478,7 +478,7 @@ target_link_libraries(securecloud_auth_token_integration_test PRIVATE
     OpenSSL::Crypto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 if(WIN32)
@@ -500,7 +500,7 @@ target_link_libraries(securecloud_auth_mfa_integration_test PRIVATE
     OpenSSL::Crypto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 if(WIN32)
@@ -522,7 +522,7 @@ target_link_libraries(securecloud_auth_device_integration_test PRIVATE
     OpenSSL::Crypto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 if(WIN32)
@@ -544,7 +544,7 @@ target_link_libraries(securecloud_auth_crypto_identity_integration_test PRIVATE
     OpenSSL::Crypto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 if(WIN32)
@@ -565,7 +565,7 @@ target_link_libraries(securecloud_auth_prekey_concurrency_integration_test PRIVA
     OpenSSL::Crypto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 if(WIN32)
@@ -591,7 +591,7 @@ target_link_libraries(securecloud_gateway_auth_e2e_integration_test PRIVATE
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_gateway_auth_e2e_integration_test PRIVATE
@@ -615,7 +615,7 @@ target_link_libraries(securecloud_messaging_service_lifecycle_integration_test P
     securecloud_proto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_messaging_service_lifecycle_integration_test PRIVATE
@@ -645,7 +645,7 @@ target_link_libraries(securecloud_messaging_conversation_integration_test PRIVAT
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_messaging_conversation_integration_test PRIVATE
@@ -695,7 +695,7 @@ target_link_libraries(securecloud_messaging_submission_integration_test PRIVATE
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_messaging_submission_integration_test PRIVATE
@@ -725,7 +725,7 @@ target_link_libraries(securecloud_messaging_e2e_envelope_integration_test PRIVAT
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_messaging_e2e_envelope_integration_test PRIVATE
@@ -760,7 +760,7 @@ target_link_libraries(securecloud_msg_read_receipts_integration_test PRIVATE
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_msg_read_receipts_integration_test PRIVATE
@@ -815,7 +815,7 @@ target_link_libraries(securecloud_messaging_online_sync_integration_test PRIVATE
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_messaging_online_sync_integration_test PRIVATE

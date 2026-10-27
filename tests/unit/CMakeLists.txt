@@ -354,7 +354,7 @@ target_link_libraries(securecloud_auth_credential_verifier_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_credential_verifier_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -370,7 +370,7 @@ target_link_libraries(securecloud_auth_session_manager_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_session_manager_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -387,7 +387,7 @@ target_link_libraries(securecloud_auth_audit_event_publisher_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_audit_event_publisher_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -404,7 +404,7 @@ target_link_libraries(securecloud_auth_service_authenticate_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_service_authenticate_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -447,7 +447,7 @@ target_link_libraries(securecloud_auth_session_validation_test PRIVATE
         securecloud::common
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_session_validation_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -462,7 +462,7 @@ target_link_libraries(securecloud_auth_session_revocation_test PRIVATE
         securecloud::common
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_session_revocation_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -478,7 +478,7 @@ target_link_libraries(securecloud_auth_session_audit_test PRIVATE
         securecloud::json
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_session_audit_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -494,7 +494,7 @@ target_link_libraries(securecloud_auth_service_session_test PRIVATE
         securecloud_proto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_service_session_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -542,7 +542,7 @@ target_link_libraries(securecloud_auth_token_manager_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_token_manager_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -559,7 +559,7 @@ target_link_libraries(securecloud_auth_token_reuse_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_token_reuse_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -577,7 +577,7 @@ target_link_libraries(securecloud_auth_service_token_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_service_token_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -623,7 +623,7 @@ target_link_libraries(securecloud_auth_mfa_manager_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_mfa_manager_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -640,7 +640,7 @@ target_link_libraries(securecloud_auth_service_mfa_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_service_mfa_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -671,7 +671,7 @@ target_link_libraries(securecloud_auth_device_manager_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_device_manager_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -687,7 +687,7 @@ target_link_libraries(securecloud_auth_device_revocation_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_device_revocation_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -704,7 +704,7 @@ target_link_libraries(securecloud_auth_service_device_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_service_device_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -750,7 +750,7 @@ target_link_libraries(securecloud_auth_prekey_validator_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_prekey_validator_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -766,7 +766,7 @@ target_link_libraries(securecloud_auth_prekey_manager_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_prekey_manager_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -797,7 +797,7 @@ target_link_libraries(securecloud_auth_crypto_directory_manager_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_crypto_directory_manager_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -814,7 +814,7 @@ target_link_libraries(securecloud_auth_service_crypto_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_service_crypto_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -830,7 +830,7 @@ target_link_libraries(securecloud_auth_service_prekey_test PRIVATE
         securecloud_proto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_service_prekey_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -848,7 +848,7 @@ target_link_libraries(securecloud_auth_service_public_key_test PRIVATE
         OpenSSL::Crypto
         securecloud::compiler_flags
         GTest::gtest_main
-        GTest::gmock
+        GTest::gmock_main
 )
 
 gtest_discover_tests(securecloud_auth_service_public_key_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -947,7 +947,7 @@ target_link_libraries(securecloud_token_validator_test PRIVATE
     securecloud::gateway_grpc
     securecloud_proto
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -963,7 +963,7 @@ target_link_libraries(securecloud_gateway_local_token_verifier_test PRIVATE
     securecloud::auth
     securecloud_proto
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -993,7 +993,7 @@ target_link_libraries(securecloud_authentication_middleware_test PRIVATE
     securecloud_proto
     securecloud::json
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -1035,7 +1035,7 @@ target_link_libraries(securecloud_authenticated_context_lifecycle_test PRIVATE
     securecloud_proto
     securecloud::json
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -1043,17 +1043,30 @@ gtest_discover_tests(securecloud_authenticated_context_lifecycle_test ${SECURECL
 
 # Gateway Auth Microservice HTTP Proxy Handler Test (GW-006-T01)
 add_executable(securecloud_auth_proxy_handler_test
-    gateway/auth_proxy_handler_test.cpp
+        gateway/auth_proxy_handler_test.cpp
 )
 
-target_link_libraries(securecloud_auth_proxy_handler_test PRIVATE
-    securecloud::gateway_http
-    securecloud_proto
-    securecloud::json
-    securecloud::compiler_flags
-    GTest::gmock
-    GTest::gtest_main
-)
+if(WIN32 AND MINGW)
+    target_link_libraries(securecloud_auth_proxy_handler_test PRIVATE
+            -Wl,--start-group
+            securecloud::gateway_http
+            securecloud_proto
+            securecloud::json
+            securecloud::compiler_flags
+            GTest::gmock
+            GTest::gmock_main
+            GTest::gtest
+            -Wl,--end-group
+    )
+#else()
+#    target_link_libraries(securecloud_auth_proxy_handler_test PRIVATE
+#            securecloud::gateway_http
+#            securecloud_proto
+#            securecloud::json
+#            securecloud::compiler_flags
+#            GTest::gmock_main
+#    )
+endif()
 
 gtest_discover_tests(securecloud_auth_proxy_handler_test ${SECURECLOUD_TEST_PROPERTIES})
 
@@ -1067,7 +1080,7 @@ target_link_libraries(securecloud_auth_proxy_handler_mfa_test PRIVATE
     securecloud_proto
     securecloud::json
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -1083,7 +1096,7 @@ target_link_libraries(securecloud_auth_proxy_handler_device_lifecycle_test PRIVA
     securecloud_proto
     securecloud::json
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -1099,7 +1112,7 @@ target_link_libraries(securecloud_auth_proxy_resilience_test PRIVATE
     securecloud_proto
     securecloud::json
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -1120,8 +1133,8 @@ target_link_libraries(securecloud_files_proxy_handler_test PRIVATE
     securecloud::json
     securecloud::common
     securecloud::compiler_flags
-    GTest::gmock
-    GTest::gtest
+    GTest::gmock_main
+    GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_files_proxy_handler_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -1138,7 +1151,7 @@ target_link_libraries(securecloud_gateway_route_registrar_test PRIVATE
     securecloud::json
     securecloud::common
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -1217,7 +1230,7 @@ target_link_libraries(securecloud_gateway_crypto_directory_policy_test PRIVATE
     securecloud::json
     securecloud::httplib
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -1234,7 +1247,7 @@ target_link_libraries(securecloud_gateway_prekey_inventory_policy_test PRIVATE
     securecloud::json
     securecloud::httplib
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -1299,7 +1312,7 @@ target_link_libraries(securecloud_gateway_bulkhead_manager_test PRIVATE
     securecloud::json
     securecloud::common
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -1317,7 +1330,7 @@ target_link_libraries(securecloud_gateway_rate_limiter_middleware_test PRIVATE
     securecloud::json
     securecloud::common
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -1336,7 +1349,7 @@ target_link_libraries(securecloud_gateway_circuit_breaker_test PRIVATE
     securecloud::json
     securecloud::common
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -1352,7 +1365,7 @@ target_link_libraries(securecloud_channel_manager_test PRIVATE
     securecloud::gateway_config
     securecloud::common
     securecloud::compiler_flags
-    GTest::gtest
+    GTest::gtest_main
 )
 
 target_compile_definitions(securecloud_channel_manager_test PRIVATE
@@ -1371,7 +1384,7 @@ target_link_libraries(securecloud_channel_manager_lifecycle_test PRIVATE
     securecloud::gateway_config
     securecloud::common
     securecloud::compiler_flags
-    GTest::gtest
+    GTest::gtest_main
 )
 
 target_compile_definitions(securecloud_channel_manager_lifecycle_test PRIVATE
@@ -1404,7 +1417,7 @@ target_link_libraries(securecloud_auth_service_client_test PRIVATE
     securecloud_proto
     securecloud::common
     securecloud::compiler_flags
-    GTest::gtest
+    GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_auth_service_client_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -1419,7 +1432,7 @@ target_link_libraries(securecloud_files_service_client_test PRIVATE
     securecloud_proto
     securecloud::common
     securecloud::compiler_flags
-    GTest::gtest
+    GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_files_service_client_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -1434,7 +1447,7 @@ target_link_libraries(securecloud_streaming_buffer_test PRIVATE
     securecloud::common
     OpenSSL::Crypto
     securecloud::compiler_flags
-    GTest::gtest
+    GTest::gtest_main
 )
 
 gtest_discover_tests(securecloud_streaming_buffer_test ${SECURECLOUD_TEST_PROPERTIES})
@@ -1871,7 +1884,7 @@ target_link_libraries(securecloud_gateway_conversation_routing_test PRIVATE
     securecloud::json
     securecloud::common
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -2098,7 +2111,7 @@ target_link_libraries(securecloud_messaging_proxy_handler_test PRIVATE
     securecloud::json
     securecloud::common
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -2316,7 +2329,7 @@ target_link_libraries(securecloud_messaging_proxy_ack_test PRIVATE
     securecloud::json
     securecloud::common
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -2495,7 +2508,7 @@ target_link_libraries(securecloud_messaging_proxy_sync_test PRIVATE
     securecloud::json
     securecloud::common
     securecloud::compiler_flags
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
@@ -2512,7 +2525,7 @@ target_link_libraries(securecloud_messaging_service_impl_sync_test PRIVATE
     securecloud_proto
     securecloud::compiler_flags
     OpenSSL::Crypto
-    GTest::gmock
+    GTest::gmock_main
     GTest::gtest_main
 )
 
