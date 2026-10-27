@@ -134,7 +134,7 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(const Fina
     try {
         assembly_res = assembly_engine_->assemble_version_object(file_opt->file_id, target_version,
                                                                  transfer_opt->transfer_id, chunks);
-    } catch (const std::exception& e) {
+    } catch (const std::exception&) {
         tx.abort();
         // Failure Rule: Leave staged chunks intact for retry/recovery
         throw;
