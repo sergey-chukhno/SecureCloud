@@ -1,4 +1,5 @@
 #include "files/domain/capability_validator.hpp"
+
 #include "files/domain/file_capability_serializer.hpp"
 
 namespace securecloud::files {
@@ -36,12 +37,12 @@ CapabilityValidationResult CapabilityValidator::validate(const CapabilityValidat
 
     // 5. Cryptographic signature and structural parsing
     std::string deserialize_error;
-    auto claims_opt = FileCapabilitySerializer::deserialize_and_verify(
-        input.presented_token, *verifier_, &deserialize_error);
+    auto claims_opt =
+        FileCapabilitySerializer::deserialize_and_verify(input.presented_token, *verifier_, &deserialize_error);
 
     if (!claims_opt.has_value()) {
-        return CapabilityValidationResult::failure(
-            deserialize_error.empty() ? "Invalid capability token" : deserialize_error);
+        return CapabilityValidationResult::failure(deserialize_error.empty() ? "Invalid capability token"
+                                                                             : deserialize_error);
     }
 
     const auto& claims = *claims_opt;
@@ -57,8 +58,7 @@ CapabilityValidationResult CapabilityValidator::validate(const CapabilityValidat
 
     // 7. Strict User Binding (User A != User B)
     if (claims.user_id != input.caller_user_id) {
-        return CapabilityValidationResult::failure(
-            "Capability user mismatch: token was not issued for caller user");
+        return CapabilityValidationResult::failure("Capability user mismatch: token was not issued for caller user");
     }
 
     // 8. Strict Device Binding (Device A != Device B)
@@ -69,8 +69,7 @@ CapabilityValidationResult CapabilityValidator::validate(const CapabilityValidat
 
     // 9. Strict File Scoping (File 1 != File 2)
     if (claims.file_id != input.target_file_id) {
-        return CapabilityValidationResult::failure(
-            "Capability file mismatch: token was not issued for requested file");
+        return CapabilityValidationResult::failure("Capability file mismatch: token was not issued for requested file");
     }
 
     // 10. Operation Authorization Scoping

@@ -19,8 +19,7 @@ FileAccessCapabilityClaims make_valid_claims() {
         .operation = FileCapabilityOperation::Read,
         .issued_at = std::chrono::time_point_cast<std::chrono::seconds>(now),
         .expires_at = std::chrono::time_point_cast<std::chrono::seconds>(now + std::chrono::minutes(15)),
-        .issuer = "securecloud-files"
-    };
+        .issuer = "securecloud-files"};
 }
 
 TEST(FileCapabilitySerializerTest, RoundTripSerializationAndVerification) {

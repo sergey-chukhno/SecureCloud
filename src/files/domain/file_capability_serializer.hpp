@@ -27,9 +27,8 @@ class FileCapabilitySerializer {
      * @param signer Asymmetric Ed25519 token signer.
      * @return Compact wire format token string.
      */
-    [[nodiscard]] static std::string serialize(
-        const FileAccessCapabilityClaims& claims,
-        const auth::crypto::ITokenSigner& signer);
+    [[nodiscard]] static std::string serialize(const FileAccessCapabilityClaims& claims,
+                                               const auth::crypto::ITokenSigner& signer);
 
     /**
      * @brief Parses and cryptographically verifies a capability token string.
@@ -38,10 +37,9 @@ class FileCapabilitySerializer {
      * @param error_out Optional diagnostic error string if parsing/verification fails.
      * @return Deserialized claims on success, std::nullopt on signature mismatch or malformed token.
      */
-    [[nodiscard]] static std::optional<FileAccessCapabilityClaims> deserialize_and_verify(
-        std::string_view token,
-        const auth::crypto::ITokenVerifier& verifier,
-        std::string* error_out = nullptr);
+    [[nodiscard]] static std::optional<FileAccessCapabilityClaims>
+    deserialize_and_verify(std::string_view token, const auth::crypto::ITokenVerifier& verifier,
+                           std::string* error_out = nullptr);
 };
 
 } // namespace securecloud::files

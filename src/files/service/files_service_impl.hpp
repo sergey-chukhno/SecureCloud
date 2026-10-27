@@ -16,6 +16,7 @@
 #include "files/db/files_connection_pool.hpp"
 #include "files/service/chunk_storage_service.hpp"
 #include "files/service/download_manager.hpp"
+#include "files/service/file_capability_manager.hpp"
 #include "files/service/file_finalization_service.hpp"
 #include "files/service/file_lifecycle_service.hpp"
 #include "files/service/metadata_manager.hpp"
@@ -24,7 +25,6 @@
 #include "files/service/upload_session_manager.hpp"
 #include "files/storage/s3_client.hpp"
 
-#include "files/service/file_capability_manager.hpp"
 #include <memory>
 #include <optional>
 #include <string>

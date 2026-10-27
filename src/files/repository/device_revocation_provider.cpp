@@ -1,4 +1,5 @@
 #include "files/repository/device_revocation_provider.hpp"
+
 #include "files/db/pqxx_compat.hpp"
 
 #include <mutex>
@@ -27,10 +28,10 @@ bool DeviceRevocationProvider::is_device_revoked(const std::string& device_id) {
             pqxx::work tx;
             // Check if device is marked revoked in devices table (if present)
             // or in file_access table grants
-            auto res = tx.exec_params(
-                "SELECT 1 FROM file_access WHERE grantee_device_id = $1 AND revoked_at IS NOT NULL "
-                "LIMIT 1",
-                device_id);
+            auto res =
+                tx.exec_params("SELECT 1 FROM file_access WHERE grantee_device_id = $1 AND revoked_at IS NOT NULL "
+                               "LIMIT 1",
+                               device_id);
 
             if (!res.empty()) {
                 // Cache the revocation status

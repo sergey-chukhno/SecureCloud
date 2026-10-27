@@ -70,8 +70,7 @@ FilesServiceImpl::FilesServiceImpl(FilesServiceDependencies deps, std::string ex
     if (!deps_.capability_manager && deps_.db_pool) {
         auto signer = std::make_shared<auth::crypto::Ed25519TokenSigner>("sc-files-v1");
         auto verifier = auth::crypto::Ed25519TokenVerifier::from_signer(*signer);
-        deps_.capability_manager = std::make_shared<FileCapabilityManager>(
-            deps_.db_pool, signer, std::move(verifier));
+        deps_.capability_manager = std::make_shared<FileCapabilityManager>(deps_.db_pool, signer, std::move(verifier));
     }
 }
 
@@ -98,8 +97,7 @@ FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db
     if (deps_.db_pool && !deps_.capability_manager) {
         auto signer = std::make_shared<auth::crypto::Ed25519TokenSigner>("sc-files-v1");
         auto verifier = auth::crypto::Ed25519TokenVerifier::from_signer(*signer);
-        deps_.capability_manager = std::make_shared<FileCapabilityManager>(
-            deps_.db_pool, signer, std::move(verifier));
+        deps_.capability_manager = std::make_shared<FileCapabilityManager>(deps_.db_pool, signer, std::move(verifier));
     }
 }
 
@@ -700,7 +698,8 @@ grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, 
 
     for (const auto& [key_ref, val_ref] : client_metadata) {
         std::string key(key_ref.data(), key_ref.size());
-        for (char& c : key) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        for (char& c : key)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 
         if (key == "x-user-id" && user_id.empty()) {
             user_id = std::string(val_ref.data(), val_ref.size());
@@ -714,8 +713,8 @@ grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, 
     // If capability manager is configured and a capability token is presented, authorize it
     if (deps_.capability_manager && !capability_token.empty()) {
         try {
-            deps_.capability_manager->authorize_capability(
-                capability_token, user_id, device_id, request->file_id(), FileCapabilityOperation::Read, 0);
+            deps_.capability_manager->authorize_capability(capability_token, user_id, device_id, request->file_id(),
+                                                           FileCapabilityOperation::Read, 0);
         } catch (const InvalidCapabilityException& ex) {
             auto status = grpc::Status(grpc::StatusCode::UNAUTHENTICATED, ex.what());
             logger.finish(status);
