@@ -1,7 +1,9 @@
 #include "clickhouse_audit_event_repository.hpp"
 #include "clickhouse_event_serializer.hpp"
+#include "domain/audit_event.hpp"
 
 #include <algorithm>
+#include <cctype>
 #include <sstream>
 
 namespace securecloud::audit::repository {
@@ -44,9 +46,9 @@ std::vector<domain::AuditEvent> ClickHouseAuditEventRepository::query_by_time_ra
     std::string end_str = ClickHouseEventSerializer::format_timestamp_ms(end);
 
     std::ostringstream ss;
-    ss << "SELECT * FROM audit_events WHERE occurred_at >= '" << start_str
-       << "' AND occurred_at <= '" << end_str
-       << "' ORDER BY occurred_at DESC, producer_service, event_type, event_id LIMIT "
+    ss << "SELECT * FROM audit_events WHERE occurred_at >= toDateTime64('" << start_str
+       << "', 3, 'UTC') AND occurred_at <= toDateTime64('" << end_str
+       << "', 3, 'UTC') ORDER BY occurred_at DESC, producer_service, event_type, event_id LIMIT "
        << clamped_limit << " FORMAT TabSeparated";
 
     std::string response;
@@ -66,13 +68,24 @@ std::vector<domain::AuditEvent> ClickHouseAuditEventRepository::query_by_produce
     uint32_t clamped_limit = clamp_limit(limit);
     std::string start_str = ClickHouseEventSerializer::format_timestamp_ms(start);
     std::string end_str = ClickHouseEventSerializer::format_timestamp_ms(end);
-    std::string escaped_producer = escape_sql_string(producer_service);
+
+    std::string lower_producer = producer_service;
+    std::transform(lower_producer.begin(), lower_producer.end(), lower_producer.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    std::string normalized_producer = lower_producer;
+    if (auto prod_opt = domain::producer_from_string(lower_producer)) {
+        normalized_producer = domain::to_string(*prod_opt);
+    } else if (auto prod_opt_orig = domain::producer_from_string(producer_service)) {
+        normalized_producer = domain::to_string(*prod_opt_orig);
+    }
+    std::string escaped_producer = escape_sql_string(normalized_producer);
 
     std::ostringstream ss;
     ss << "SELECT * FROM audit_events WHERE producer_service = '" << escaped_producer
-       << "' AND occurred_at >= '" << start_str
-       << "' AND occurred_at <= '" << end_str
-       << "' ORDER BY occurred_at DESC, producer_service, event_type, event_id LIMIT "
+       << "' AND occurred_at >= toDateTime64('" << start_str
+       << "', 3, 'UTC') AND occurred_at <= toDateTime64('" << end_str
+       << "', 3, 'UTC') ORDER BY occurred_at DESC, producer_service, event_type, event_id LIMIT "
        << clamped_limit << " FORMAT TabSeparated";
 
     std::string response;
