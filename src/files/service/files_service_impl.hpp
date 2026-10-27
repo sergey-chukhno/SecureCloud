@@ -25,6 +25,8 @@
 #include "files/service/file_finalization_service.hpp"
 #include "files/service/object_assembly_engine.hpp"
 #include "files/service/file_capability_manager.hpp"
+#include "files/concurrency/concurrency_bulkhead.hpp"
+#include "files/concurrency/memory_buffer_tracker.hpp"
 
 #include <memory>
 #include <optional>
@@ -50,6 +52,14 @@ struct FilesServiceDependencies {
     std::shared_ptr<ObjectAssemblyEngine> object_assembly_engine{nullptr};
     std::shared_ptr<FileFinalizationService> finalization_service{nullptr};
     std::shared_ptr<IFileCapabilityManager> capability_manager{nullptr};
+
+    // Concurrency Bulkheads & Resource Controls (FILES-009)
+    std::shared_ptr<ConcurrencyBulkhead> metadata_bulkhead{nullptr};
+    std::shared_ptr<ConcurrencyBulkhead> upload_bulkhead{nullptr};
+    std::shared_ptr<ConcurrencyBulkhead> download_bulkhead{nullptr};
+    std::shared_ptr<MemoryBufferTracker> memory_tracker{nullptr};
+    size_t max_chunk_request_bytes{5 * 1024 * 1024};
+    uint64_t max_file_transfer_bytes{10ULL * 1024ULL * 1024ULL * 1024ULL};
 };
 
 /// Implementation of the securecloud.files.v1.FilesService gRPC interface.

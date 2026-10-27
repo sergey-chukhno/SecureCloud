@@ -1165,6 +1165,150 @@ TEST(FilesServiceImplCapabilityTest, MapsUnauthorizedCapabilityToPermissionDenie
     EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
 }
 
+// ============================================================================
+// FILES-009 Concurrency Bulkhead, Backpressure & Resource Bounds Unit Tests
+// ============================================================================
+
+TEST(FilesServiceImplBulkheadTest, MapsMetadataBulkheadSaturationToResourceExhausted) {
+    auto mock_lifecycle = std::make_shared<TestMockLifecycleService>();
+    auto metadata_bulkhead = ConcurrencyBulkhead::create("metadata", 1, std::chrono::milliseconds(20));
+
+    FilesServiceDependencies deps{
+        .lifecycle_service = mock_lifecycle,
+        .metadata_bulkhead = metadata_bulkhead
+    };
+    FilesServiceImpl service(deps, "gateway");
+
+    // Saturate the metadata domain with a held permit
+    auto held_permit = metadata_bulkhead->try_acquire();
+    ASSERT_TRUE(held_permit.holds_permit());
+
+    v1::GetFileMetadataRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    v1::GetFileMetadataResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.GetFileMetadata(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::RESOURCE_EXHAUSTED);
+    EXPECT_NE(status.error_message().find("Metadata concurrency capacity exhausted"), std::string::npos);
+
+    // Release permit and verify subsequent call proceeds past bulkhead
+    held_permit.release();
+    auto status2 = service.GetFileMetadata(&gateway_ctx, &req, &resp);
+    EXPECT_NE(status2.error_code(), grpc::StatusCode::RESOURCE_EXHAUSTED);
+}
+
+TEST(FilesServiceImplBulkheadTest, MapsUploadBulkheadSaturationToResourceExhausted) {
+    auto upload_bulkhead = ConcurrencyBulkhead::create("upload", 1, std::chrono::milliseconds(20));
+
+    FilesServiceDependencies deps{
+        .upload_bulkhead = upload_bulkhead
+    };
+    FilesServiceImpl service(deps, "gateway");
+
+    // Hold the only permit in upload domain
+    auto held_permit = upload_bulkhead->try_acquire();
+    ASSERT_TRUE(held_permit.holds_permit());
+
+    v1::UploadChunkRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+    req.set_chunk_size_bytes(100);
+    req.set_encrypted_data(std::string(100, 'X'));
+    v1::UploadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.UploadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::RESOURCE_EXHAUSTED);
+    EXPECT_NE(status.error_message().find("Upload concurrency capacity exhausted"), std::string::npos);
+}
+
+TEST(FilesServiceImplBulkheadTest, MapsDownloadBulkheadSaturationToResourceExhausted) {
+    auto download_bulkhead = ConcurrencyBulkhead::create("download", 1, std::chrono::milliseconds(20));
+
+    FilesServiceDependencies deps{
+        .download_bulkhead = download_bulkhead
+    };
+    FilesServiceImpl service(deps, "gateway");
+
+    auto held_permit = download_bulkhead->try_acquire();
+    ASSERT_TRUE(held_permit.holds_permit());
+
+    v1::DownloadChunkRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+    v1::DownloadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.DownloadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::RESOURCE_EXHAUSTED);
+    EXPECT_NE(status.error_message().find("Download concurrency capacity exhausted"), std::string::npos);
+}
+
+TEST(FilesServiceImplResourceTest, RejectsOversizedChunkUploadRequest) {
+    FilesServiceDependencies deps{
+        .max_chunk_request_bytes = 1024 // 1 KiB ceiling for testing
+    };
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::UploadChunkRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+    req.set_chunk_size_bytes(2048); // Exceeds 1024
+    req.set_encrypted_data(std::string(2048, 'X'));
+    v1::UploadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.UploadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+    EXPECT_NE(status.error_message().find("exceeds maximum allowed size"), std::string::npos);
+}
+
+TEST(FilesServiceImplResourceTest, RejectsOversizedFileTransferRequest) {
+    FilesServiceDependencies deps{
+        .max_file_transfer_bytes = 5000 // 5000 bytes ceiling
+    };
+    FilesServiceImpl service(deps, "gateway");
+
+    v1::CreateFileUploadRequest req;
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_owner_user_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+    req.set_owner_device_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36002");
+    req.set_encrypted_size_bytes(6000); // Exceeds 5000
+    v1::CreateFileUploadResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.CreateFileUpload(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+    EXPECT_NE(status.error_message().find("exceeds maximum allowed size"), std::string::npos);
+}
+
+TEST(FilesServiceImplResourceTest, MapsMemoryBudgetExhaustionToResourceExhausted) {
+    auto memory_tracker = MemoryBufferTracker::create(500); // 500 bytes budget
+
+    FilesServiceDependencies deps{
+        .memory_tracker = memory_tracker,
+        .max_chunk_request_bytes = 1000
+    };
+    FilesServiceImpl service(deps, "gateway");
+
+    // Exhaust memory budget manually
+    auto reserved = memory_tracker->try_reserve(450);
+    ASSERT_TRUE(reserved.holds_reservation());
+
+    v1::UploadChunkRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_chunk_index(0);
+    req.set_chunk_size_bytes(100); // 450 + 100 > 500 => Exhausted
+    req.set_encrypted_data(std::string(100, 'X'));
+    v1::UploadChunkResponse resp;
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+
+    auto status = service.UploadChunk(&gateway_ctx, &req, &resp);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::RESOURCE_EXHAUSTED);
+    EXPECT_NE(status.error_message().find("Global memory buffer budget exhausted"), std::string::npos);
+}
+
 } // namespace
 
 } // namespace securecloud::files::service
