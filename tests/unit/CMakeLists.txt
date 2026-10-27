@@ -1682,6 +1682,100 @@ target_link_libraries(securecloud_access_outbox_repository_test PRIVATE
 
 gtest_discover_tests(securecloud_access_outbox_repository_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Lifecycle State Machine Unit Test Suite (FILES-004-T01)
+add_executable(securecloud_files_lifecycle_state_machine_test
+    files/lifecycle_state_machine_test.cpp
+)
+
+target_link_libraries(securecloud_files_lifecycle_state_machine_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_lifecycle_state_machine_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Metadata Validator Unit Test Suite (FILES-004-T02)
+add_executable(securecloud_files_metadata_validator_test
+    files/metadata_validator_test.cpp
+)
+
+target_link_libraries(securecloud_files_metadata_validator_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_metadata_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Chunk Validator Unit Test Suite (FILES-005-T01)
+add_executable(securecloud_files_chunk_validator_test
+    files/chunk_validator_test.cpp
+)
+
+target_link_libraries(securecloud_files_chunk_validator_test PRIVATE
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_chunk_validator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Upload Session Manager Unit Test Suite (FILES-005-T02)
+add_executable(securecloud_files_upload_session_manager_test
+    files/upload_session_manager_test.cpp
+)
+
+target_link_libraries(securecloud_files_upload_session_manager_test PRIVATE
+    securecloud::files_service
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_upload_session_manager_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Chunk Storage Service Unit Test Suite (FILES-005-T03)
+add_executable(securecloud_files_chunk_storage_service_test
+    files/chunk_storage_service_test.cpp
+)
+
+target_link_libraries(securecloud_files_chunk_storage_service_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_chunk_storage_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Lifecycle Service Unit Test Suite (FILES-004-T05)
+add_executable(securecloud_files_lifecycle_service_test
+    files/file_lifecycle_service_test.cpp
+)
+
+target_link_libraries(securecloud_files_lifecycle_service_test PRIVATE
+    securecloud::files_service
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_lifecycle_service_test ${SECURECLOUD_TEST_PROPERTIES})
+
 
 # Messaging Service Configuration Unit Test Suite (MSG-001-T02)
 add_executable(securecloud_messaging_config_test
