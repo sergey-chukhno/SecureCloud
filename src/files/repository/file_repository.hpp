@@ -62,6 +62,9 @@ class FileRepository {
     /// Throws InvalidStateTransitionException if transition is illegal.
     bool update_status(const std::string& file_id, FileStatus expected_current, FileStatus new_status, pqxx::work& tx);
 
+    /// Enforces optimistic concurrency and valid lifecycle state transitions (creates autonomous work session).
+    bool update_status(const std::string& file_id, FileStatus expected_current, FileStatus new_status);
+
     /// Logically marks a file as DELETED within the given transaction.
     bool delete_file_logical(const std::string& file_id, pqxx::work& tx);
 
