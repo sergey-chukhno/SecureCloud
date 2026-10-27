@@ -391,7 +391,7 @@ jobs:
           ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
           MSYS2_ENV_CONV_EXCL: "ACTIONS_CACHE_URL;ACTIONS_RESULTS_URL"
         run: |
-          cmake --build --preset ci-windows-mingw
+          cmake --build --preset ci-windows-mingw --parallel
 
       - name: Show sccache Stats
         shell: msys2 {0}

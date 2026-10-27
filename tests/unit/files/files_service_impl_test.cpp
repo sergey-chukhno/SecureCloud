@@ -1065,12 +1065,16 @@ class MockCapabilityManager : public IFileCapabilityManager {
             throw UnauthorizedFileAccessException("Unauthorized capability access");
         }
 
+        const auto now = std::chrono::system_clock::now();
         return FileAccessCapabilityClaims{.capability_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099",
                                           .user_id = caller_user_id,
                                           .device_id = caller_device_id,
                                           .file_id = target_file_id,
                                           .file_version = version,
-                                          .operation = op};
+                                          .operation = op,
+                                          .issued_at = now,
+                                          .expires_at = now + std::chrono::minutes(15),
+                                          .issuer = "securecloud-files"};
     }
 
     std::string last_token;

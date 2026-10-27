@@ -51,8 +51,8 @@ struct FileAccessCapabilityClaims {
     std::string file_id;       // Target file UUIDv7
     int32_t file_version{0};   // 0 = any/active version, >0 = pinned version
     FileCapabilityOperation operation{FileCapabilityOperation::Read};
-    std::chrono::system_clock::time_point issued_at;
-    std::chrono::system_clock::time_point expires_at;
+    std::chrono::system_clock::time_point issued_at{};
+    std::chrono::system_clock::time_point expires_at{};
     std::string issuer{"securecloud-files"};
 
     [[nodiscard]] bool is_expired(std::chrono::system_clock::time_point now,
