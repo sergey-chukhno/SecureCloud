@@ -38,6 +38,7 @@ target_link_libraries(securecloud_audit_config PUBLIC
 
 add_library(securecloud_audit_repository STATIC
         repository/schema_initializer.cpp
+        repository/clickhouse_client.cpp
 )
 
 add_library(securecloud::audit_repository ALIAS securecloud_audit_repository)
