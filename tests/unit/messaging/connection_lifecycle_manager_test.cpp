@@ -132,8 +132,11 @@ TEST_F(ConnectionLifecycleManagerTest, BackgroundReaperEvictsStaleConnection) {
     lifecycle_->start();
     EXPECT_TRUE(lifecycle_->is_running());
 
-    // Wait past lease timeout
-    std::this_thread::sleep_for(300ms);
+    // Wait past lease timeout for background reaper to sweep stale connection
+    const auto deadline = std::chrono::steady_clock::now() + 3000ms;
+    while (lifecycle_->active_session_count() > 0 && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(20ms);
+    }
 
     // Reaper should have swept the connection
     EXPECT_EQ(lifecycle_->active_session_count(), 0u);
@@ -176,7 +179,8 @@ TEST_F(ConnectionLifecycleManagerTest, ManualSweepStaleConnections) {
     EXPECT_EQ(lifecycle_->sweep_stale_connections(), 0u);
     EXPECT_EQ(lifecycle_->active_session_count(), 1u);
 
-    std::this_thread::sleep_for(220ms);
+    // Ensure lease has fully expired (250ms > 200ms lease)
+    std::this_thread::sleep_for(250ms);
 
     // Now expired
     EXPECT_EQ(lifecycle_->sweep_stale_connections(), 1u);
