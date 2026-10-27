@@ -56,29 +56,22 @@ class IDownloadManager {
 
     /// Version-aware and caller-authorized chunk retrieval.
     /// If version_number is 0, uses latest active version.
-    virtual DownloadChunkResult get_chunk_versioned(
-        const std::string& file_id,
-        int32_t version_number,
-        uint32_t chunk_index,
-        const std::string& caller_user_id) = 0;
+    virtual DownloadChunkResult get_chunk_versioned(const std::string& file_id, int32_t version_number,
+                                                    uint32_t chunk_index, const std::string& caller_user_id) = 0;
 
     /// Prepares and validates a resumable download session based on canonical (file_id, version, starting_chunk).
-    virtual DownloadResumeModel prepare_resume_session(
-        const std::string& file_id,
-        int32_t version_number,
-        uint32_t starting_chunk,
-        const std::string& caller_user_id) = 0;
+    virtual DownloadResumeModel prepare_resume_session(const std::string& file_id, int32_t version_number,
+                                                       uint32_t starting_chunk, const std::string& caller_user_id) = 0;
 };
 
 /// Production implementation of IDownloadManager.
 class DownloadManager : public IDownloadManager {
   public:
-    explicit DownloadManager(
-        std::shared_ptr<db::FilesDbConnectionPool> pool = nullptr,
-        std::shared_ptr<ChunkDownloadEngine> download_engine = nullptr,
-        std::shared_ptr<FileRepository> file_repo = nullptr,
-        std::shared_ptr<FileVersionRepository> version_repo = nullptr,
-        std::shared_ptr<FileAccessRepository> access_repo = nullptr);
+    explicit DownloadManager(std::shared_ptr<db::FilesDbConnectionPool> pool = nullptr,
+                             std::shared_ptr<ChunkDownloadEngine> download_engine = nullptr,
+                             std::shared_ptr<FileRepository> file_repo = nullptr,
+                             std::shared_ptr<FileVersionRepository> version_repo = nullptr,
+                             std::shared_ptr<FileAccessRepository> access_repo = nullptr);
 
     ~DownloadManager() override = default;
 
@@ -91,17 +84,11 @@ class DownloadManager : public IDownloadManager {
 
     std::optional<DownloadChunkResult> get_chunk(const std::string& file_id, uint32_t chunk_index) override;
 
-    DownloadChunkResult get_chunk_versioned(
-        const std::string& file_id,
-        int32_t version_number,
-        uint32_t chunk_index,
-        const std::string& caller_user_id) override;
+    DownloadChunkResult get_chunk_versioned(const std::string& file_id, int32_t version_number, uint32_t chunk_index,
+                                            const std::string& caller_user_id) override;
 
-    DownloadResumeModel prepare_resume_session(
-        const std::string& file_id,
-        int32_t version_number,
-        uint32_t starting_chunk,
-        const std::string& caller_user_id) override;
+    DownloadResumeModel prepare_resume_session(const std::string& file_id, int32_t version_number,
+                                               uint32_t starting_chunk, const std::string& caller_user_id) override;
 
   private:
     std::shared_ptr<db::FilesDbConnectionPool> pool_;

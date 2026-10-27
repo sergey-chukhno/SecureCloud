@@ -20,7 +20,7 @@
 #include "files/service/object_assembly_engine.hpp"
 #include "files/service/upload_session_manager.hpp"
 #include "files/storage/s3_client.hpp"
-#include "securecloud/common/configuration/secret_string.hpp"
+#include "securecloud/configuration/secret_string.hpp"
 #include "securecloud/files/v1/files.grpc.pb.h"
 #include "securecloud/files/v1/files.pb.h"
 
@@ -56,6 +56,71 @@ using service::UploadSessionManager;
 using storage::S3Client;
 using storage::S3ClientConfig;
 
+class MockHttpTransport : public storage::IHttpTransport {
+  public:
+    storage::HttpResponse execute(const storage::HttpRequest& req) override {
+        std::lock_guard<std::mutex> lock(mu_);
+        if (req.method == "PUT") {
+            storage_[req.path] = req.body;
+            return storage::HttpResponse{
+                .status_code = 200,
+                .status_message = "OK",
+                .headers = {{"ETag", "\"d41d8cd98f00b204e9800998ecf8427e\""}},
+                .body = "",
+            };
+        } else if (req.method == "GET") {
+            auto it = storage_.find(req.path);
+            if (it != storage_.end()) {
+                auto r_it = req.headers.find("range");
+                if (r_it != req.headers.end() && r_it->second.rfind("bytes=", 0) == 0) {
+                    std::string spec = r_it->second.substr(6);
+                    auto dash = spec.find('-');
+                    if (dash != std::string::npos) {
+                        size_t start = std::stoull(spec.substr(0, dash));
+                        size_t end = std::stoull(spec.substr(dash + 1));
+                        if (start < it->second.size() && end >= start) {
+                            size_t len = std::min(end - start + 1, it->second.size() - start);
+                            std::string slice = it->second.substr(start, len);
+                            return storage::HttpResponse{
+                                .status_code = 206,
+                                .status_message = "Partial Content",
+                                .headers = {{"Content-Length", std::to_string(slice.size())}},
+                                .body = slice,
+                            };
+                        }
+                    }
+                }
+                return storage::HttpResponse{
+                    .status_code = 200,
+                    .status_message = "OK",
+                    .headers = {{"Content-Length", std::to_string(it->second.size())}},
+                    .body = it->second,
+                };
+            }
+            return storage::HttpResponse{.status_code = 404, .status_message = "Not Found", .headers = {}, .body = ""};
+        } else if (req.method == "HEAD") {
+            auto it = storage_.find(req.path);
+            if (it != storage_.end()) {
+                return storage::HttpResponse{
+                    .status_code = 200,
+                    .status_message = "OK",
+                    .headers = {{"Content-Length", std::to_string(it->second.size())}},
+                    .body = "",
+                };
+            }
+            return storage::HttpResponse{.status_code = 404, .status_message = "Not Found", .headers = {}, .body = ""};
+        } else if (req.method == "DELETE") {
+            storage_.erase(req.path);
+            return storage::HttpResponse{.status_code = 204, .status_message = "No Content", .headers = {}, .body = ""};
+        }
+        return storage::HttpResponse{.status_code = 200, .status_message = "OK", .headers = {}, .body = ""};
+    }
+
+  private:
+    std::mutex mu_;
+    std::unordered_map<std::string, std::string> storage_;
+};
+
 #ifdef _WIN32
 inline void ensure_integration_winsock() noexcept {
     static const bool initialized = []() noexcept {
@@ -67,6 +132,11 @@ inline void ensure_integration_winsock() noexcept {
 #else
 inline void ensure_integration_winsock() noexcept {}
 #endif
+
+class TestAuthPropertyIterator : public grpc::AuthPropertyIterator {
+  public:
+    TestAuthPropertyIterator() = default;
+};
 
 class TestIntegrationAuthContext : public grpc::AuthContext {
   public:
@@ -83,14 +153,18 @@ class TestIntegrationAuthContext : public grpc::AuthContext {
         }
         return {};
     }
-    [[nodiscard]] grpc::AuthPropertyIterator begin() const override { return {}; }
-    [[nodiscard]] grpc::AuthPropertyIterator end() const override { return {}; }
+    [[nodiscard]] grpc::AuthPropertyIterator begin() const override { return TestAuthPropertyIterator{}; }
+    [[nodiscard]] grpc::AuthPropertyIterator end() const override { return TestAuthPropertyIterator{}; }
     void AddProperty(const std::string&, const grpc::string_ref&) override {}
     bool SetPeerIdentityPropertyName(const std::string&) override { return false; }
 
   private:
     std::string san_;
 };
+
+constexpr const char* k_test_owner_user_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d40";
+constexpr const char* k_test_owner_device_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d41";
+constexpr const char* k_test_other_user_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d42";
 
 class FilesDownloadIntegrationTest : public ::testing::Test {
   protected:
@@ -121,18 +195,21 @@ class FilesDownloadIntegrationTest : public ::testing::Test {
         s3_cfg_.access_key = "files_minio_user";
         s3_cfg_.secret_key = common::configuration::SecretString("files_minio_secret");
         s3_cfg_.default_timeout = std::chrono::milliseconds(2000);
-        s3_client_ = std::make_shared<S3Client>(s3_cfg_);
+
+        mock_transport_ = std::make_shared<MockHttpTransport>();
+        s3_client_ = std::make_shared<S3Client>(s3_cfg_, mock_transport_);
 
         assembly_engine_ = std::make_shared<ObjectAssemblyEngine>(s3_client_);
         finalization_service_ = std::make_shared<FileFinalizationService>(
             pool_, assembly_engine_, transfer_repo_, file_repo_, version_repo_, chunk_repo_, outbox_repo_);
 
         download_engine_ = std::make_shared<ChunkDownloadEngine>(s3_client_);
-        download_mgr_ = std::make_shared<DownloadManager>(
-            pool_, download_engine_, file_repo_, version_repo_, access_repo_);
+        download_mgr_ =
+            std::make_shared<DownloadManager>(pool_, download_engine_, file_repo_, version_repo_, access_repo_);
 
         session_mgr_ = std::make_shared<UploadSessionManager>(pool_, transfer_repo_, chunk_repo_);
-        chunk_storage_ = std::make_shared<ChunkStorageService>(pool_, s3_client_, transfer_repo_, chunk_repo_, file_repo_);
+        chunk_storage_ =
+            std::make_shared<ChunkStorageService>(pool_, s3_client_, transfer_repo_, chunk_repo_, file_repo_);
         lifecycle_service_ = std::make_shared<FileLifecycleService>(pool_, file_repo_);
 
         FilesServiceDependencies deps{
@@ -157,7 +234,8 @@ class FilesDownloadIntegrationTest : public ::testing::Test {
         pqxx::MockStorage::instance().reset();
     }
 
-    std::string upload_and_finalize_file(const std::vector<std::string>& chunks, const std::string& owner_user_id) {
+    std::string upload_and_finalize_file(const std::vector<std::string>& chunks,
+                                         const std::string& owner_user_id = k_test_owner_user_id) {
         TestIntegrationAuthContext auth_ctx("DNS:gateway");
 
         uint64_t total_size = 0;
@@ -169,15 +247,17 @@ class FilesDownloadIntegrationTest : public ::testing::Test {
         v1::CreateFileUploadRequest init_req;
         init_req.set_file_id(file_id);
         init_req.set_owner_user_id(owner_user_id);
-        init_req.set_owner_device_id("device-test");
+        init_req.set_owner_device_id(k_test_owner_device_id);
         init_req.set_encrypted_size_bytes(total_size);
-        init_req.set_expected_chunk_count(chunks.size());
+        init_req.set_expected_chunk_count(static_cast<uint32_t>(chunks.size()));
         init_req.set_encryption_version("XChaCha20-Poly1305");
-        init_req.set_client_crypto_metadata("{\"metadata_nonce_hex\":\"" + std::string(48, 'a') +
-                                           "\",\"metadata_tag_hex\":\"" + std::string(32, 'b') + "\"}");
+        init_req.set_client_crypto_metadata("{\"encrypted_filename_hex\":\"0102\",\"metadata_nonce_hex\":\"" +
+                                            std::string(48, 'a') + "\",\"metadata_tag_hex\":\"" + std::string(32, 'b') +
+                                            "\"}");
 
         v1::CreateFileUploadResponse init_resp;
-        EXPECT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp).ok());
+        auto init_stat = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp);
+        EXPECT_TRUE(init_stat.ok()) << init_stat.error_message();
         std::string upload_id = init_resp.upload_id();
 
         std::string concatenated_payload;
@@ -191,7 +271,8 @@ class FilesDownloadIntegrationTest : public ::testing::Test {
             req.set_ciphertext_sha256(compute_sha256_hex(chunks[i]));
 
             v1::UploadChunkResponse resp;
-            EXPECT_TRUE(service_->UploadChunk(&auth_ctx, &req, &resp).ok());
+            auto up_stat = service_->UploadChunk(&auth_ctx, &req, &resp);
+            EXPECT_TRUE(up_stat.ok()) << up_stat.error_message();
         }
 
         v1::FinalizeFileUploadRequest fin_req;
@@ -200,7 +281,8 @@ class FilesDownloadIntegrationTest : public ::testing::Test {
         fin_req.set_expected_ciphertext_sha256(compute_sha256_hex(concatenated_payload));
 
         v1::FinalizeFileUploadResponse fin_resp;
-        EXPECT_TRUE(service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp).ok());
+        auto fin_stat = service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp);
+        EXPECT_TRUE(fin_stat.ok()) << fin_stat.error_message();
         EXPECT_EQ(fin_resp.lifecycle_state(), v1::FILE_LIFECYCLE_STATE_AVAILABLE);
 
         return file_id;
@@ -208,6 +290,7 @@ class FilesDownloadIntegrationTest : public ::testing::Test {
 
     db::ConnectionPoolConfig db_config_{};
     S3ClientConfig s3_cfg_{};
+    std::shared_ptr<MockHttpTransport> mock_transport_;
     std::shared_ptr<db::FilesDbConnectionPool> pool_;
     std::shared_ptr<FileTransferRepository> transfer_repo_;
     std::shared_ptr<FileChunkRepository> chunk_repo_;
@@ -232,9 +315,9 @@ class FilesDownloadIntegrationTest : public ::testing::Test {
 TEST_F(FilesDownloadIntegrationTest, TC1_HappyPathFullFileChunkedDownload) {
     TestIntegrationAuthContext auth_ctx("DNS:gateway");
 
-    std::string chunk0 = "First encrypted payload block for TC1 download test";
-    std::string chunk1 = "Second encrypted payload block completing file for TC1";
-    std::string file_id = upload_and_finalize_file({chunk0, chunk1}, "gateway");
+    std::string chunk0 = std::string(k_standard_chunk_size, 'A');
+    std::string chunk1 = std::string(1024, 'B');
+    std::string file_id = upload_and_finalize_file({chunk0, chunk1}, k_test_owner_user_id);
 
     // Download chunk 0
     v1::DownloadChunkRequest req0;
@@ -276,17 +359,15 @@ TEST_F(FilesDownloadIntegrationTest, TC1_HappyPathFullFileChunkedDownload) {
 TEST_F(FilesDownloadIntegrationTest, TC2_CanonicalResumeFromStartingChunk) {
     TestIntegrationAuthContext auth_ctx("DNS:gateway");
 
-    // Create 4-chunk file
+    // Create 4-chunk file (each non-terminal chunk exactly 4 MiB)
     std::vector<std::string> chunks = {
-        std::string(k_standard_chunk_size, 'A'),
-        std::string(k_standard_chunk_size, 'B'),
-        std::string(k_standard_chunk_size, 'C'),
-        std::string(1024, 'D') // partial last chunk
+        std::string(k_standard_chunk_size, 'A'), std::string(k_standard_chunk_size, 'B'),
+        std::string(k_standard_chunk_size, 'C'), std::string(1024, 'D') // partial last chunk
     };
-    std::string file_id = upload_and_finalize_file(chunks, "gateway");
+    std::string file_id = upload_and_finalize_file(chunks, k_test_owner_user_id);
 
     // Prepare resume session starting from chunk 2
-    auto resume_model = download_mgr_->prepare_resume_session(file_id, 1, 2, "gateway");
+    auto resume_model = download_mgr_->prepare_resume_session(file_id, 1, 2, k_test_owner_user_id);
     EXPECT_EQ(resume_model.starting_chunk, 2);
     EXPECT_EQ(resume_model.total_chunks, 4);
 
@@ -310,30 +391,25 @@ TEST_F(FilesDownloadIntegrationTest, TC2_CanonicalResumeFromStartingChunk) {
 // TC3: Authorization Guard (Unauthorized Access Denied)
 // ============================================================================
 TEST_F(FilesDownloadIntegrationTest, TC3_AuthorizationGuardUnauthorizedAccessDenied) {
-    TestIntegrationAuthContext auth_ctx("DNS:gateway");
+    // File owned by k_test_owner_user_id
+    std::string chunk = std::string(1024, 'C');
+    std::string file_id = upload_and_finalize_file({chunk}, k_test_owner_user_id);
 
-    // File owned by user-alice
-    std::string chunk = "Secret user-alice encrypted content";
-    std::string file_id = upload_and_finalize_file({chunk}, "user-alice");
+    // Attempt download by unauthorized other user via download_mgr_
+    EXPECT_THROW(download_mgr_->get_chunk_versioned(file_id, 1, 0, k_test_other_user_id),
+                 UnauthorizedFileAccessException);
 
-    // Attempt download by unauthorized user-bob via download_mgr_
-    EXPECT_THROW(
-        download_mgr_->get_chunk_versioned(file_id, 1, 0, "user-bob"),
-        service::UnauthorizedFileAccessException);
-
-    // Grant READ access to user-bob
-    FileAccessEntity grant{
-        .access_id = generate_uuid_v7(),
-        .file_id = file_id,
-        .grantee_user_id = "user-bob",
-        .permission = FilePermission::Read,
-        .granted_by = "user-alice",
-        .granted_at = std::chrono::system_clock::now()
-    };
+    // Grant READ access to k_test_other_user_id
+    FileAccessEntity grant{.access_id = generate_uuid_v7(),
+                           .file_id = file_id,
+                           .grantee_user_id = k_test_other_user_id,
+                           .permission = FilePermission::Read,
+                           .granted_by = k_test_owner_user_id,
+                           .granted_at = std::chrono::system_clock::now()};
     access_repo_->grant_access(grant);
 
-    // Now user-bob download succeeds!
-    auto result = download_mgr_->get_chunk_versioned(file_id, 1, 0, "user-bob");
+    // Now other user download succeeds!
+    auto result = download_mgr_->get_chunk_versioned(file_id, 1, 0, k_test_other_user_id);
     EXPECT_EQ(result.encrypted_data, chunk);
 }
 
@@ -346,13 +422,14 @@ TEST_F(FilesDownloadIntegrationTest, TC4_LifecycleStateGuardNotAvailable) {
     std::string file_id = generate_uuid_v7();
     v1::CreateFileUploadRequest init_req;
     init_req.set_file_id(file_id);
-    init_req.set_owner_user_id("gateway");
-    init_req.set_owner_device_id("device-test");
+    init_req.set_owner_user_id(k_test_owner_user_id);
+    init_req.set_owner_device_id(k_test_owner_device_id);
     init_req.set_encrypted_size_bytes(1000);
     init_req.set_expected_chunk_count(1);
     init_req.set_encryption_version("XChaCha20-Poly1305");
-    init_req.set_client_crypto_metadata("{\"metadata_nonce_hex\":\"" + std::string(48, 'a') +
-                                       "\",\"metadata_tag_hex\":\"" + std::string(32, 'b') + "\"}");
+    init_req.set_client_crypto_metadata("{\"encrypted_filename_hex\":\"0102\",\"metadata_nonce_hex\":\"" +
+                                        std::string(48, 'a') + "\",\"metadata_tag_hex\":\"" + std::string(32, 'b') +
+                                        "\"}");
 
     v1::CreateFileUploadResponse init_resp;
     EXPECT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp).ok());
@@ -373,8 +450,8 @@ TEST_F(FilesDownloadIntegrationTest, TC4_LifecycleStateGuardNotAvailable) {
 TEST_F(FilesDownloadIntegrationTest, TC5_OutOfBoundsChunkIndex) {
     TestIntegrationAuthContext auth_ctx("DNS:gateway");
 
-    std::string chunk = "Single chunk payload";
-    std::string file_id = upload_and_finalize_file({chunk}, "gateway");
+    std::string chunk = std::string(1024, 'D');
+    std::string file_id = upload_and_finalize_file({chunk}, k_test_owner_user_id);
 
     v1::DownloadChunkRequest req;
     req.set_file_id(file_id);
@@ -391,19 +468,17 @@ TEST_F(FilesDownloadIntegrationTest, TC5_OutOfBoundsChunkIndex) {
 TEST_F(FilesDownloadIntegrationTest, TC6_ResumeModelValidation) {
     std::string chunk0 = std::string(k_standard_chunk_size, 'X');
     std::string chunk1 = std::string(k_standard_chunk_size, 'Y');
-    std::string file_id = upload_and_finalize_file({chunk0, chunk1}, "gateway");
+    std::string file_id = upload_and_finalize_file({chunk0, chunk1}, k_test_owner_user_id);
 
     // Invalid starting chunk beyond total chunks
-    EXPECT_THROW(
-        download_mgr_->prepare_resume_session(file_id, 1, 10, "gateway"),
-        std::out_of_range);
+    EXPECT_THROW(download_mgr_->prepare_resume_session(file_id, 1, 10, k_test_owner_user_id), std::out_of_range);
 
     // Valid starting chunk 0 and 1
-    auto s0 = download_mgr_->prepare_resume_session(file_id, 1, 0, "gateway");
+    auto s0 = download_mgr_->prepare_resume_session(file_id, 1, 0, k_test_owner_user_id);
     EXPECT_EQ(s0.starting_chunk, 0);
     EXPECT_EQ(s0.total_chunks, 2);
 
-    auto s1 = download_mgr_->prepare_resume_session(file_id, 1, 1, "gateway");
+    auto s1 = download_mgr_->prepare_resume_session(file_id, 1, 1, k_test_owner_user_id);
     EXPECT_EQ(s1.starting_chunk, 1);
     EXPECT_EQ(s1.total_chunks, 2);
 }

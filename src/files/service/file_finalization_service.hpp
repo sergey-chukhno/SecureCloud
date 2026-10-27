@@ -15,8 +15,10 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 
 namespace securecloud::files::service {
 
@@ -50,21 +52,20 @@ struct FinalizeUploadResultDto {
 /// machine transitions, and anti-split-brain idempotency.
 class FileFinalizationService {
   public:
-    explicit FileFinalizationService(
-        std::shared_ptr<db::FilesDbConnectionPool> pool,
-        std::shared_ptr<ObjectAssemblyEngine> assembly_engine,
-        std::shared_ptr<FileTransferRepository> transfer_repo = nullptr,
-        std::shared_ptr<FileRepository> file_repo = nullptr,
-        std::shared_ptr<FileVersionRepository> version_repo = nullptr,
-        std::shared_ptr<FileChunkRepository> chunk_repo = nullptr,
-        std::shared_ptr<FilesOutboxRepository> outbox_repo = nullptr);
+    explicit FileFinalizationService(std::shared_ptr<db::FilesDbConnectionPool> pool,
+                                     std::shared_ptr<ObjectAssemblyEngine> assembly_engine,
+                                     std::shared_ptr<FileTransferRepository> transfer_repo = nullptr,
+                                     std::shared_ptr<FileRepository> file_repo = nullptr,
+                                     std::shared_ptr<FileVersionRepository> version_repo = nullptr,
+                                     std::shared_ptr<FileChunkRepository> chunk_repo = nullptr,
+                                     std::shared_ptr<FilesOutboxRepository> outbox_repo = nullptr);
 
     virtual ~FileFinalizationService() = default;
 
     FileFinalizationService(const FileFinalizationService&) = delete;
     FileFinalizationService& operator=(const FileFinalizationService&) = delete;
-    FileFinalizationService(FileFinalizationService&&) noexcept = default;
-    FileFinalizationService& operator=(FileFinalizationService&&) noexcept = default;
+    FileFinalizationService(FileFinalizationService&&) = delete;
+    FileFinalizationService& operator=(FileFinalizationService&&) = delete;
 
     /// Finalizes an uploaded file session.
     /// Strictly guarantees that AVAILABLE is never reported on failure.
@@ -78,6 +79,8 @@ class FileFinalizationService {
     std::shared_ptr<FileVersionRepository> version_repo_;
     std::shared_ptr<FileChunkRepository> chunk_repo_;
     std::shared_ptr<FilesOutboxRepository> outbox_repo_;
+    std::mutex session_locks_mutex_;
+    std::unordered_map<std::string, std::shared_ptr<std::mutex>> session_locks_;
 };
 
 } // namespace securecloud::files::service

@@ -43,10 +43,10 @@ class UnauthorizedTransferException : public TransferException {
 
 namespace securecloud::files::service {
 
-using securecloud::files::TransferException;
-using securecloud::files::TransferNotFoundException;
-using securecloud::files::TransferExpiredException;
 using securecloud::files::TransferCancelledException;
+using securecloud::files::TransferException;
+using securecloud::files::TransferExpiredException;
+using securecloud::files::TransferNotFoundException;
 using securecloud::files::UnauthorizedTransferException;
 
 /// Model representing an active or finalized upload transfer session.
@@ -101,10 +101,9 @@ class IUploadSessionManager {
 /// Authoritative Resumable Upload Session Manager with crash recovery.
 class UploadSessionManager : public IUploadSessionManager {
   public:
-    explicit UploadSessionManager(
-        std::shared_ptr<db::FilesDbConnectionPool> pool = nullptr,
-        std::shared_ptr<FileTransferRepository> transfer_repo = nullptr,
-        std::shared_ptr<FileChunkRepository> chunk_repo = nullptr);
+    explicit UploadSessionManager(std::shared_ptr<db::FilesDbConnectionPool> pool = nullptr,
+                                  std::shared_ptr<FileTransferRepository> transfer_repo = nullptr,
+                                  std::shared_ptr<FileChunkRepository> chunk_repo = nullptr);
 
     ~UploadSessionManager() override = default;
 

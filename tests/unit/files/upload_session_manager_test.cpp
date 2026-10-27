@@ -104,10 +104,9 @@ TEST(UploadSessionManagerTest, ConcurrentChunkRecordingThreadSafety) {
     ASSERT_TRUE(session.has_value());
 
     std::vector<std::thread> threads;
-    for (int i = 0; i < 50; ++i) {
-        threads.emplace_back([&manager, upload_id = session->upload_id, i]() {
-            manager.record_chunk_upload(upload_id, i, "hash");
-        });
+    for (uint32_t i = 0; i < 50; ++i) {
+        threads.emplace_back(
+            [&manager, upload_id = session->upload_id, i]() { manager.record_chunk_upload(upload_id, i, "hash"); });
     }
 
     for (auto& t : threads) {

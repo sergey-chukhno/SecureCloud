@@ -36,12 +36,9 @@ class ChunkDownloadEngine {
     /// Computes SHA-256 digest over the retrieved chunk ciphertext.
     /// Throws std::out_of_range if chunk_index exceeds file chunk count.
     /// Throws storage::S3Exception derivatives on storage failure.
-    virtual ChunkFetchResult fetch_chunk(
-        const std::string& file_id,
-        int32_t version_number,
-        uint32_t chunk_index,
-        uint64_t total_file_size,
-        uint32_t standard_chunk_size = k_standard_chunk_size);
+    virtual ChunkFetchResult fetch_chunk(const std::string& file_id, int32_t version_number, uint32_t chunk_index,
+                                         uint64_t total_file_size,
+                                         uint32_t standard_chunk_size = k_standard_chunk_size);
 
     /// Computes canonical S3 version object key: objects/{file_id}/{version_number}
     [[nodiscard]] static std::string build_version_key(const std::string& file_id, int32_t version_number);

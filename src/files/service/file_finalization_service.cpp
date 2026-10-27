@@ -1,24 +1,20 @@
 #include "files/service/file_finalization_service.hpp"
+
 #include "files/domain/metadata_validator.hpp"
 
 #include <iostream>
 
 namespace securecloud::files::service {
 
-FileFinalizationService::FileFinalizationService(
-    std::shared_ptr<db::FilesDbConnectionPool> pool,
-    std::shared_ptr<ObjectAssemblyEngine> assembly_engine,
-    std::shared_ptr<FileTransferRepository> transfer_repo,
-    std::shared_ptr<FileRepository> file_repo,
-    std::shared_ptr<FileVersionRepository> version_repo,
-    std::shared_ptr<FileChunkRepository> chunk_repo,
-    std::shared_ptr<FilesOutboxRepository> outbox_repo)
-    : pool_(std::move(pool)),
-      assembly_engine_(std::move(assembly_engine)),
-      transfer_repo_(std::move(transfer_repo)),
-      file_repo_(std::move(file_repo)),
-      version_repo_(std::move(version_repo)),
-      chunk_repo_(std::move(chunk_repo)),
+FileFinalizationService::FileFinalizationService(std::shared_ptr<db::FilesDbConnectionPool> pool,
+                                                 std::shared_ptr<ObjectAssemblyEngine> assembly_engine,
+                                                 std::shared_ptr<FileTransferRepository> transfer_repo,
+                                                 std::shared_ptr<FileRepository> file_repo,
+                                                 std::shared_ptr<FileVersionRepository> version_repo,
+                                                 std::shared_ptr<FileChunkRepository> chunk_repo,
+                                                 std::shared_ptr<FilesOutboxRepository> outbox_repo)
+    : pool_(std::move(pool)), assembly_engine_(std::move(assembly_engine)), transfer_repo_(std::move(transfer_repo)),
+      file_repo_(std::move(file_repo)), version_repo_(std::move(version_repo)), chunk_repo_(std::move(chunk_repo)),
       outbox_repo_(std::move(outbox_repo)) {
     if (!transfer_repo_ && pool_) {
         transfer_repo_ = std::make_shared<FileTransferRepository>(pool_);
@@ -37,8 +33,7 @@ FileFinalizationService::FileFinalizationService(
     }
 }
 
-FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(
-    const FinalizeUploadRequestDto& request) {
+FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(const FinalizeUploadRequestDto& request) {
     if (request.upload_id.empty()) {
         throw FinalizationPreconditionException("upload_id must not be empty");
     }
@@ -51,8 +46,34 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(
         throw std::runtime_error("Database connection pool is uninitialized");
     }
 
-    auto conn = pool_->acquire_connection();
-    pqxx::work tx(*conn);
+    std::shared_ptr<std::mutex> session_lock;
+    {
+        std::lock_guard<std::mutex> lock(session_locks_mutex_);
+        auto& ptr = session_locks_[request.upload_id];
+        if (!ptr) {
+            ptr = std::make_shared<std::mutex>();
+        }
+        session_lock = ptr;
+    }
+    std::lock_guard<std::mutex> lock(*session_lock);
+
+    struct LockCleaner {
+        std::mutex& map_mutex;
+        std::unordered_map<std::string, std::shared_ptr<std::mutex>>& map;
+        std::string id;
+        std::shared_ptr<std::mutex> lock_ptr;
+
+        ~LockCleaner() {
+            lock_ptr.reset();
+            std::lock_guard<std::mutex> lk(map_mutex);
+            auto it = map.find(id);
+            if (it != map.end() && it->second.use_count() <= 1) {
+                map.erase(it);
+            }
+        }
+    } cleaner{session_locks_mutex_, session_locks_, request.upload_id, session_lock};
+
+    pqxx::work tx;
 
     // 1. Fetch transfer session
     auto transfer_opt = transfer_repo_->find_by_id(request.upload_id, tx);
@@ -64,9 +85,9 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(
     // 2. Validate file_id association if specified in request
     if (!request.file_id.empty() && request.file_id != transfer_opt->file_id) {
         tx.abort();
-        throw FinalizationPreconditionException(
-            "Request file_id (" + request.file_id + ") does not match transfer session file_id (" +
-            transfer_opt->file_id + ")");
+        throw FinalizationPreconditionException("Request file_id (" + request.file_id +
+                                                ") does not match transfer session file_id (" + transfer_opt->file_id +
+                                                ")");
     }
 
     // 3. Fetch file entity
@@ -79,23 +100,20 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(
     // 4. Verify caller authorization
     if (!request.caller_user_id.empty() && file_opt->owner_user_id != request.caller_user_id) {
         tx.abort();
-        throw FinalizationPreconditionException(
-            "Caller user ID does not match file owner ID");
+        throw FinalizationPreconditionException("Caller user ID does not match file owner ID");
     }
 
-    // 5. Anti-split-brain Idempotency Check: if transfer is already completed
-    if (transfer_opt->status == TransferStatus::Completed) {
+    // 5. Anti-split-brain Idempotency Check: if transfer is already completed or file is already available
+    if (transfer_opt->status == TransferStatus::Completed || file_opt->status == FileStatus::Available) {
         auto active_ver = version_repo_->find_active_version(file_opt->file_id, tx);
         if (active_ver) {
             tx.commit();
-            return FinalizeUploadResultDto{
-                .file_id = file_opt->file_id,
-                .version_number = active_ver->version_number,
-                .total_bytes = static_cast<uint64_t>(active_ver->encrypted_size),
-                .checksum_sha256 = active_ver->checksum_sha256,
-                .available_at = active_ver->created_at,
-                .is_idempotent_replay = true
-            };
+            return FinalizeUploadResultDto{.file_id = file_opt->file_id,
+                                           .version_number = active_ver->version_number,
+                                           .total_bytes = static_cast<uint64_t>(active_ver->encrypted_size),
+                                           .checksum_sha256 = active_ver->checksum_sha256,
+                                           .available_at = active_ver->created_at,
+                                           .is_idempotent_replay = true};
         }
     }
 
@@ -120,12 +138,10 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(
     // 8. Load chunks and perform authoritative precondition validation
     auto chunks = chunk_repo_->list_chunks_for_transfer(transfer_opt->transfer_id, tx);
 
-    FinalizationValidationInput val_input{
-        .transfer = *transfer_opt,
-        .file = *file_opt,
-        .chunks = chunks,
-        .expected_ciphertext_sha256 = request.expected_ciphertext_sha256
-    };
+    FinalizationValidationInput val_input{.transfer = *transfer_opt,
+                                          .file = *file_opt,
+                                          .chunks = chunks,
+                                          .expected_ciphertext_sha256 = request.expected_ciphertext_sha256};
     val_input.transfer.status = TransferStatus::Finalizing;
     val_input.file.status = FileStatus::Finalizing;
 
@@ -133,20 +149,19 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(
     if (!val_res.is_valid) {
         tx.abort();
         // Failure Rule: NEVER report AVAILABLE when finalization fails!
-        throw FinalizationPreconditionException(
-            "Finalization precondition check failed: " + val_res.error_message);
+        throw FinalizationPreconditionException("Finalization precondition check failed: " + val_res.error_message);
     }
 
     // 9. Determine target version number
     auto latest_ver = version_repo_->find_active_version(file_opt->file_id, tx);
-    int32_t target_version = latest_ver ? (latest_ver->version_number + 1) : 1;
+    uint32_t target_version = latest_ver ? static_cast<uint32_t>(latest_ver->version_number + 1) : 1U;
 
     // 10. Assemble whole-object from staged chunks
     AssemblyResult assembly_res;
     try {
-        assembly_res = assembly_engine_->assemble_version_object(
-            file_opt->file_id, target_version, transfer_opt->transfer_id, chunks);
-    } catch (const std::exception& e) {
+        assembly_res = assembly_engine_->assemble_version_object(file_opt->file_id, target_version,
+                                                                 transfer_opt->transfer_id, chunks);
+    } catch (const std::exception&) {
         tx.abort();
         // Failure Rule: Leave staged chunks intact for retry/recovery
         throw;
@@ -169,9 +184,8 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(
         if (!match) {
             tx.abort();
             // Failure Rule: AVAILABLE must never be reported!
-            throw ChunkIntegrityException(
-                "Whole-ciphertext SHA-256 integrity mismatch: expected " +
-                expected + ", but computed " + computed);
+            throw ChunkIntegrityException("Whole-ciphertext SHA-256 integrity mismatch: expected " + expected +
+                                          ", but computed " + computed);
         }
     }
 
@@ -182,47 +196,61 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(
     FileVersionEntity new_ver;
     new_ver.version_id = generate_uuid_v7();
     new_ver.file_id = file_opt->file_id;
-    new_ver.version_number = target_version;
+    new_ver.version_number = static_cast<int32_t>(target_version);
     new_ver.encrypted_size = static_cast<int64_t>(assembly_res.total_bytes);
     new_ver.minio_object_key = assembly_res.target_object_key;
     new_ver.checksum_sha256 = assembly_res.computed_sha256;
     new_ver.is_active = true;
     new_ver.created_at = now;
-    version_repo_->create_version(new_ver, tx);
+    try {
+        version_repo_->create_version(new_ver, tx);
 
-    // b) Transition file status to AVAILABLE
-    file_repo_->update_status(file_opt->file_id, FileStatus::Finalizing, FileStatus::Available, tx);
+        // b) Transition file status to AVAILABLE
+        file_repo_->update_status(file_opt->file_id, FileStatus::Finalizing, FileStatus::Available, tx);
 
-    // c) Transition transfer status to COMPLETED
-    transfer_repo_->update_status(transfer_opt->transfer_id, TransferStatus::Completed, tx);
+        // c) Transition transfer status to COMPLETED
+        transfer_repo_->update_status(transfer_opt->transfer_id, TransferStatus::Completed, tx);
 
-    // d) Stage outbox event for FILE_AVAILABLE
-    FilesOutboxEntity outbox;
-    outbox.event_id = generate_uuid_v7();
-    outbox.event_type = "FILE_AVAILABLE";
-    outbox.aggregate_id = file_opt->file_id;
-    outbox.payload_json = "{\"file_id\":\"" + file_opt->file_id +
-        "\",\"version_number\":" + std::to_string(target_version) +
-        ",\"owner_user_id\":\"" + file_opt->owner_user_id +
-        "\",\"checksum_sha256\":\"" + assembly_res.computed_sha256 +
-        "\",\"total_bytes\":" + std::to_string(assembly_res.total_bytes) + "}";
-    outbox.created_at = now;
-    outbox_repo_->stage_event(outbox, tx);
+        // d) Stage outbox event for FILE_AVAILABLE
+        FilesOutboxEntity outbox;
+        outbox.event_id = generate_uuid_v7();
+        outbox.event_type = "FILE_AVAILABLE";
+        outbox.aggregate_id = file_opt->file_id;
+        outbox.payload_json = "{\"file_id\":\"" + file_opt->file_id +
+                              "\",\"version_number\":" + std::to_string(target_version) + ",\"owner_user_id\":\"" +
+                              file_opt->owner_user_id + "\",\"checksum_sha256\":\"" + assembly_res.computed_sha256 +
+                              "\",\"total_bytes\":" + std::to_string(assembly_res.total_bytes) + "}";
+        outbox.created_at = now;
+        outbox_repo_->stage_event(outbox, tx);
 
-    // Commit transaction!
-    tx.commit();
+        // Commit transaction!
+        tx.commit();
+    } catch (const UniqueConstraintViolationException&) {
+        tx.abort();
+        // Concurrent finalization race: another concurrent request finalized this session
+        pqxx::work retry_tx;
+        auto active_ver = version_repo_->find_active_version(file_opt->file_id, retry_tx);
+        if (active_ver) {
+            retry_tx.commit();
+            return FinalizeUploadResultDto{.file_id = file_opt->file_id,
+                                           .version_number = active_ver->version_number,
+                                           .total_bytes = static_cast<uint64_t>(active_ver->encrypted_size),
+                                           .checksum_sha256 = active_ver->checksum_sha256,
+                                           .available_at = active_ver->created_at,
+                                           .is_idempotent_replay = true};
+        }
+        throw;
+    }
 
     // 13. Staging chunks cleanup
     assembly_engine_->cleanup_staging_chunks(transfer_opt->transfer_id, chunks);
 
-    return FinalizeUploadResultDto{
-        .file_id = file_opt->file_id,
-        .version_number = target_version,
-        .total_bytes = assembly_res.total_bytes,
-        .checksum_sha256 = assembly_res.computed_sha256,
-        .available_at = now,
-        .is_idempotent_replay = false
-    };
+    return FinalizeUploadResultDto{.file_id = file_opt->file_id,
+                                   .version_number = static_cast<int32_t>(target_version),
+                                   .total_bytes = assembly_res.total_bytes,
+                                   .checksum_sha256 = assembly_res.computed_sha256,
+                                   .available_at = now,
+                                   .is_idempotent_replay = false};
 }
 
 } // namespace securecloud::files::service

@@ -55,7 +55,7 @@ TEST(LifecycleStateMachineTest, FromProtoConversions) {
     EXPECT_EQ(from_proto(v1::FILE_LIFECYCLE_STATE_DELETED), FileStatus::Deleted);
     EXPECT_EQ(from_proto(v1::FILE_LIFECYCLE_STATE_FAILED), FileStatus::Failed);
 
-    EXPECT_THROW(from_proto(v1::FILE_LIFECYCLE_STATE_UNSPECIFIED), std::invalid_argument);
+    EXPECT_THROW((void)from_proto(v1::FILE_LIFECYCLE_STATE_UNSPECIFIED), std::invalid_argument);
 }
 
 TEST(LifecycleStateMachineTest, TerminalStates) {
@@ -70,10 +70,9 @@ TEST(LifecycleStateMachineTest, TerminalStates) {
 }
 
 TEST(LifecycleStateMachineTest, ExhaustiveTransitionMatrixVerification) {
-    const std::vector<FileStatus> all_statuses = {
-        FileStatus::Created, FileStatus::Uploading, FileStatus::Finalizing,
-        FileStatus::Available, FileStatus::Expired, FileStatus::Deleted, FileStatus::Failed
-    };
+    const std::vector<FileStatus> all_statuses = {FileStatus::Created,   FileStatus::Uploading, FileStatus::Finalizing,
+                                                  FileStatus::Available, FileStatus::Expired,   FileStatus::Deleted,
+                                                  FileStatus::Failed};
 
     // Define all legally allowed transitions
     const std::set<std::pair<FileStatus, FileStatus>> legal_transitions = {
@@ -93,8 +92,7 @@ TEST(LifecycleStateMachineTest, ExhaustiveTransitionMatrixVerification) {
         {FileStatus::Available, FileStatus::Expired},
         {FileStatus::Available, FileStatus::Deleted},
         // Expired paths
-        {FileStatus::Expired, FileStatus::Deleted}
-    };
+        {FileStatus::Expired, FileStatus::Deleted}};
 
     // Test all 49 transitions
     for (const auto& from : all_statuses) {
@@ -103,17 +101,16 @@ TEST(LifecycleStateMachineTest, ExhaustiveTransitionMatrixVerification) {
             bool actual_valid = is_valid_state_transition(from, to);
 
             EXPECT_EQ(actual_valid, expected_valid)
-                << "Transition from " << to_string(from) << " to " << to_string(to)
-                << " expected " << (expected_valid ? "VALID" : "INVALID")
-                << " but got " << (actual_valid ? "VALID" : "INVALID");
+                << "Transition from " << to_string(from) << " to " << to_string(to) << " expected "
+                << (expected_valid ? "VALID" : "INVALID") << " but got " << (actual_valid ? "VALID" : "INVALID");
 
             if (expected_valid) {
                 EXPECT_NO_THROW(assert_valid_state_transition(from, to));
             } else {
                 try {
                     assert_valid_state_transition(from, to);
-                    FAIL() << "Expected InvalidLifecycleTransitionException from "
-                           << to_string(from) << " to " << to_string(to);
+                    FAIL() << "Expected InvalidLifecycleTransitionException from " << to_string(from) << " to "
+                           << to_string(to);
                 } catch (const InvalidLifecycleTransitionException& ex) {
                     EXPECT_EQ(ex.from(), from);
                     EXPECT_EQ(ex.to(), to);

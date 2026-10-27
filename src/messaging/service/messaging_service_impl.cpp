@@ -7,6 +7,7 @@
 #undef GetMessage
 #endif
 
+#include "domain/presence_types.hpp"
 #include "securecloud/grpc/caller_context.hpp"
 #include "securecloud/security/mtls_config.hpp"
 #include "service/conversation_service.hpp"
@@ -158,12 +159,33 @@ MessagingServiceImpl::MessagingServiceImpl(std::shared_ptr<concurrency::BoundedW
                                            std::shared_ptr<DeliveryService> delivery_service,
                                            std::shared_ptr<ReadReceiptService> read_receipt_service,
                                            std::shared_ptr<MessageSyncService> sync_service,
-                                           std::shared_ptr<SyncCursorManager> cursor_manager)
+                                           std::shared_ptr<SyncCursorManager> cursor_manager,
+                                           std::shared_ptr<IPresenceCoordinator> presence_coordinator)
     : submission_pool_(std::move(submission_pool)), delivery_pool_(std::move(delivery_pool)),
       sync_pool_(std::move(sync_pool)), conversation_service_(std::move(conversation_service)),
       submission_service_(std::move(submission_service)), delivery_service_(std::move(delivery_service)),
       read_receipt_service_(std::move(read_receipt_service)), sync_service_(std::move(sync_service)),
-      cursor_manager_(std::move(cursor_manager)) {}
+      cursor_manager_(std::move(cursor_manager)), presence_coordinator_(std::move(presence_coordinator)) {}
+
+bool MessagingServiceImpl::check_and_record_presence_rate_limit(const domain::UserId& user_id) {
+    const auto now = std::chrono::steady_clock::now();
+    const auto window = std::chrono::minutes(1);
+    constexpr size_t k_max_updates_per_minute = 12;
+
+    std::lock_guard<std::mutex> lock(presence_rate_limit_mutex_);
+    auto& timestamps = presence_rate_limits_[user_id];
+
+    while (!timestamps.empty() && (now - timestamps.front()) > window) {
+        timestamps.pop_front();
+    }
+
+    if (timestamps.size() >= k_max_updates_per_minute) {
+        return false;
+    }
+
+    timestamps.push_back(now);
+    return true;
+}
 
 // --- Message lifecycle RPCs ---
 
@@ -1352,27 +1374,169 @@ MessagingServiceImpl::UpdateSyncCursor(::grpc::ServerContext* context,
 
 // --- Presence signaling & query RPCs ---
 
-::grpc::Status
-MessagingServiceImpl::UpdatePresence(::grpc::ServerContext* context,
-                                     const ::securecloud::messaging::v1::UpdatePresenceRequest* /*request*/,
-                                     ::securecloud::messaging::v1::UpdatePresenceResponse* /*response*/) {
+::grpc::Status MessagingServiceImpl::UpdatePresence(::grpc::ServerContext* context,
+                                                    const ::securecloud::messaging::v1::UpdatePresenceRequest* request,
+                                                    ::securecloud::messaging::v1::UpdatePresenceResponse* response) {
     log_rpc_invocation("UpdatePresence", context);
-    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    if (!presence_coordinator_) {
+        return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    }
+    if (!request || !response) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null"};
+    }
+
+    auto caller_ctx = extract_messaging_caller_context(context);
+    std::string error_reason;
+    auto val_status = validate_messaging_caller_context(caller_ctx, kRequireUserId, error_reason);
+    if (!val_status.ok()) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, error_reason, caller_ctx.correlation_id(), context);
+    }
+
+    auto caller_id = domain::UserId::from_string(caller_ctx.user_id());
+    if (!caller_id) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, "Invalid caller user ID",
+                              caller_ctx.correlation_id(), context);
+    }
+
+    // Rate bounding: max 12 updates per minute per user
+    if (!check_and_record_presence_rate_limit(*caller_id)) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_QUEUE_CAPACITY_EXCEEDED,
+                              "Presence update rate limit exceeded (max 12 per minute)", caller_ctx.correlation_id(),
+                              context);
+    }
+
+    const std::string sanitized_message = domain::sanitize_status_message(request->custom_status_message());
+    const auto target_status = domain::from_proto(request->status());
+
+    if (target_status == domain::PresenceStatus::Unspecified ||
+        (target_status == domain::PresenceStatus::Online && sanitized_message.empty())) {
+        presence_coordinator_->clear_user_override(*caller_id);
+    } else {
+        presence_coordinator_->set_user_override(*caller_id, target_status, sanitized_message);
+    }
+
+    const auto current_presence = presence_coordinator_->get_user_presence(*caller_id);
+    *response->mutable_presence() = domain::to_proto(current_presence);
+    return ::grpc::Status::OK;
 }
 
 ::grpc::Status MessagingServiceImpl::GetPresence(::grpc::ServerContext* context,
-                                                 const ::securecloud::messaging::v1::GetPresenceRequest* /*request*/,
-                                                 ::securecloud::messaging::v1::GetPresenceResponse* /*response*/) {
+                                                 const ::securecloud::messaging::v1::GetPresenceRequest* request,
+                                                 ::securecloud::messaging::v1::GetPresenceResponse* response) {
     log_rpc_invocation("GetPresence", context);
-    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    if (!presence_coordinator_) {
+        return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    }
+    if (!request || !response) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null"};
+    }
+
+    auto caller_ctx = extract_messaging_caller_context(context);
+    std::string error_reason;
+    auto val_status = validate_messaging_caller_context(caller_ctx, kRequireUserId, error_reason);
+    if (!val_status.ok()) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, error_reason, caller_ctx.correlation_id(), context);
+    }
+
+    auto caller_id = domain::UserId::from_string(caller_ctx.user_id());
+    if (!caller_id) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, "Invalid caller user ID",
+                              caller_ctx.correlation_id(), context);
+    }
+
+    auto target_id = domain::UserId::from_string(request->user_id());
+    if (!target_id) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, "Invalid target user ID format",
+                              caller_ctx.correlation_id(), context);
+    }
+
+    // Mutual-Conversation Privacy Guard (MSG-010):
+    // Allow immediately if caller is querying their own presence.
+    // Otherwise, verify caller and target share at least one mutual active conversation.
+    // If not, privacy-shield the response to OFFLINE (preventing existence / presence oracle).
+    bool is_authorized = (*caller_id == *target_id);
+    if (!is_authorized && conversation_service_) {
+        is_authorized = conversation_service_->shares_mutual_conversation(*caller_id, *target_id);
+    }
+
+    if (!is_authorized) {
+        domain::UserPresence shielded_presence{
+            .user_id = *target_id,
+            .status = domain::PresenceStatus::Offline,
+            .last_active_at = {},
+            .custom_status_message = "",
+            .active_device_count = 0,
+        };
+        *response->mutable_presence() = domain::to_proto(shielded_presence);
+        return ::grpc::Status::OK;
+    }
+
+    const auto presence = presence_coordinator_->get_user_presence(*target_id);
+    *response->mutable_presence() = domain::to_proto(presence);
+    return ::grpc::Status::OK;
 }
 
 ::grpc::Status
 MessagingServiceImpl::BatchGetPresence(::grpc::ServerContext* context,
-                                       const ::securecloud::messaging::v1::BatchGetPresenceRequest* /*request*/,
-                                       ::securecloud::messaging::v1::BatchGetPresenceResponse* /*response*/) {
+                                       const ::securecloud::messaging::v1::BatchGetPresenceRequest* request,
+                                       ::securecloud::messaging::v1::BatchGetPresenceResponse* response) {
     log_rpc_invocation("BatchGetPresence", context);
-    return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    if (!presence_coordinator_) {
+        return {::grpc::StatusCode::UNIMPLEMENTED, k_unimplemented_message};
+    }
+    if (!request || !response) {
+        return {::grpc::StatusCode::INVALID_ARGUMENT, "Request and response must not be null"};
+    }
+
+    auto caller_ctx = extract_messaging_caller_context(context);
+    std::string error_reason;
+    auto val_status = validate_messaging_caller_context(caller_ctx, kRequireUserId, error_reason);
+    if (!val_status.ok()) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, error_reason, caller_ctx.correlation_id(), context);
+    }
+
+    auto caller_id = domain::UserId::from_string(caller_ctx.user_id());
+    if (!caller_id) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, "Invalid caller user ID",
+                              caller_ctx.correlation_id(), context);
+    }
+
+    if (request->user_ids_size() > 100) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, "Batch size exceeds maximum limit of 100 user IDs",
+                              caller_ctx.correlation_id(), context);
+    }
+
+    for (const auto& uid_str : request->user_ids()) {
+        auto target_id = domain::UserId::from_string(uid_str);
+        if (!target_id) {
+            auto* p = response->add_presences();
+            p->set_user_id(uid_str);
+            p->set_status(securecloud::messaging::v1::PRESENCE_STATUS_OFFLINE);
+            p->set_last_active_unix_ms(0);
+            continue;
+        }
+
+        bool is_authorized = (*caller_id == *target_id);
+        if (!is_authorized && conversation_service_) {
+            is_authorized = conversation_service_->shares_mutual_conversation(*caller_id, *target_id);
+        }
+
+        if (!is_authorized) {
+            domain::UserPresence shielded_presence{
+                .user_id = *target_id,
+                .status = domain::PresenceStatus::Offline,
+                .last_active_at = {},
+                .custom_status_message = "",
+                .active_device_count = 0,
+            };
+            *response->add_presences() = domain::to_proto(shielded_presence);
+        } else {
+            const auto presence = presence_coordinator_->get_user_presence(*target_id);
+            *response->add_presences() = domain::to_proto(presence);
+        }
+    }
+
+    return ::grpc::Status::OK;
 }
 
 // --- Metadata & security helpers ---

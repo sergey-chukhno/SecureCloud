@@ -1,9 +1,13 @@
 #include "delivery/device_connection_registry.hpp"
 
+#include <algorithm>
+
 namespace securecloud::messaging::delivery {
 
 DeviceConnectionRegistry::DeviceConnectionRegistry(std::chrono::milliseconds default_lease_timeout)
-    : default_lease_timeout_(default_lease_timeout) {}
+    : config_{.default_lease_timeout = default_lease_timeout} {}
+
+DeviceConnectionRegistry::DeviceConnectionRegistry(ConnectionCapacityConfig config) : config_(config) {}
 
 void DeviceConnectionRegistry::register_channel(std::shared_ptr<IDeviceDeliveryChannel> channel) {
     if (!channel) {
@@ -11,8 +15,55 @@ void DeviceConnectionRegistry::register_channel(std::shared_ptr<IDeviceDeliveryC
     }
 
     const auto id = channel->device_id();
-    const std::lock_guard<std::mutex> lock(mutex_);
-    channels_[id] = ChannelEntry{std::move(channel), std::chrono::steady_clock::now()};
+    const auto uid = channel->user_id();
+    bool is_superseding = false;
+
+    {
+        const std::lock_guard<std::mutex> lock(mutex_);
+
+        auto it = channels_.find(id);
+        if (it != channels_.end()) {
+            // Atomic superseding: device already registered. Old channel will be replaced.
+            is_superseding = true;
+            const auto old_uid = it->second.channel ? it->second.channel->user_id() : uid;
+            if (old_uid != uid) {
+                // If device user changed, remove from old user mapping
+                auto& old_user_devs = user_to_devices_[old_uid];
+                std::erase(old_user_devs, id);
+                if (old_user_devs.empty()) {
+                    user_to_devices_.erase(old_uid);
+                }
+            }
+        } else {
+            // New device connection: check global capacity
+            if (config_.max_global_connections > 0 && channels_.size() >= config_.max_global_connections) {
+                throw ConnectionLimitExceededException("Global connection capacity reached: maximum " +
+                                                       std::to_string(config_.max_global_connections) +
+                                                       " concurrent connections");
+            }
+
+            // Check per-user device capacity
+            auto& user_devs = user_to_devices_[uid];
+            if (config_.max_devices_per_user > 0 && user_devs.size() >= config_.max_devices_per_user) {
+                throw ConnectionLimitExceededException("User device limit exceeded for user " + uid.str() +
+                                                       ": maximum " + std::to_string(config_.max_devices_per_user) +
+                                                       " active devices");
+            }
+        }
+
+        channels_[id] = ChannelEntry{channel, std::chrono::steady_clock::now()};
+
+        // Maintain user_to_devices_
+        auto& user_devs = user_to_devices_[uid];
+        if (std::find(user_devs.begin(), user_devs.end(), id) == user_devs.end()) {
+            user_devs.push_back(id);
+        }
+    }
+
+    if (is_superseding) {
+        // Notify disconnect for the superseded channel so external observers (and reaper) are aware
+        notify_disconnect(id);
+    }
 }
 
 void DeviceConnectionRegistry::unregister_channel(const domain::DeviceId& device_id) {
@@ -21,6 +72,16 @@ void DeviceConnectionRegistry::unregister_channel(const domain::DeviceId& device
         const std::lock_guard<std::mutex> lock(mutex_);
         auto it = channels_.find(device_id);
         if (it != channels_.end()) {
+            if (it->second.channel) {
+                const auto uid = it->second.channel->user_id();
+                auto u_it = user_to_devices_.find(uid);
+                if (u_it != user_to_devices_.end()) {
+                    std::erase(u_it->second, device_id);
+                    if (u_it->second.empty()) {
+                        user_to_devices_.erase(u_it);
+                    }
+                }
+            }
             channels_.erase(it);
             found = true;
         }
@@ -29,6 +90,15 @@ void DeviceConnectionRegistry::unregister_channel(const domain::DeviceId& device
     if (found) {
         notify_disconnect(device_id);
     }
+}
+
+size_t DeviceConnectionRegistry::user_device_count(const domain::UserId& user_id) const noexcept {
+    const std::lock_guard<std::mutex> lock(mutex_);
+    auto it = user_to_devices_.find(user_id);
+    if (it != user_to_devices_.end()) {
+        return it->second.size();
+    }
+    return 0;
 }
 
 std::shared_ptr<IDeviceDeliveryChannel> DeviceConnectionRegistry::get_channel(const domain::DeviceId& device_id) const {
@@ -44,7 +114,8 @@ std::shared_ptr<IDeviceDeliveryChannel> DeviceConnectionRegistry::get_channel(co
         return nullptr;
     }
 
-    if (default_lease_timeout_.count() > 0 && (now - it->second.last_active_at) > default_lease_timeout_) {
+    if (config_.default_lease_timeout.count() > 0 &&
+        (now - it->second.last_active_at) > config_.default_lease_timeout) {
         return nullptr;
     }
 
@@ -69,7 +140,8 @@ DeviceConnectionRegistry::filter_online_devices(const std::vector<domain::Device
     for (const auto& id : device_ids) {
         auto it = channels_.find(id);
         if (it != channels_.end() && it->second.channel && it->second.channel->is_active()) {
-            if (default_lease_timeout_.count() <= 0 || (now - it->second.last_active_at) <= default_lease_timeout_) {
+            if (config_.default_lease_timeout.count() <= 0 ||
+                (now - it->second.last_active_at) <= config_.default_lease_timeout) {
                 online.push_back(id);
             }
         }
@@ -95,7 +167,7 @@ bool DeviceConnectionRegistry::touch_channel(const domain::DeviceId& device_id) 
 
 size_t DeviceConnectionRegistry::evict_stale_channels(std::chrono::milliseconds max_idle) {
     const auto now = std::chrono::steady_clock::now();
-    const auto limit = (max_idle.count() > 0) ? max_idle : default_lease_timeout_;
+    const auto limit = (max_idle.count() > 0) ? max_idle : config_.default_lease_timeout;
     std::vector<domain::DeviceId> evicted_ids;
 
     {
@@ -105,7 +177,18 @@ size_t DeviceConnectionRegistry::evict_stale_channels(std::chrono::milliseconds 
             const bool timed_out = (limit.count() > 0) && ((now - it->second.last_active_at) > limit);
 
             if (inactive || timed_out) {
-                evicted_ids.push_back(it->first);
+                const auto dev_id = it->first;
+                if (it->second.channel) {
+                    const auto uid = it->second.channel->user_id();
+                    auto u_it = user_to_devices_.find(uid);
+                    if (u_it != user_to_devices_.end()) {
+                        std::erase(u_it->second, dev_id);
+                        if (u_it->second.empty()) {
+                            user_to_devices_.erase(u_it);
+                        }
+                    }
+                }
+                evicted_ids.push_back(dev_id);
                 it = channels_.erase(it);
             } else {
                 ++it;
