@@ -2826,3 +2826,33 @@ target_link_libraries(securecloud_audit_clickhouse_client_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_clickhouse_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Proto Mapper Unit Test Suite (AUDIT-004-T01)
+add_executable(securecloud_audit_proto_mapper_test
+        audit/audit_proto_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_audit_proto_mapper_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_proto_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service gRPC Producer Identity Validator Test Suite (AUDIT-004-T02)
+add_executable(securecloud_audit_grpc_producer_identity_validator_test
+        audit/grpc_producer_identity_validator_test.cpp
+)
+
+target_link_libraries(securecloud_audit_grpc_producer_identity_validator_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_grpc_producer_identity_validator_test ${SECURECLOUD_TEST_PROPERTIES})
