@@ -58,6 +58,8 @@ target_link_libraries(securecloud_audit_repository PUBLIC
 
 add_library(securecloud_audit_service STATIC
         service/audit_proto_mapper.cpp
+        service/audit_ingestion_service.cpp
+        service/audit_service_impl.cpp
         security/grpc_producer_identity_validator.cpp
 )
 
