@@ -52,8 +52,11 @@ TEST(FileCapabilitySerializerTest, RejectsTamperedSignature) {
     auto claims = make_valid_claims();
     std::string token = FileCapabilitySerializer::serialize(claims, signer);
 
-    // Tamper with last signature character
-    token.back() = (token.back() == 'A') ? 'B' : 'A';
+    // Tamper with a signature character (avoiding trailing Base64 padding bits)
+    const auto second_dot = token.rfind('.');
+    ASSERT_NE(second_dot, std::string::npos);
+    ASSERT_LT(second_dot + 5, token.size());
+    token[second_dot + 5] = (token[second_dot + 5] == 'A') ? 'B' : 'A';
 
     std::string error;
     auto parsed = FileCapabilitySerializer::deserialize_and_verify(token, *verifier, &error);

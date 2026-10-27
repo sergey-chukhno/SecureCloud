@@ -379,7 +379,7 @@ jobs:
           CMAKE_C_COMPILER_LAUNCHER: "sccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
         run: |
-          cmake --preset ci-windows-mingw
+          cmake --preset ci-windows-mingw -DCMAKE_NO_SYSTEM_FROM_IMPORTED=ON
 
       - name: Build All Targets (MinGW MINGW64)
         shell: msys2 {0}
