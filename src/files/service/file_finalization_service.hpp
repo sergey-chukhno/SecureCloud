@@ -15,8 +15,10 @@
 
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 
 namespace securecloud::files::service {
 
@@ -62,8 +64,8 @@ class FileFinalizationService {
 
     FileFinalizationService(const FileFinalizationService&) = delete;
     FileFinalizationService& operator=(const FileFinalizationService&) = delete;
-    FileFinalizationService(FileFinalizationService&&) noexcept = default;
-    FileFinalizationService& operator=(FileFinalizationService&&) noexcept = default;
+    FileFinalizationService(FileFinalizationService&&) = delete;
+    FileFinalizationService& operator=(FileFinalizationService&&) = delete;
 
     /// Finalizes an uploaded file session.
     /// Strictly guarantees that AVAILABLE is never reported on failure.
@@ -77,6 +79,8 @@ class FileFinalizationService {
     std::shared_ptr<FileVersionRepository> version_repo_;
     std::shared_ptr<FileChunkRepository> chunk_repo_;
     std::shared_ptr<FilesOutboxRepository> outbox_repo_;
+    std::mutex session_locks_mutex_;
+    std::unordered_map<std::string, std::shared_ptr<std::mutex>> session_locks_;
 };
 
 } // namespace securecloud::files::service

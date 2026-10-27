@@ -46,6 +46,33 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(const Fina
         throw std::runtime_error("Database connection pool is uninitialized");
     }
 
+    std::shared_ptr<std::mutex> session_lock;
+    {
+        std::lock_guard<std::mutex> lock(session_locks_mutex_);
+        auto& ptr = session_locks_[request.upload_id];
+        if (!ptr) {
+            ptr = std::make_shared<std::mutex>();
+        }
+        session_lock = ptr;
+    }
+    std::lock_guard<std::mutex> lock(*session_lock);
+
+    struct LockCleaner {
+        std::mutex& map_mutex;
+        std::unordered_map<std::string, std::shared_ptr<std::mutex>>& map;
+        std::string id;
+        std::shared_ptr<std::mutex> lock_ptr;
+
+        ~LockCleaner() {
+            lock_ptr.reset();
+            std::lock_guard<std::mutex> lk(map_mutex);
+            auto it = map.find(id);
+            if (it != map.end() && it->second.use_count() <= 1) {
+                map.erase(it);
+            }
+        }
+    } cleaner{session_locks_mutex_, session_locks_, request.upload_id, session_lock};
+
     pqxx::work tx;
 
     // 1. Fetch transfer session
@@ -76,8 +103,8 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(const Fina
         throw FinalizationPreconditionException("Caller user ID does not match file owner ID");
     }
 
-    // 5. Anti-split-brain Idempotency Check: if transfer is already completed
-    if (transfer_opt->status == TransferStatus::Completed) {
+    // 5. Anti-split-brain Idempotency Check: if transfer is already completed or file is already available
+    if (transfer_opt->status == TransferStatus::Completed || file_opt->status == FileStatus::Available) {
         auto active_ver = version_repo_->find_active_version(file_opt->file_id, tx);
         if (active_ver) {
             tx.commit();
