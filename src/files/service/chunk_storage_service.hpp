@@ -30,18 +30,16 @@ struct ChunkStoreResult {
 /// and atomic progress accounting in PostgreSQL.
 class ChunkStorageService {
   public:
-    explicit ChunkStorageService(
-        std::shared_ptr<db::FilesDbConnectionPool> pool,
-        std::shared_ptr<storage::S3Client> s3_client,
-        std::shared_ptr<FileTransferRepository> transfer_repo = nullptr,
-        std::shared_ptr<FileChunkRepository> chunk_repo = nullptr,
-        std::shared_ptr<FileRepository> file_repo = nullptr);
+    explicit ChunkStorageService(std::shared_ptr<db::FilesDbConnectionPool> pool,
+                                 std::shared_ptr<storage::S3Client> s3_client,
+                                 std::shared_ptr<FileTransferRepository> transfer_repo = nullptr,
+                                 std::shared_ptr<FileChunkRepository> chunk_repo = nullptr,
+                                 std::shared_ptr<FileRepository> file_repo = nullptr);
 
     virtual ~ChunkStorageService() = default;
 
     /// Stores and records an individual encrypted chunk with strict idempotency semantics.
-    virtual ChunkStoreResult store_chunk(const ChunkPayloadDto& chunk_dto,
-                                         const std::string& caller_user_id);
+    virtual ChunkStoreResult store_chunk(const ChunkPayloadDto& chunk_dto, const std::string& caller_user_id);
 
     /// Helper to compute the canonical MinIO staging object key.
     [[nodiscard]] static std::string build_staging_key(const std::string& upload_id, uint32_t chunk_index);

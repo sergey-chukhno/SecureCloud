@@ -194,7 +194,12 @@ TEST_F(DeviceConnectionRegistryTest, DisconnectCallbackNotification) {
 }
 
 TEST_F(DeviceConnectionRegistryTest, ConcurrentReadWriteStress) {
-    DeviceConnectionRegistry registry(10s);
+    ConnectionCapacityConfig cfg{
+        .max_devices_per_user = 100,
+        .max_global_connections = 1000,
+        .default_lease_timeout = 10s,
+    };
+    DeviceConnectionRegistry registry(cfg);
     constexpr int kDevices = 50;
     std::vector<domain::DeviceId> device_pool;
     for (int i = 0; i < kDevices; ++i) {
@@ -298,6 +303,85 @@ TEST_F(DeviceConnectionRegistryTest, MockChannelDispatchAndInspection) {
 
     task.priority = domain::MessagePriority::Emergency;
     EXPECT_EQ(channel.send_envelope(task, 500ms), domain::DeliveryAttemptResult::Success);
+}
+
+TEST_F(DeviceConnectionRegistryTest, EnforcesMaxDevicesPerUserCapacityLimit) {
+    ConnectionCapacityConfig cfg{
+        .max_devices_per_user = 3,
+        .max_global_connections = 100,
+        .default_lease_timeout = 60s,
+    };
+    DeviceConnectionRegistry registry(cfg);
+
+    for (int i = 1; i <= 3; ++i) {
+        domain::DeviceId d{"dev-user1-" + std::to_string(i)};
+        auto ch = std::make_shared<MockDeviceDeliveryChannel>(d, user1_);
+        EXPECT_NO_THROW(registry.register_channel(ch));
+    }
+
+    EXPECT_EQ(registry.user_device_count(user1_), 3u);
+
+    // 4th device exceeds limit of 3
+    domain::DeviceId d4{"dev-user1-4"};
+    auto ch4 = std::make_shared<MockDeviceDeliveryChannel>(d4, user1_);
+    EXPECT_THROW(registry.register_channel(ch4), ConnectionLimitExceededException);
+
+    // Different user can still connect
+    domain::DeviceId d_u2{"dev-user2-1"};
+    auto ch_u2 = std::make_shared<MockDeviceDeliveryChannel>(d_u2, user2_);
+    EXPECT_NO_THROW(registry.register_channel(ch_u2));
+    EXPECT_EQ(registry.user_device_count(user2_), 1u);
+}
+
+TEST_F(DeviceConnectionRegistryTest, EnforcesGlobalCapacityLimit) {
+    ConnectionCapacityConfig cfg{
+        .max_devices_per_user = 10,
+        .max_global_connections = 2,
+        .default_lease_timeout = 60s,
+    };
+    DeviceConnectionRegistry registry(cfg);
+
+    auto ch1 = std::make_shared<MockDeviceDeliveryChannel>(dev1_, user1_);
+    auto ch2 = std::make_shared<MockDeviceDeliveryChannel>(dev2_, user2_);
+    EXPECT_NO_THROW(registry.register_channel(ch1));
+    EXPECT_NO_THROW(registry.register_channel(ch2));
+
+    EXPECT_EQ(registry.connected_device_count(), 2u);
+
+    auto ch3 = std::make_shared<MockDeviceDeliveryChannel>(dev3_, user1_);
+    EXPECT_THROW(registry.register_channel(ch3), ConnectionLimitExceededException);
+}
+
+TEST_F(DeviceConnectionRegistryTest, AtomicSupersedingDoesNotIncrementUserDeviceCount) {
+    ConnectionCapacityConfig cfg{
+        .max_devices_per_user = 2,
+        .max_global_connections = 10,
+        .default_lease_timeout = 60s,
+    };
+    DeviceConnectionRegistry registry(cfg);
+
+    bool disconnect_notified = false;
+    domain::DeviceId disconnected_dev;
+    registry.register_disconnect_callback([&](const domain::DeviceId& d) {
+        disconnect_notified = true;
+        disconnected_dev = d;
+    });
+
+    auto ch1 = std::make_shared<MockDeviceDeliveryChannel>(dev1_, user1_);
+    registry.register_channel(ch1);
+    EXPECT_EQ(registry.user_device_count(user1_), 1u);
+    EXPECT_FALSE(disconnect_notified);
+
+    // Superseding same device with new channel
+    auto ch1_new = std::make_shared<MockDeviceDeliveryChannel>(dev1_, user1_);
+    EXPECT_NO_THROW(registry.register_channel(ch1_new));
+
+    // Old channel was superseded -> disconnect notified
+    EXPECT_TRUE(disconnect_notified);
+    EXPECT_EQ(disconnected_dev, dev1_);
+    EXPECT_EQ(registry.user_device_count(user1_), 1u);
+    EXPECT_EQ(registry.connected_device_count(), 1u);
+    EXPECT_EQ(registry.get_channel(dev1_), ch1_new);
 }
 
 } // namespace

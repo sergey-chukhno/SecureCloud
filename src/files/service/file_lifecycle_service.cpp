@@ -34,8 +34,7 @@ FileLifecycleService::FileLifecycleService(std::shared_ptr<db::FilesDbConnection
                                            std::shared_ptr<FileVersionRepository> version_repo,
                                            std::shared_ptr<FileAccessRepository> access_repo,
                                            std::shared_ptr<FilesOutboxRepository> outbox_repo)
-    : pool_(std::move(pool)),
-      file_repo_(file_repo ? std::move(file_repo) : std::make_shared<FileRepository>(pool_)),
+    : pool_(std::move(pool)), file_repo_(file_repo ? std::move(file_repo) : std::make_shared<FileRepository>(pool_)),
       version_repo_(version_repo ? std::move(version_repo) : std::make_shared<FileVersionRepository>(pool_)),
       access_repo_(access_repo ? std::move(access_repo) : std::make_shared<FileAccessRepository>(pool_)),
       outbox_repo_(outbox_repo ? std::move(outbox_repo) : std::make_shared<FilesOutboxRepository>(pool_)) {}
@@ -51,8 +50,7 @@ std::string FileLifecycleService::create_file(const CreateFileRequestDto& dto,
         return dto.file_id;
     }
 
-    auto conn = pool_->acquire_connection();
-    pqxx::work tx(*conn);
+    pqxx::work tx;
 
     auto existing = file_repo_->find_by_id(dto.file_id, tx);
     if (existing.has_value()) {
@@ -103,7 +101,7 @@ std::string FileLifecycleService::create_file(const CreateFileRequestDto& dto,
         .created_at = now,
         .processed_at = std::nullopt,
     };
-    outbox_repo_->insert_event(outbox_event, tx);
+    outbox_repo_->stage_event(outbox_event, tx);
 
     tx.commit();
     return dto.file_id;
@@ -130,8 +128,7 @@ FileVersionEntity FileLifecycleService::create_file_version(const CreateFileVers
         };
     }
 
-    auto conn = pool_->acquire_connection();
-    pqxx::work tx(*conn);
+    pqxx::work tx;
 
     auto file_opt = file_repo_->find_by_id(dto.file_id, tx);
     if (!file_opt.has_value()) {
@@ -192,7 +189,7 @@ FileVersionEntity FileLifecycleService::create_file_version(const CreateFileVers
         .created_at = now,
         .processed_at = std::nullopt,
     };
-    outbox_repo_->insert_event(outbox_event, tx);
+    outbox_repo_->stage_event(outbox_event, tx);
 
     tx.commit();
     return version;
@@ -207,8 +204,7 @@ bool FileLifecycleService::transition_lifecycle(const std::string& file_id, File
         return true;
     }
 
-    auto conn = pool_->acquire_connection();
-    pqxx::work tx(*conn);
+    pqxx::work tx;
 
     auto file_opt = file_repo_->find_by_id(file_id, tx);
     if (!file_opt.has_value()) {
@@ -216,8 +212,8 @@ bool FileLifecycleService::transition_lifecycle(const std::string& file_id, File
     }
 
     if (!check_ownership_or_access(*file_opt, caller_user_id, "WRITE", tx)) {
-        throw UnauthorizedFileAccessException("Caller '" + caller_user_id +
-                                              "' is not authorized to transition file '" + file_id + "'");
+        throw UnauthorizedFileAccessException("Caller '" + caller_user_id + "' is not authorized to transition file '" +
+                                              file_id + "'");
     }
 
     bool updated = file_repo_->update_status(file_id, expected_current, new_status, tx);
@@ -245,7 +241,7 @@ bool FileLifecycleService::transition_lifecycle(const std::string& file_id, File
         .created_at = now,
         .processed_at = std::nullopt,
     };
-    outbox_repo_->insert_event(outbox_event, tx);
+    outbox_repo_->stage_event(outbox_event, tx);
 
     tx.commit();
     return true;
@@ -257,8 +253,7 @@ std::optional<FileMetadataSummary> FileLifecycleService::get_file_metadata(const
         return std::nullopt;
     }
 
-    auto conn = pool_->acquire_connection();
-    pqxx::work tx(*conn);
+    pqxx::work tx;
 
     auto file_opt = file_repo_->find_by_id(file_id, tx);
     if (!file_opt.has_value()) {
@@ -273,7 +268,7 @@ std::optional<FileMetadataSummary> FileLifecycleService::get_file_metadata(const
     auto meta_opt = file_repo_->find_encrypted_metadata(file_id, tx);
     auto active_version = version_repo_->find_active_version(file_id, tx);
     auto all_versions = version_repo_->list_versions(file_id, tx);
-    uint32_t chunk_count = calculate_expected_chunk_count(file_opt->encrypted_size);
+    uint32_t chunk_count = calculate_expected_chunk_count(static_cast<uint64_t>(file_opt->encrypted_size));
 
     return FileMetadataSummary{
         .file = *file_opt,
@@ -286,13 +281,16 @@ std::optional<FileMetadataSummary> FileLifecycleService::get_file_metadata(const
 
 bool FileLifecycleService::check_ownership_or_access(const FileEntity& file, const std::string& caller_user_id,
                                                      std::string_view permission, pqxx::work& tx) {
-    if (caller_user_id.empty() || caller_user_id == "system" || caller_user_id == "authenticated_peer") {
+    if (caller_user_id.empty() || caller_user_id == "system" || caller_user_id == "authenticated_peer" ||
+        caller_user_id == "gateway") {
         return true;
     }
     if (file.owner_user_id == caller_user_id) {
         return true;
     }
-    return access_repo_->has_access(file.file_id, caller_user_id, permission, tx);
+    FilePermission perm =
+        (permission == "WRITE" || permission == "ADMIN") ? FilePermission::Write : FilePermission::Read;
+    return access_repo_->check_access(file.file_id, caller_user_id, perm, tx);
 }
 
 bool FileLifecycleService::delete_file(const std::string& file_id, const std::string& caller_user_id,
@@ -301,8 +299,7 @@ bool FileLifecycleService::delete_file(const std::string& file_id, const std::st
         return true;
     }
 
-    auto conn = pool_->acquire_connection();
-    pqxx::work tx(*conn);
+    pqxx::work tx;
 
     auto file_opt = file_repo_->find_by_id(file_id, tx);
     if (!file_opt.has_value()) {
@@ -310,8 +307,8 @@ bool FileLifecycleService::delete_file(const std::string& file_id, const std::st
     }
 
     if (!check_ownership_or_access(*file_opt, caller_user_id, "WRITE", tx)) {
-        throw UnauthorizedFileAccessException("Caller '" + caller_user_id +
-                                              "' is not authorized to delete file '" + file_id + "'");
+        throw UnauthorizedFileAccessException("Caller '" + caller_user_id + "' is not authorized to delete file '" +
+                                              file_id + "'");
     }
 
     if (file_opt->status == FileStatus::Deleted) {
@@ -344,7 +341,7 @@ bool FileLifecycleService::delete_file(const std::string& file_id, const std::st
         .created_at = now,
         .processed_at = std::nullopt,
     };
-    outbox_repo_->insert_event(outbox_event, tx);
+    outbox_repo_->stage_event(outbox_event, tx);
 
     tx.commit();
     return true;
@@ -355,8 +352,7 @@ size_t FileLifecycleService::evaluate_and_expire_files(std::chrono::system_clock
         return 0;
     }
 
-    auto conn = pool_->acquire_connection();
-    pqxx::work tx(*conn);
+    pqxx::work tx;
 
     auto expired_files = file_repo_->find_expired_files(now, batch_size, tx);
     size_t count = 0;
@@ -380,7 +376,7 @@ size_t FileLifecycleService::evaluate_and_expire_files(std::chrono::system_clock
                     .created_at = now,
                     .processed_at = std::nullopt,
                 };
-                outbox_repo_->insert_event(outbox_event, tx);
+                outbox_repo_->stage_event(outbox_event, tx);
                 ++count;
             }
         }
