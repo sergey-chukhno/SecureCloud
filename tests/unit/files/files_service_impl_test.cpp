@@ -204,7 +204,7 @@ TEST_F(FilesServiceInProcessTest, FinalizeFileUploadRejectsInvalidFileId) {
     EXPECT_EQ(status.error_message(), "Invalid file_id format");
 }
 
-TEST_F(FilesServiceInProcessTest, DownloadChunkReturnsUnimplemented) {
+TEST_F(FilesServiceInProcessTest, DownloadChunkReturnsUnavailableWhenDownloadManagerNotConfigured) {
     grpc::ClientContext context;
     v1::DownloadChunkRequest request;
     request.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
@@ -213,8 +213,8 @@ TEST_F(FilesServiceInProcessTest, DownloadChunkReturnsUnimplemented) {
     v1::DownloadChunkResponse response;
     auto status = stub_->DownloadChunk(&context, request, &response);
 
-    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNIMPLEMENTED);
-    EXPECT_EQ(status.error_message(), FilesServiceImpl::k_unimplemented_skeleton_message);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAVAILABLE);
+    EXPECT_EQ(status.error_message(), "DownloadManager is not configured");
 }
 
 TEST_F(FilesServiceInProcessTest, CancelFileUploadReturnsNotFoundWhenSessionManagerNotConfigured) {
@@ -854,19 +854,12 @@ TEST(FilesServiceImplFinalizeTest, MapsIntegrityMismatchToFailedPrecondition) {
 
 class MockDownloadManager : public IDownloadManager {
   public:
-    bool authorize_download(const std::string&, const std::string&) override {
-        return !should_deny_permission;
-    }
+    bool authorize_download(const std::string&, const std::string&) override { return !should_deny_permission; }
 
-    std::optional<DownloadChunkResult> get_chunk(const std::string&, uint32_t) override {
-        return std::nullopt;
-    }
+    std::optional<DownloadChunkResult> get_chunk(const std::string&, uint32_t) override { return std::nullopt; }
 
-    DownloadChunkResult get_chunk_versioned(
-        const std::string& file_id,
-        int32_t version_number,
-        uint32_t chunk_index,
-        const std::string& caller_user_id) override {
+    DownloadChunkResult get_chunk_versioned(const std::string& file_id, int32_t version_number, uint32_t chunk_index,
+                                            const std::string& caller_user_id) override {
         last_file_id = file_id;
         last_version_number = version_number;
         last_chunk_index = chunk_index;
@@ -886,29 +879,22 @@ class MockDownloadManager : public IDownloadManager {
         }
 
         std::string payload = "Encrypted chunk data";
-        return DownloadChunkResult{
-            .file_id = file_id,
-            .version_number = version_number == 0 ? 1 : version_number,
-            .chunk_index = chunk_index,
-            .encrypted_data = payload,
-            .chunk_size_bytes = static_cast<uint32_t>(payload.size()),
-            .ciphertext_sha256 = compute_sha256_hex(payload)
-        };
+        return DownloadChunkResult{.file_id = file_id,
+                                   .version_number = version_number == 0 ? 1 : version_number,
+                                   .chunk_index = chunk_index,
+                                   .encrypted_data = payload,
+                                   .chunk_size_bytes = static_cast<uint32_t>(payload.size()),
+                                   .ciphertext_sha256 = compute_sha256_hex(payload)};
     }
 
-    DownloadResumeModel prepare_resume_session(
-        const std::string& file_id,
-        int32_t version_number,
-        uint32_t starting_chunk,
-        const std::string&) override {
-        return DownloadResumeModel{
-            .file_id = file_id,
-            .version_number = version_number,
-            .starting_chunk = starting_chunk,
-            .total_chunks = 5,
-            .total_bytes = 20 * 1024 * 1024,
-            .ciphertext_sha256 = "dummy"
-        };
+    DownloadResumeModel prepare_resume_session(const std::string& file_id, int32_t version_number,
+                                               uint32_t starting_chunk, const std::string&) override {
+        return DownloadResumeModel{.file_id = file_id,
+                                   .version_number = version_number,
+                                   .starting_chunk = starting_chunk,
+                                   .total_chunks = 5,
+                                   .total_bytes = 20 * 1024 * 1024,
+                                   .ciphertext_sha256 = "dummy"};
     }
 
     std::string last_file_id;

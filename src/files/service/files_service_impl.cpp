@@ -75,10 +75,9 @@ FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db
           .db_pool = db_pool,
           .s3_client = s3_client,
           .upload_session_manager = std::make_shared<UploadSessionManager>(db_pool),
-          .download_manager = (db_pool && s3_client)
-                                  ? std::make_shared<DownloadManager>(
-                                        db_pool, std::make_shared<ChunkDownloadEngine>(s3_client))
-                                  : std::make_shared<DownloadManager>(),
+          .download_manager = (db_pool && s3_client) ? std::make_shared<DownloadManager>(
+                                                           db_pool, std::make_shared<ChunkDownloadEngine>(s3_client))
+                                                     : std::make_shared<DownloadManager>(),
           .storage_engine = std::make_shared<StorageEngine>(),
           .metadata_manager = std::make_shared<MetadataManager>(db_pool),
           .lifecycle_service = std::make_shared<FileLifecycleService>(db_pool),
@@ -679,8 +678,8 @@ grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, 
     }
 
     try {
-        auto chunk_res = deps_.download_manager->get_chunk_versioned(
-            request->file_id(), 0, request->chunk_index(), peer_identity);
+        auto chunk_res =
+            deps_.download_manager->get_chunk_versioned(request->file_id(), 0, request->chunk_index(), peer_identity);
 
         response->set_file_id(chunk_res.file_id);
         response->set_chunk_index(chunk_res.chunk_index);
@@ -715,7 +714,7 @@ grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, 
         auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
         logger.finish(status);
         return status;
-    } catch (const storage::S3TimeoutException& ex) {
+    } catch (const storage::S3ConnectionException& ex) {
         auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, ex.what());
         logger.finish(status);
         return status;

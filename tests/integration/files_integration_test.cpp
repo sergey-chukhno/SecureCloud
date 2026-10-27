@@ -416,15 +416,15 @@ TEST_F(FilesIntegrationTest, AllSevenRpcMethodsReturnDeterministicStatus) {
         EXPECT_EQ(st.error_message(), "Invalid file_id format");
     }
 
-    // 5. DownloadChunk (FILES-006)
+    // 5. DownloadChunk (implemented in FILES-007: validates input)
     {
         grpc::ClientContext ctx;
         ctx.set_deadline(std::chrono::system_clock::now() + k_rpc_deadline);
         v1::DownloadChunkRequest req;
         v1::DownloadChunkResponse resp;
         auto st = stub->DownloadChunk(&ctx, req, &resp);
-        EXPECT_EQ(st.error_code(), grpc::StatusCode::UNIMPLEMENTED);
-        EXPECT_EQ(st.error_message(), expected_msg);
+        EXPECT_EQ(st.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+        EXPECT_EQ(st.error_message(), "Invalid file_id format: ");
     }
 
     // 6. CancelFileUpload (implemented in FILES-005: validates input)
