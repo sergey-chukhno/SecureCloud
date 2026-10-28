@@ -157,8 +157,17 @@ TargetDeviceValidationResult RecipientDeviceResolutionService::validate_submissi
     std::unordered_set<domain::UserId> participant_set(conversation_participant_ids.begin(),
                                                        conversation_participant_ids.end());
 
-    // 1. Participant membership check
+    // 1. Participant membership check & self-targeting prevention
     for (const auto& env : target_envelopes) {
+        if (!sender_device_id.empty() && env.recipient_device_id == sender_device_id) {
+            return TargetDeviceValidationResult{
+                .is_valid = false,
+                .error_code = v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+                .error_message = "Sender device cannot target itself: " + sender_device_id.str(),
+                .omitted_device_ids = {},
+            };
+        }
+
         if (!participant_set.contains(env.recipient_user_id)) {
             return TargetDeviceValidationResult{
                 .is_valid = false,
@@ -170,8 +179,12 @@ TargetDeviceValidationResult RecipientDeviceResolutionService::validate_submissi
         }
     }
 
-    // 2. Resolve device directories for all participants
-    auto dir_res = resolve_devices_for_users(conversation_participant_ids);
+    // 2. Resolve device directories for all participants (and sender user if not in participants)
+    std::vector<domain::UserId> query_users = conversation_participant_ids;
+    if (!sender_user_id.empty() && !participant_set.contains(sender_user_id)) {
+        query_users.push_back(sender_user_id);
+    }
+    auto dir_res = resolve_devices_for_users(query_users);
     if (!dir_res.has_value()) {
         return TargetDeviceValidationResult{
             .is_valid = false,
@@ -249,6 +262,8 @@ TargetDeviceValidationResult RecipientDeviceResolutionService::validate_submissi
 
     // 5. Completeness / Selective Omission detection
     std::vector<domain::DeviceId> omitted;
+
+    // 5a. Recipient participants completeness
     for (const auto& participant_id : conversation_participant_ids) {
         if (participant_id == sender_user_id) {
             continue;
@@ -273,11 +288,32 @@ TargetDeviceValidationResult RecipientDeviceResolutionService::validate_submissi
         }
     }
 
+    // 5b. Sender companion devices completeness (Sent History Sync)
+    if (!sender_user_id.empty()) {
+        auto s_it = dir_map.find(sender_user_id);
+        if (s_it != dir_map.end()) {
+            for (const auto& dev : s_it->second) {
+                if (dev.status == securecloud::auth::v1::DEVICE_STATUS_ACTIVE && dev.device_id != sender_device_id) {
+                    bool targeted = false;
+                    for (const auto& env : target_envelopes) {
+                        if (env.recipient_user_id == sender_user_id && env.recipient_device_id == dev.device_id) {
+                            targeted = true;
+                            break;
+                        }
+                    }
+                    if (!targeted) {
+                        omitted.push_back(dev.device_id);
+                    }
+                }
+            }
+        }
+    }
+
     if (enforce_completeness && !omitted.empty()) {
         return TargetDeviceValidationResult{
             .is_valid = false,
             .error_code = v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
-            .error_message = "Incomplete delivery targets: active recipient devices were omitted",
+            .error_message = "Incomplete delivery targets: active recipient or sender companion devices were omitted",
             .omitted_device_ids = std::move(omitted),
         };
     }
