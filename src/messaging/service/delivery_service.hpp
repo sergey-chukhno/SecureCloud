@@ -9,6 +9,7 @@
 #include "service/conversation_service.hpp" // for ServiceResult
 
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -42,11 +43,16 @@ struct DeliveryAckResponse {
  * 2. Device Ownership & Authorization: Confirms caller owns the acknowledging device.
  * 3. Idempotent Delivery Receipts: Duplicate receipts for DELIVERED or READ messages succeed deterministically.
  * 4. Dual-Write Safety (ADR-005): Emits `ConversationOutboxEventType::MessageDelivered` via Transactional Outbox.
+ * 5. Device Revocation Check: Revoked devices cannot acknowledge delivery.
  */
 class DeliveryService {
   public:
+    /// Callback predicate returning true if the device is currently in DEVICE_STATUS_ACTIVE.
+    using DeviceStatusChecker = std::function<bool(const domain::DeviceId&)>;
+
     DeliveryService(std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
-                    std::shared_ptr<repository::IOutboxRepository> outbox_repo);
+                    std::shared_ptr<repository::IOutboxRepository> outbox_repo,
+                    DeviceStatusChecker device_status_checker = nullptr);
     ~DeliveryService() = default;
 
     DeliveryService(const DeliveryService&) = delete;
@@ -65,6 +71,7 @@ class DeliveryService {
   private:
     std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<repository::IOutboxRepository> outbox_repo_;
+    DeviceStatusChecker device_status_checker_{nullptr};
 };
 
 } // namespace securecloud::messaging::service

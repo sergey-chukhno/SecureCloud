@@ -76,6 +76,26 @@ void DeviceDirectoryCache::invalidate(const domain::UserId& user_id) {
     }
 }
 
+void DeviceDirectoryCache::invalidate_device(const domain::DeviceId& device_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<domain::UserId> users_to_invalidate;
+    for (const auto& [user_id, entry] : entries_) {
+        for (const auto& rec : entry.records) {
+            if (rec.device_id == device_id) {
+                users_to_invalidate.push_back(user_id);
+                break;
+            }
+        }
+    }
+    for (const auto& uid : users_to_invalidate) {
+        auto it = entries_.find(uid);
+        if (it != entries_.end()) {
+            lru_order_.erase(it->second.lru_it);
+            entries_.erase(it);
+        }
+    }
+}
+
 void DeviceDirectoryCache::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     entries_.clear();
@@ -249,13 +269,23 @@ TargetDeviceValidationResult RecipientDeviceResolutionService::validate_submissi
             auto s_dev =
                 std::find_if(s_it->second.begin(), s_it->second.end(),
                              [&](const client::DeviceCryptoRecord& r) { return r.device_id == sender_device_id; });
-            if (s_dev != s_it->second.end() && s_dev->status == securecloud::auth::v1::DEVICE_STATUS_REVOKED) {
-                return TargetDeviceValidationResult{
-                    .is_valid = false,
-                    .error_code = v1::MESSAGING_ERROR_CODE_DEVICE_REVOKED,
-                    .error_message = "Sender device " + sender_device_id.str() + " has been revoked",
-                    .omitted_device_ids = {},
-                };
+            if (s_dev != s_it->second.end()) {
+                if (s_dev->status == securecloud::auth::v1::DEVICE_STATUS_REVOKED) {
+                    return TargetDeviceValidationResult{
+                        .is_valid = false,
+                        .error_code = v1::MESSAGING_ERROR_CODE_DEVICE_REVOKED,
+                        .error_message = "Sender device " + sender_device_id.str() + " has been revoked",
+                        .omitted_device_ids = {},
+                    };
+                }
+                if (s_dev->status != securecloud::auth::v1::DEVICE_STATUS_ACTIVE) {
+                    return TargetDeviceValidationResult{
+                        .is_valid = false,
+                        .error_code = v1::MESSAGING_ERROR_CODE_DEVICE_REVOKED,
+                        .error_message = "Sender device " + sender_device_id.str() + " is not active",
+                        .omitted_device_ids = {},
+                    };
+                }
             }
         }
     }
@@ -328,6 +358,24 @@ TargetDeviceValidationResult RecipientDeviceResolutionService::validate_submissi
 
 void RecipientDeviceResolutionService::invalidate_user_cache(const domain::UserId& user_id) {
     cache_.invalidate(user_id);
+}
+
+void RecipientDeviceResolutionService::invalidate_device(const domain::DeviceId& device_id) {
+    cache_.invalidate_device(device_id);
+}
+
+std::optional<securecloud::auth::v1::DeviceStatus>
+RecipientDeviceResolutionService::get_device_status(const domain::UserId& user_id, const domain::DeviceId& device_id) {
+    auto res = resolve_devices_for_user(user_id);
+    if (!res.has_value()) {
+        return std::nullopt;
+    }
+    for (const auto& rec : res.value()) {
+        if (rec.device_id == device_id) {
+            return rec.status;
+        }
+    }
+    return std::nullopt;
 }
 
 void RecipientDeviceResolutionService::clear_cache() {

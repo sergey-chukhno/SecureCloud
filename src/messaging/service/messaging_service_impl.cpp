@@ -160,12 +160,14 @@ MessagingServiceImpl::MessagingServiceImpl(std::shared_ptr<concurrency::BoundedW
                                            std::shared_ptr<ReadReceiptService> read_receipt_service,
                                            std::shared_ptr<MessageSyncService> sync_service,
                                            std::shared_ptr<SyncCursorManager> cursor_manager,
-                                           std::shared_ptr<IPresenceCoordinator> presence_coordinator)
+                                           std::shared_ptr<IPresenceCoordinator> presence_coordinator,
+                                           std::shared_ptr<RecipientDeviceResolutionService> resolution_service)
     : submission_pool_(std::move(submission_pool)), delivery_pool_(std::move(delivery_pool)),
       sync_pool_(std::move(sync_pool)), conversation_service_(std::move(conversation_service)),
       submission_service_(std::move(submission_service)), delivery_service_(std::move(delivery_service)),
       read_receipt_service_(std::move(read_receipt_service)), sync_service_(std::move(sync_service)),
-      cursor_manager_(std::move(cursor_manager)), presence_coordinator_(std::move(presence_coordinator)) {}
+      cursor_manager_(std::move(cursor_manager)), presence_coordinator_(std::move(presence_coordinator)),
+      resolution_service_(std::move(resolution_service)) {}
 
 bool MessagingServiceImpl::check_and_record_presence_rate_limit(const domain::UserId& user_id) {
     const auto now = std::chrono::steady_clock::now();
@@ -381,6 +383,15 @@ bool MessagingServiceImpl::check_and_record_presence_rate_limit(const domain::Us
         effective_device_id = "device-default";
     }
 
+    if (resolution_service_) {
+        auto dev_status = resolution_service_->get_device_status(*caller_id, domain::DeviceId(effective_device_id));
+        if (dev_status.has_value() && *dev_status != securecloud::auth::v1::DEVICE_STATUS_ACTIVE) {
+            return to_grpc_status(v1::MESSAGING_ERROR_CODE_DEVICE_REVOKED,
+                                  "Calling device has been revoked or is not active", caller_ctx.correlation_id(),
+                                  context);
+        }
+    }
+
     auto conv_id = domain::ConversationId::from_string(request->conversation_id());
     if (!conv_id) {
         return to_grpc_status(v1::MESSAGING_ERROR_CODE_CONVERSATION_NOT_FOUND, "Invalid conversation ID format",
@@ -495,6 +506,15 @@ MessagingServiceImpl::AcknowledgeDelivery(::grpc::ServerContext* context,
     if (effective_device_id.empty() || !common::rpc::is_valid_uuid(effective_device_id)) {
         return {::grpc::StatusCode::INVALID_ARGUMENT,
                 "Missing or invalid recipient device ID (expected RFC 4122 UUID)"};
+    }
+
+    if (resolution_service_) {
+        auto dev_status = resolution_service_->get_device_status(*caller_id, domain::DeviceId(effective_device_id));
+        if (dev_status.has_value() && *dev_status != securecloud::auth::v1::DEVICE_STATUS_ACTIVE) {
+            return to_grpc_status(v1::MESSAGING_ERROR_CODE_DEVICE_REVOKED,
+                                  "Calling device has been revoked or is not active", caller_ctx.correlation_id(),
+                                  context);
+        }
     }
 
     DeliveryAckCommand cmd;
@@ -614,6 +634,15 @@ MessagingServiceImpl::SendReadReceipt(::grpc::ServerContext* context,
     }
     if (effective_device_id.empty() || !common::rpc::is_valid_uuid(effective_device_id)) {
         return {::grpc::StatusCode::INVALID_ARGUMENT, "Missing or invalid reader device ID (expected RFC 4122 UUID)"};
+    }
+
+    if (resolution_service_) {
+        auto dev_status = resolution_service_->get_device_status(*caller_id, domain::DeviceId(effective_device_id));
+        if (dev_status.has_value() && *dev_status != securecloud::auth::v1::DEVICE_STATUS_ACTIVE) {
+            return to_grpc_status(v1::MESSAGING_ERROR_CODE_DEVICE_REVOKED,
+                                  "Calling device has been revoked or is not active", caller_ctx.correlation_id(),
+                                  context);
+        }
     }
 
     ReadReceiptCommand cmd;
@@ -1158,6 +1187,15 @@ MessagingServiceImpl::SyncDeviceMessages(::grpc::ServerContext* context,
     std::string effective_device_id = !request->device_id().empty() ? request->device_id() : caller_ctx.device_id();
     if (effective_device_id.empty()) {
         return {::grpc::StatusCode::INVALID_ARGUMENT, "Missing device ID"};
+    }
+
+    if (resolution_service_) {
+        auto dev_status = resolution_service_->get_device_status(*caller_id, domain::DeviceId(effective_device_id));
+        if (dev_status.has_value() && *dev_status != securecloud::auth::v1::DEVICE_STATUS_ACTIVE) {
+            return to_grpc_status(v1::MESSAGING_ERROR_CODE_DEVICE_REVOKED,
+                                  "Calling device has been revoked or is not active", caller_ctx.correlation_id(),
+                                  context);
+        }
     }
 
     if (request->conversation_id().empty()) {

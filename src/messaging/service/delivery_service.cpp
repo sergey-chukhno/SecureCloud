@@ -10,8 +10,10 @@
 namespace securecloud::messaging::service {
 
 DeliveryService::DeliveryService(std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
-                                 std::shared_ptr<repository::IOutboxRepository> outbox_repo)
-    : delivery_repo_(std::move(delivery_repo)), outbox_repo_(std::move(outbox_repo)) {}
+                                 std::shared_ptr<repository::IOutboxRepository> outbox_repo,
+                                 DeviceStatusChecker device_status_checker)
+    : delivery_repo_(std::move(delivery_repo)), outbox_repo_(std::move(outbox_repo)),
+      device_status_checker_(std::move(device_status_checker)) {}
 
 ServiceResult<DeliveryAckResponse> DeliveryService::acknowledge_delivery(const DeliveryAckCommand& cmd) {
     if (!delivery_repo_) {
@@ -56,6 +58,12 @@ ServiceResult<DeliveryAckResponse> DeliveryService::acknowledge_delivery(const D
         return ServiceResult<DeliveryAckResponse>::fail(
             v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
             "Caller device cannot acknowledge delivery on behalf of a different device");
+    }
+
+    // 3c. Fail-Closed Device Revocation Check (ADR-008, MSG-011-T03):
+    if (device_status_checker_ && !device_status_checker_(cmd.recipient_device_id)) {
+        return ServiceResult<DeliveryAckResponse>::fail(v1::MESSAGING_ERROR_CODE_DEVICE_REVOKED,
+                                                        "Recipient device has been revoked or is not active");
     }
 
     // 4. Idempotency Check: if already DELIVERED or READ, return success deterministically
