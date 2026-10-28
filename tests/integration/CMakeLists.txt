@@ -1053,4 +1053,25 @@ endif()
 
 gtest_discover_tests(securecloud_messaging_multi_device_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Messaging Capacity, Multi-Device Fan-Out & ScyllaDB Access Pattern Load Test Suite (MSG-012-T03)
+add_executable(securecloud_messaging_capacity_load_test
+    messaging_capacity_load_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_capacity_load_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_messaging_capacity_load_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_messaging_capacity_load_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 
