@@ -2016,6 +2016,25 @@ target_link_libraries(securecloud_files_audit_mapper_test PRIVATE
 
 gtest_discover_tests(securecloud_files_audit_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Outbox Relay Unit Test Suite (FILES-010-T04)
+add_executable(securecloud_files_outbox_relay_test
+    files/files_outbox_relay_test.cpp
+)
+
+target_link_libraries(securecloud_files_outbox_relay_test PRIVATE
+    securecloud::files_audit
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    securecloud_proto
+    securecloud::json
+    GTest::gmock
+    GTest::gtest
+)
+
+gtest_discover_tests(securecloud_files_outbox_relay_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Messaging Service Configuration Unit Test Suite (MSG-001-T02)
 add_executable(securecloud_messaging_config_test
     messaging/messaging_config_test.cpp

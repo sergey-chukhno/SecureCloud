@@ -111,6 +111,7 @@ target_link_libraries(securecloud_files_service PUBLIC
 add_library(securecloud_files_audit STATIC
     audit/grpc_audit_client.cpp
     audit/files_audit_mapper.cpp
+    audit/files_outbox_relay.cpp
 )
 
 add_library(securecloud::files_audit ALIAS securecloud_files_audit)
@@ -153,6 +154,7 @@ add_executable(securecloud-files
 )
 
 target_link_libraries(securecloud-files PRIVATE
+    securecloud::files_audit
     securecloud::files_health
     securecloud::files_service
     securecloud::files_storage
