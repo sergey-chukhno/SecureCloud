@@ -62,6 +62,7 @@ add_library(securecloud_audit_service STATIC
         ingestion/batch_aggregator.cpp
         ingestion/acknowledgement_manager.cpp
         ingestion/insert_worker_pool.cpp
+        ingestion/audit_ingestion_pipeline.cpp
         service/audit_proto_mapper.cpp
         service/audit_ingestion_service.cpp
         service/audit_service_impl.cpp

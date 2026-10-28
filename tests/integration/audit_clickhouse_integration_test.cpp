@@ -1,18 +1,18 @@
-#include "repository/schema_initializer.hpp"
-#include "repository/clickhouse_client.hpp"
-#include "repository/clickhouse_audit_event_repository.hpp"
-#include "repository/audit_repository_exceptions.hpp"
 #include "domain/audit_event.hpp"
+#include "repository/audit_repository_exceptions.hpp"
+#include "repository/clickhouse_audit_event_repository.hpp"
+#include "repository/clickhouse_client.hpp"
+#include "repository/schema_initializer.hpp"
 
-#include <gtest/gtest.h>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <thread>
 #include <vector>
 
 namespace securecloud::audit::repository::testing {
 
 class ClickHouseIntegrationTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         config_.host = "127.0.0.1";
         config_.port = 8123;
@@ -136,9 +136,7 @@ TEST_F(ClickHouseIntegrationTest, Test7_DatabaseOutageAndTimeoutHandling) {
     ClickHouseAuditEventRepository bad_repo(bad_client);
 
     auto ev = create_sample_event("fail.event");
-    EXPECT_THROW({
-        (void)bad_repo.insert_batch({ev});
-    }, ClickHouseException);
+    EXPECT_THROW({ (void)bad_repo.insert_batch({ev}); }, ClickHouseException);
 }
 
 } // namespace securecloud::audit::repository::testing

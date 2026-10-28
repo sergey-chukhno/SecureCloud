@@ -4,8 +4,7 @@ namespace securecloud::audit::ingestion {
 
 // --- BoundedBatchQueue Implementation ---
 
-BoundedBatchQueue::BoundedBatchQueue(size_t capacity)
-    : capacity_(capacity == 0 ? 1 : capacity) {}
+BoundedBatchQueue::BoundedBatchQueue(size_t capacity) : capacity_(capacity == 0 ? 1 : capacity) {}
 
 BoundedBatchQueue::~BoundedBatchQueue() {
     shutdown();
@@ -23,8 +22,8 @@ bool BoundedBatchQueue::try_push(IngestionBatch batch) {
 
 bool BoundedBatchQueue::push_with_timeout(IngestionBatch batch, std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(mutex_);
-    bool capacity_available = cv_not_full_.wait_for(
-        lock, timeout, [this] { return shutdown_ || queue_.size() < capacity_; });
+    bool capacity_available =
+        cv_not_full_.wait_for(lock, timeout, [this] { return shutdown_ || queue_.size() < capacity_; });
 
     if (shutdown_ || !capacity_available || queue_.size() >= capacity_) {
         return false;
@@ -77,15 +76,11 @@ void BoundedBatchQueue::shutdown() noexcept {
 
 // --- BatchAggregator Implementation ---
 
-BatchAggregator::BatchAggregator(
-    size_t max_batch_size,
-    std::chrono::milliseconds max_batch_delay,
-    std::shared_ptr<BoundedIngestionQueue> input_queue,
-    std::shared_ptr<BoundedBatchQueue> output_batch_queue)
-    : max_batch_size_(max_batch_size == 0 ? 1000 : max_batch_size),
-      max_batch_delay_(max_batch_delay),
-      input_queue_(std::move(input_queue)),
-      output_batch_queue_(std::move(output_batch_queue)) {
+BatchAggregator::BatchAggregator(size_t max_batch_size, std::chrono::milliseconds max_batch_delay,
+                                 std::shared_ptr<BoundedIngestionQueue> input_queue,
+                                 std::shared_ptr<BoundedBatchQueue> output_batch_queue)
+    : max_batch_size_(max_batch_size == 0 ? 1000 : max_batch_size), max_batch_delay_(max_batch_delay),
+      input_queue_(std::move(input_queue)), output_batch_queue_(std::move(output_batch_queue)) {
     active_batch_.reserve(max_batch_size_);
 }
 

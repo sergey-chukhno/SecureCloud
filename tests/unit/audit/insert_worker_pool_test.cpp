@@ -1,23 +1,17 @@
 #include "ingestion/insert_worker_pool.hpp"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
+#include <gtest/gtest.h>
 #include <stdexcept>
 #include <thread>
 
 namespace securecloud::audit::ingestion::testing {
 
 class StubAuditEventRepository : public repository::IAuditEventRepository {
-public:
-    enum class Behavior {
-        Success,
-        Timeout,
-        ConnectionError
-    };
+  public:
+    enum class Behavior { Success, Timeout, ConnectionError };
 
-    explicit StubAuditEventRepository(Behavior behavior = Behavior::Success)
-        : behavior_(behavior) {}
+    explicit StubAuditEventRepository(Behavior behavior = Behavior::Success) : behavior_(behavior) {}
 
     bool insert_batch(const std::vector<domain::AuditEvent>& events) override {
         inserted_count_.fetch_add(events.size());
@@ -30,40 +24,29 @@ public:
         return true;
     }
 
-    std::vector<domain::AuditEvent> query_by_time_range(
-        std::chrono::system_clock::time_point,
-        std::chrono::system_clock::time_point,
-        uint32_t) override {
+    std::vector<domain::AuditEvent> query_by_time_range(std::chrono::system_clock::time_point,
+                                                        std::chrono::system_clock::time_point, uint32_t) override {
         return {};
     }
 
-    std::vector<domain::AuditEvent> query_by_producer(
-        const std::string&,
-        std::chrono::system_clock::time_point,
-        std::chrono::system_clock::time_point,
-        uint32_t) override {
+    std::vector<domain::AuditEvent> query_by_producer(const std::string&, std::chrono::system_clock::time_point,
+                                                      std::chrono::system_clock::time_point, uint32_t) override {
         return {};
     }
 
-    std::vector<domain::AuditEvent> query_by_correlation_id(
-        const std::string&,
-        uint32_t) override {
-        return {};
-    }
+    std::vector<domain::AuditEvent> query_by_correlation_id(const std::string&, uint32_t) override { return {}; }
 
-    std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId&) override {
-        return std::nullopt;
-    }
+    std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId&) override { return std::nullopt; }
 
     size_t inserted_count() const { return inserted_count_.load(); }
 
-private:
+  private:
     Behavior behavior_;
     std::atomic<size_t> inserted_count_{0};
 };
 
 class InsertWorkerPoolTest : public ::testing::Test {
-protected:
+  protected:
     IngestionEnvelope create_sample_envelope(const std::string& event_id) {
         IngestionEnvelope env;
         auto parsed_id = domain::EventId::from_string(event_id);

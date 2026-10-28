@@ -35,7 +35,7 @@ namespace securecloud::audit::test {
 
 namespace {
 
-constexpr uint16_t k_integration_test_port = 50055;
+constexpr uint16_t k_integration_test_port = 50065;
 constexpr auto k_test_timeout = std::chrono::seconds(5);
 
 std::filesystem::path find_pki_root() {

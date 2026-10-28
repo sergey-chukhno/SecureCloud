@@ -1,7 +1,7 @@
 #include "repository/clickhouse_event_serializer.hpp"
 
-#include <gtest/gtest.h>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <string>
 
 using namespace std::string_literals;

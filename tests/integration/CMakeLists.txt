@@ -943,3 +943,33 @@ target_link_libraries(securecloud_audit_ingestion_integration_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_ingestion_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Concurrency Integration Test (AUDIT-005-T05)
+add_executable(securecloud_audit_ingestion_concurrency_test
+        audit_ingestion_concurrency_test.cpp
+)
+
+target_link_libraries(securecloud_audit_ingestion_concurrency_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_ingestion_concurrency_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Failure Injection Integration Test (AUDIT-005-T05)
+add_executable(securecloud_audit_ingestion_failure_injection_test
+        audit_ingestion_failure_injection_test.cpp
+)
+
+target_link_libraries(securecloud_audit_ingestion_failure_injection_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_ingestion_failure_injection_test ${SECURECLOUD_TEST_PROPERTIES})

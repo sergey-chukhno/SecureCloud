@@ -1,15 +1,14 @@
-#include "ingestion/validation_worker_pool.hpp"
 #include "ingestion/in_memory_deduplication_manager.hpp"
-
-#include <gtest/gtest.h>
+#include "ingestion/validation_worker_pool.hpp"
 
 #include <chrono>
+#include <gtest/gtest.h>
 #include <thread>
 
 namespace securecloud::audit::ingestion::testing {
 
 class ValidationWorkerPoolTest : public ::testing::Test {
-protected:
+  protected:
     IngestionEnvelope create_valid_envelope(const std::string& event_id) {
         IngestionEnvelope env;
         auto parsed_id = domain::EventId::from_string(event_id);

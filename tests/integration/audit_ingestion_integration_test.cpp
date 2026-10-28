@@ -1,13 +1,12 @@
-#include "service/audit_service_impl.hpp"
 #include "repository/clickhouse_audit_event_repository.hpp"
 #include "repository/clickhouse_client.hpp"
-
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
-#include <grpcpp/grpcpp.h>
+#include "service/audit_service_impl.hpp"
 
 #include <chrono>
 #include <future>
+#include <gmock/gmock.h>
+#include <grpcpp/grpcpp.h>
+#include <gtest/gtest.h>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -18,7 +17,7 @@ using ::testing::_;
 using ::testing::Return;
 
 class MockClickHouseClient : public repository::ClickHouseClient {
-public:
+  public:
     MockClickHouseClient() : repository::ClickHouseClient(ClickHouseConfig{}) {}
 
     MOCK_METHOD(bool, ping, (std::chrono::milliseconds timeout), (override));
@@ -28,7 +27,7 @@ public:
 };
 
 class AuditIngestionIntegrationTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         mock_client_ = std::make_shared<MockClickHouseClient>();
         repo_ = std::make_shared<repository::ClickHouseAuditEventRepository>(mock_client_);
@@ -39,8 +38,9 @@ protected:
     v1::AuditEventProto build_event(v1::ProducerServiceProto producer, const std::string& instance) {
         v1::AuditEventProto event;
         event.set_event_id("018f6e4a-7b3c-7000-8000-000000000001");
-        auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+        auto now_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
         event.set_occurred_at_ms(now_ms);
         event.set_event_type("system.test.event");
         event.set_severity(v1::SEVERITY_INFO);
@@ -92,12 +92,8 @@ TEST_F(AuditIngestionIntegrationTest, ConcurrentMultiProducerIngestion) {
     const int events_per_thread = 25;
     std::vector<std::future<void>> futures;
 
-    std::vector<v1::ProducerServiceProto> producers = {
-        v1::PRODUCER_SERVICE_GATEWAY,
-        v1::PRODUCER_SERVICE_AUTH,
-        v1::PRODUCER_SERVICE_MESSAGING,
-        v1::PRODUCER_SERVICE_FILES
-    };
+    std::vector<v1::ProducerServiceProto> producers = {v1::PRODUCER_SERVICE_GATEWAY, v1::PRODUCER_SERVICE_AUTH,
+                                                       v1::PRODUCER_SERVICE_MESSAGING, v1::PRODUCER_SERVICE_FILES};
 
     for (int i = 0; i < num_threads; ++i) {
         futures.push_back(std::async(std::launch::async, [this, i, &producers]() {

@@ -1,16 +1,15 @@
 #include "ingestion/bounded_ingestion_queue.hpp"
 
-#include <gtest/gtest.h>
-
 #include <atomic>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <thread>
 #include <vector>
 
 namespace securecloud::audit::ingestion::testing {
 
 class BoundedIngestionQueueTest : public ::testing::Test {
-protected:
+  protected:
     IngestionEnvelope create_sample_envelope(const std::string& event_id) {
         IngestionEnvelope env;
         auto parsed_id = domain::EventId::from_string(event_id);

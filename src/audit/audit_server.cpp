@@ -59,9 +59,13 @@ bool AuditServer::start() {
     health_service_ =
         std::make_unique<common::health::HealthServiceImpl>(config_.common.service_name, *health_manager_);
 
-    // 3. Initialize ClickHouse client, repository, ingestion engine, and gRPC service
+    // 3. Initialize ClickHouse client, repository, pipeline, and gRPC service
     clickhouse_client_ = std::make_shared<repository::ClickHouseClient>(config_.clickhouse);
     repository_ = std::make_shared<repository::ClickHouseAuditEventRepository>(clickhouse_client_);
+
+    pipeline_ = std::make_shared<ingestion::AuditIngestionPipeline>(config_.ingestion, repository_);
+    pipeline_->start();
+
     ingestion_service_ = std::make_shared<service::AuditIngestionService>(repository_);
     audit_service_ = std::make_unique<service::AuditServiceImpl>(ingestion_service_);
 
@@ -101,6 +105,10 @@ void AuditServer::stop() {
     if (health_manager_) {
         health_manager_->set_shutting_down(true);
         health_manager_->set_ready(false);
+    }
+
+    if (pipeline_) {
+        pipeline_->shutdown(std::chrono::milliseconds(config_.retention.shutdown_grace_period_ms));
     }
 
     if (server_) {

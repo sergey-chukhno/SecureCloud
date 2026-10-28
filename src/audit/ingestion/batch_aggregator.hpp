@@ -18,7 +18,7 @@ using IngestionBatch = std::vector<IngestionEnvelope>;
 
 /// Thread-safe bounded queue for holding aggregated event batches.
 class BoundedBatchQueue {
-public:
+  public:
     explicit BoundedBatchQueue(size_t capacity = 32);
     ~BoundedBatchQueue();
 
@@ -34,7 +34,7 @@ public:
     [[nodiscard]] bool is_shutdown() const noexcept;
     void shutdown() noexcept;
 
-private:
+  private:
     const size_t capacity_;
     mutable std::mutex mutex_;
     std::condition_variable cv_not_full_;
@@ -45,12 +45,10 @@ private:
 
 /// Aggregates validated events into contiguous batches using count (1,000) or time (100 ms) dual triggers.
 class BatchAggregator {
-public:
-    BatchAggregator(
-        size_t max_batch_size,
-        std::chrono::milliseconds max_batch_delay,
-        std::shared_ptr<BoundedIngestionQueue> input_queue,
-        std::shared_ptr<BoundedBatchQueue> output_batch_queue);
+  public:
+    BatchAggregator(size_t max_batch_size, std::chrono::milliseconds max_batch_delay,
+                    std::shared_ptr<BoundedIngestionQueue> input_queue,
+                    std::shared_ptr<BoundedBatchQueue> output_batch_queue);
 
     ~BatchAggregator();
 
@@ -65,7 +63,7 @@ public:
     [[nodiscard]] size_t total_count_triggers() const noexcept;
     [[nodiscard]] size_t total_timer_triggers() const noexcept;
 
-private:
+  private:
     void aggregator_loop();
     void flush_active_batch(bool is_count_trigger);
 

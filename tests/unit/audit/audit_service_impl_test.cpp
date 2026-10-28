@@ -1,9 +1,8 @@
 #include "service/audit_service_impl.hpp"
 
+#include <chrono>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-
-#include <chrono>
 #include <memory>
 #include <string>
 #include <vector>
@@ -14,20 +13,23 @@ using ::testing::_;
 using ::testing::Return;
 
 class MockAuditEventRepository : public repository::IAuditEventRepository {
-public:
+  public:
     MOCK_METHOD(bool, insert_batch, (const std::vector<domain::AuditEvent>& events), (override));
     MOCK_METHOD(std::vector<domain::AuditEvent>, query_by_time_range,
-                (std::chrono::system_clock::time_point start, std::chrono::system_clock::time_point end, uint32_t limit), (override));
+                (std::chrono::system_clock::time_point start, std::chrono::system_clock::time_point end,
+                 uint32_t limit),
+                (override));
     MOCK_METHOD(std::vector<domain::AuditEvent>, query_by_producer,
-                (const std::string& producer_service, std::chrono::system_clock::time_point start, std::chrono::system_clock::time_point end, uint32_t limit), (override));
+                (const std::string& producer_service, std::chrono::system_clock::time_point start,
+                 std::chrono::system_clock::time_point end, uint32_t limit),
+                (override));
     MOCK_METHOD(std::vector<domain::AuditEvent>, query_by_correlation_id,
                 (const std::string& correlation_id, uint32_t limit), (override));
-    MOCK_METHOD(std::optional<domain::AuditEvent>, find_by_event_id,
-                (const domain::EventId& event_id), (override));
+    MOCK_METHOD(std::optional<domain::AuditEvent>, find_by_event_id, (const domain::EventId& event_id), (override));
 };
 
 class AuditServiceImplTest : public ::testing::Test {
-protected:
+  protected:
     void SetUp() override {
         mock_repo_ = std::make_shared<MockAuditEventRepository>();
         ingestion_service_ = std::make_shared<AuditIngestionService>(mock_repo_);
@@ -38,8 +40,9 @@ protected:
         v1::AuditEventProto event;
         event.set_event_id("018f6e4a-7b3c-7000-8000-000000000001");
 
-        auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::system_clock::now().time_since_epoch()).count();
+        auto now_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
         event.set_occurred_at_ms(now_ms);
 
         event.set_event_type("user.authentication.success");
@@ -136,7 +139,8 @@ TEST_F(AuditServiceImplTest, FutureClockSkewRejection) {
     auto skew_event = create_valid_proto_event();
 
     auto future_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-        (std::chrono::system_clock::now() + std::chrono::minutes(10)).time_since_epoch()).count();
+                         (std::chrono::system_clock::now() + std::chrono::minutes(10)).time_since_epoch())
+                         .count();
     skew_event.set_occurred_at_ms(future_ms);
     *request.mutable_event() = skew_event;
 

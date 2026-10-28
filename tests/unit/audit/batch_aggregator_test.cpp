@@ -1,14 +1,13 @@
 #include "ingestion/batch_aggregator.hpp"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
+#include <gtest/gtest.h>
 #include <thread>
 
 namespace securecloud::audit::ingestion::testing {
 
 class BatchAggregatorTest : public ::testing::Test {
-protected:
+  protected:
     IngestionEnvelope create_sample_envelope(size_t index) {
         IngestionEnvelope env;
         env.event.event_type = "batch.test.event." + std::to_string(index);
@@ -51,8 +50,8 @@ TEST_F(BatchAggregatorTest, TimeTriggerFlushesTrickleTraffic) {
 
     auto start_time = std::chrono::steady_clock::now();
     auto batch_opt = batch_q->pop(std::chrono::milliseconds(1000));
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::steady_clock::now() - start_time);
+    auto duration =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time);
 
     ASSERT_TRUE(batch_opt.has_value());
     EXPECT_EQ(batch_opt->size(), 2);

@@ -4,8 +4,7 @@
 
 namespace securecloud::audit::ingestion {
 
-BoundedIngestionQueue::BoundedIngestionQueue(size_t capacity)
-    : capacity_(capacity == 0 ? 1 : capacity) {}
+BoundedIngestionQueue::BoundedIngestionQueue(size_t capacity) : capacity_(capacity == 0 ? 1 : capacity) {}
 
 BoundedIngestionQueue::~BoundedIngestionQueue() {
     shutdown();
@@ -33,8 +32,8 @@ bool BoundedIngestionQueue::try_push(IngestionEnvelope item) {
 
 bool BoundedIngestionQueue::push_with_timeout(IngestionEnvelope item, std::chrono::milliseconds timeout) {
     std::unique_lock<std::mutex> lock(mutex_);
-    bool capacity_available = cv_not_full_.wait_for(
-        lock, timeout, [this] { return shutdown_ || queue_.size() < capacity_; });
+    bool capacity_available =
+        cv_not_full_.wait_for(lock, timeout, [this] { return shutdown_ || queue_.size() < capacity_; });
 
     if (shutdown_ || !capacity_available || queue_.size() >= capacity_) {
         total_rejected_.fetch_add(1, std::memory_order_relaxed);
@@ -131,8 +130,7 @@ grpc::Status create_backpressure_status(grpc::ServerContext* context) {
     if (context != nullptr) {
         context->AddTrailingMetadata("retry-after", "1");
     }
-    return grpc::Status(grpc::StatusCode::RESOURCE_EXHAUSTED,
-                        "Audit ingestion queue saturated; backpressure applied");
+    return grpc::Status(grpc::StatusCode::RESOURCE_EXHAUSTED, "Audit ingestion queue saturated; backpressure applied");
 }
 
 } // namespace securecloud::audit::ingestion
