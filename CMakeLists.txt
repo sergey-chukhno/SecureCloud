@@ -26,6 +26,37 @@ if(MSVC)
     )
 endif()
 
+if(MINGW)
+    # Prevent CMake from passing -isystem for imported targets. Under MinGW GCC,
+    # passing toolchain system include paths (-isystem C:/msys64/mingw64/include)
+    # alters the include search order and breaks GCC's standard library #include_next <stdlib.h>.
+    set(CMAKE_NO_SYSTEM_FROM_IMPORTED ON)
+    if(DEFINED ENV{MSYSTEM_PREFIX})
+        list(APPEND CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES "$ENV{MSYSTEM_PREFIX}/include" "$ENV{MSYSTEM_PREFIX}/x86_64-w64-mingw32/include")
+        list(APPEND CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES "$ENV{MSYSTEM_PREFIX}/include" "$ENV{MSYSTEM_PREFIX}/x86_64-w64-mingw32/include")
+    endif()
+    list(APPEND CMAKE_CXX_IMPLICIT_INCLUDE_DIRECTORIES
+        "C:/msys64/mingw64/include"
+        "C:/msys64/mingw64/x86_64-w64-mingw32/include"
+        "C:/msys64/ucrt64/include"
+        "C:/msys64/ucrt64/x86_64-w64-mingw32/include"
+        "/mingw64/include"
+        "/mingw64/x86_64-w64-mingw32/include"
+        "/ucrt64/include"
+        "/ucrt64/x86_64-w64-mingw32/include"
+    )
+    list(APPEND CMAKE_C_IMPLICIT_INCLUDE_DIRECTORIES
+        "C:/msys64/mingw64/include"
+        "C:/msys64/mingw64/x86_64-w64-mingw32/include"
+        "C:/msys64/ucrt64/include"
+        "C:/msys64/ucrt64/x86_64-w64-mingw32/include"
+        "/mingw64/include"
+        "/mingw64/x86_64-w64-mingw32/include"
+        "/ucrt64/include"
+        "/ucrt64/x86_64-w64-mingw32/include"
+    )
+endif()
+
 # Global standard enforcement for C++20 baseline
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

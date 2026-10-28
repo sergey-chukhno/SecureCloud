@@ -104,6 +104,7 @@ FilesConfig FilesConfig::load(const common::configuration::ConfigurationSource& 
 
     load_postgres_config(config, source, out_errors);
     load_s3_config(config, source, out_errors);
+    config.resources = FilesResourceConfig::load(source, out_errors);
 
     return config;
 }

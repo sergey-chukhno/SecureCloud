@@ -430,6 +430,116 @@ endif()
 
 gtest_discover_tests(securecloud_files_resumable_upload_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Whole-Object Finalization Integration Test Suite (FILES-006-T06)
+add_executable(securecloud_files_finalization_integration_test
+    files_finalization_integration_test.cpp
+)
+
+target_link_libraries(securecloud_files_finalization_integration_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud_proto
+    gRPC::grpc++
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_files_finalization_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_files_finalization_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_files_finalization_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Authorized Chunked Download Integration Test Suite (FILES-007-T06)
+add_executable(securecloud_files_download_integration_test
+    files_download_integration_test.cpp
+)
+
+target_link_libraries(securecloud_files_download_integration_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud_proto
+    gRPC::grpc++
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_files_download_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_files_download_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_files_download_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Capability-Based Access Authorization Integration Test Suite (FILES-008-T06)
+add_executable(securecloud_files_capability_integration_test
+    files_capability_integration_test.cpp
+)
+
+target_link_libraries(securecloud_files_capability_integration_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::auth
+    securecloud::json
+    securecloud_proto
+    gRPC::grpc++
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_files_capability_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_files_capability_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_files_capability_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Concurrency Bulkheads & Resource Controls Integration Test Suite (FILES-009-T06)
+add_executable(securecloud_files_concurrency_integration_test
+    files_concurrency_integration_test.cpp
+)
+
+target_link_libraries(securecloud_files_concurrency_integration_test PRIVATE
+    securecloud::files_service
+    securecloud::files_storage
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud_proto
+    gRPC::grpc++
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_files_concurrency_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_files_concurrency_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_files_concurrency_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Gateway Streaming TLS 1.3 / mTLS Integration Test Suite (GW-010-T04)
 add_executable(securecloud_gateway_streaming_integration_test
     gateway_streaming_integration_test.cpp

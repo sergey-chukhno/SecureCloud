@@ -1,5 +1,6 @@
 #pragma once
 
+#include "concurrency/resource_config.hpp"
 #include "securecloud/configuration/common_service_config.hpp"
 #include "securecloud/configuration/configuration_source.hpp"
 #include "securecloud/configuration/secret_string.hpp"
@@ -28,6 +29,9 @@ struct FilesConfig {
     std::string s3_bucket{"securecloud-files-encrypted"};
     std::string s3_access_key{"files_minio_user"};
     common::configuration::SecretString s3_secret_key;
+
+    // Resource & Concurrency Controls (FILES-009)
+    FilesResourceConfig resources;
 
     /// Loads and validates Files configuration. Fails closed if db_password or s3_secret_key is missing/empty.
     static FilesConfig load(const common::configuration::ConfigurationSource& source,
