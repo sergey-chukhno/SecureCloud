@@ -189,6 +189,20 @@ class VerificationOrchestrator:
                     pass
 
         cmd_config = ["cmake", "--preset", self.preset]
+        if platform.system() == "Windows" and "msvc" in self.preset.lower():
+            vcpkg_toolchain = None
+            for cand in [
+                os.environ.get("VCPKG_ROOT"),
+                os.environ.get("VCPKG_INSTALLATION_ROOT"),
+                "C:/vcpkg",
+            ]:
+                if cand:
+                    toolchain_path = Path(cand) / "scripts" / "buildsystems" / "vcpkg.cmake"
+                    if toolchain_path.exists():
+                        vcpkg_toolchain = str(toolchain_path.resolve())
+                        break
+            if vcpkg_toolchain:
+                cmd_config.append(f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_toolchain}")
         if run_tidy:
             cmd_config.append("-DENABLE_CLANG_TIDY=ON")
         if not self._execute_stage("1. CMake Configure", cmd_config, skip=skip_configure):
