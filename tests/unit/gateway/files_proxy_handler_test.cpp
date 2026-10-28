@@ -321,7 +321,7 @@ TEST_F(FilesProxyHandlerTest, DownloadChunkSuccess) {
 TEST_F(FilesProxyHandlerTest, StreamingDownloadSuccess) {
     securecloud::files::v1::GetFileMetadataResponse meta_resp;
     meta_resp.set_file_id("f-stream");
-    meta_resp.set_encrypted_size_bytes(10);
+    meta_resp.set_encrypted_size_bytes(11);
     meta_resp.set_chunk_count(2);
 
     securecloud::files::v1::DownloadChunkResponse chunk0;
@@ -344,7 +344,31 @@ TEST_F(FilesProxyHandlerTest, StreamingDownloadSuccess) {
     handler_->handle_streaming_download(req, res, make_test_context());
 
     EXPECT_EQ(res.status, 200);
-    EXPECT_EQ(res.body, "hello-world");
+    EXPECT_TRUE(res.content_provider_ != nullptr);
+    EXPECT_EQ(res.content_length_, 11u);
+
+    // Verify non-buffering content provider streams chunk-by-chunk to DataSink
+    std::string streamed_output;
+    httplib::DataSink sink;
+    sink.write = [&](const char* data, size_t len) {
+        streamed_output.append(data, len);
+        return true;
+    };
+    sink.is_writable = []() { return true; };
+
+    // Read chunk 0
+    bool continue_0 = res.content_provider_(0, 6, sink);
+    EXPECT_TRUE(continue_0);
+    EXPECT_EQ(streamed_output, "hello-");
+
+    // Read chunk 1
+    bool continue_1 = res.content_provider_(6, 5, sink);
+    EXPECT_TRUE(continue_1);
+    EXPECT_EQ(streamed_output, "hello-world");
+
+    // Read EOF
+    bool continue_eof = res.content_provider_(11, 0, sink);
+    EXPECT_FALSE(continue_eof);
 }
 
 // 8. DELETE /api/v1/files/:file_id

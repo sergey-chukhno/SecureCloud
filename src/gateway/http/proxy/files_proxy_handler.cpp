@@ -755,33 +755,80 @@ void FilesProxyHandler::handle_streaming_download(const httplib::Request& req, h
     }
 
     const uint32_t chunk_count = meta.chunk_count();
-
-    // Step 2: Stream/aggregate chunks
-    std::string full_payload;
-    full_payload.reserve(meta.encrypted_size_bytes());
-
-    for (uint32_t i = 0; i < chunk_count; ++i) {
-        securecloud::files::v1::DownloadChunkRequest chunk_req;
-        chunk_req.set_file_id(file_id);
-        chunk_req.set_chunk_index(i);
-
-        grpc::ClientCallContext chunk_ctx(timeout);
-        populate_call_metadata(chunk_ctx, ctx, capability_token);
-        ActiveCallGuard chunk_guard(*this, request_id, chunk_ctx);
-
-        auto chunk_res = files_client_->download_chunk(chunk_req, chunk_ctx);
-        if (chunk_res.has_error()) {
-            write_grpc_error(res, chunk_res.error(), request_id);
-            return;
-        }
-        full_payload.append(chunk_res.value().encrypted_data());
-    }
+    const uint64_t total_size = meta.encrypted_size_bytes();
 
     res.status = 200;
-    res.set_header("Content-Type", k_content_type_octet);
-    res.set_header("Content-Length", std::to_string(full_payload.size()));
-    res.set_header("ETag", "\"" + StreamingSha256Validator::compute_hex(full_payload) + "\"");
-    res.body = std::move(full_payload);
+    if (!meta.ciphertext_integrity_hash().empty()) {
+        res.set_header("ETag", "\"" + meta.ciphertext_integrity_hash() + "\"");
+    }
+
+    // Step 2: Stream chunk-by-chunk using ContentProviderWithoutLength / chunked transfer
+    // Single chunk resident memory invariant: only one chunk is loaded into RAM at any time.
+    struct StreamDownloadState {
+        uint32_t current_chunk{0};
+        uint32_t total_chunks{0};
+        std::string file_id;
+        std::string request_id;
+        AuthenticatedContext auth_ctx;
+        std::string capability_token;
+        std::chrono::milliseconds timeout{5000};
+        BulkheadLease lease;
+    };
+
+    auto state = std::make_shared<StreamDownloadState>(StreamDownloadState{
+        .current_chunk = 0,
+        .total_chunks = chunk_count,
+        .file_id = file_id,
+        .request_id = request_id,
+        .auth_ctx = ctx,
+        .capability_token = capability_token,
+        .timeout = timeout,
+        .lease = std::move(lease),
+    });
+
+    res.set_content_provider(
+        total_size, k_content_type_octet,
+        [this, state](size_t /*offset*/, size_t /*length*/, httplib::DataSink& sink) -> bool {
+            if (state->current_chunk >= state->total_chunks) {
+                return false; // EOF
+            }
+
+            if (sink.is_writable && !sink.is_writable()) {
+                // Client disconnected
+                return false;
+            }
+
+            securecloud::files::v1::DownloadChunkRequest chunk_req;
+            chunk_req.set_file_id(state->file_id);
+            chunk_req.set_chunk_index(state->current_chunk);
+
+            grpc::ClientCallContext chunk_ctx(state->timeout);
+            populate_call_metadata(chunk_ctx, state->auth_ctx, state->capability_token);
+            ActiveCallGuard chunk_guard(*this, state->request_id, chunk_ctx);
+
+            auto chunk_res = files_client_->download_chunk(chunk_req, chunk_ctx);
+            if (chunk_res.has_error()) {
+                return false;
+            }
+
+            const auto& chunk_data = chunk_res.value().encrypted_data();
+            if (sink.write) {
+                if (!sink.write(chunk_data.data(), chunk_data.size())) {
+                    return false;
+                }
+            } else {
+                sink.os.write(chunk_data.data(), static_cast<std::streamsize>(chunk_data.size()));
+                if (!sink.os) {
+                    return false;
+                }
+            }
+
+            state->current_chunk++;
+            return true;
+        },
+        [state](bool /*success*/) {
+            // Releaser: lease releases when state is destructed
+        });
 }
 
 // 8. DELETE /api/v1/files/:file_id
