@@ -2902,3 +2902,17 @@ target_link_libraries(securecloud_audit_bounded_ingestion_queue_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_bounded_ingestion_queue_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Validation Worker Pool Unit Test Suite (AUDIT-005-T02)
+add_executable(securecloud_audit_validation_worker_pool_test
+        audit/validation_worker_pool_test.cpp
+)
+
+target_link_libraries(securecloud_audit_validation_worker_pool_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_validation_worker_pool_test ${SECURECLOUD_TEST_PROPERTIES})
