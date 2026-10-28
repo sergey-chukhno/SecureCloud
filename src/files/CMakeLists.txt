@@ -108,6 +108,27 @@ target_link_libraries(securecloud_files_service PUBLIC
     securecloud::compiler_flags
 )
 
+add_library(securecloud_files_audit STATIC
+    audit/grpc_audit_client.cpp
+    audit/files_audit_mapper.cpp
+)
+
+add_library(securecloud::files_audit ALIAS securecloud_files_audit)
+
+target_include_directories(securecloud_files_audit PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(securecloud_files_audit PUBLIC
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    securecloud_proto
+    securecloud::json
+)
+
 add_library(securecloud_files_health STATIC
     health/files_health_evaluator.cpp
 )
