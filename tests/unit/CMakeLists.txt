@@ -2930,3 +2930,18 @@ target_link_libraries(securecloud_audit_batch_aggregator_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_batch_aggregator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Insert Worker Pool Unit Test Suite (AUDIT-005-T04)
+add_executable(securecloud_audit_insert_worker_pool_test
+        audit/insert_worker_pool_test.cpp
+)
+
+target_link_libraries(securecloud_audit_insert_worker_pool_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_insert_worker_pool_test ${SECURECLOUD_TEST_PROPERTIES})
