@@ -174,6 +174,11 @@ std::vector<domain::DeliveryTask> BoundedDeliveryScheduler::drain_device_queue(c
     return drained;
 }
 
+size_t BoundedDeliveryScheduler::purge_device_tasks(const domain::DeviceId& device_id) {
+    auto drained = drain_device_queue(device_id);
+    return drained.size();
+}
+
 void BoundedDeliveryScheduler::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     emergency_queue_.clear();
