@@ -130,12 +130,8 @@ SyncMessagesResult MessageSyncService::sync_messages(const domain::UserId& calle
             }
 
             if (rec.has_value()) {
-                if (matching_state != nullptr) {
-                    if (matching_state->read_at.has_value()) {
-                        rec->delivery_state = domain::DeliveryState::Read;
-                    } else if (matching_state->delivery_state != domain::DeliveryState::Pending) {
-                        rec->delivery_state = matching_state->delivery_state;
-                    }
+                if (matching_state != nullptr && matching_state->delivery_state != domain::DeliveryState::Pending) {
+                    rec->delivery_state = matching_state->delivery_state;
                 }
                 device_envelopes.emplace(msg.message_id, std::move(*rec));
             } else if (!states.empty() && matching_state == nullptr) {

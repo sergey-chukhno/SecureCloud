@@ -2885,6 +2885,24 @@ target_link_libraries(securecloud_new_device_sync_boundary_test PRIVATE
 
 gtest_discover_tests(securecloud_new_device_sync_boundary_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Messaging Proxy Multi-Device Header Binding & Route Hardening Test Suite (MSG-011-T05)
+add_executable(securecloud_messaging_proxy_multi_device_test
+    gateway/messaging_proxy_multi_device_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_proxy_multi_device_test PRIVATE
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud_proto
+    securecloud::json
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_proxy_multi_device_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Audit Service Domain Event Model Unit Test Suite (AUDIT-002-T06)
 add_executable(securecloud_audit_event_model_test
         audit/audit_event_model_test.cpp

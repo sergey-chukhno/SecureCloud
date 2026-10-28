@@ -95,9 +95,6 @@ void populate_message_envelope(const domain::MessageEntity& entity,
         case domain::DeliveryState::Delivered:
             target->set_state(securecloud::messaging::v1::DELIVERY_STATE_DELIVERED);
             break;
-        case domain::DeliveryState::Read:
-            target->set_state(securecloud::messaging::v1::DELIVERY_STATE_READ);
-            break;
         case domain::DeliveryState::RetryWait:
             target->set_state(securecloud::messaging::v1::DELIVERY_STATE_RETRY_WAIT);
             break;
@@ -497,8 +494,8 @@ bool MessagingServiceImpl::check_and_record_presence_rate_limit(const domain::Us
         if (it != task_result.device_envelopes.end()) {
             dev_rec = &it->second;
         }
-        bool is_untargeted = task_result.untargeted_messages.find(msg.message_id) !=
-                             task_result.untargeted_messages.end();
+        bool is_untargeted =
+            task_result.untargeted_messages.find(msg.message_id) != task_result.untargeted_messages.end();
         populate_message_envelope(msg, response->add_messages(), &task_result.device_id, dev_rec, is_untargeted);
     }
     response->set_has_more(task_result.has_more);
@@ -1325,8 +1322,8 @@ MessagingServiceImpl::SyncDeviceMessages(::grpc::ServerContext* context,
         if (it != task_result.device_envelopes.end()) {
             dev_rec = &it->second;
         }
-        bool is_untargeted = task_result.untargeted_messages.find(msg.message_id) !=
-                             task_result.untargeted_messages.end();
+        bool is_untargeted =
+            task_result.untargeted_messages.find(msg.message_id) != task_result.untargeted_messages.end();
         populate_message_envelope(msg, response->add_messages(), &task_result.device_id, dev_rec, is_untargeted);
     }
     return ::grpc::Status::OK;

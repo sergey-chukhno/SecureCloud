@@ -312,8 +312,7 @@ class NewDeviceSyncBoundaryTest : public ::testing::Test {
     MessageId seed_message_with_targets(uint64_t seq, const std::vector<std::pair<DeviceId, std::string>>& targets) {
         auto now = std::chrono::system_clock::now();
         auto bucket = MessageBucket::from_time_point(now);
-        auto msg_id =
-            MessageId::from_string("018f1234-5678-7000-8000-00000000090" + std::to_string(seq)).value();
+        auto msg_id = MessageId::from_string("018f1234-5678-7000-8000-00000000090" + std::to_string(seq)).value();
 
         MessageEntity entity;
         entity.conversation_id = conv_id_;
@@ -397,8 +396,8 @@ TEST_F(NewDeviceSyncBoundaryTest, PreEnrollmentMessagesOmitPayloadWhilePostEnrol
     auto m2_id = seed_message_with_targets(2, {{alice_dev_1_, "CIPHERTEXT_M2_FOR_A1"}});
 
     // 2. Alice enrolls alice_dev_2_. Message M3 is sent to both alice_dev_1_ and alice_dev_2_
-    auto m3_id = seed_message_with_targets(
-        3, {{alice_dev_1_, "CIPHERTEXT_M3_FOR_A1"}, {alice_dev_2_, "CIPHERTEXT_M3_FOR_A2"}});
+    auto m3_id =
+        seed_message_with_targets(3, {{alice_dev_1_, "CIPHERTEXT_M3_FOR_A1"}, {alice_dev_2_, "CIPHERTEXT_M3_FOR_A2"}});
 
     // 3. Newly enrolled alice_dev_2_ calls SyncDeviceMessages from sequence 0
     {
@@ -474,8 +473,7 @@ TEST_F(NewDeviceSyncBoundaryTest, PreEnrollmentMessagesOmitPayloadWhilePostEnrol
 
 TEST_F(NewDeviceSyncBoundaryTest, GetMessagesPopulatesGenuinePerDeviceEnvelopeAndRespectsPreEnrollmentBoundary) {
     seed_message_with_targets(1, {{alice_dev_1_, "CIPHERTEXT_M1_FOR_A1"}});
-    seed_message_with_targets(
-        2, {{alice_dev_1_, "CIPHERTEXT_M2_FOR_A1"}, {alice_dev_2_, "CIPHERTEXT_M2_FOR_A2"}});
+    seed_message_with_targets(2, {{alice_dev_1_, "CIPHERTEXT_M2_FOR_A1"}, {alice_dev_2_, "CIPHERTEXT_M2_FOR_A2"}});
 
     // GetMessages as alice_dev_2_
     grpc::ClientContext ctx;
@@ -502,12 +500,9 @@ TEST_F(NewDeviceSyncBoundaryTest, GetMessagesPopulatesGenuinePerDeviceEnvelopeAn
 }
 
 TEST_F(NewDeviceSyncBoundaryTest, CompanionDevicesMaintainIndependentSyncWatermarks) {
-    seed_message_with_targets(
-        1, {{alice_dev_1_, "CT_1_A1"}, {alice_dev_2_, "CT_1_A2"}});
-    seed_message_with_targets(
-        2, {{alice_dev_1_, "CT_2_A1"}, {alice_dev_2_, "CT_2_A2"}});
-    seed_message_with_targets(
-        3, {{alice_dev_1_, "CT_3_A1"}, {alice_dev_2_, "CT_3_A2"}});
+    seed_message_with_targets(1, {{alice_dev_1_, "CT_1_A1"}, {alice_dev_2_, "CT_1_A2"}});
+    seed_message_with_targets(2, {{alice_dev_1_, "CT_2_A1"}, {alice_dev_2_, "CT_2_A2"}});
+    seed_message_with_targets(3, {{alice_dev_1_, "CT_3_A1"}, {alice_dev_2_, "CT_3_A2"}});
 
     // Advance alice_dev_1_ cursor to sequence 3
     {
@@ -570,8 +565,8 @@ TEST_F(NewDeviceSyncBoundaryTest, ScyllaDeliveryStateRepositoryFetchesDeviceReco
          db::ScyllaValue(msg_id.to_string()), db::ScyllaValue(conv_id_.to_string()),
          db::ScyllaValue(static_cast<int64_t>(42)), db::ScyllaValue("NORMAL"), db::ScyllaValue("QUEUED"),
          db::ScyllaValue(0), db::ScyllaValue(), db::ScyllaValue(ct_vec), db::ScyllaValue(epk_vec),
-         db::ScyllaValue(iv_vec), db::ScyllaValue(tag_vec), db::ScyllaValue("XChaCha20-Poly1305"),
-         db::ScyllaValue(1), db::ScyllaValue()});
+         db::ScyllaValue(iv_vec), db::ScyllaValue(tag_vec), db::ScyllaValue("XChaCha20-Poly1305"), db::ScyllaValue(1),
+         db::ScyllaValue()});
 
     mock_session->set_prepared_result(db::PreparedStatementId("deliv_repo_get_device_record"),
                                       db::ScyllaQueryResult({row}));

@@ -113,8 +113,8 @@ class MockAuthDirectoryClient final : public IAuthCryptoDirectoryClient {
         return std::vector<DeviceCryptoRecord>{};
     }
 
-    Result<DeviceCryptoRecord, CryptoDirectoryError>
-    get_device_crypto_identity(const DeviceId& device_id, std::chrono::milliseconds) override {
+    Result<DeviceCryptoRecord, CryptoDirectoryError> get_device_crypto_identity(const DeviceId& device_id,
+                                                                                std::chrono::milliseconds) override {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = device_map_.find(device_id);
         if (it != device_map_.end()) {
@@ -213,13 +213,13 @@ TEST(DeviceRevocationQuarantineTest, SubmissionTargetingRevokedDeviceIsRejectedF
         .ciphertext_blob = "CT_B2",
     };
 
-    auto res = resolution_svc.validate_submission_targets({alice, bob}, {env_b1, env_b2_revoked}, alice_phone, alice,
-                                                          true);
+    auto res =
+        resolution_svc.validate_submission_targets({alice, bob}, {env_b1, env_b2_revoked}, alice_phone, alice, true);
     EXPECT_FALSE(res.is_valid);
     EXPECT_EQ(res.error_code, v1::MESSAGING_ERROR_CODE_DEVICE_REVOKED);
 }
 
-TEST(DeviceRevocationQuarantineTest,SchedulerPurgesQueuedTasksForRevokedDeviceWithoutAffectingActiveDevices) {
+TEST(DeviceRevocationQuarantineTest, SchedulerPurgesQueuedTasksForRevokedDeviceWithoutAffectingActiveDevices) {
     delivery::BoundedDeliveryScheduler scheduler;
     DeviceId active_dev("018f1234-5678-7000-8000-0000000000b1");
     DeviceId revoked_dev("018f1234-5678-7000-8000-0000000000b2");
@@ -280,8 +280,8 @@ TEST(DeviceRevocationQuarantineTest, RevokedDeviceBlockedFromGetMessagesSyncAndA
     auto auth_svc = std::make_shared<ConversationAuthorizationService>(*conv_repo, *member_repo);
     auto cursor_mgr = std::make_shared<SyncCursorManager>(cursor_repo, msg_repo);
     auto sync_svc = std::make_shared<MessageSyncService>(msg_repo, cursor_mgr, auth_svc, delivery_repo);
-    auto delivery_svc = std::make_shared<DeliveryService>(
-        delivery_repo, outbox_repo, [resolution_svc, bob](const DeviceId& dev) {
+    auto delivery_svc =
+        std::make_shared<DeliveryService>(delivery_repo, outbox_repo, [resolution_svc, bob](const DeviceId& dev) {
             auto st = resolution_svc->get_device_status(bob, dev);
             return !st.has_value() || *st == securecloud::auth::v1::DEVICE_STATUS_ACTIVE;
         });
