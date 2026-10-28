@@ -3088,3 +3088,21 @@ target_link_libraries(securecloud_presence_privacy_guard_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_presence_privacy_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Concurrency, Deduplication & State Invariant Stress Harness (MSG-012-T01)
+add_executable(securecloud_messaging_concurrency_stress_test
+    messaging/messaging_concurrency_stress_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_concurrency_stress_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_concurrency_stress_test ${SECURECLOUD_TEST_PROPERTIES})
+

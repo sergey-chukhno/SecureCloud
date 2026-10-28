@@ -29,6 +29,11 @@ ServiceResult<DeliveryAckResponse> DeliveryService::acknowledge_delivery(const D
     const auto now = std::chrono::system_clock::now();
     const auto effective_delivered_at = (cmd.delivered_at.time_since_epoch().count() > 0) ? cmd.delivered_at : now;
 
+    // Lock-striped concurrency control per (message_id, recipient_device_id) (MSG-012-T01)
+    const size_t stripe_idx =
+        std::hash<std::string>{}(cmd.message_id.to_string() + ":" + cmd.recipient_device_id.str()) % kNumStripes;
+    std::lock_guard<std::mutex> stripe_lock(ack_stripes_[stripe_idx]);
+
     // 1. Fetch fan-out delivery states for the message from ScyllaDB
     const auto states = delivery_repo_->get_delivery_states_for_message(cmd.message_id);
     std::optional<domain::RecipientDeliveryState> target_state;

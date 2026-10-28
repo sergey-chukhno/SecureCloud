@@ -60,6 +60,11 @@ ServiceResult<ReadReceiptResponse> ReadReceiptService::record_read_receipt(const
             "Reader device has been revoked and cannot submit valid read receipts");
     }
 
+    // Lock-striped concurrency control per (message_id, reader_device_id) (MSG-012-T01)
+    const size_t stripe_idx =
+        std::hash<std::string>{}(cmd.message_id.to_string() + ":" + cmd.reader_device_id.str()) % kNumStripes;
+    std::lock_guard<std::mutex> stripe_lock(receipt_stripes_[stripe_idx]);
+
     // 3. Fetch fan-out delivery states for the message from ScyllaDB
     const auto states = delivery_repo_->get_delivery_states_for_message(cmd.message_id);
     if (states.empty()) {
