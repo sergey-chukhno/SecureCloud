@@ -20,6 +20,7 @@ struct DeliveryAckCommand {
     domain::MessageId message_id;
     domain::DeviceId recipient_device_id;
     domain::UserId caller_user_id;
+    domain::DeviceId caller_device_id{};
     std::chrono::system_clock::time_point delivered_at;
     std::optional<domain::ConversationId> conversation_id{std::nullopt};
 };

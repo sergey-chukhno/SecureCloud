@@ -50,6 +50,14 @@ ServiceResult<DeliveryAckResponse> DeliveryService::acknowledge_delivery(const D
             "Caller is not authorized to acknowledge delivery for this device");
     }
 
+    // 3b. Anti-Impersonation Perimeter Guard (ADR-008, MSG-011-T02):
+    // Assert caller device matches recipient device (cannot mutate companion device state)
+    if (!cmd.caller_device_id.empty() && cmd.caller_device_id != cmd.recipient_device_id) {
+        return ServiceResult<DeliveryAckResponse>::fail(
+            v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+            "Caller device cannot acknowledge delivery on behalf of a different device");
+    }
+
     // 4. Idempotency Check: if already DELIVERED or READ, return success deterministically
     if (target_state->delivery_state == domain::DeliveryState::Delivered ||
         target_state->delivery_state == domain::DeliveryState::Read) {

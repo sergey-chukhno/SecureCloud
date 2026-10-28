@@ -2834,6 +2834,23 @@ target_link_libraries(securecloud_messaging_service_impl_sync_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_service_impl_sync_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Device Anti-Impersonation Perimeter Guard Unit Test Suite (MSG-011-T02)
+add_executable(securecloud_device_anti_impersonation_test
+    messaging/device_anti_impersonation_test.cpp
+)
+
+target_link_libraries(securecloud_device_anti_impersonation_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_device_anti_impersonation_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Audit Service Domain Event Model Unit Test Suite (AUDIT-002-T06)
 add_executable(securecloud_audit_event_model_test
         audit/audit_event_model_test.cpp

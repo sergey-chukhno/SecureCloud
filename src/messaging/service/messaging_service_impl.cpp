@@ -368,6 +368,13 @@ bool MessagingServiceImpl::check_and_record_presence_rate_limit(const domain::Us
         return {::grpc::StatusCode::UNAUTHENTICATED, "Missing or invalid user ID header (expected RFC 4122 UUID)"};
     }
 
+    if (!caller_ctx.device_id().empty() && !request->recipient_device_id().empty() &&
+        caller_ctx.device_id() != request->recipient_device_id()) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+                              "Caller device cannot query messages on behalf of a different device",
+                              caller_ctx.correlation_id(), context);
+    }
+
     std::string effective_device_id =
         !request->recipient_device_id().empty() ? request->recipient_device_id() : caller_ctx.device_id();
     if (effective_device_id.empty()) {
@@ -474,6 +481,13 @@ MessagingServiceImpl::AcknowledgeDelivery(::grpc::ServerContext* context,
                               caller_ctx.correlation_id(), context);
     }
 
+    if (!caller_ctx.device_id().empty() && !request->recipient_device_id().empty() &&
+        caller_ctx.device_id() != request->recipient_device_id()) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+                              "Caller device cannot acknowledge delivery on behalf of a different device",
+                              caller_ctx.correlation_id(), context);
+    }
+
     std::string effective_device_id = request->recipient_device_id();
     if (effective_device_id.empty()) {
         effective_device_id = caller_ctx.device_id();
@@ -487,6 +501,7 @@ MessagingServiceImpl::AcknowledgeDelivery(::grpc::ServerContext* context,
     cmd.message_id = *msg_id;
     cmd.recipient_device_id = domain::DeviceId(effective_device_id);
     cmd.caller_user_id = *caller_id;
+    cmd.caller_device_id = domain::DeviceId(caller_ctx.device_id());
     if (request->delivered_at_unix_ms() > 0) {
         cmd.delivered_at =
             std::chrono::system_clock::time_point(std::chrono::milliseconds(request->delivered_at_unix_ms()));
@@ -586,6 +601,13 @@ MessagingServiceImpl::SendReadReceipt(::grpc::ServerContext* context,
                               caller_ctx.correlation_id(), context);
     }
 
+    if (!caller_ctx.device_id().empty() && !request->reader_device_id().empty() &&
+        caller_ctx.device_id() != request->reader_device_id()) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+                              "Caller device cannot submit read receipts on behalf of a different device",
+                              caller_ctx.correlation_id(), context);
+    }
+
     std::string effective_device_id = request->reader_device_id();
     if (effective_device_id.empty()) {
         effective_device_id = caller_ctx.device_id();
@@ -599,6 +621,7 @@ MessagingServiceImpl::SendReadReceipt(::grpc::ServerContext* context,
     cmd.conversation_id = *conv_id;
     cmd.reader_device_id = domain::DeviceId(effective_device_id);
     cmd.caller_user_id = *caller_id;
+    cmd.caller_device_id = domain::DeviceId(caller_ctx.device_id());
     if (request->read_at_unix_ms() > 0) {
         cmd.read_at = std::chrono::system_clock::time_point(std::chrono::milliseconds(request->read_at_unix_ms()));
     } else {
@@ -1123,6 +1146,13 @@ MessagingServiceImpl::SyncDeviceMessages(::grpc::ServerContext* context,
     auto caller_id = domain::UserId::from_string(caller_ctx.user_id());
     if (!caller_id) {
         return {::grpc::StatusCode::UNAUTHENTICATED, "Missing or invalid user ID header (expected RFC 4122 UUID)"};
+    }
+
+    if (!caller_ctx.device_id().empty() && !request->device_id().empty() &&
+        caller_ctx.device_id() != request->device_id()) {
+        return to_grpc_status(v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+                              "Caller device cannot sync messages on behalf of a different device",
+                              caller_ctx.correlation_id(), context);
     }
 
     std::string effective_device_id = !request->device_id().empty() ? request->device_id() : caller_ctx.device_id();
