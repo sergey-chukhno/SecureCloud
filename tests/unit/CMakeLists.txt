@@ -2916,3 +2916,17 @@ target_link_libraries(securecloud_audit_validation_worker_pool_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_validation_worker_pool_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Batch Aggregator Unit Test Suite (AUDIT-005-T03)
+add_executable(securecloud_audit_batch_aggregator_test
+        audit/batch_aggregator_test.cpp
+)
+
+target_link_libraries(securecloud_audit_batch_aggregator_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_batch_aggregator_test ${SECURECLOUD_TEST_PROPERTIES})
