@@ -3106,3 +3106,21 @@ target_link_libraries(securecloud_messaging_concurrency_stress_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_concurrency_stress_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Messaging Reconnect Storms, Sync Watermarks & Backpressure Bounds Test Suite (MSG-012-T02)
+add_executable(securecloud_messaging_sync_reconnect_storm_test
+    messaging/messaging_sync_reconnect_storm_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_sync_reconnect_storm_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_sync_reconnect_storm_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
