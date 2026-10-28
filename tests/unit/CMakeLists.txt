@@ -2888,3 +2888,17 @@ target_link_libraries(securecloud_audit_service_impl_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_service_impl_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Bounded Ingestion Queue Unit Test Suite (AUDIT-005-T01)
+add_executable(securecloud_audit_bounded_ingestion_queue_test
+        audit/bounded_ingestion_queue_test.cpp
+)
+
+target_link_libraries(securecloud_audit_bounded_ingestion_queue_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_bounded_ingestion_queue_test ${SECURECLOUD_TEST_PROPERTIES})
