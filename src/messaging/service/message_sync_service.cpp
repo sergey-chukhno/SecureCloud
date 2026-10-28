@@ -70,6 +70,8 @@ SyncMessagesResult MessageSyncService::sync_messages(const domain::UserId& calle
                                   .device_id = cmd.device_id,
                                   .conversation_id = cmd.conversation_id,
                                   .messages = {},
+                                  .device_envelopes = {},
+                                  .untargeted_messages = {},
                                   .cursor = cursor,
                                   .has_more = false,
                                   .next_sequence = effective_since + 1,
@@ -112,10 +114,44 @@ SyncMessagesResult MessageSyncService::sync_messages(const domain::UserId& calle
 
     uint64_t next_seq = fetched.empty() ? (effective_since + 1) : (fetched.back().message_sequence + 1);
 
+    std::unordered_map<domain::MessageId, domain::DeviceDeliveryRecord> device_envelopes;
+    std::unordered_set<domain::MessageId> untargeted_messages;
+    if (delivery_state_repo_) {
+        for (const auto& msg : fetched) {
+            auto rec = delivery_state_repo_->get_delivery_record_for_device(cmd.device_id, msg.message_id);
+            auto states = delivery_state_repo_->get_delivery_states_for_message(msg.message_id);
+
+            const domain::RecipientDeliveryState* matching_state = nullptr;
+            for (const auto& st : states) {
+                if (st.recipient_device_id == cmd.device_id) {
+                    matching_state = &st;
+                    break;
+                }
+            }
+
+            if (rec.has_value()) {
+                if (matching_state != nullptr) {
+                    if (matching_state->read_at.has_value()) {
+                        rec->delivery_state = domain::DeliveryState::Read;
+                    } else if (matching_state->delivery_state != domain::DeliveryState::Pending) {
+                        rec->delivery_state = matching_state->delivery_state;
+                    }
+                }
+                device_envelopes.emplace(msg.message_id, std::move(*rec));
+            } else if (!states.empty() && matching_state == nullptr) {
+                // Message was accepted with explicit device targets, and this calling device was not targeted
+                // (e.g., pre-enrollment history for a newly enrolled device). Enforce Zero-Retroactive-Synthesis.
+                untargeted_messages.insert(msg.message_id);
+            }
+        }
+    }
+
     return SyncMessagesResult{.status = SyncMessagesStatus::Success,
                               .device_id = cmd.device_id,
                               .conversation_id = cmd.conversation_id,
                               .messages = std::move(fetched),
+                              .device_envelopes = std::move(device_envelopes),
+                              .untargeted_messages = std::move(untargeted_messages),
                               .cursor = cursor,
                               .has_more = has_more,
                               .next_sequence = next_seq,

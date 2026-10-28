@@ -7,6 +7,8 @@
 #undef GetMessage
 #endif
 
+#include "domain/delivery_types.hpp"
+#include "domain/envelope_types.hpp"
 #include "domain/presence_types.hpp"
 #include "securecloud/grpc/caller_context.hpp"
 #include "securecloud/security/mtls_config.hpp"
@@ -56,7 +58,10 @@ void populate_conversation_metadata(const ConversationDetails& details,
 }
 
 void populate_message_envelope(const domain::MessageEntity& entity,
-                               securecloud::messaging::v1::MessageEnvelope* envelope) {
+                               securecloud::messaging::v1::MessageEnvelope* envelope,
+                               const domain::DeviceId* recipient_device_id = nullptr,
+                               const domain::DeviceDeliveryRecord* device_record = nullptr,
+                               bool is_untargeted_for_device = false) {
     envelope->set_message_id(entity.message_id.to_string());
     envelope->set_conversation_id(entity.conversation_id.to_string());
     envelope->set_sender_user_id(entity.sender_user_id.str());
@@ -76,9 +81,46 @@ void populate_message_envelope(const domain::MessageEntity& entity,
     auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(entity.accepted_at.time_since_epoch()).count();
     envelope->set_created_at_unix_ms(ms);
 
-    if (!entity.envelope.ciphertext.empty()) {
+    if (device_record != nullptr) {
         auto* target = envelope->add_delivery_targets();
-        target->set_recipient_device_id(entity.sender_device_id.str());
+        target->set_recipient_device_id(recipient_device_id ? recipient_device_id->str()
+                                                            : entity.sender_device_id.str());
+        switch (device_record->delivery_state) {
+        case domain::DeliveryState::Queued:
+            target->set_state(securecloud::messaging::v1::DELIVERY_STATE_QUEUED);
+            break;
+        case domain::DeliveryState::Delivering:
+            target->set_state(securecloud::messaging::v1::DELIVERY_STATE_DELIVERING);
+            break;
+        case domain::DeliveryState::Delivered:
+            target->set_state(securecloud::messaging::v1::DELIVERY_STATE_DELIVERED);
+            break;
+        case domain::DeliveryState::Read:
+            target->set_state(securecloud::messaging::v1::DELIVERY_STATE_READ);
+            break;
+        case domain::DeliveryState::RetryWait:
+            target->set_state(securecloud::messaging::v1::DELIVERY_STATE_RETRY_WAIT);
+            break;
+        case domain::DeliveryState::Expired:
+            target->set_state(securecloud::messaging::v1::DELIVERY_STATE_EXPIRED);
+            break;
+        default:
+            target->set_state(securecloud::messaging::v1::DELIVERY_STATE_UNSPECIFIED);
+            break;
+        }
+
+        auto* ep = target->mutable_encrypted_payload();
+        ep->set_ciphertext_blob(device_record->ciphertext_blob);
+        ep->set_ephemeral_public_key(reinterpret_cast<const char*>(device_record->ephemeral_public_key.data()),
+                                     device_record->ephemeral_public_key.size());
+        ep->set_initialization_vector(reinterpret_cast<const char*>(device_record->iv.data()),
+                                      device_record->iv.size());
+        ep->set_auth_tag(reinterpret_cast<const char*>(device_record->auth_tag.data()), device_record->auth_tag.size());
+        ep->set_algorithm(domain::to_string(device_record->algorithm));
+    } else if (!is_untargeted_for_device && !entity.envelope.ciphertext.empty()) {
+        auto* target = envelope->add_delivery_targets();
+        target->set_recipient_device_id(recipient_device_id ? recipient_device_id->str()
+                                                            : entity.sender_device_id.str());
         target->set_state(securecloud::messaging::v1::DELIVERY_STATE_DELIVERED);
         auto* ep = target->mutable_encrypted_payload();
         ep->set_ciphertext_blob(entity.envelope.ciphertext);
@@ -450,7 +492,14 @@ bool MessagingServiceImpl::check_and_record_presence_rate_limit(const domain::Us
     }
 
     for (const auto& msg : task_result.messages) {
-        populate_message_envelope(msg, response->add_messages());
+        const domain::DeviceDeliveryRecord* dev_rec = nullptr;
+        auto it = task_result.device_envelopes.find(msg.message_id);
+        if (it != task_result.device_envelopes.end()) {
+            dev_rec = &it->second;
+        }
+        bool is_untargeted = task_result.untargeted_messages.find(msg.message_id) !=
+                             task_result.untargeted_messages.end();
+        populate_message_envelope(msg, response->add_messages(), &task_result.device_id, dev_rec, is_untargeted);
     }
     response->set_has_more(task_result.has_more);
     response->set_latest_sequence(static_cast<int64_t>(task_result.latest_sequence));
@@ -1271,7 +1320,14 @@ MessagingServiceImpl::SyncDeviceMessages(::grpc::ServerContext* context,
         populate_sync_cursor(task_result.cursor, response->mutable_cursor());
     }
     for (const auto& msg : task_result.messages) {
-        populate_message_envelope(msg, response->add_messages());
+        const domain::DeviceDeliveryRecord* dev_rec = nullptr;
+        auto it = task_result.device_envelopes.find(msg.message_id);
+        if (it != task_result.device_envelopes.end()) {
+            dev_rec = &it->second;
+        }
+        bool is_untargeted = task_result.untargeted_messages.find(msg.message_id) !=
+                             task_result.untargeted_messages.end();
+        populate_message_envelope(msg, response->add_messages(), &task_result.device_id, dev_rec, is_untargeted);
     }
     return ::grpc::Status::OK;
 }

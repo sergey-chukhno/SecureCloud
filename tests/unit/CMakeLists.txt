@@ -2851,6 +2851,40 @@ target_link_libraries(securecloud_device_anti_impersonation_test PRIVATE
 
 gtest_discover_tests(securecloud_device_anti_impersonation_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Fail-Closed Device Revocation Quarantine Unit Test Suite (MSG-011-T03)
+add_executable(securecloud_device_revocation_quarantine_test
+    messaging/device_revocation_quarantine_test.cpp
+)
+
+target_link_libraries(securecloud_device_revocation_quarantine_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_device_revocation_quarantine_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Per-Device Envelope Retrieval & Newly Enrolled Device Sync Boundary Unit Test Suite (MSG-011-T04)
+add_executable(securecloud_new_device_sync_boundary_test
+    messaging/new_device_sync_boundary_test.cpp
+)
+
+target_link_libraries(securecloud_new_device_sync_boundary_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gmock
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_new_device_sync_boundary_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Audit Service Domain Event Model Unit Test Suite (AUDIT-002-T06)
 add_executable(securecloud_audit_event_model_test
         audit/audit_event_model_test.cpp
