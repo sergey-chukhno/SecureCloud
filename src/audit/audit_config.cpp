@@ -34,6 +34,10 @@ std::optional<uint32_t> parse_uint32_bounded(const std::string& key, std::string
     }
 }
 
+bool is_power_of_two(uint32_t n) noexcept {
+    return n != 0 && (n & (n - 1)) == 0;
+}
+
 } // namespace
 
 AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& source,
@@ -183,6 +187,53 @@ AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& 
         }
     }
 
+    // --- Deduplication Configuration Extensions ---
+
+    // AUDIT_INGESTION_DEDUP_CACHE_CAPACITY [1000, 1000000]
+    auto dedup_cap_val = source.get("AUDIT_INGESTION_DEDUP_CACHE_CAPACITY");
+    if (dedup_cap_val.has_value()) {
+        auto parsed = parse_uint32_bounded("AUDIT_INGESTION_DEDUP_CACHE_CAPACITY", dedup_cap_val.value(), out_errors,
+                                           1000, 1000000);
+        if (parsed.has_value()) {
+            config.ingestion.dedup_cache_capacity = parsed.value();
+        }
+    }
+
+    // AUDIT_INGESTION_DEDUP_CACHE_TTL_MS [10000, 86400000]
+    auto dedup_ttl_val = source.get("AUDIT_INGESTION_DEDUP_CACHE_TTL_MS");
+    if (dedup_ttl_val.has_value()) {
+        auto parsed = common::configuration::ConfigParser::parse_duration_ms(
+            "AUDIT_INGESTION_DEDUP_CACHE_TTL_MS", dedup_ttl_val.value(), out_errors, 10000, 86400000);
+        if (parsed.has_value()) {
+            config.ingestion.dedup_cache_ttl_ms = static_cast<uint32_t>(parsed->count());
+        }
+    }
+
+    // AUDIT_INGESTION_DEDUP_CACHE_SHARDS [1, 256]
+    auto dedup_shards_val = source.get("AUDIT_INGESTION_DEDUP_CACHE_SHARDS");
+    if (dedup_shards_val.has_value()) {
+        auto parsed = parse_uint32_bounded("AUDIT_INGESTION_DEDUP_CACHE_SHARDS", dedup_shards_val.value(), out_errors,
+                                           1, 256);
+        if (parsed.has_value()) {
+            if (!is_power_of_two(parsed.value())) {
+                out_errors.add_error("AUDIT_INGESTION_DEDUP_CACHE_SHARDS",
+                                     "must be a power of two in range [1, 256]");
+            } else {
+                config.ingestion.dedup_cache_shards = parsed.value();
+            }
+        }
+    }
+
+    // AUDIT_INGESTION_IN_FLIGHT_ACK_TIMEOUT_MS [500, 30000]
+    auto ack_timeout_val = source.get("AUDIT_INGESTION_IN_FLIGHT_ACK_TIMEOUT_MS");
+    if (ack_timeout_val.has_value()) {
+        auto parsed = common::configuration::ConfigParser::parse_duration_ms(
+            "AUDIT_INGESTION_IN_FLIGHT_ACK_TIMEOUT_MS", ack_timeout_val.value(), out_errors, 500, 30000);
+        if (parsed.has_value()) {
+            config.ingestion.in_flight_ack_timeout_ms = static_cast<uint32_t>(parsed->count());
+        }
+    }
+
     // --- Query Configuration ---
 
     // SECURECLOUD_AUDIT_QUERY_WORKERS [1, 32]
@@ -261,6 +312,13 @@ AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& 
                                                                  std::to_string(config.ingestion.batch_size) + " > " +
                                                                  std::to_string(config.ingestion.max_queued_events) +
                                                                  ")");
+    }
+
+    if (config.ingestion.dedup_cache_capacity < config.ingestion.max_queued_events) {
+        out_errors.add_error("AUDIT_INGESTION_DEDUP_CACHE_CAPACITY",
+                             "dedup_cache_capacity cannot be less than max_queued_events (" +
+                                 std::to_string(config.ingestion.dedup_cache_capacity) + " < " +
+                                 std::to_string(config.ingestion.max_queued_events) + ")");
     }
 
     return config;

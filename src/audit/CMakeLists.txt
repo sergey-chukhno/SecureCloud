@@ -1,6 +1,7 @@
 add_library(securecloud_audit_domain STATIC
         domain/enums.cpp
         domain/event_id.cpp
+        domain/event_payload_fingerprint.cpp
         domain/validation_result.cpp
         domain/audit_event_validator.cpp
         domain/sensitive_data_guard.cpp
