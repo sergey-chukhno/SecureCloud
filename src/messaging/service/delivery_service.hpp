@@ -8,9 +8,11 @@
 #include "securecloud/messaging/v1/messaging.pb.h"
 #include "service/conversation_service.hpp" // for ServiceResult
 
+#include <array>
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -57,8 +59,8 @@ class DeliveryService {
 
     DeliveryService(const DeliveryService&) = delete;
     DeliveryService& operator=(const DeliveryService&) = delete;
-    DeliveryService(DeliveryService&&) = default;
-    DeliveryService& operator=(DeliveryService&&) = default;
+    DeliveryService(DeliveryService&&) = delete;
+    DeliveryService& operator=(DeliveryService&&) = delete;
 
     /**
      * @brief Authoritatively records a recipient device's affirmative delivery receipt.
@@ -72,6 +74,9 @@ class DeliveryService {
     std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<repository::IOutboxRepository> outbox_repo_;
     DeviceStatusChecker device_status_checker_{nullptr};
+
+    static constexpr size_t kNumStripes = 64;
+    mutable std::array<std::mutex, kNumStripes> ack_stripes_;
 };
 
 } // namespace securecloud::messaging::service
