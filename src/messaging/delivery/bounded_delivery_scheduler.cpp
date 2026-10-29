@@ -151,25 +151,18 @@ std::vector<domain::DeliveryTask> BoundedDeliveryScheduler::drain_device_queue(c
     if (!active_device_ring_.empty() && active_device_ring_.front() == device_id) {
         current_device_quanta_consumed_ = 0;
     }
-    std::deque<domain::DeviceId> filtered_ring;
-    for (const auto& dev : active_device_ring_) {
-        if (dev != device_id) {
-            filtered_ring.push_back(dev);
-        }
-    }
-    active_device_ring_ = std::move(filtered_ring);
+    std::erase(active_device_ring_, device_id);
 
-    // Also drain any emergency tasks scheduled for this device
-    std::deque<domain::DeliveryTask> remaining_emergency;
-    for (auto& task : emergency_queue_) {
-        if (task.recipient_device_id == device_id) {
-            drained.push_back(std::move(task));
+    // Also drain any emergency tasks scheduled for this device in-place
+    for (auto em_it = emergency_queue_.begin(); em_it != emergency_queue_.end();) {
+        if (em_it->recipient_device_id == device_id) {
+            drained.push_back(std::move(*em_it));
             --total_tasks_count_;
+            em_it = emergency_queue_.erase(em_it);
         } else {
-            remaining_emergency.push_back(std::move(task));
+            ++em_it;
         }
     }
-    emergency_queue_ = std::move(remaining_emergency);
 
     return drained;
 }
