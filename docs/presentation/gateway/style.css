@@ -646,6 +646,29 @@ code {
     gap: 0.5rem;
 }
 
+/* Compact Subsystem Tabs for 9-node topologies */
+.subsystem-tabs.compact-tabs {
+    gap: 0.32rem;
+    overflow-y: auto;
+    max-height: 410px;
+    padding-right: 0.25rem;
+}
+
+.compact-tabs .sub-tab {
+    padding: 0.45rem 0.75rem;
+    gap: 0.65rem;
+    border-radius: 8px;
+}
+
+.compact-tabs .tab-num {
+    font-size: 0.75rem;
+}
+
+.compact-tabs .tab-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
 .sub-tab {
     display: flex;
     align-items: center;
@@ -1465,4 +1488,82 @@ code {
     font-size: 0.8rem;
     color: var(--text-secondary);
     line-height: 1.4;
+}
+
+/* =========================================================================
+   Slide 20: Capacity Load Benchmarks, Chaos Recovery & Code Snippets
+   ========================================================================= */
+
+.test-benchmark-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.85rem;
+    margin-bottom: 0.75rem;
+}
+
+.test-card {
+    padding: 0.85rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    border-radius: 12px;
+}
+
+.test-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.test-card-title {
+    font-family: var(--font-heading);
+    font-size: 0.94rem;
+    font-weight: 700;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.test-card-desc {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    line-height: 1.35;
+}
+
+.code-snippet {
+    background: rgba(7, 13, 24, 0.9);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    border-radius: 6px;
+    padding: 0.45rem 0.65rem;
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    color: #e2e8f0;
+    line-height: 1.42;
+    overflow-x: auto;
+    white-space: pre;
+}
+
+.code-snippet .keyword { color: #f43f5e; font-weight: 600; }
+.code-snippet .type { color: #38bdf8; }
+.code-snippet .func { color: #a855f7; }
+.code-snippet .str { color: #10b981; }
+.code-snippet .num { color: #fbbf24; }
+.code-snippet .comment { color: #64748b; font-style: italic; }
+
+.test-result-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    border-radius: 5px;
+    padding: 0.35rem 0.6rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: #10b981;
+}
+
+.test-result-row strong {
+    color: #fff;
 }

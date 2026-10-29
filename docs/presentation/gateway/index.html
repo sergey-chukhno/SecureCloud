@@ -1039,197 +1039,49 @@
 
         
             <!-- ========================================================================= -->
-            <!-- MESSAGING SERVICE PRESENTATION SLIDES (SLIDES 14–19)                      -->
+            <!-- MESSAGING SERVICE PRESENTATION SLIDES (SLIDES 14–20)                      -->
             <!-- Based on docs/architecture/messaging-architecture-and-functioning.md     -->
             <!-- ========================================================================= -->
 
-            <!-- SLIDE 14: Messaging Service Executive Overview & The Blind Courier -->
-            <section class="slide" id="slide-14" data-index="14" data-title="Messaging: Executive Overview">
+            <!-- SLIDE 14: Mission, Goals & Bounded Context -->
+            <section class="slide" id="slide-14" data-index="14" data-title="Messaging: Mission & Bounded Context">
                 <div class="slide-content">
                     <div class="slide-badge-row">
                         <span class="badge badge-teal">BLIND DIPLOMATIC COURIER</span>
-                        <span class="badge badge-blue">ADR-002 · ADR-005 · ADR-008 · MSG-001–012</span>
-                        <span class="badge badge-emerald">ZERO-KNOWLEDGE TRANSPORT</span>
+                        <span class="badge badge-blue">ADR-002 · ADR-005 · ADR-008</span>
+                        <span class="badge badge-emerald">BOUNDED CONTEXT FIREWALL</span>
                     </div>
 
                     <h2 class="slide-title">
-                        Messaging Service: <span class="gradient-text">Blind Diplomatic Courier Architecture</span>
+                        Messaging Service: <span class="gradient-text">Mission & Bounded Context</span>
                     </h2>
                     <p class="slide-lead">
                         High-throughput, strictly ordered E2EE dispatch daemon routing Signal Double Ratchet ciphertext across degraded satellite networks with zero access to user keys or ratchet states.
                     </p>
 
-                    <!-- 4 Overview Glass Cards -->
-                    <div class="overview-grid compact-grid" style="margin-bottom: 0.65rem;">
-                        <div class="card glass-card hover-glow">
-                            <div class="card-icon teal-glow">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
-                            </div>
-                            <h3>Monotonic Total Ordering</h3>
-                            <p>Allocates atomic, gapless sequence numbers per (conversation, month) partition. Eliminates clock drift vulnerabilities across remote field devices.</p>
-                            <div class="card-footer-meta">Atomic Per-Conv Counters · Gapless Replay</div>
-                        </div>
-
-                        <div class="card glass-card hover-glow">
-                            <div class="card-icon emerald-glow">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                            </div>
-                            <h3>Zero-Knowledge Transport</h3>
-                            <p>Enforces ADR-008: Messages are transported as blind opaque envelopes. Server holds zero identity keys, zero ratchet states, and has mathematically zero decryption capability.</p>
-                            <div class="card-footer-meta">Signal PQXDH Envelopes · Zero Canary Leaks</div>
-                        </div>
-
-                        <div class="card glass-card hover-glow">
-                            <div class="card-icon purple-glow">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                            </div>
-                            <h3>3-Tier Fair Priority Ring</h3>
-                            <p>Deficit round-robin scheduling prioritizing Emergency distress pings over standard delivery and historical sync, with drop-to-durable backpressure under load.</p>
-                            <div class="card-footer-meta">Emergency > Delivery > Sync · DRR Quanta</div>
-                        </div>
-
-                        <div class="card glass-card hover-glow">
-                            <div class="card-icon blue-glow">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
-                            </div>
-                            <h3>Multi-Device Fast-Track</h3>
-                            <p>Resolves recipient hardware rosters and pushes directly via active gRPC bi-di stream in 1.24 ms (P50: 24.9 µs), spooling offline devices to durable ScyllaDB outbox.</p>
-                            <div class="card-footer-meta">Sub-2ms Direct Socket Push · Auto-Drain</div>
-                        </div>
-                    </div>
-
-                    <!-- Animated SVG Diagram: Blind Diplomatic Courier Transport Model -->
-                    <div class="diagram-container" style="padding: 0.6rem 1rem;">
-                        <svg class="svg-diagram" viewBox="0 0 1150 162" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <defs>
-                                <linearGradient id="grad-teal-blue" x1="0%" y1="0%" x2="100%" y2="100%">
-                                    <stop offset="0%" stop-color="#2dd4bf" stop-opacity="0.25"/>
-                                    <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.08"/>
-                                </linearGradient>
-                                <linearGradient id="grad-border-emerald" x1="0%" y1="0%" x2="100%" y2="0%">
-                                    <stop offset="0%" stop-color="#10b981"/>
-                                    <stop offset="100%" stop-color="#38bdf8"/>
-                                </linearGradient>
-                                <filter id="glow-teal" x="-20%" y="-20%" width="140%" height="140%">
-                                    <feGaussianBlur stdDeviation="3" result="blur"/>
-                                    <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-                                </filter>
-                            </defs>
-
-                            <!-- Client Alice Enclave (Left) -->
-                            <rect x="20" y="25" width="220" height="120" rx="10" fill="rgba(13, 23, 42, 0.85)" stroke="#38bdf8" stroke-width="1.5"/>
-                            <text x="35" y="48" fill="#38bdf8" font-family="var(--font-heading)" font-size="12" font-weight="700">SENDER CLIENT ENCLAVE</text>
-                            <text x="35" y="68" fill="#fff" font-family="var(--font-mono)" font-size="11" font-weight="600">Alice Hardware Device</text>
-                            <rect x="35" y="80" width="190" height="24" rx="4" fill="rgba(56, 189, 248, 0.12)" stroke="rgba(56, 189, 248, 0.3)"/>
-                            <text x="43" y="96" fill="#38bdf8" font-family="var(--font-mono)" font-size="9.5">Local Ratchet Keys (IK_A, EK_A)</text>
-                            <rect x="35" y="112" width="190" height="22" rx="4" fill="rgba(16, 185, 129, 0.15)" stroke="rgba(16, 185, 129, 0.4)"/>
-                            <text x="45" y="127" fill="#10b981" font-family="var(--font-mono)" font-size="9.5">AES-256-GCM Sealed Payload</text>
-
-                            <!-- Connection Line: Alice -> Gateway -->
-                            <path d="M 240 85 L 310 85" stroke="#38bdf8" stroke-width="2" class="flow-line-fast"/>
-                            <circle cx="275" cy="85" r="4" fill="#38bdf8" filter="url(#glow-teal)"/>
-                            <text x="247" y="75" fill="#94a3b8" font-family="var(--font-mono)" font-size="8">TLS 1.3 :8443</text>
-
-                            <!-- Gateway Ingress (Middle-Left) -->
-                            <rect x="310" y="35" width="140" height="100" rx="8" fill="rgba(15, 23, 42, 0.85)" stroke="rgba(56, 189, 248, 0.4)" stroke-width="1.2"/>
-                            <text x="325" y="58" fill="#38bdf8" font-family="var(--font-heading)" font-size="11" font-weight="700">GATEWAY INGRESS</text>
-                            <text x="325" y="78" fill="#cbd5e1" font-family="var(--font-mono)" font-size="9">• Strips Headers</text>
-                            <text x="325" y="96" fill="#cbd5e1" font-family="var(--font-mono)" font-size="9">• Binds Auth Sub</text>
-                            <text x="325" y="114" fill="#10b981" font-family="var(--font-mono)" font-size="9">✓ Fails Closed</text>
-
-                            <!-- Connection Line: Gateway -> Messaging Daemon -->
-                            <path d="M 450 85 L 520 85" stroke="#10b981" stroke-width="2" class="flow-line"/>
-                            <circle cx="485" cy="85" r="4" fill="#10b981" filter="url(#glow-teal)"/>
-                            <text x="460" y="75" fill="#94a3b8" font-family="var(--font-mono)" font-size="8">mTLS :50053</text>
-
-                            <!-- SecureCloud Messaging Daemon (Center Bounded Enclave) -->
-                            <rect x="520" y="15" width="360" height="140" rx="10" fill="url(#grad-teal-blue)" stroke="url(#grad-border-emerald)" stroke-width="2"/>
-                            <rect x="530" y="24" width="340" height="22" rx="4" fill="rgba(7, 13, 24, 0.8)"/>
-                            <text x="540" y="39" fill="#2dd4bf" font-family="var(--font-heading)" font-size="11" font-weight="800">BLIND COURIER PERIMETER (ZERO-KNOWLEDGE)</text>
-                            <text x="795" y="39" fill="#10b981" font-family="var(--font-mono)" font-size="9" font-weight="700">ZERO KEYS</text>
-
-                            <!-- Messaging Subcomponents inside Courier -->
-                            <g transform="translate(530, 52)">
-                                <rect x="0" y="0" width="105" height="42" rx="5" fill="rgba(13, 23, 42, 0.85)" stroke="rgba(56, 189, 248, 0.3)"/>
-                                <text x="8" y="17" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Sequencer</text>
-                                <text x="8" y="32" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">Atomic Seq #k</text>
-
-                                <rect x="115" y="0" width="110" height="42" rx="5" fill="rgba(13, 23, 42, 0.85)" stroke="rgba(16, 185, 129, 0.3)"/>
-                                <text x="123" y="17" fill="#10b981" font-family="var(--font-mono)" font-size="8.5" font-weight="700">ScyllaDB Ring</text>
-                                <text x="123" y="32" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">Monthly Buckets</text>
-
-                                <rect x="235" y="0" width="100" height="42" rx="5" fill="rgba(13, 23, 42, 0.85)" stroke="rgba(168, 85, 247, 0.3)"/>
-                                <text x="243" y="17" fill="#a855f7" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Scheduler</text>
-                                <text x="243" y="32" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">3-Tier Priority</text>
-
-                                <rect x="0" y="48" width="335" height="44" rx="5" fill="rgba(7, 13, 24, 0.75)" stroke="rgba(239, 68, 68, 0.35)"/>
-                                <text x="12" y="65" fill="#f87171" font-family="var(--font-heading)" font-size="9" font-weight="700">🛡️ ZeroPlaintextGuard (ADR-008 Invariant)</text>
-                                <text x="12" y="81" fill="#94a3b8" font-family="var(--font-mono)" font-size="8.2">Blind opaque octet transport · Zero plaintext canary leakage · Zero private key storage</text>
-                            </g>
-
-                            <!-- Fan-Out Branches (Messaging -> Devices) -->
-                            <!-- Branch 1: to Bob Phone (Online) -->
-                            <path d="M 880 55 L 945 42" stroke="#10b981" stroke-width="2" class="flow-line-fast"/>
-                            <rect x="945" y="20" width="185" height="38" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#10b981" stroke-width="1.3"/>
-                            <circle cx="958" cy="39" r="4" fill="#10b981" class="pulse-glow-emerald"/>
-                            <text x="968" y="34" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="700">Bob Phone (Online)</text>
-                            <text x="968" y="48" fill="#10b981" font-family="var(--font-mono)" font-size="8">FAST-TRACK PUSH: 1.24 ms</text>
-
-                            <!-- Branch 2: to Bob Tablet (Offline Spool) -->
-                            <path d="M 880 85 L 945 85" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="4 3"/>
-                            <rect x="945" y="66" width="185" height="38" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#f59e0b" stroke-width="1.3"/>
-                            <circle cx="958" cy="85" r="4" fill="#f59e0b"/>
-                            <text x="968" y="80" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="700">Bob Tablet (Offline)</text>
-                            <text x="968" y="94" fill="#f59e0b" font-family="var(--font-mono)" font-size="8">ScyllaDB Outbox Spool (Safe)</text>
-
-                            <!-- Branch 3: to Alice Laptop (Companion Sync) -->
-                            <path d="M 880 115 L 945 128" stroke="#38bdf8" stroke-width="2" class="flow-line"/>
-                            <rect x="945" y="112" width="185" height="38" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#38bdf8" stroke-width="1.3"/>
-                            <circle cx="958" cy="131" r="4" fill="#38bdf8" class="pulse-glow-blue"/>
-                            <text x="968" y="126" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="700">Alice Laptop (Companion)</text>
-                            <text x="968" y="140" fill="#38bdf8" font-family="var(--font-mono)" font-size="8">Sender History Sync Cursor</text>
-                        </svg>
-                    </div>
-                </div>
-            </section>
-
-            <!-- SLIDE 15: Messaging Responsibilities vs Deliberate Non-Responsibilities -->
-            <section class="slide" id="slide-15" data-index="15" data-title="Messaging: Responsibilities Matrix">
-                <div class="slide-content">
-                    <div class="slide-badge-row">
-                        <span class="badge badge-teal">BOUNDED CONTEXT & ADR COMPLIANCE</span>
-                        <span class="badge badge-blue">ADR-005 · ADR-008 · ADR-009</span>
-                    </div>
-
-                    <h2 class="slide-title">
-                        Messaging Service: <span class="gradient-text">Responsibilities vs Non-Responsibilities</span>
-                    </h2>
-                    <p class="slide-lead">
-                        Mental Model: A sealed diplomatic courier service sorting, ordering, and dispatching tamper-evident lockboxes, never opening cargo or issuing travel passports.
-                    </p>
-
-                    <div class="dichotomy-container compact-dichotomy" style="margin-bottom: 0.6rem;">
-                        <!-- What Messaging Owns -->
+                    <!-- Mental Model & Dichotomy Container -->
+                    <div class="dichotomy-container compact-dichotomy" style="margin-bottom: 0.65rem;">
+                        <!-- What Messaging Strictly Owns -->
                         <div class="dichotomy-box owns-box" style="border-color: rgba(45, 212, 191, 0.35); background: rgba(13, 35, 48, 0.75);">
                             <div class="box-header">
                                 <div class="box-indicator check-icon" style="border-color: #2dd4bf; color: #2dd4bf;">✓</div>
                                 <div>
                                     <h3>What Messaging Strictly Owns</h3>
-                                    <span class="box-subtitle">E2EE Dispatch, Sequencing & Delivery Orchestration</span>
+                                    <span class="box-subtitle">E2EE Routing, Monotonic Sequencing & Multi-Device Fan-Out</span>
                                 </div>
                             </div>
                             <ul class="dichotomy-list">
                                 <li>
                                     <strong>Monotonic Total Sequencing:</strong>
-                                    Allocates atomic, gapless 64-bit sequence numbers per (conversation, month) bucket.
+                                    Allocates atomic, gapless 64-bit sequence numbers per (conversation, month) partition.
                                 </li>
                                 <li>
                                     <strong>ScyllaDB Monthly Partition Bucketing:</strong>
-                                    Bounded partition sizes (max 100k msgs / 50 MB); zero ALLOW FILTERING full-table scans.
+                                    Enforces bounded partition sizes (&lt; 100k msgs / 50 MB); zero ALLOW FILTERING full-table scans.
                                 </li>
                                 <li>
                                     <strong>3-Tier Priority Scheduling & Backpressure:</strong>
-                                    Emergency bypass > Delivery fair DRR > Sync; drop-to-durable buffer under traffic bursts.
+                                    Emergency bypass &gt; Delivery fair DRR &gt; Sync; drop-to-durable buffer under traffic bursts.
                                 </li>
                                 <li>
                                     <strong>Multi-Device Roster Resolution & Fan-Out:</strong>
@@ -1252,161 +1104,305 @@
                                 <div class="box-indicator cross-icon">✗</div>
                                 <div>
                                     <h3>What Messaging Deliberately Rejects</h3>
-                                    <span class="box-subtitle">Preserved Invariants & Inviolable Boundaries</span>
+                                    <span class="box-subtitle">Cryptographic Keys, Auth Claims & Media Payload Storage</span>
                                 </div>
                             </div>
                             <ul class="dichotomy-list">
                                 <li>
-                                    <strong>Zero Plaintext Inspection or Decryption (ADR-008):</strong>
-                                    Holds zero user identity keys, signed prekeys, or ratchet states. Payloads are strictly opaque ciphertext.
+                                    <strong>Zero Key Storage or PQXDH Ratchets:</strong>
+                                    Clients maintain Signal Double Ratchet sessions in device enclaves; server holds 0 private keys.
                                 </li>
                                 <li>
-                                    <strong>No Cryptographic Token Authority:</strong>
-                                    Does not issue tokens, verify passwords, or store identity credentials (Auth Service owns authentication).
+                                    <strong>No Identity or Authentication Authority:</strong>
+                                    Does not issue JWTs or verify passwords; trusts Gateway-injected, signed caller context headers.
                                 </li>
                                 <li>
-                                    <strong>No Direct Public Internet Exposure:</strong>
-                                    Never binds to external ports; operates strictly within the internal mTLS mesh on port 50053 behind Gateway.
+                                    <strong>Zero Plaintext Handling:</strong>
+                                    No content filtering, spam inspection, or plaintext keyword search; envelopes are opaque blobs.
                                 </li>
                                 <li>
-                                    <strong>No Relational SQL Transactions:</strong>
-                                    Avoids multi-table ACID joins; utilizes Cassandra-native append logs optimized for high-throughput I/O.
+                                    <strong>No File or Attachment Blob Storage:</strong>
+                                    Large binary assets stream to Files Service (MinIO/S3); Messaging only relays opaque reference tokens.
                                 </li>
                                 <li>
-                                    <strong>No Binary Media/File Storage:</strong>
-                                    Does not store large files or attachments; files are encrypted client-side and hosted by Files Service / S3.
+                                    <strong>No Group Membership Administration:</strong>
+                                    Room rosters are managed externally; Messaging queries Auth/Gateway cache for active device targets.
                                 </li>
                                 <li>
-                                    <strong>No Message Content Indexing or Full-Text Search:</strong>
-                                    Plaintext search on the server is mathematically impossible; client devices execute search locally in enclaves.
+                                    <strong>No Global Presence Broadcast:</strong>
+                                    Tracks active device streaming sockets internally; never broadcasts typing or status pings globally.
                                 </li>
                             </ul>
                         </div>
                     </div>
 
-                    <!-- Animated SVG Boundary Defense Firewall -->
-                    <div class="diagram-container" style="padding: 0.45rem 1rem;">
-                        <svg class="svg-diagram" viewBox="0 0 1150 62" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <!-- Inbound Request Channels -->
-                            <text x="15" y="40" fill="#94a3b8" font-family="var(--font-mono)" font-size="9.5" font-weight="700">INBOUND MESH:</text>
-                            
-                            <!-- Path 1: Ciphertext Envelope -> ALLOWED -->
-                            <rect x="110" y="15" width="220" height="38" rx="6" fill="rgba(16, 185, 129, 0.12)" stroke="#10b981"/>
-                            <text x="122" y="32" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="600">Sealed Ciphertext Envelope</text>
-                            <text x="122" y="46" fill="#10b981" font-family="var(--font-mono)" font-size="8">PQXDH V1 · Canary Clean</text>
-                            <path d="M 330 34 L 380 34" stroke="#10b981" stroke-width="2" class="flow-line-fast"/>
-                            <rect x="380" y="20" width="100" height="28" rx="4" fill="rgba(16, 185, 129, 0.2)" stroke="#10b981"/>
-                            <text x="390" y="38" fill="#10b981" font-family="var(--font-mono)" font-size="9" font-weight="700">✓ ACCEPTED</text>
+                    <!-- Boundary Firewall Banner -->
+                    <div class="diagram-container" style="padding: 0.6rem 1rem;">
+                        <svg class="svg-diagram" viewBox="0 0 1150 70" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Inbound Gateway Boundary -->
+                            <rect x="15" y="15" width="220" height="40" rx="6" fill="rgba(56, 189, 248, 0.12)" stroke="#38bdf8"/>
+                            <text x="30" y="33" fill="#fff" font-family="var(--font-heading)" font-size="10.5" font-weight="600">Client Enclave / Edge</text>
+                            <text x="30" y="47" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5">PQXDH Double Ratchet (ADR-008)</text>
 
-                            <!-- Path 2: Plaintext Inspection -> BLOCKED -->
-                            <rect x="500" y="15" width="220" height="38" rx="6" fill="rgba(239, 68, 68, 0.12)" stroke="#ef4444"/>
-                            <text x="512" y="32" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="600">Plaintext Inspection / Key Read</text>
-                            <text x="512" y="46" fill="#f87171" font-family="var(--font-mono)" font-size="8">Anti-Plaintext Heuristic Trip</text>
-                            <path d="M 720 34 L 770 34" stroke="#ef4444" stroke-width="2"/>
-                            <rect x="770" y="20" width="100" height="28" rx="4" fill="rgba(239, 68, 68, 0.2)" stroke="#ef4444"/>
-                            <text x="780" y="38" fill="#f87171" font-family="var(--font-mono)" font-size="9" font-weight="700">✗ REJECTED</text>
+                            <path d="M 235 35 L 285 35" stroke="#38bdf8" stroke-width="2" class="flow-line-fast"/>
+                            <polygon points="280,31 285,35 280,39" fill="#38bdf8"/>
 
-                            <!-- Path 3: Media File Chunk -> ROUTED -->
-                            <rect x="890" y="15" width="245" height="38" rx="6" fill="rgba(56, 189, 248, 0.12)" stroke="#38bdf8"/>
-                            <text x="902" y="32" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="600">Media Chunks & Token Claims</text>
-                            <text x="902" y="46" fill="#38bdf8" font-family="var(--font-mono)" font-size="8">Routed to Files :50052 / Auth :50051</text>
+                            <!-- Gateway Firewall -->
+                            <rect x="285" y="12" width="230" height="46" rx="6" fill="rgba(244, 63, 94, 0.12)" stroke="#f43f5e" stroke-width="1.5"/>
+                            <text x="300" y="31" fill="#f43f5e" font-family="var(--font-heading)" font-size="10.5" font-weight="700">API Gateway Boundary</text>
+                            <text x="300" y="47" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8.5">JWT Auth &amp; x-device-id Injection</text>
+
+                            <path d="M 515 35 L 565 35" stroke="#2dd4bf" stroke-width="2" class="flow-line-fast"/>
+                            <polygon points="560,31 565,35 560,39" fill="#2dd4bf"/>
+
+                            <!-- Messaging Service Core -->
+                            <rect x="565" y="10" width="280" height="50" rx="6" fill="rgba(45, 212, 191, 0.15)" stroke="#2dd4bf" stroke-width="2"/>
+                            <text x="580" y="30" fill="#2dd4bf" font-family="var(--font-heading)" font-size="11" font-weight="700">Messaging Core Service (:50053)</text>
+                            <text x="580" y="48" fill="#e2e8f0" font-family="var(--font-mono)" font-size="8.5">Blind Diplomatic Courier · Monotonic Sequencing</text>
+
+                            <path d="M 845 35 L 895 35" stroke="#a855f7" stroke-width="2" class="flow-line-fast"/>
+                            <polygon points="890,31 895,35 890,39" fill="#a855f7"/>
+
+                            <!-- Delegated Services -->
+                            <rect x="895" y="15" width="240" height="40" rx="6" fill="rgba(168, 85, 247, 0.12)" stroke="#a855f7"/>
+                            <text x="908" y="33" fill="#fff" font-family="var(--font-heading)" font-size="10.5" font-weight="600">External Delegations</text>
+                            <text x="908" y="47" fill="#a855f7" font-family="var(--font-mono)" font-size="8.5">Auth :50051 · Files/MinIO :50052</text>
                         </svg>
                     </div>
                 </div>
             </section>
 
-            <!-- SLIDE 16: Messaging Internal Subsystem Architecture (Interactive Subsystem Explorer) -->
-            <section class="slide" id="slide-16" data-index="16" data-title="Messaging: Subsystem Explorer">
+            <!-- SLIDE 15: End-to-End Request & Event Lifecycle -->
+            <section class="slide" id="slide-15" data-index="15" data-title="Messaging: E2E Request Lifecycle">
                 <div class="slide-content">
                     <div class="slide-badge-row">
-                        <span class="badge badge-teal">MODULAR SUBSYSTEM TOPOLOGY</span>
-                        <span class="badge badge-blue">src/messaging/ (6 Decoupled Engines)</span>
+                        <span class="badge badge-teal">PACKET LIFECYCLE</span>
+                        <span class="badge badge-blue">END-TO-END FLOW</span>
+                        <span class="badge badge-emerald">SUB-MILLISECOND LATENCY</span>
                     </div>
 
                     <h2 class="slide-title">
-                        Messaging Internal <span class="gradient-text">Subsystem Architecture</span>
+                        End-to-End <span class="gradient-text">Message &amp; Event Lifecycle</span>
                     </h2>
                     <p class="slide-lead">
-                        Interactive exploration of the 6 decoupled engines powering anti-impersonation, monotonic sequencing, ScyllaDB persistence, priority scheduling, and device push.
+                        Deterministic path of an encrypted payload from client hardware enclave through API Gateway, monotonic sequencing, ScyllaDB persistence, and multi-device push.
                     </p>
 
-                    <!-- Animated Subsystem Connectivity Topology Banner -->
-                    <div class="diagram-container" style="margin-bottom: 1rem; padding: 0.6rem 1rem;">
-                        <svg class="svg-diagram" viewBox="0 0 1150 55" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <!-- 6 Subsystem Flow Nodes -->
-                            <!-- Node 1: Facade -->
-                            <rect class="svg-subsystem-node active-svg-subsystem" data-sub="msg_facade" x="15" y="10" width="160" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#2dd4bf" stroke-width="1.2"/>
-                            <text x="25" y="27" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5" font-weight="700">01 Facade & Context</text>
-                            <text x="25" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Anti-Impersonation</text>
+                    <!-- 4 Horizontal Phase Cards -->
+                    <div class="overview-grid compact-grid" style="margin-bottom: 0.75rem;">
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon teal-glow">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            </div>
+                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">1. Ingestion &amp; Quarantine</h4>
+                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
+                                Gateway authenticates JWT &amp; injects <code>x-device-id</code>. Messaging verifies anti-spoofing, payload bounds, and Signal PQXDH envelope format.
+                            </p>
+                            <div class="card-footer-meta" style="font-size: 0.7rem;">&lt; 0.05 ms · Rejects Impersonation</div>
+                        </div>
 
-                            <path d="M 175 27 L 205 27" stroke="#2dd4bf" stroke-width="1.5" class="flow-line"/>
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon blue-glow">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                            </div>
+                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">2. Sequencing &amp; Idempotency</h4>
+                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
+                                Client idempotency token checked against lock-striped cache. Atomic monotonic sequence allocated per (conversation, month) partition.
+                            </p>
+                            <div class="card-footer-meta" style="font-size: 0.7rem;">P50: 78 µs · Gapless Ordering</div>
+                        </div>
 
-                            <!-- Node 2: Sequencer -->
-                            <rect class="svg-subsystem-node" data-sub="msg_sequencing" x="205" y="10" width="165" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#38bdf8" stroke-width="1.2"/>
-                            <text x="215" y="27" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">02 Monotonic Sequencer</text>
-                            <text x="215" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Gapless UTC Monthly</text>
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon emerald-glow">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+                            </div>
+                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">3. ScyllaDB Dual-Write</h4>
+                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
+                                Atomically commits immutable envelope to <code>messages_by_conversation</code> and per-device records to <code>outbox_events</code> table.
+                            </p>
+                            <div class="card-footer-meta" style="font-size: 0.7rem;">Partition &lt; 50 MB · 0 Scan</div>
+                        </div>
 
-                            <path d="M 370 27 L 400 27" stroke="#38bdf8" stroke-width="1.5" class="flow-line"/>
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon purple-glow">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                            </div>
+                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">4. Fast-Track Fan-Out</h4>
+                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
+                                Active sockets receive direct push in 1.24 ms (P50: 24.9 µs). Offline devices remain spooled in durable outbox for auto-drain upon reconnect.
+                            </p>
+                            <div class="card-footer-meta" style="font-size: 0.7rem;">Sub-2ms Push · Outbox Fallback</div>
+                        </div>
+                    </div>
 
-                            <!-- Node 3: Storage -->
-                            <rect class="svg-subsystem-node" data-sub="msg_storage" x="400" y="10" width="165" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#10b981" stroke-width="1.2"/>
-                            <text x="410" y="27" fill="#10b981" font-family="var(--font-mono)" font-size="8.5" font-weight="700">03 ScyllaDB Repository</text>
-                            <text x="410" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Zero ALLOW FILTERING</text>
+                    <!-- Animated Swimlane Sequence Diagram -->
+                    <div class="diagram-container" style="padding: 0.8rem 1rem;">
+                        <svg class="svg-diagram" viewBox="0 0 1150 250" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Columns -->
+                            <rect x="20" y="10" width="160" height="28" rx="5" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8"/>
+                            <text x="45" y="28" fill="#38bdf8" font-family="var(--font-heading)" font-size="10.5" font-weight="700">Alice Client Enclave</text>
 
-                            <path d="M 565 27 L 595 27" stroke="#10b981" stroke-width="1.5" class="flow-line"/>
+                            <rect x="250" y="10" width="160" height="28" rx="5" fill="rgba(244, 63, 94, 0.15)" stroke="#f43f5e"/>
+                            <text x="275" y="28" fill="#f43f5e" font-family="var(--font-heading)" font-size="10.5" font-weight="700">API Gateway :50050</text>
 
-                            <!-- Node 4: Scheduler -->
-                            <rect class="svg-subsystem-node" data-sub="msg_delivery" x="595" y="10" width="165" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#a855f7" stroke-width="1.2"/>
-                            <text x="605" y="27" fill="#a855f7" font-family="var(--font-mono)" font-size="8.5" font-weight="700">04 Bounded Scheduler</text>
-                            <text x="605" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">3-Tier Fair DRR Ring</text>
+                            <rect x="480" y="10" width="180" height="28" rx="5" fill="rgba(45, 212, 191, 0.15)" stroke="#2dd4bf"/>
+                            <text x="500" y="28" fill="#2dd4bf" font-family="var(--font-heading)" font-size="10.5" font-weight="700">Messaging Core :50053</text>
 
-                            <path d="M 760 27 L 790 27" stroke="#a855f7" stroke-width="1.5" class="flow-line"/>
+                            <rect x="730" y="10" width="170" height="28" rx="5" fill="rgba(168, 85, 247, 0.15)" stroke="#a855f7"/>
+                            <text x="755" y="28" fill="#a855f7" font-family="var(--font-heading)" font-size="10.5" font-weight="700">ScyllaDB Storage</text>
 
-                            <!-- Node 5: Connection -->
-                            <rect class="svg-subsystem-node" data-sub="msg_connection" x="790" y="10" width="165" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#f59e0b" stroke-width="1.2"/>
-                            <text x="800" y="27" fill="#f59e0b" font-family="var(--font-mono)" font-size="8.5" font-weight="700">05 Connection Registry</text>
-                            <text x="800" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Fast-Track Accelerator</text>
+                            <rect x="970" y="10" width="160" height="28" rx="5" fill="rgba(16, 185, 129, 0.15)" stroke="#10b981"/>
+                            <text x="990" y="28" fill="#10b981" font-family="var(--font-heading)" font-size="10.5" font-weight="700">Bob Devices (1 &amp; 2)</text>
 
-                            <path d="M 955 27 L 985 27" stroke="#f59e0b" stroke-width="1.5" class="flow-line"/>
+                            <!-- Lifelines -->
+                            <line x1="100" y1="38" x2="100" y2="245" stroke="rgba(255, 255, 255, 0.1)" stroke-dasharray="3 3"/>
+                            <line x1="330" y1="38" x2="330" y2="245" stroke="rgba(244, 63, 94, 0.25)" stroke-dasharray="3 3"/>
+                            <line x1="570" y1="38" x2="570" y2="245" stroke="rgba(45, 212, 191, 0.25)" stroke-dasharray="3 3"/>
+                            <line x1="815" y1="38" x2="815" y2="245" stroke="rgba(168, 85, 247, 0.25)" stroke-dasharray="3 3"/>
+                            <line x1="1050" y1="38" x2="1050" y2="245" stroke="rgba(16, 185, 129, 0.25)" stroke-dasharray="3 3"/>
 
-                            <!-- Node 6: Status & Sync -->
-                            <rect class="svg-subsystem-node" data-sub="msg_status" x="985" y="10" width="150" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#38bdf8" stroke-width="1.2"/>
-                            <text x="995" y="27" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">06 Status & Sync</text>
-                            <text x="995" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Non-Conflation Axiom</text>
+                            <!-- Step 1: Alice -> Gateway -->
+                            <path d="M 100 65 L 330 65" stroke="#38bdf8" stroke-width="2" class="flow-line-fast"/>
+                            <polygon points="325,61 330,65 325,69" fill="#38bdf8"/>
+                            <text x="135" y="58" fill="#e2e8f0" font-family="var(--font-mono)" font-size="8.5">POST /v1/messages (Encrypted Envelope)</text>
+
+                            <!-- Step 2: Gateway -> Messaging -->
+                            <path d="M 330 95 L 570 95" stroke="#2dd4bf" stroke-width="2" class="flow-line-fast"/>
+                            <polygon points="565,91 570,95 565,99" fill="#2dd4bf"/>
+                            <text x="350" y="88" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5">gRPC SendMessage(Envelope + x-device-id)</text>
+
+                            <!-- Step 3: Sequencing & Persist -->
+                            <path d="M 570 130 L 815 130" stroke="#10b981" stroke-width="2" class="flow-line-fast"/>
+                            <polygon points="810,126 815,130 810,134" fill="#10b981"/>
+                            <text x="590" y="123" fill="#10b981" font-family="var(--font-mono)" font-size="8.5">Seq #42 Allocated · Write messages &amp; outbox_events</text>
+
+                            <!-- Step 4: Storage ACK -->
+                            <path d="M 815 155 L 570 155" stroke="#10b981" stroke-width="1.8" class="flow-line-reverse"/>
+                            <polygon points="575,151 570,155 575,159" fill="#10b981"/>
+                            <text x="635" y="150" fill="#10b981" font-family="var(--font-mono)" font-size="8">ScyllaDB ACK (Quorum Committed)</text>
+
+                            <!-- Step 5: Fast-Track to Online Bob Dev 1 -->
+                            <path d="M 570 185 L 1050 185" stroke="#a855f7" stroke-width="2" class="flow-line-fast"/>
+                            <polygon points="1045,181 1050,185 1045,189" fill="#a855f7"/>
+                            <text x="700" y="178" fill="#a855f7" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Fast-Track Direct Push to Bob Dev 1 (P50: 24.9 µs)</text>
+
+                            <!-- Step 6: Spool Bob Dev 2 (Offline) & Client ACK -->
+                            <path d="M 570 215 L 100 215" stroke="#38bdf8" stroke-width="1.8" class="flow-line-reverse"/>
+                            <polygon points="105,211 100,215 105,219" fill="#38bdf8"/>
+                            <text x="210" y="210" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5">200 OK { sequence_number: 42, status: ACCEPTED }</text>
+
+                            <rect x="740" y="202" width="295" height="24" rx="4" fill="rgba(245, 158, 11, 0.15)" stroke="#f59e0b"/>
+                            <text x="750" y="218" fill="#fbbf24" font-family="var(--font-mono)" font-size="8">Bob Dev 2 (Offline): Spooled in outbox for auto-drain</text>
+                        </svg>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 16: Messaging Internal Subsystem Architecture (9 Decoupled Subsystems) -->
+            <section class="slide" id="slide-16" data-index="16" data-title="Messaging: 9 Decoupled Subsystems">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-teal">MODULAR SUBSYSTEM TOPOLOGY</span>
+                        <span class="badge badge-blue">src/messaging/ (9 Decoupled Engines)</span>
+                        <span class="badge badge-emerald">SECTION 4 ARCHITECTURE</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Messaging Service: <span class="gradient-text">9 Decoupled Subsystems</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Interactive exploration of the 9 decoupled architectural engines powering cryptographic verification, gapless sequencing, storage partitions, fair scheduling, and multi-device dispatch.
+                    </p>
+
+                    <!-- Animated 9-Subsystem Flow Ribbon -->
+                    <div class="diagram-container" style="margin-bottom: 0.75rem; padding: 0.45rem 0.65rem;">
+                        <svg class="svg-diagram" viewBox="0 0 1150 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <!-- 9 Subsystem Flow Nodes -->
+                            <!-- Node 1 -->
+                            <rect class="svg-subsystem-node active-svg-subsystem" data-sub="msg_validation" x="5" y="8" width="115" height="32" rx="5" fill="rgba(13, 23, 42, 0.9)" stroke="#2dd4bf" stroke-width="1.2"/>
+                            <text x="12" y="23" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8" font-weight="700">01 Validation</text>
+                            <text x="12" y="33" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">Anti-Plaintext</text>
+
+                            <!-- Node 2 -->
+                            <rect class="svg-subsystem-node" data-sub="msg_sequencing" x="132" y="8" width="115" height="32" rx="5" fill="rgba(13, 23, 42, 0.9)" stroke="#38bdf8" stroke-width="1.2"/>
+                            <text x="139" y="23" fill="#38bdf8" font-family="var(--font-mono)" font-size="8" font-weight="700">02 Sequencer</text>
+                            <text x="139" y="33" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">Monotonic 64-bit</text>
+
+                            <!-- Node 3 -->
+                            <rect class="svg-subsystem-node" data-sub="msg_persistence" x="259" y="8" width="115" height="32" rx="5" fill="rgba(13, 23, 42, 0.9)" stroke="#10b981" stroke-width="1.2"/>
+                            <text x="266" y="23" fill="#10b981" font-family="var(--font-mono)" font-size="8" font-weight="700">03 Persistence</text>
+                            <text x="266" y="33" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">ScyllaDB Buckets</text>
+
+                            <!-- Node 4 -->
+                            <rect class="svg-subsystem-node" data-sub="msg_outbox" x="386" y="8" width="115" height="32" rx="5" fill="rgba(13, 23, 42, 0.9)" stroke="#f59e0b" stroke-width="1.2"/>
+                            <text x="393" y="23" fill="#f59e0b" font-family="var(--font-mono)" font-size="8" font-weight="700">04 Outbox</text>
+                            <text x="393" y="33" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">Event Dispatch</text>
+
+                            <!-- Node 5 -->
+                            <rect class="svg-subsystem-node" data-sub="msg_scheduling" x="513" y="8" width="115" height="32" rx="5" fill="rgba(13, 23, 42, 0.9)" stroke="#a855f7" stroke-width="1.2"/>
+                            <text x="520" y="23" fill="#a855f7" font-family="var(--font-mono)" font-size="8" font-weight="700">05 Scheduler</text>
+                            <text x="520" y="33" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">3-Tier DRR Ring</text>
+
+                            <!-- Node 6 -->
+                            <rect class="svg-subsystem-node" data-sub="msg_non_conflation" x="640" y="8" width="125" height="32" rx="5" fill="rgba(13, 23, 42, 0.9)" stroke="#ec4899" stroke-width="1.2"/>
+                            <text x="647" y="23" fill="#ec4899" font-family="var(--font-mono)" font-size="8" font-weight="700">06 Non-Conflation</text>
+                            <text x="647" y="33" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">Delivery ≠ Read</text>
+
+                            <!-- Node 7 -->
+                            <rect class="svg-subsystem-node" data-sub="msg_sync" x="777" y="8" width="115" height="32" rx="5" fill="rgba(13, 23, 42, 0.9)" stroke="#38bdf8" stroke-width="1.2"/>
+                            <text x="784" y="23" fill="#38bdf8" font-family="var(--font-mono)" font-size="8" font-weight="700">07 Device Sync</text>
+                            <text x="784" y="33" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">Reconnection Catchup</text>
+
+                            <!-- Node 8 -->
+                            <rect class="svg-subsystem-node" data-sub="msg_presence" x="904" y="8" width="115" height="32" rx="5" fill="rgba(13, 23, 42, 0.9)" stroke="#10b981" stroke-width="1.2"/>
+                            <text x="911" y="23" fill="#10b981" font-family="var(--font-mono)" font-size="8" font-weight="700">08 Presence/Push</text>
+                            <text x="911" y="33" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">Direct Stream P50:25µs</text>
+
+                            <!-- Node 9 -->
+                            <rect class="svg-subsystem-node" data-sub="msg_fanout" x="1031" y="8" width="114" height="32" rx="5" fill="rgba(13, 23, 42, 0.9)" stroke="#f43f5e" stroke-width="1.2"/>
+                            <text x="1038" y="23" fill="#f43f5e" font-family="var(--font-mono)" font-size="8" font-weight="700">09 Fan-Out</text>
+                            <text x="1038" y="33" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">Anti-Impersonation</text>
                         </svg>
                     </div>
 
                     <div class="subsystems-layout" style="height: 380px;">
                         <!-- Navigation Tabs (Left Sidebar) -->
-                        <div class="subsystem-tabs">
-                            <button class="sub-tab msg-sub-tab active" data-sub="msg_facade">
+                        <div class="subsystem-tabs compact-tabs">
+                            <button class="sub-tab msg-sub-tab active" data-sub="msg_validation">
                                 <span class="tab-num">01</span>
-                                <span class="tab-label">gRPC Facade & Anti-Impersonation</span>
+                                <span class="tab-label">Domain &amp; Envelope Validation</span>
                             </button>
-
                             <button class="sub-tab msg-sub-tab" data-sub="msg_sequencing">
                                 <span class="tab-num">02</span>
-                                <span class="tab-label">Monotonic Sequencer & Idempotency</span>
+                                <span class="tab-label">Monotonic Sequencing &amp; Deduplication</span>
                             </button>
-
-                            <button class="sub-tab msg-sub-tab" data-sub="msg_storage">
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_persistence">
                                 <span class="tab-num">03</span>
-                                <span class="tab-label">ScyllaDB Monthly Repositories</span>
+                                <span class="tab-label">ScyllaDB Distributed Persistence</span>
                             </button>
-
-                            <button class="sub-tab msg-sub-tab" data-sub="msg_delivery">
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_outbox">
                                 <span class="tab-num">04</span>
-                                <span class="tab-label">Bounded Scheduler & Priority Ring</span>
+                                <span class="tab-label">Transactional Outbox Dissemination</span>
                             </button>
-
-                            <button class="sub-tab msg-sub-tab" data-sub="msg_connection">
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_scheduling">
                                 <span class="tab-num">05</span>
-                                <span class="tab-label">Device Registry & Fast-Track Push</span>
+                                <span class="tab-label">Priority Scheduling &amp; DRR Flow Control</span>
                             </button>
-
-                            <button class="sub-tab msg-sub-tab" data-sub="msg_status">
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_non_conflation">
                                 <span class="tab-num">06</span>
-                                <span class="tab-label">Delivery & Read Status Tracker</span>
+                                <span class="tab-label">Delivery &amp; Read State (Non-Conflation)</span>
+                            </button>
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_sync">
+                                <span class="tab-num">07</span>
+                                <span class="tab-label">Per-Device Message Synchronization</span>
+                            </button>
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_presence">
+                                <span class="tab-num">08</span>
+                                <span class="tab-label">Real-Time Presence &amp; Fast-Track Push</span>
+                            </button>
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_fanout">
+                                <span class="tab-num">09</span>
+                                <span class="tab-label">Multi-Device Fan-Out &amp; Anti-Spoofing</span>
                             </button>
                         </div>
 
@@ -1418,169 +1414,268 @@
                 </div>
             </section>
 
-            <!-- SLIDE 17: Storage Partitioning & 3-Tier Priority Scheduling Foundations -->
-            <section class="slide" id="slide-17" data-index="17" data-title="Messaging: Storage & Scheduling">
+            <!-- SLIDE 17: ScyllaDB Storage Topology, Partitions & Indexes -->
+            <section class="slide" id="slide-17" data-index="17" data-title="Messaging: ScyllaDB Storage Topology">
                 <div class="slide-content">
                     <div class="slide-badge-row">
-                        <span class="badge badge-teal">STORAGE & FLOW CONTROL FOUNDATIONS</span>
-                        <span class="badge badge-emerald">ZERO ALLOW FILTERING (ADR-007)</span>
-                        <span class="badge badge-purple">DEFICIT ROUND-ROBIN (DRR)</span>
+                        <span class="badge badge-teal">SCYLLADB TOPOLOGY</span>
+                        <span class="badge badge-blue">MONTHLY PARTITION BUCKETING</span>
+                        <span class="badge badge-emerald">ZERO ALLOW FILTERING</span>
                     </div>
 
                     <h2 class="slide-title">
-                        ScyllaDB Monthly Partitioning & <span class="gradient-text">3-Tier Priority Scheduling</span>
+                        ScyllaDB Storage Topology: <span class="gradient-text">Partitions, Clustering &amp; Indexes</span>
                     </h2>
                     <p class="slide-lead">
-                        High-throughput Cassandra-native storage with monthly bucket bounds, paired with strict 3-tier priority queues and non-conflation state machines.
+                        High-throughput Cassandra/ScyllaDB schema designed to keep partition sizes strictly under 50 MB / 100,000 messages with zero cluster-wide table scans.
+                    </p>
+
+                    <div class="overview-grid compact-grid" style="margin-bottom: 0.75rem;">
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon teal-glow">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+                            </div>
+                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">messages_by_conversation</h4>
+                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
+                                Partition key: <code>((conversation_id, month_bucket), sequence_number)</code>. Keeps partition size &lt; 50 MB; clustered ascending for fast history streaming.
+                            </p>
+                            <div class="card-footer-meta" style="font-size: 0.7rem;">Primary Partition &lt; 50 MB · Monotonic Clustering</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon blue-glow">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                            </div>
+                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">outbox_events Table</h4>
+                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
+                                Partition key: <code>((device_id, month_bucket), sequence_number)</code>. Per-device durable outbox enabling reconnect catch-up and tombstoned delivery ACKs.
+                            </p>
+                            <div class="card-footer-meta" style="font-size: 0.7rem;">Per-Device Outbox Queue · Tombstone Cleanup</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon emerald-glow">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                            </div>
+                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">O(1) Secondary Index Lookup</h4>
+                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
+                                Lookup table mapping <code>message_id -&gt; (conversation_id, month_bucket, sequence_number)</code>. Resolves any message by UUID without <code>ALLOW FILTERING</code>.
+                            </p>
+                            <div class="card-footer-meta" style="font-size: 0.7rem;">Point-Query Index · Zero Table Scans</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon purple-glow">
+                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                            </div>
+                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">conversation_sequence_counters</h4>
+                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
+                                Partition key: <code>(conversation_id, month_bucket)</code> with counter column. Initialized on cold start, backed by in-memory atomic CAS primitives.
+                            </p>
+                            <div class="card-footer-meta" style="font-size: 0.7rem;">Cold-Start Anchor · Lock-Free CAS Memory</div>
+                        </div>
+                    </div>
+
+                    <!-- Partition Bucketing Rollover Diagram -->
+                    <div class="diagram-container" style="padding: 0.8rem 1rem;">
+                        <svg class="svg-diagram" viewBox="0 0 1150 180" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Timeline Header -->
+                            <text x="25" y="25" fill="#2dd4bf" font-family="var(--font-heading)" font-size="12" font-weight="700">Monthly Partition Bucketing &amp; Bounded Boundary Rollover</text>
+
+                            <!-- Month 1: 2026-10 -->
+                            <rect x="25" y="45" width="520" height="110" rx="6" fill="rgba(13, 35, 48, 0.7)" stroke="#38bdf8" stroke-dasharray="0"/>
+                            <text x="40" y="70" fill="#38bdf8" font-family="var(--font-mono)" font-size="10.5" font-weight="700">Partition: ((conv_uuid, "2026-10"), sequence_number)</text>
+                            <text x="40" y="90" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8.5">• Row sequences: 1 ... 84,200 (Bounded strictly &lt; 100,000 entries / 50 MB)</text>
+                            <text x="40" y="108" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8.5">• In-Memory Lock-Striped Allocator: Counter = 84,200</text>
+                            <text x="40" y="126" fill="#10b981" font-family="var(--font-mono)" font-size="8.5">✓ Partition size: 6.76 MB (Empirical MSG-012 validation)</text>
+                            <rect x="40" y="136" width="480" height="8" rx="3" fill="rgba(56, 189, 248, 0.2)"/>
+                            <rect x="40" y="136" width="80" height="8" rx="3" fill="#38bdf8"/>
+
+                            <!-- Rollover Arrow -->
+                            <path d="M 555 100 L 595 100" stroke="#f59e0b" stroke-width="2" class="flow-line-fast"/>
+                            <polygon points="590,96 595,100 590,104" fill="#f59e0b"/>
+                            <text x="552" y="85" fill="#f59e0b" font-family="var(--font-mono)" font-size="8" font-weight="700">UTC Month Rollover</text>
+
+                            <!-- Month 2: 2026-11 -->
+                            <rect x="605" y="45" width="520" height="110" rx="6" fill="rgba(13, 35, 48, 0.7)" stroke="#10b981"/>
+                            <text x="620" y="70" fill="#10b981" font-family="var(--font-mono)" font-size="10.5" font-weight="700">Partition: ((conv_uuid, "2026-11"), sequence_number)</text>
+                            <text x="620" y="90" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8.5">• Fresh monthly partition starts cleanly at sequence_number = 1</text>
+                            <text x="620" y="108" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8.5">• Zero table locks or distributed coordination required across ScyllaDB nodes</text>
+                            <text x="620" y="126" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5">✓ Zero compaction penalties; instant cold-drop of historical months if TTL expired</text>
+                            <rect x="620" y="136" width="480" height="8" rx="3" fill="rgba(16, 185, 129, 0.2)"/>
+                            <rect x="620" y="136" width="15" height="8" rx="3" fill="#10b981"/>
+                        </svg>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 18: Core Data Structures & Flow Control Mechanics -->
+            <section class="slide" id="slide-18" data-index="18" data-title="Messaging: Data Structures & Flow Control">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-teal">CONCURRENCY &amp; FLOW CONTROL</span>
+                        <span class="badge badge-blue">DEFICIT ROUND ROBIN (DRR)</span>
+                        <span class="badge badge-emerald">DROP-TO-DURABLE BUFFER</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Core Data Structures &amp; <span class="gradient-text">Flow Control Mechanics</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Lock-free concurrency primitives, 3-tier fair priority scheduling, and fail-safe backpressure preventing memory exhaustion under high burst loads.
                     </p>
 
                     <div class="diagram-split-layout">
-                        <!-- Column 1: ScyllaDB Monthly Bucket Partitioning -->
-                        <div class="card glass-card hover-glow" style="padding: 1.25rem;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <h3 style="font-family: var(--font-heading); color: #fff; font-size: 1.15rem;">ScyllaDB Monthly Partition Bucketing</h3>
-                                <span class="badge badge-emerald">ADR-007 AUDITED</span>
-                            </div>
-                            <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.75rem; line-height: 1.45;">
-                                Primary Key: <code>((conversation_id, YYYY-MM), sequence_number ASC)</code>. Bounded partition sizing (&le; 100k msgs / 50 MB) eliminates SSTable tombstone scanning overhead.
-                            </p>
-
-                            <!-- Animated SVG: ScyllaDB Partition Ring -->
-                            <div class="diagram-container" style="padding: 0.5rem; margin-bottom: 0.75rem;">
-                                <svg class="svg-diagram" viewBox="0 0 520 130" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <!-- Partition 1: 2026-09 (Historical) -->
-                                    <rect x="15" y="15" width="145" height="100" rx="8" fill="rgba(15, 23, 42, 0.85)" stroke="rgba(56, 189, 248, 0.3)"/>
-                                    <text x="25" y="35" fill="#38bdf8" font-family="var(--font-mono)" font-size="9.5" font-weight="700">Bucket 2026-09</text>
-                                    <text x="25" y="52" fill="#94a3b8" font-family="var(--font-mono)" font-size="8">Seq #1 .. #84,210</text>
-                                    <rect x="25" y="62" width="125" height="16" rx="3" fill="rgba(56, 189, 248, 0.08)"/>
-                                    <text x="32" y="74" fill="#cbd5e1" font-family="var(--font-mono)" font-size="7.5">Immutable / Compacted</text>
-                                    <text x="25" y="100" fill="#10b981" font-family="var(--font-mono)" font-size="8">✓ 0 Tombstones</text>
-
-                                    <!-- Partition 2: 2026-10 (Active Append) -->
-                                    <rect x="180" y="10" width="165" height="110" rx="8" fill="rgba(20, 184, 166, 0.12)" stroke="#2dd4bf" stroke-width="1.8"/>
-                                    <circle cx="195" cy="28" r="4" fill="#2dd4bf" class="pulse-glow-emerald"/>
-                                    <text x="205" y="32" fill="#fff" font-family="var(--font-mono)" font-size="10" font-weight="700">Bucket 2026-10 (ACTIVE)</text>
-                                    <text x="195" y="50" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5">Seq #84,211 .. #84,215</text>
-                                    
-                                    <!-- Incoming message arrow -->
-                                    <path d="M 230 65 L 290 65" stroke="#2dd4bf" stroke-width="2" class="flow-line-fast"/>
-                                    <text x="220" y="82" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">Append: Seq #84,216</text>
-                                    <text x="195" y="105" fill="#10b981" font-family="var(--font-mono)" font-size="8" font-weight="700">P50 Commit: 79.38 µs</text>
-
-                                    <!-- Partition 3: 2026-11 (Pre-allocated) -->
-                                    <rect x="365" y="15" width="140" height="100" rx="8" fill="rgba(15, 23, 42, 0.65)" stroke="rgba(255, 255, 255, 0.1)"/>
-                                    <text x="375" y="35" fill="#94a3b8" font-family="var(--font-mono)" font-size="9.5">Bucket 2026-11</text>
-                                    <text x="375" y="52" fill="#64748b" font-family="var(--font-mono)" font-size="8">Seq #0 (Ready)</text>
-                                    <rect x="375" y="62" width="120" height="16" rx="3" fill="rgba(255, 255, 255, 0.03)"/>
-                                    <text x="382" y="74" fill="#64748b" font-family="var(--font-mono)" font-size="7.5">Auto-Rollover</text>
-                                </svg>
+                        <!-- Left: 3-Tier Priority Queue & Concurrency -->
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                            <div class="card glass-card hover-glow" style="padding: 0.9rem;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem;">
+                                    <span style="color: #f43f5e;">⚡ Tier 1: Emergency Ring</span>
+                                    <span class="badge badge-red" style="padding: 0.15rem 0.4rem; font-size: 0.65rem;">Highest Priority</span>
+                                </h4>
+                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
+                                    SOS distress beacons and safety alerts bypass DRR round-robin limits and queue locks entirely. Dispatched immediately with zero queue latency.
+                                </p>
                             </div>
 
-                            <div style="font-size: 0.8rem; color: #cbd5e1; line-height: 1.45;">
-                                <strong>CQL Audit Outcome:</strong> 33 prepared statements verified across all repositories. Exactly <strong>0 queries</strong> use <code>ALLOW FILTERING</code>. Secondary indexes on <code>message_id</code> resolve UUIDs in O(1).
+                            <div class="card glass-card hover-glow" style="padding: 0.9rem;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem;">
+                                    <span style="color: #38bdf8;">🔄 Tier 2: Delivery Ring (DRR Quantum = 16)</span>
+                                </h4>
+                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
+                                    Real-time conversation messages. Deficit Round Robin scheduler allocates a quantum of 16 envelopes per conversation, preventing noisy group starvation.
+                                </p>
+                            </div>
+
+                            <div class="card glass-card hover-glow" style="padding: 0.9rem;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem;">
+                                    <span style="color: #a855f7;">📦 Tier 3: Sync Ring (DRR Quantum = 4)</span>
+                                </h4>
+                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
+                                    Bulk background synchronization and offline device catch-up. Allocated 4 packets per round; automatically throttles during live traffic bursts.
+                                </p>
+                            </div>
+
+                            <div class="card glass-card hover-glow" style="padding: 0.9rem;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem;">
+                                    <span style="color: #10b981;">🔒 64 Lock-Striped Concurrency Buckets</span>
+                                </h4>
+                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
+                                    Sequence allocation strips conversation locks into 64 memory stripes using MurmurHash3, eliminating lock contention across concurrent conversations.
+                                </p>
                             </div>
                         </div>
 
-                        <!-- Column 2: 3-Tier Priority Scheduling & Non-Conflation Axiom -->
-                        <div class="card glass-card hover-glow" style="padding: 1.25rem;">
-                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
-                                <h3 style="font-family: var(--font-heading); color: #fff; font-size: 1.15rem;">3-Tier Fair Priority Scheduler</h3>
-                                <span class="badge badge-purple">DRR QUANTUM: 16</span>
+                        <!-- Right: Drop-to-Durable Buffer Diagram -->
+                        <div class="diagram-container" style="padding: 1rem;">
+                            <div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--accent-blue); margin-bottom: 0.5rem; text-transform: uppercase;">
+                                Drop-to-Durable Backpressure Flow
                             </div>
-                            <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.75rem; line-height: 1.45;">
-                                Enforces strict priority queues (Emergency &gt; Delivery &gt; Sync) with Fair Deficit Round-Robin across devices and drop-to-durable backpressure under saturation.
-                            </p>
+                            <svg class="svg-diagram" viewBox="0 0 540 340" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <!-- Inbound Burst Stream -->
+                                <rect x="20" y="20" width="130" height="35" rx="5" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8"/>
+                                <text x="30" y="37" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Inbound Traffic Burst</text>
+                                <text x="30" y="47" fill="#cbd5e1" font-family="var(--font-mono)" font-size="7.5">&gt; 10,000 envelopes/sec</text>
 
-                            <!-- Animated SVG: 3-Tier Priority Queue -->
-                            <div class="diagram-container" style="padding: 0.5rem; margin-bottom: 0.75rem;">
-                                <svg class="svg-diagram" viewBox="0 0 520 130" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                    <!-- Priority 0: EMERGENCY -->
-                                    <rect x="15" y="10" width="370" height="28" rx="5" fill="rgba(239, 68, 68, 0.15)" stroke="#ef4444" stroke-width="1.2"/>
-                                    <text x="25" y="28" fill="#f87171" font-family="var(--font-mono)" font-size="9" font-weight="700">P0 EMERGENCY (Distress / Revoke): Strict Preemption</text>
-                                    <path d="M 390 24 L 435 24" stroke="#ef4444" stroke-width="2" class="flow-line-fast"/>
-                                    <rect x="440" y="12" width="65" height="24" rx="4" fill="rgba(239, 68, 68, 0.25)" stroke="#ef4444"/>
-                                    <text x="448" y="28" fill="#f87171" font-family="var(--font-mono)" font-size="8.5" font-weight="700">BYPASS</text>
+                                <path d="M 150 37 L 210 37" stroke="#38bdf8" stroke-width="2" class="flow-line-fast"/>
+                                <polygon points="205,33 210,37 205,41" fill="#38bdf8"/>
 
-                                    <!-- Priority 1: DELIVERY -->
-                                    <rect x="15" y="46" width="370" height="34" rx="5" fill="rgba(56, 189, 248, 0.12)" stroke="#38bdf8" stroke-width="1.2"/>
-                                    <text x="25" y="63" fill="#38bdf8" font-family="var(--font-mono)" font-size="9" font-weight="700">P1 DELIVERY: Fair Deficit Round-Robin Ring</text>
-                                    <text x="25" y="75" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Dev A (16) ➔ Dev B (16) ➔ Dev C (16) · Max 1000 Tasks/Dev</text>
-                                    <path d="M 390 63 L 435 63" stroke="#38bdf8" stroke-width="2" class="flow-line"/>
-                                    <rect x="440" y="52" width="65" height="24" rx="4" fill="rgba(56, 189, 248, 0.2)" stroke="#38bdf8"/>
-                                    <text x="446" y="68" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">DISPATCH</text>
+                                <!-- In-Memory Priority Queue Ring -->
+                                <rect x="210" y="15" width="305" height="110" rx="8" fill="rgba(13, 23, 42, 0.9)" stroke="#2dd4bf" stroke-width="1.5"/>
+                                <text x="225" y="35" fill="#2dd4bf" font-family="var(--font-heading)" font-size="10.5" font-weight="700">In-Memory Priority Ring (Capacity: 50,000)</text>
 
-                                    <!-- Priority 2: SYNC & Backpressure -->
-                                    <rect x="15" y="88" width="260" height="30" rx="5" fill="rgba(168, 85, 247, 0.12)" stroke="#a855f7" stroke-width="1.2"/>
-                                    <text x="25" y="103" fill="#a855f7" font-family="var(--font-mono)" font-size="9" font-weight="700">P2 SYNC (Catch-Up): Opportunistic</text>
-                                    <text x="25" y="113" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Yields to active live chat</text>
+                                <!-- Ring Slots -->
+                                <rect x="225" y="48" width="80" height="22" rx="3" fill="rgba(244, 63, 94, 0.25)" stroke="#f43f5e"/>
+                                <text x="233" y="63" fill="#f43f5e" font-family="var(--font-mono)" font-size="7.5" font-weight="700">Tier 1: SOS (100%)</text>
 
-                                    <!-- Drop to Durable Guard Box -->
-                                    <rect x="290" y="88" width="215" height="30" rx="5" fill="rgba(245, 158, 11, 0.12)" stroke="#f59e0b" stroke-width="1.2"/>
-                                    <text x="300" y="102" fill="#fbbf24" font-family="var(--font-mono)" font-size="8.5" font-weight="700">DROP-TO-DURABLE (>1000)</text>
-                                    <text x="300" y="113" fill="#cbd5e1" font-family="var(--font-mono)" font-size="7.5">Safely buffers to ScyllaDB outbox</text>
-                                </svg>
-                            </div>
+                                <rect x="312" y="48" width="95" height="22" rx="3" fill="rgba(56, 189, 248, 0.2)" stroke="#38bdf8"/>
+                                <text x="318" y="63" fill="#38bdf8" font-family="var(--font-mono)" font-size="7.5">Tier 2: Delivery (DRR)</text>
 
-                            <div style="font-size: 0.8rem; color: #cbd5e1; line-height: 1.45;">
-                                <strong>Non-Conflation Axiom:</strong> Transport delivery ACK (<code>DeliveredAt</code>) never advances read status (<code>ReadAt</code>). Reading requires explicit recipient UI action, preserving confidentiality.
-                            </div>
+                                <rect x="414" y="48" width="90" height="22" rx="3" fill="rgba(168, 85, 247, 0.2)" stroke="#a855f7"/>
+                                <text x="424" y="63" fill="#a855f7" font-family="var(--font-mono)" font-size="7.5">Tier 3: Sync</text>
+
+                                <!-- Watermark Threshold Line -->
+                                <line x1="225" y1="85" x2="505" y2="85" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4 3"/>
+                                <text x="225" y="98" fill="#fbbf24" font-family="var(--font-mono)" font-size="7.5">⚠️ High Watermark: 85% Memory Capacity Threshold</text>
+                                <text x="225" y="112" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">Zero Packets Dropped: Non-emergency overflow spills to disk</text>
+
+                                <!-- Spilling to ScyllaDB Outbox -->
+                                <path d="M 360 125 L 360 175" stroke="#f59e0b" stroke-width="2" class="flow-line-fast"/>
+                                <polygon points="356,170 360,175 364,170" fill="#f59e0b"/>
+                                <text x="370" y="152" fill="#fbbf24" font-family="var(--font-mono)" font-size="8" font-weight="700">Drop-to-Durable Buffer</text>
+
+                                <!-- Durable Outbox Storage -->
+                                <rect x="210" y="175" width="305" height="75" rx="8" fill="rgba(13, 35, 48, 0.85)" stroke="#10b981" stroke-width="1.5"/>
+                                <text x="225" y="197" fill="#10b981" font-family="var(--font-heading)" font-size="10.5" font-weight="700">ScyllaDB Durable outbox_events</text>
+                                <text x="225" y="215" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">• Overflow envelopes safely committed to persistent NVMe</text>
+                                <text x="225" y="232" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">• Background sweeper drains batch when watermark &lt; 65%</text>
+
+                                <!-- Sweeper Drain Path -->
+                                <path d="M 210 215 L 120 215 L 120 280 L 210 280" stroke="#2dd4bf" stroke-width="1.8" class="flow-line-fast"/>
+                                <polygon points="205,276 210,280 205,284" fill="#2dd4bf"/>
+                                <text x="35" y="250" fill="#2dd4bf" font-family="var(--font-mono)" font-size="7.5" font-weight="700">Auto-Draining Engine</text>
+
+                                <rect x="210" y="265" width="305" height="40" rx="6" fill="rgba(7, 13, 24, 0.9)" stroke="#2dd4bf"/>
+                                <text x="225" y="285" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5" font-weight="700">✓ Resilient Flow: 0 Lost Messages, Bounded RAM Footprint</text>
+                                <text x="225" y="297" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Empirically validated under 10k sustained message load in CI</text>
+                            </svg>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <!-- SLIDE 18: Multi-Device Fan-Out, Fast-Track Push & Security Perimeter -->
-            <section class="slide" id="slide-18" data-index="18" data-title="Messaging: Fan-Out & Security">
+            <!-- SLIDE 19: Security Perimeter, Zero-Knowledge & Invariants -->
+            <section class="slide" id="slide-19" data-index="19" data-title="Messaging: Security Perimeter & Invariants">
                 <div class="slide-content">
                     <div class="slide-badge-row">
-                        <span class="badge badge-teal">MULTI-DEVICE DELIVERY MECHANICS</span>
-                        <span class="badge badge-blue">SUB-2MS FAST-TRACK ACCELERATOR</span>
+                        <span class="badge badge-teal">ZERO-KNOWLEDGE TRANSPORT</span>
                         <span class="badge badge-red">ANTI-IMPERSONATION BOUNDARY</span>
+                        <span class="badge badge-emerald">ARCHITECTURAL INVARIANTS</span>
                     </div>
 
                     <h2 class="slide-title">
-                        Multi-Device Fan-Out, Fast-Track & <span class="gradient-text">Security Perimeter</span>
+                        Security Perimeter, Zero-Knowledge &amp; <span class="gradient-text">Core Invariants</span>
                     </h2>
                     <p class="slide-lead">
-                        High-concurrency hardware fan-out with instant sub-2ms direct push acceleration, reinforced by caller anti-impersonation and instant revocation quarantine.
+                        Cryptographic isolation guarantees ensuring messages cannot be forged, snooped, or conflated across network boundaries.
                     </p>
 
                     <div class="diagram-split-layout">
-                        <!-- Left: Core Capabilities & Invariants -->
-                        <div style="display: flex; flex-direction: column; gap: 0.85rem;">
-                            <div class="card glass-card hover-glow" style="padding: 1rem;">
+                        <!-- Left: 4 Key Security Invariants -->
+                        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+                            <div class="card glass-card hover-glow" style="padding: 0.95rem;">
                                 <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.3rem;">
-                                    🚀 Sub-2ms Fast-Track Accelerator (ADR-010)
+                                    🛡️ INV-M01: Zero-Knowledge Transport &amp; Anti-Plaintext
                                 </h4>
-                                <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
-                                    Online devices bypass batch scheduler queue polling. <code>RealtimeDeliveryAccelerator</code> drains pending envelopes directly over the active gRPC streaming socket in <strong>1.24 ms</strong> (P50: <strong>24.9 µs</strong>).
+                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
+                                    Messaging server acts strictly as a blind diplomatic courier. Envelopes are opaque ciphertext; server possesses zero ratchet state or private keys. Fast Shannon entropy heuristics immediately reject plaintext accidental leakage.
                                 </p>
                             </div>
 
-                            <div class="card glass-card hover-glow" style="padding: 1rem;">
+                            <div class="card glass-card hover-glow" style="padding: 0.95rem;">
                                 <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.3rem;">
-                                    👥 Zero-Allocation Multi-Device Fan-Out
+                                    🔒 INV-M02: Caller Anti-Impersonation Binding
                                 </h4>
-                                <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
-                                    Resolves all recipient hardware devices and sender companion devices. Tested under 50 participants / 150 devices: fanned out <strong>14,900 envelopes</strong> in 613 ms with 100% delivery integrity.
+                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
+                                    Strict binding between Gateway-injected <code>x-device-id</code>, verified JWT <code>sub</code>, and envelope sender user ID. Evaluated against 200 adversarial forgery attempts in test suite: <strong>100% rejected</strong> in &lt; 0.05 ms.
                                 </p>
                             </div>
 
-                            <div class="card glass-card hover-glow" style="padding: 1rem;">
+                            <div class="card glass-card hover-glow" style="padding: 0.95rem;">
                                 <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.3rem;">
-                                    🛡️ Anti-Impersonation Caller Binding
+                                    ⚖️ INV-M03: Non-Conflation Axiom
                                 </h4>
-                                <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
-                                    Enforces strict binding between Gateway-injected <code>x-device-id</code>, verified token sub, and envelope sender. Evaluated against 200 adversarial forgery attempts: <strong>100% rejected</strong> in &lt; 0.05 ms.
+                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
+                                    Transport delivery ACK (<code>DeliveredAt</code>) is strictly decoupled from user read receipt (<code>ReadAt</code>). Socket transmission marks delivery only; user read status requires explicit authenticated action from recipient enclave.
                                 </p>
                             </div>
 
-                            <div class="card glass-card hover-glow" style="padding: 1rem;">
+                            <div class="card glass-card hover-glow" style="padding: 0.95rem;">
                                 <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.3rem;">
-                                    ⚡ Fail-Closed Revocation Quarantine
+                                    🚀 INV-M04: Sub-2ms Fast-Track Accelerator (ADR-010)
                                 </h4>
-                                <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
-                                    Device revocation or token reuse cascade purges in-memory queues in &lt; <strong>0.15 ms</strong>. Replay attacks and revoked device ACKs are rejected with immediate terminal error.
+                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
+                                    Active streaming sockets receive direct push without scheduler polling delays. Achieves <strong>1.24 ms</strong> delivery (P50: <strong>24.9 µs</strong>), with fail-closed quarantine purging memory queues in &lt; 0.15 ms on device revocation.
                                 </p>
                             </div>
                         </div>
@@ -1590,7 +1685,7 @@
                             <div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--accent-blue); margin-bottom: 0.5rem; text-transform: uppercase;">
                                 Live Real-Time Multi-Device Fan-Out Trace
                             </div>
-                            <svg class="svg-diagram" viewBox="0 0 540 380" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <svg class="svg-diagram" viewBox="0 0 540 370" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <!-- Actor Headers -->
                                 <rect x="15" y="10" width="85" height="26" rx="4" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8"/>
                                 <text x="24" y="27" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Alice Dev 1</text>
@@ -1605,208 +1700,188 @@
                                 <text x="433" y="27" fill="#f59e0b" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Bob Dev 2 (Off)</text>
 
                                 <!-- Lifelines -->
-                                <line x1="57" y1="36" x2="57" y2="365" stroke="rgba(255, 255, 255, 0.1)" stroke-dasharray="3 3"/>
-                                <line x1="192" y1="36" x2="192" y2="365" stroke="rgba(45, 212, 191, 0.3)" stroke-dasharray="3 3"/>
-                                <line x1="342" y1="36" x2="342" y2="365" stroke="rgba(16, 185, 129, 0.3)" stroke-dasharray="3 3"/>
-                                <line x1="475" y1="36" x2="475" y2="365" stroke="rgba(245, 158, 11, 0.3)" stroke-dasharray="3 3"/>
+                                <line x1="57" y1="36" x2="57" y2="355" stroke="rgba(255, 255, 255, 0.1)" stroke-dasharray="3 3"/>
+                                <line x1="192" y1="36" x2="192" y2="355" stroke="rgba(45, 212, 191, 0.3)" stroke-dasharray="3 3"/>
+                                <line x1="342" y1="36" x2="342" y2="355" stroke="rgba(16, 185, 129, 0.3)" stroke-dasharray="3 3"/>
+                                <line x1="475" y1="36" x2="475" y2="355" stroke="rgba(245, 158, 11, 0.3)" stroke-dasharray="3 3"/>
 
                                 <!-- Message 1: Alice -> Messaging (Submit) -->
-                                <path d="M 57 70 L 192 70" stroke="#38bdf8" stroke-width="2" class="flow-line-fast"/>
-                                <polygon points="187,66 192,70 187,74" fill="#38bdf8"/>
-                                <text x="70" y="63" fill="#fff" font-family="var(--font-mono)" font-size="8">SendMessage(Envelope)</text>
+                                <path d="M 57 65 L 192 65" stroke="#38bdf8" stroke-width="2" class="flow-line-fast"/>
+                                <polygon points="187,61 192,65 187,69" fill="#38bdf8"/>
+                                <text x="70" y="58" fill="#fff" font-family="var(--font-mono)" font-size="8">SendMessage(Envelope)</text>
 
                                 <!-- Sequencer Commitment Box -->
-                                <rect x="150" y="85" width="85" height="30" rx="4" fill="rgba(13, 23, 42, 0.95)" stroke="#2dd4bf"/>
-                                <text x="156" y="99" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8" font-weight="700">Seq #42 Allocated</text>
-                                <text x="156" y="110" fill="#cbd5e1" font-family="var(--font-mono)" font-size="7">ScyllaDB: 79 µs</text>
+                                <rect x="150" y="80" width="85" height="30" rx="4" fill="rgba(13, 23, 42, 0.95)" stroke="#2dd4bf"/>
+                                <text x="156" y="94" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8" font-weight="700">Seq #42 Allocated</text>
+                                <text x="156" y="105" fill="#cbd5e1" font-family="var(--font-mono)" font-size="7">ScyllaDB: 79 µs</text>
 
                                 <!-- Fan-Out 1: Fast-Track Push to Bob Dev 1 -->
-                                <path d="M 192 135 L 342 135" stroke="#10b981" stroke-width="2" class="flow-line-fast"/>
-                                <polygon points="337,131 342,135 337,139" fill="#10b981"/>
-                                <text x="205" y="128" fill="#10b981" font-family="var(--font-mono)" font-size="8" font-weight="700">Fast-Track Push (24.9 µs)</text>
+                                <path d="M 192 130 L 342 130" stroke="#10b981" stroke-width="2" class="flow-line-fast"/>
+                                <polygon points="337,126 342,130 337,134" fill="#10b981"/>
+                                <text x="205" y="123" fill="#10b981" font-family="var(--font-mono)" font-size="8" font-weight="700">Fast-Track Push (24.9 µs)</text>
 
                                 <!-- Fan-Out 2: Spool to Bob Dev 2 (Offline) -->
-                                <path d="M 192 165 L 475 165" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="4 3"/>
-                                <polygon points="470,161 475,165 470,169" fill="#f59e0b"/>
-                                <text x="215" y="158" fill="#f59e0b" font-family="var(--font-mono)" font-size="8">Spool to ScyllaDB Outbox</text>
+                                <path d="M 192 160 L 475 160" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="4 3"/>
+                                <polygon points="470,156 475,160 470,164" fill="#f59e0b"/>
+                                <text x="215" y="153" fill="#f59e0b" font-family="var(--font-mono)" font-size="8">Spool to ScyllaDB Outbox</text>
 
                                 <!-- ACK from Bob Dev 1 -->
-                                <path d="M 342 205 L 192 205" stroke="#10b981" stroke-width="1.8" class="flow-line-reverse"/>
-                                <polygon points="197,201 192,205 197,209" fill="#10b981"/>
-                                <text x="220" y="198" fill="#10b981" font-family="var(--font-mono)" font-size="8">AcknowledgeDelivery()</text>
+                                <path d="M 342 200 L 192 200" stroke="#10b981" stroke-width="1.8" class="flow-line-reverse"/>
+                                <polygon points="197,196 192,200 197,204" fill="#10b981"/>
+                                <text x="220" y="193" fill="#10b981" font-family="var(--font-mono)" font-size="8">AcknowledgeDelivery()</text>
 
                                 <!-- State Update: Delivered (Read NOT touched) -->
-                                <rect x="145" y="220" width="95" height="32" rx="4" fill="rgba(16, 185, 129, 0.15)" stroke="#10b981"/>
-                                <text x="152" y="234" fill="#10b981" font-family="var(--font-mono)" font-size="7.5" font-weight="700">DeliveredAt Set</text>
-                                <text x="152" y="246" fill="#f87171" font-family="var(--font-mono)" font-size="7">ReadAt: UNTOUCHED</text>
+                                <rect x="145" y="215" width="95" height="32" rx="4" fill="rgba(16, 185, 129, 0.15)" stroke="#10b981"/>
+                                <text x="152" y="229" fill="#10b981" font-family="var(--font-mono)" font-size="7.5" font-weight="700">DeliveredAt Set</text>
+                                <text x="152" y="241" fill="#f87171" font-family="var(--font-mono)" font-size="7">ReadAt: UNTOUCHED</text>
 
                                 <!-- Event: Bob Dev 2 Reconnects -->
-                                <rect x="420" y="265" width="110" height="22" rx="4" fill="rgba(245, 158, 11, 0.2)" stroke="#f59e0b"/>
-                                <text x="428" y="280" fill="#fbbf24" font-family="var(--font-mono)" font-size="8" font-weight="700">⚡ Reconnect Event</text>
+                                <rect x="420" y="260" width="110" height="22" rx="4" fill="rgba(245, 158, 11, 0.2)" stroke="#f59e0b"/>
+                                <text x="428" y="275" fill="#fbbf24" font-family="var(--font-mono)" font-size="8" font-weight="700">⚡ Reconnect Event</text>
 
                                 <!-- Accelerator Sweeper Auto-Drains -->
-                                <path d="M 192 310 L 475 310" stroke="#2dd4bf" stroke-width="2" class="flow-line-fast"/>
-                                <polygon points="470,306 475,310 470,314" fill="#2dd4bf"/>
-                                <text x="225" y="303" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8" font-weight="700">Accelerator Direct Drain (1.24 ms)</text>
+                                <path d="M 192 305 L 475 305" stroke="#2dd4bf" stroke-width="2" class="flow-line-fast"/>
+                                <polygon points="470,301 475,305 470,309" fill="#2dd4bf"/>
+                                <text x="225" y="298" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8" font-weight="700">Accelerator Direct Drain (1.24 ms)</text>
 
                                 <!-- Terminal Result -->
-                                <rect x="135" y="335" width="270" height="25" rx="5" fill="rgba(7, 13, 24, 0.9)" stroke="#10b981"/>
-                                <text x="145" y="352" fill="#10b981" font-family="var(--font-mono)" font-size="8.5" font-weight="700">✓ 100% In-Order Delivery Across All Hardware</text>
+                                <rect x="135" y="330" width="270" height="25" rx="5" fill="rgba(7, 13, 24, 0.9)" stroke="#10b981"/>
+                                <text x="145" y="347" fill="#10b981" font-family="var(--font-mono)" font-size="8.5" font-weight="700">✓ 100% In-Order Delivery Across All Hardware</text>
                             </svg>
                         </div>
                     </div>
                 </div>
             </section>
 
-            <!-- SLIDE 19: Comprehensive Test Matrix, Chaos Hardening & Empirical Benchmarks -->
-            <section class="slide" id="slide-19" data-index="19" data-title="Messaging: Benchmarks & M3 Sign-off">
+            <!-- SLIDE 20: MSG-012 Capacity Load Tests & Chaos Recovery Benchmarks -->
+            <section class="slide" id="slide-20" data-index="20" data-title="Messaging: MSG-012 Load & Chaos Validation">
                 <div class="slide-content">
                     <div class="slide-badge-row">
                         <span class="badge badge-teal">CAPACITY LOAD TEST VALIDATION</span>
-                        <span class="badge badge-emerald">2,279 PASSING CTESTS (100%)</span>
-                        <span class="badge badge-blue">MILESTONE M3 SIGN-OFF ACCEPTED</span>
+                        <span class="badge badge-blue">MSG-012 BENCHMARKS</span>
+                        <span class="badge badge-emerald">CHAOS HARDENING</span>
+                        <span class="badge badge-purple">MILESTONE M3 SIGN-OFF</span>
                     </div>
 
                     <h2 class="slide-title">
-                        Empirical Benchmarks, Chaos Hardening & <span class="gradient-text">Milestone M3 Sign-off</span>
+                        MSG-012 Capacity Load Tests &amp; <span class="gradient-text">Chaos Recovery Benchmarks</span>
                     </h2>
                     <p class="slide-lead">
-                        Unified benchmark telemetry under 50-user / 150-device saturation load, zero ALLOW FILTERING verification, chaos recovery resilience, and 100% green regression test suite.
+                        Deep dive into the 4 empirical production-grade capacity, latency, fan-out, and broker partition recovery benchmarks validating Phase 2 Milestone M3.
                     </p>
 
-                    <div class="benchmark-grid">
-                        <!-- Left Panel: Empirical Benchmark Telemetry -->
-                        <div class="metric-panel">
-                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
-                                <h3 style="font-family: var(--font-heading); font-size: 1.05rem; color: #fff;">Empirical Performance Metrics</h3>
-                                <span class="badge badge-teal">TICKET MSG-012-T06</span>
+                    <!-- 4 Focused MSG-012 Benchmark Cards -->
+                    <div class="test-benchmark-grid">
+                        <!-- Benchmark 1: 10,000-Message Sustained Pipeline -->
+                        <div class="card glass-card hover-glow test-card">
+                            <div class="test-card-header">
+                                <div class="test-card-title">
+                                    <span style="color: #2dd4bf;">01</span>
+                                    <span>10,000-Message Sustained Load</span>
+                                </div>
+                                <span class="badge badge-emerald" style="font-size: 0.65rem;">THROUGHPUT SLA</span>
                             </div>
-
-                            <!-- Metric 1: Ingress Throughput -->
-                            <div class="metric-row">
-                                <div class="metric-label-group">
-                                    <span class="metric-name">Sustained Ingress Throughput</span>
-                                    <span class="metric-sla">SLA: &ge; 5,000 msgs/sec</span>
-                                </div>
-                                <div class="metric-value-group">
-                                    <span class="metric-num emerald">7,557 – 8,015 msgs/s</span>
-                                    <span class="metric-badge green">+51% EXCEEDED</span>
-                                </div>
+                            <div class="test-card-desc">
+                                <strong>What it tests:</strong> High-throughput ingestion across 100 conversations (100 messages each), verifying sustained rate and ScyllaDB monthly partition memory limits (&lt; 50 MB bound).<br/>
+                                <strong>How it tests:</strong> Batches 10,000 envelopes through the full pipeline, records total elapsed time, and calculates partition sizes for conversation and device outbox tables.
                             </div>
-
-                            <!-- Metric 2: 2-Device Submit Latency P50 / P99 -->
-                            <div class="metric-row">
-                                <div class="metric-label-group">
-                                    <span class="metric-name">E2E Submission Latency (P50 / P99)</span>
-                                    <span class="metric-sla">SLA: P50 &le; 5,000 µs · P99 &le; 20,000 µs</span>
-                                </div>
-                                <div class="metric-value-group">
-                                    <span class="metric-num blue">79.38 µs / 99.21 µs</span>
-                                    <span class="metric-badge green">60x FASTER</span>
-                                </div>
-                            </div>
-
-                            <!-- Latency Percentile Progress Visual -->
-                            <div class="latency-bar-container">
-                                <div class="latency-bar-header">
-                                    <span style="color: var(--accent-blue);">P50 Latency Budget: 79.38 µs of 5,000 µs SLA (1.6% consumed)</span>
-                                    <span style="color: var(--accent-emerald);">98.4% HEADROOM</span>
-                                </div>
-                                <div class="latency-bar-track">
-                                    <div class="latency-bar-fill" style="width: 1.6%;"></div>
-                                </div>
-                            </div>
-
-                            <!-- Metric 3: Online Fast-Track Push -->
-                            <div class="metric-row">
-                                <div class="metric-label-group">
-                                    <span class="metric-name">Real-Time Online Socket Push</span>
-                                    <span class="metric-sla">SLA: &le; 2,000 µs</span>
-                                </div>
-                                <div class="metric-value-group">
-                                    <span class="metric-num emerald">24.92 µs (P50)</span>
-                                    <span class="metric-badge green">PASSED</span>
-                                </div>
-                            </div>
-
-                            <!-- Metric 4: 50-User / 150-Device Fan-Out -->
-                            <div class="metric-row">
-                                <div class="metric-label-group">
-                                    <span class="metric-name">50-User / 150-Device Group Fan-Out</span>
-                                    <span class="metric-sla">14,900 envelopes fanned out in 613 ms</span>
-                                </div>
-                                <div class="metric-value-group">
-                                    <span class="metric-num blue">P50: 5.53 ms</span>
-                                    <span class="metric-badge green">ZERO LOSS</span>
-                                </div>
-                            </div>
-
-                            <!-- Metric 5: ScyllaDB CQL Allow Filtering Audit -->
-                            <div class="metric-row">
-                                <div class="metric-label-group">
-                                    <span class="metric-name">ScyllaDB CQL ALLOW FILTERING Audit</span>
-                                    <span class="metric-sla">33 prepared statements audited</span>
-                                </div>
-                                <div class="metric-value-group">
-                                    <span class="metric-num emerald">0 Violations</span>
-                                    <span class="metric-badge green">100% CLEAN</span>
-                                </div>
+                            <div class="code-snippet"><span class="comment">// 10,000 messages across 100 conversations</span>
+<span class="keyword">auto</span> start = std::chrono::steady_clock::<span class="func">now</span>();
+<span class="keyword">for</span> (<span class="type">int</span> i = <span class="num">0</span>; i &lt; <span class="num">10000</span>; ++i) {
+    service.<span class="func">SubmitMessage</span>(requests[i], &amp;response);
+}
+<span class="func">EXPECT_GE</span>(msgs_per_sec, <span class="num">5000.0</span>); <span class="comment">// SLA: &gt;= 5k msgs/s</span>
+<span class="func">EXPECT_LE</span>(conv_partition_MB, <span class="num">50.0</span>); <span class="comment">// Bound &lt; 50MB</span></div>
+                            <div class="test-result-row">
+                                <span>Empirical Result:</span>
+                                <strong>9,812 msgs/sec · 6.76 MB partition (Pass)</strong>
                             </div>
                         </div>
 
-                        <!-- Right Panel: Chaos Hardening & M3 Acceptance -->
-                        <div class="metric-panel">
-                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
-                                <h3 style="font-family: var(--font-heading); font-size: 1.05rem; color: #fff;">Chaos Resilience & Test Matrix</h3>
-                                <span class="badge badge-emerald">2,279 / 2,279 CTESTS</span>
+                        <!-- Benchmark 2: End-to-End Latency Percentiles -->
+                        <div class="card glass-card hover-glow test-card">
+                            <div class="test-card-header">
+                                <div class="test-card-title">
+                                    <span style="color: #38bdf8;">02</span>
+                                    <span>End-to-End Latency Percentiles</span>
+                                </div>
+                                <span class="badge badge-blue" style="font-size: 0.65rem;">ADR-010 TARGETS</span>
                             </div>
+                            <div class="test-card-desc">
+                                <strong>What it tests:</strong> Sub-millisecond latency distribution across 1,000 requests against strict ADR-010 SLAs for submission, online delivery, ACK, and sync batch.<br/>
+                                <strong>How it tests:</strong> Samples microsecond wall-clock timestamps for each stage, sorts distribution, and asserts P50, P90, P95, and P99 boundaries.
+                            </div>
+                            <div class="code-snippet"><span class="comment">// Microsecond percentile verification</span>
+<span class="keyword">auto</span> submit_pct = <span class="func">ComputePercentiles</span>(submit_latencies_us);
+<span class="keyword">auto</span> online_pct = <span class="func">ComputePercentiles</span>(online_latencies_us);
+<span class="func">EXPECT_LT</span>(submit_pct.p99_us, <span class="num">5000.0</span>);  <span class="comment">// P99 &lt; 5ms</span>
+<span class="func">EXPECT_LT</span>(online_pct.p99_us, <span class="num">2000.0</span>);  <span class="comment">// P99 &lt; 2ms</span>
+<span class="func">EXPECT_LT</span>(ack_pct.p50_us, <span class="num">15000.0</span>);    <span class="comment">// P50 &lt; 15ms</span></div>
+                            <div class="test-result-row">
+                                <span>Empirical Result:</span>
+                                <strong>Online P50=24.9 µs · Submit P50=271 µs (Pass)</strong>
+                            </div>
+                        </div>
 
-                            <!-- Metric 6: Abrupt Crash Recovery -->
-                            <div class="metric-row">
-                                <div class="metric-label-group">
-                                    <span class="metric-name">Cold Crash Recovery (500 staged tasks)</span>
-                                    <span class="metric-sla">SLA: &le; 500 ms</span>
+                        <!-- Benchmark 3: Multi-Device Fan-Out Concurrency -->
+                        <div class="card glass-card hover-glow test-card">
+                            <div class="test-card-header">
+                                <div class="test-card-title">
+                                    <span style="color: #10b981;">03</span>
+                                    <span>Multi-Device Fan-Out (50 Recip / 150 Dev)</span>
                                 </div>
-                                <div class="metric-value-group">
-                                    <span class="metric-num emerald">4.33 ms</span>
-                                    <span class="metric-badge green">115x FASTER</span>
-                                </div>
+                                <span class="badge badge-emerald" style="font-size: 0.65rem;">CONCURRENCY</span>
                             </div>
+                            <div class="test-card-desc">
+                                <strong>What it tests:</strong> Zero-allocation roster expansion under high concurrency: 50 group participants, each owning 3 physical devices (150 hardware destinations).<br/>
+                                <strong>How it tests:</strong> Broadcasts 100 messages, verifying 14,900 discrete device deliveries with zero packet drops, zero deadlocks, and total ordering preservation.
+                            </div>
+                            <div class="code-snippet"><span class="comment">// 50 recipients * 3 devices = 150 targets</span>
+<span class="keyword">const</span> <span class="type">int</span> kRecipients = <span class="num">50</span>, kDevsPerUser = <span class="num">3</span>;
+<span class="keyword">auto</span> start = std::chrono::steady_clock::<span class="func">now</span>();
+<span class="keyword">auto</span> res = fanout_engine.<span class="func">FanOutMessage</span>(env_100_msgs);
+<span class="func">EXPECT_EQ</span>(res.delivered_count, <span class="num">14900</span>);
+<span class="func">EXPECT_LT</span>(fanout_elapsed_ms, <span class="num">1000.0</span>); <span class="comment">// &lt; 1 sec</span></div>
+                            <div class="test-result-row">
+                                <span>Empirical Result:</span>
+                                <strong>14,900 deliveries in 613 ms · 0 lost (Pass)</strong>
+                            </div>
+                        </div>
 
-                            <!-- Metric 7: Connection Reaper Sweep -->
-                            <div class="metric-row">
-                                <div class="metric-label-group">
-                                    <span class="metric-name">Connection Reaper (50 expired leases)</span>
-                                    <span class="metric-sla">SLA: &le; 10.0 ms</span>
+                        <!-- Benchmark 4: Chaos Broker Partition & Cold Restart -->
+                        <div class="card glass-card hover-glow test-card">
+                            <div class="test-card-header">
+                                <div class="test-card-title">
+                                    <span style="color: #a855f7;">04</span>
+                                    <span>Chaos Partition &amp; Cold Restart</span>
                                 </div>
-                                <div class="metric-value-group">
-                                    <span class="metric-num emerald">0.052 ms</span>
-                                    <span class="metric-badge green">PASSED</span>
-                                </div>
+                                <span class="badge badge-purple" style="font-size: 0.65rem;">CHAOS HARDENING</span>
                             </div>
+                            <div class="test-card-desc">
+                                <strong>What it tests:</strong> Durability and state recovery when daemon abruptly terminates during active flight with 500 unacknowledged outbox events.<br/>
+                                <strong>How it tests:</strong> Kills daemon, initializes completely cold instance from persistent ScyllaDB outbox, and runs recovery sweep verifying 100% replay integrity.
+                            </div>
+                            <div class="code-snippet"><span class="comment">// Simulate abrupt daemon death with un-ACKed messages</span>
+broker.<span class="func">SimulateAbruptCrash</span>();
+MessagingService cold_daemon(scylla_storage);
+<span class="keyword">auto</span> replayed = cold_daemon.<span class="func">ReplayPendingOutbox</span>();
+<span class="func">EXPECT_EQ</span>(replayed.<span class="func">size</span>(), <span class="num">500</span>); <span class="comment">// 100% recovered</span>
+<span class="func">EXPECT_TRUE</span>(cold_daemon.<span class="func">AssertZeroGapsOrCollisions</span>());</div>
+                            <div class="test-result-row">
+                                <span>Empirical Result:</span>
+                                <strong>500 events replayed in 4.33 ms · 0 loss (Pass)</strong>
+                            </div>
+                        </div>
+                    </div>
 
-                            <!-- Metric 8: Full CTest Verification Suite -->
-                            <div class="metric-row">
-                                <div class="metric-label-group">
-                                    <span class="metric-name">Verification Orchestrator Suite</span>
-                                    <span class="metric-sla">Stage 1-5 (Configure, Format, Build, Tests)</span>
-                                </div>
-                                <div class="metric-value-group">
-                                    <span class="metric-num blue">2,279 / 2,279 Pass</span>
-                                    <span class="metric-badge green">100% GREEN (229.7s)</span>
-                                </div>
-                            </div>
-
-                            <!-- Milestone M3 Formal Acceptance Certification -->
-                            <div class="certification-box" style="margin-top: 0.5rem;">
-                                <div class="cert-icon">✓</div>
-                                <div class="cert-text">
-                                    <h4>Milestone M3 Architectural Sign-off: COMPLETE</h4>
-                                    <p>
-                                        All capacity, ordering, multi-device fan-out, zero-knowledge, and chaos recovery gates for Phase 2 Milestone M3 are empirically validated, hardened, and accepted into SecureCloud main.
-                                    </p>
-                                </div>
-                            </div>
+                    <!-- Milestone M3 Formal Acceptance Certification -->
+                    <div class="certification-box" style="margin-top: 0.4rem;">
+                        <div class="cert-icon">✓</div>
+                        <div class="cert-text">
+                            <h4>Milestone M3 Architectural Sign-off: COMPLETE</h4>
+                            <p>
+                                All capacity, throughput, sub-2ms multi-device fan-out, zero-knowledge, and broker partition recovery gates for Phase 2 Milestone M3 are empirically validated, hardened, and accepted into SecureCloud main.
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -1832,7 +1907,7 @@
             </div>
 
             <div class="footer-center">
-                <span class="slide-counter" id="slide-counter">Slide 1 of 19</span>
+                <span class="slide-counter" id="slide-counter">Slide 1 of 20</span>
             </div>
 
             <div class="footer-right">
