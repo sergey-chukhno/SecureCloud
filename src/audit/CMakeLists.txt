@@ -59,6 +59,7 @@ target_link_libraries(securecloud_audit_repository PUBLIC
 
 add_library(securecloud_audit_service STATIC
         ingestion/bounded_ingestion_queue.cpp
+        ingestion/deduplication_cache.cpp
         ingestion/validation_worker_pool.cpp
         ingestion/batch_aggregator.cpp
         ingestion/acknowledgement_manager.cpp

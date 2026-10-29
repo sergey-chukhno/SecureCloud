@@ -2960,3 +2960,15 @@ target_link_libraries(securecloud_audit_ingestion_pipeline_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_ingestion_pipeline_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Deduplication Cache Test (AUDIT-006-T02)
+add_executable(securecloud_audit_deduplication_cache_test
+        audit/deduplication_cache_test.cpp
+)
+target_link_libraries(securecloud_audit_deduplication_cache_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_deduplication_cache_test)
