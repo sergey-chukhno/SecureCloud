@@ -37,7 +37,8 @@ grpc::Status GrpcProducerIdentityValidator::validate_peer_context(const grpc::Se
     // 3. Inspection de l'identité X.509 pour les connexions gRPC réseau
     auto auth_ctx = context.auth_context();
     if (!auth_ctx || !auth_ctx->IsPeerAuthenticated()) {
-        return grpc::Status(grpc::StatusCode::UNAUTHENTICATED, "Authentication required: peer is not authenticated via mTLS");
+        return grpc::Status(grpc::StatusCode::UNAUTHENTICATED,
+                            "Authentication required: peer is not authenticated via mTLS");
     }
 
     auto peer_identities = auth_ctx->FindPropertyValues("x509_common_name");

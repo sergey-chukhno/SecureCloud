@@ -1,5 +1,5 @@
-#include "service/audit_ingestion_service.hpp"
 #include "ingestion/deduplication_cache.hpp"
+#include "service/audit_ingestion_service.hpp"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -74,10 +74,7 @@ TEST_F(AuditIngestionServiceTest, IngestSingleNewAndDuplicate) {
     auto event = build_sample_event("018f6e4a-7b3c-7000-8000-000000000100");
 
     repository::RepositoryBatchWriteResult success_write{
-        .status = repository::RepositoryWriteStatus::Committed,
-        .error_code = "",
-        .sanitized_reason = ""
-    };
+        .status = repository::RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
 
     EXPECT_CALL(*repo, insert_batch_classified(_)).Times(1).WillOnce(Return(success_write));
 
@@ -98,10 +95,7 @@ TEST_F(AuditIngestionServiceTest, IngestSinglePayloadConflict) {
     AuditIngestionService service(repo, cache);
 
     repository::RepositoryBatchWriteResult success_write{
-        .status = repository::RepositoryWriteStatus::Committed,
-        .error_code = "",
-        .sanitized_reason = ""
-    };
+        .status = repository::RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
 
     EXPECT_CALL(*repo, insert_batch_classified(_)).Times(1).WillOnce(Return(success_write));
 
@@ -123,10 +117,7 @@ TEST_F(AuditIngestionServiceTest, IngestBatchWithIntraBatchDeduplication) {
     AuditIngestionService service(repo, cache);
 
     repository::RepositoryBatchWriteResult success_write{
-        .status = repository::RepositoryWriteStatus::Committed,
-        .error_code = "",
-        .sanitized_reason = ""
-    };
+        .status = repository::RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
 
     EXPECT_CALL(*repo, insert_batch_classified(_)).Times(1).WillOnce(Return(success_write));
 

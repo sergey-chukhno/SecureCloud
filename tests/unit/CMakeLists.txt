@@ -2984,3 +2984,15 @@ target_link_libraries(securecloud_audit_acknowledgement_manager_test PRIVATE
         GTest::gtest_main
 )
 gtest_discover_tests(securecloud_audit_acknowledgement_manager_test)
+
+# Audit Deduplication Metrics Test (AUDIT-006-T05)
+add_executable(securecloud_audit_deduplication_metrics_test
+        audit/deduplication_metrics_test.cpp
+)
+target_link_libraries(securecloud_audit_deduplication_metrics_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_deduplication_metrics_test)

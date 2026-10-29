@@ -18,8 +18,7 @@ namespace securecloud::audit::ingestion {
 /// End-to-end asynchronous audit ingestion pipeline coordinating all processing stages.
 class AuditIngestionPipeline {
   public:
-    AuditIngestionPipeline(const IngestionConfig& config,
-                           std::shared_ptr<repository::IAuditEventRepository> repository,
+    AuditIngestionPipeline(const IngestionConfig& config, std::shared_ptr<repository::IAuditEventRepository> repository,
                            std::shared_ptr<IDeduplicationCache> dedup_cache = nullptr);
 
     ~AuditIngestionPipeline();

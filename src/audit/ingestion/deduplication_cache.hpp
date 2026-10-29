@@ -35,23 +35,18 @@ class IDeduplicationCache {
     virtual ~IDeduplicationCache() = default;
 
     /// Atomically inspects or reserves event_id in the cache.
-    virtual DedupAcquireResult try_acquire(
-        const domain::EventId& event_id,
-        const domain::EventPayloadFingerprint& fingerprint,
-        std::chrono::steady_clock::time_point now) = 0;
+    virtual DedupAcquireResult try_acquire(const domain::EventId& event_id,
+                                           const domain::EventPayloadFingerprint& fingerprint,
+                                           std::chrono::steady_clock::time_point now) = 0;
 
     /// Transitions an IN_FLIGHT entry to COMMITTED after ClickHouse confirms durable insert,
     /// starts the 10-minute TTL window, and fulfills the shared AckFuture for any coalesced waiters.
-    virtual void mark_committed(
-        const domain::EventId& event_id,
-        std::chrono::system_clock::time_point received_at,
-        std::chrono::steady_clock::time_point now) = 0;
+    virtual void mark_committed(const domain::EventId& event_id, std::chrono::system_clock::time_point received_at,
+                                std::chrono::steady_clock::time_point now) = 0;
 
     /// Rolls back and removes an IN_FLIGHT entry when queuing fails, ClickHouse insert fails,
     /// or a timeout produces an ambiguous outcome, notifying coalesced waiters with failure_result.
-    virtual void rollback_in_flight(
-        const domain::EventId& event_id,
-        const PersistAckResult& failure_result) = 0;
+    virtual void rollback_in_flight(const domain::EventId& event_id, const PersistAckResult& failure_result) = 0;
 
     /// Evicts expired COMMITTED entries across shards.
     virtual size_t evict_expired(std::chrono::steady_clock::time_point now) = 0;
@@ -63,29 +58,22 @@ class IDeduplicationCache {
 
 class BoundedDeduplicationCache : public IDeduplicationCache {
   public:
-    explicit BoundedDeduplicationCache(
-        uint32_t capacity = 100000,
-        std::chrono::milliseconds ttl = std::chrono::minutes(10),
-        uint32_t num_shards = 64);
+    explicit BoundedDeduplicationCache(uint32_t capacity = 100000,
+                                       std::chrono::milliseconds ttl = std::chrono::minutes(10),
+                                       uint32_t num_shards = 64);
 
     ~BoundedDeduplicationCache() override = default;
 
     BoundedDeduplicationCache(const BoundedDeduplicationCache&) = delete;
     BoundedDeduplicationCache& operator=(const BoundedDeduplicationCache&) = delete;
 
-    DedupAcquireResult try_acquire(
-        const domain::EventId& event_id,
-        const domain::EventPayloadFingerprint& fingerprint,
-        std::chrono::steady_clock::time_point now) override;
+    DedupAcquireResult try_acquire(const domain::EventId& event_id, const domain::EventPayloadFingerprint& fingerprint,
+                                   std::chrono::steady_clock::time_point now) override;
 
-    void mark_committed(
-        const domain::EventId& event_id,
-        std::chrono::system_clock::time_point received_at,
-        std::chrono::steady_clock::time_point now) override;
+    void mark_committed(const domain::EventId& event_id, std::chrono::system_clock::time_point received_at,
+                        std::chrono::steady_clock::time_point now) override;
 
-    void rollback_in_flight(
-        const domain::EventId& event_id,
-        const PersistAckResult& failure_result) override;
+    void rollback_in_flight(const domain::EventId& event_id, const PersistAckResult& failure_result) override;
 
     size_t evict_expired(std::chrono::steady_clock::time_point now) override;
 

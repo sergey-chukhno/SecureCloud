@@ -52,16 +52,15 @@ class EventId {
 
 namespace std {
 
-  template <>
-  struct hash<securecloud::audit::domain::EventId> {
+template <> struct hash<securecloud::audit::domain::EventId> {
     size_t operator()(const securecloud::audit::domain::EventId& id) const noexcept {
-      const auto& bytes = id.bytes();
-      uint64_t h1 = 0;
-      uint64_t h2 = 0;
-      std::memcpy(&h1, bytes.data(), 8);
-      std::memcpy(&h2, bytes.data() + 8, 8);
-      return static_cast<size_t>(h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2)));
+        const auto& bytes = id.bytes();
+        uint64_t h1 = 0;
+        uint64_t h2 = 0;
+        std::memcpy(&h1, bytes.data(), 8);
+        std::memcpy(&h2, bytes.data() + 8, 8);
+        return static_cast<size_t>(h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2)));
     }
-  };
+};
 
 } // namespace std

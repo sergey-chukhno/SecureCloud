@@ -28,10 +28,10 @@ struct IngestionConfig {
     uint32_t batch_flush_interval_ms{200}; // [10, 5000]
     uint32_t max_event_size_bytes{65536};  // [1024, 1048576] (64KB default, 1MB max)
 
-    uint32_t dedup_cache_capacity{100000};    // [1000, 1000000] (100k baseline per 05-audit-data-model.md §5.24)
-    uint32_t dedup_cache_ttl_ms{600000};      // [10000, 86400000] (10 minutes default)
-    uint32_t dedup_cache_shards{64};          // Power of 2 in [1, 256]
-    uint32_t in_flight_ack_timeout_ms{5000};  // [500, 30000]
+    uint32_t dedup_cache_capacity{100000};   // [1000, 1000000] (100k baseline per 05-audit-data-model.md §5.24)
+    uint32_t dedup_cache_ttl_ms{600000};     // [10000, 86400000] (10 minutes default)
+    uint32_t dedup_cache_shards{64};         // Power of 2 in [1, 256]
+    uint32_t in_flight_ack_timeout_ms{5000}; // [500, 30000]
 };
 
 struct QueryConfig {

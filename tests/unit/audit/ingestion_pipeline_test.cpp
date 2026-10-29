@@ -1,28 +1,32 @@
-#include "ingestion/audit_ingestion_pipeline.hpp"
 #include "domain/audit_event_validator.hpp"
 #include "domain/sensitive_data_guard.hpp"
+#include "ingestion/audit_ingestion_pipeline.hpp"
 
 #include <gtest/gtest.h>
 
 namespace securecloud::audit::ingestion::testing {
 
 class MockRepository : public repository::IAuditEventRepository {
-public:
+  public:
     bool insert_batch(const std::vector<domain::AuditEvent>& events) override {
         inserted_count_.fetch_add(events.size());
         return true;
     }
 
-    std::vector<domain::AuditEvent> query_by_time_range(
-        std::chrono::system_clock::time_point, std::chrono::system_clock::time_point, uint32_t) override { return {}; }
-    std::vector<domain::AuditEvent> query_by_producer(
-        const std::string&, std::chrono::system_clock::time_point, std::chrono::system_clock::time_point, uint32_t) override { return {}; }
+    std::vector<domain::AuditEvent> query_by_time_range(std::chrono::system_clock::time_point,
+                                                        std::chrono::system_clock::time_point, uint32_t) override {
+        return {};
+    }
+    std::vector<domain::AuditEvent> query_by_producer(const std::string&, std::chrono::system_clock::time_point,
+                                                      std::chrono::system_clock::time_point, uint32_t) override {
+        return {};
+    }
     std::vector<domain::AuditEvent> query_by_correlation_id(const std::string&, uint32_t) override { return {}; }
     std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId&) override { return std::nullopt; }
 
     [[nodiscard]] size_t inserted_count() const { return inserted_count_.load(); }
 
-private:
+  private:
     std::atomic<size_t> inserted_count_{0};
 };
 
@@ -44,13 +48,11 @@ static IngestionEnvelope create_valid_envelope(const std::string& event_type = "
 
 TEST(AuditIngestionPipelineTest, PipelineLifecycleAndDrain) {
     auto repo = std::make_shared<MockRepository>();
-    IngestionConfig config{
-        .workers = 2,
-        .max_queued_events = 100,
-        .batch_size = 10,
-        .batch_flush_interval_ms = 50,
-        .max_event_size_bytes = 65536
-    };
+    IngestionConfig config{.workers = 2,
+                           .max_queued_events = 100,
+                           .batch_size = 10,
+                           .batch_flush_interval_ms = 50,
+                           .max_event_size_bytes = 65536};
 
     AuditIngestionPipeline pipeline(config, repo);
     pipeline.start();
@@ -60,10 +62,13 @@ TEST(AuditIngestionPipelineTest, PipelineLifecycleAndDrain) {
 
     // Diagnostic validation checks
     auto val_res = domain::AuditEventValidator::validate(env.event);
-    EXPECT_TRUE(val_res.is_valid()) << (val_res.errors().empty() ? "Validation failed" : val_res.errors().front().message);
+    EXPECT_TRUE(val_res.is_valid()) << (val_res.errors().empty() ? "Validation failed"
+                                                                 : val_res.errors().front().message);
 
     auto sensitive_check = domain::SensitiveDataGuard::inspect(env.event);
-    EXPECT_TRUE(sensitive_check.is_valid()) << (sensitive_check.errors().empty() ? "Sensitive data guard failed" : sensitive_check.errors().front().message);
+    EXPECT_TRUE(sensitive_check.is_valid())
+        << (sensitive_check.errors().empty() ? "Sensitive data guard failed"
+                                             : sensitive_check.errors().front().message);
 
     EXPECT_TRUE(pipeline.submit(std::move(env)));
 

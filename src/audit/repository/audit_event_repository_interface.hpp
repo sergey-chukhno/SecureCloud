@@ -23,6 +23,11 @@ struct RepositoryBatchWriteResult {
     std::string sanitized_reason;
 };
 
+struct DuplicateEventCount {
+    domain::EventId event_id;
+    uint64_t occurrences{0};
+};
+
 /// Abstract interface for authoritative audit event persistence operations.
 class IAuditEventRepository {
   public:
@@ -37,16 +42,11 @@ class IAuditEventRepository {
         bool ok = insert_batch(events);
         if (ok) {
             return RepositoryBatchWriteResult{
-                .status = RepositoryWriteStatus::Committed,
-                .error_code = "",
-                .sanitized_reason = ""
-            };
+                .status = RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
         }
-        return RepositoryBatchWriteResult{
-            .status = RepositoryWriteStatus::DeterministicFailure,
-            .error_code = "PERSISTENCE_FAILED",
-            .sanitized_reason = "ClickHouse batch insertion failed"
-        };
+        return RepositoryBatchWriteResult{.status = RepositoryWriteStatus::DeterministicFailure,
+                                          .error_code = "PERSISTENCE_FAILED",
+                                          .sanitized_reason = "ClickHouse batch insertion failed"};
     }
 
     /// Queries audit events occurring within a specified time range (UTC).
@@ -66,6 +66,12 @@ class IAuditEventRepository {
 
     /// Finds a single audit event by its unique EventId.
     [[nodiscard]] virtual std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId& event_id) = 0;
+
+    /// Executes an analytical duplicate verification query across the ClickHouse database.
+    [[nodiscard]] virtual std::vector<DuplicateEventCount> find_duplicate_event_counts(uint32_t limit = 100) {
+        (void)limit;
+        return {};
+    }
 };
 
 } // namespace securecloud::audit::repository

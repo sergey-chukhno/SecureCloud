@@ -1,11 +1,10 @@
 #include "domain/event_payload_fingerprint.hpp"
 
-#include <openssl/evp.h>
-
 #include <algorithm>
 #include <bit>
 #include <iomanip>
 #include <map>
+#include <openssl/evp.h>
 #include <sstream>
 #include <stdexcept>
 

@@ -10,13 +10,13 @@
 
 namespace securecloud::audit::ingestion {
 
-    using CompletionCallback = std::function<void(const service::IngestionResult&)>;
+using CompletionCallback = std::function<void(const service::IngestionResult&)>;
 
-    struct IngestionEnvelope {
-        domain::AuditEvent event{};
-        std::chrono::system_clock::time_point enqueued_at{std::chrono::system_clock::now()};
-        std::shared_ptr<std::promise<service::IngestionResult>> completion_promise{nullptr};
-        CompletionCallback completion_callback{nullptr};
-    };
+struct IngestionEnvelope {
+    domain::AuditEvent event{};
+    std::chrono::system_clock::time_point enqueued_at{std::chrono::system_clock::now()};
+    std::shared_ptr<std::promise<service::IngestionResult>> completion_promise{nullptr};
+    CompletionCallback completion_callback{nullptr};
+};
 
 } // namespace securecloud::audit::ingestion

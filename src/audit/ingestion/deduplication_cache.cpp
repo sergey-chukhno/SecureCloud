@@ -6,10 +6,8 @@ namespace securecloud::audit::ingestion {
 
 BoundedDeduplicationCache::BoundedDeduplicationCache(uint32_t capacity, std::chrono::milliseconds ttl,
                                                      uint32_t num_shards)
-    : total_capacity_(std::max(1000u, capacity)),
-      ttl_(ttl),
-      num_shards_(std::has_single_bit(num_shards) ? num_shards : 64u),
-      shard_mask_(num_shards_ - 1) {
+    : total_capacity_(std::max(1000u, capacity)), ttl_(ttl),
+      num_shards_(std::has_single_bit(num_shards) ? num_shards : 64u), shard_mask_(num_shards_ - 1) {
     shard_capacity_ = std::max(16u, total_capacity_ / num_shards_);
     shards_.reserve(num_shards_);
     for (uint32_t i = 0; i < num_shards_; ++i) {
@@ -18,12 +16,12 @@ BoundedDeduplicationCache::BoundedDeduplicationCache(uint32_t capacity, std::chr
 }
 
 size_t BoundedDeduplicationCache::get_shard_index(const domain::EventId& event_id) const noexcept {
-    return std::hash<domain::EventId>{}(event_id) & shard_mask_;
+    return std::hash<domain::EventId>{}(event_id)&shard_mask_;
 }
 
 DedupAcquireResult BoundedDeduplicationCache::try_acquire(const domain::EventId& event_id,
-                                                           const domain::EventPayloadFingerprint& fingerprint,
-                                                           std::chrono::steady_clock::time_point now) {
+                                                          const domain::EventPayloadFingerprint& fingerprint,
+                                                          std::chrono::steady_clock::time_point now) {
     auto& shard = *shards_[get_shard_index(event_id)];
     std::lock_guard<std::mutex> lock(shard.mutex);
 
@@ -84,8 +82,8 @@ DedupAcquireResult BoundedDeduplicationCache::try_acquire(const domain::EventId&
 }
 
 void BoundedDeduplicationCache::mark_committed(const domain::EventId& event_id,
-                                                std::chrono::system_clock::time_point received_at,
-                                                std::chrono::steady_clock::time_point now) {
+                                               std::chrono::system_clock::time_point received_at,
+                                               std::chrono::steady_clock::time_point now) {
     auto& shard = *shards_[get_shard_index(event_id)];
     std::shared_ptr<std::promise<PersistAckResult>> promise_to_fulfill;
 
@@ -101,10 +99,8 @@ void BoundedDeduplicationCache::mark_committed(const domain::EventId& event_id,
 
         shard.in_flight_map.erase(in_flight_it);
 
-        CommittedEntry committed_entry{.event_id = event_id,
-                                       .fingerprint = fp,
-                                       .committed_received_at = received_at,
-                                       .expires_at = now + ttl_};
+        CommittedEntry committed_entry{
+            .event_id = event_id, .fingerprint = fp, .committed_received_at = received_at, .expires_at = now + ttl_};
 
         shard.committed_lru_list.push_front(committed_entry);
         shard.committed_map[event_id] = shard.committed_lru_list.begin();

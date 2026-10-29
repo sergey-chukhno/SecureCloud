@@ -212,12 +212,11 @@ AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& 
     // AUDIT_INGESTION_DEDUP_CACHE_SHARDS [1, 256]
     auto dedup_shards_val = source.get("AUDIT_INGESTION_DEDUP_CACHE_SHARDS");
     if (dedup_shards_val.has_value()) {
-        auto parsed = parse_uint32_bounded("AUDIT_INGESTION_DEDUP_CACHE_SHARDS", dedup_shards_val.value(), out_errors,
-                                           1, 256);
+        auto parsed =
+            parse_uint32_bounded("AUDIT_INGESTION_DEDUP_CACHE_SHARDS", dedup_shards_val.value(), out_errors, 1, 256);
         if (parsed.has_value()) {
             if (!is_power_of_two(parsed.value())) {
-                out_errors.add_error("AUDIT_INGESTION_DEDUP_CACHE_SHARDS",
-                                     "must be a power of two in range [1, 256]");
+                out_errors.add_error("AUDIT_INGESTION_DEDUP_CACHE_SHARDS", "must be a power of two in range [1, 256]");
             } else {
                 config.ingestion.dedup_cache_shards = parsed.value();
             }

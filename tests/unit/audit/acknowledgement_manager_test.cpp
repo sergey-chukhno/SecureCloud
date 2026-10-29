@@ -53,11 +53,9 @@ TEST_F(AcknowledgementManagerTest, BatchFailedRollsBackCacheInFlight) {
     auto acq = cache->try_acquire(event.event_id, fp, now);
     EXPECT_EQ(acq.decision, DedupAcquireResult::Decision::AcquiredNewInFlight);
 
-    repository::RepositoryBatchWriteResult failure{
-        .status = repository::RepositoryWriteStatus::DeterministicFailure,
-        .error_code = "UNAVAILABLE",
-        .sanitized_reason = "Connection refused"
-    };
+    repository::RepositoryBatchWriteResult failure{.status = repository::RepositoryWriteStatus::DeterministicFailure,
+                                                   .error_code = "UNAVAILABLE",
+                                                   .sanitized_reason = "Connection refused"};
 
     ack_mgr.on_batch_failed({event}, failure);
 
@@ -79,11 +77,9 @@ TEST_F(AcknowledgementManagerTest, AmbiguousFailureMapsToAmbiguousStatus) {
 
     auto acq = cache->try_acquire(event.event_id, fp, now);
 
-    repository::RepositoryBatchWriteResult failure{
-        .status = repository::RepositoryWriteStatus::AmbiguousOutcome,
-        .error_code = "DEADLINE_EXCEEDED",
-        .sanitized_reason = "HTTP POST socket timeout"
-    };
+    repository::RepositoryBatchWriteResult failure{.status = repository::RepositoryWriteStatus::AmbiguousOutcome,
+                                                   .error_code = "DEADLINE_EXCEEDED",
+                                                   .sanitized_reason = "HTTP POST socket timeout"};
 
     ack_mgr.on_batch_failed({event}, failure);
 
@@ -103,12 +99,10 @@ TEST_F(AcknowledgementManagerTest, InFlightReservationGuardRollsBackWhenUndismis
 
     auto acq = cache->try_acquire(event.event_id, fp, now);
 
-    PersistAckResult default_failure{
-        .status = IngestionOutcomeStatus::QueueOverloaded,
-        .event_id = event.event_id,
-        .error_code = "RESOURCE_EXHAUSTED",
-        .diagnostic_message = "Ingestion queue saturated"
-    };
+    PersistAckResult default_failure{.status = IngestionOutcomeStatus::QueueOverloaded,
+                                     .event_id = event.event_id,
+                                     .error_code = "RESOURCE_EXHAUSTED",
+                                     .diagnostic_message = "Ingestion queue saturated"};
 
     {
         InFlightReservationGuard guard(cache, event.event_id, default_failure);
