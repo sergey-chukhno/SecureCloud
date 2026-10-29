@@ -2961,18 +2961,6 @@ target_link_libraries(securecloud_audit_ingestion_pipeline_test PRIVATE
 
 gtest_discover_tests(securecloud_audit_ingestion_pipeline_test ${SECURECLOUD_TEST_PROPERTIES})
 
-# Audit Service Deduplication Cache Test (AUDIT-006-T02)
-add_executable(securecloud_audit_deduplication_cache_test
-        audit/deduplication_cache_test.cpp
-)
-target_link_libraries(securecloud_audit_deduplication_cache_test PRIVATE
-        securecloud::audit_service
-        securecloud::common
-        securecloud::compiler_flags
-        GTest::gtest_main
-)
-gtest_discover_tests(securecloud_audit_deduplication_cache_test)
-
 # Audit Service Acknowledgement Manager Test (AUDIT-006-T03)
 add_executable(securecloud_audit_acknowledgement_manager_test
         audit/acknowledgement_manager_test.cpp
@@ -2996,3 +2984,39 @@ target_link_libraries(securecloud_audit_deduplication_metrics_test PRIVATE
         GTest::gtest_main
 )
 gtest_discover_tests(securecloud_audit_deduplication_metrics_test)
+
+# Audit Event Payload Fingerprint Test (AUDIT-006-T06)
+add_executable(securecloud_audit_event_payload_fingerprint_test
+        audit/event_payload_fingerprint_test.cpp
+)
+target_link_libraries(securecloud_audit_event_payload_fingerprint_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_event_payload_fingerprint_test)
+
+# Audit Bounded Deduplication Cache Test (AUDIT-006-T06)
+add_executable(securecloud_audit_bounded_deduplication_cache_test
+        audit/bounded_deduplication_cache_test.cpp
+)
+target_link_libraries(securecloud_audit_bounded_deduplication_cache_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_bounded_deduplication_cache_test)
+
+# Audit Deduplication Pipeline Test (AUDIT-006-T06)
+add_executable(securecloud_audit_deduplication_pipeline_test
+        audit/audit_deduplication_pipeline_test.cpp
+)
+target_link_libraries(securecloud_audit_deduplication_pipeline_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_deduplication_pipeline_test)
