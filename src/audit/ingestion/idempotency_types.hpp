@@ -35,3 +35,15 @@ namespace securecloud::audit::ingestion {
     };
 
 } // namespace securecloud::audit::ingestion
+
+namespace securecloud::audit::service {
+
+    struct IngestionResult {
+        bool success{false};
+        ingestion::IngestionOutcomeStatus outcome_status{ingestion::IngestionOutcomeStatus::PersistenceFailed};
+        std::string error_code{};
+        std::string error_message{};
+        std::chrono::system_clock::time_point received_at{};
+    };
+
+} // namespace securecloud::audit::service

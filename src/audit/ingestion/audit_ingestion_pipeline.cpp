@@ -6,17 +6,17 @@ namespace securecloud::audit::ingestion {
 AuditIngestionPipeline::AuditIngestionPipeline(
     const IngestionConfig& config,
     std::shared_ptr<repository::IAuditEventRepository> repository,
-    std::shared_ptr<IDeduplicationManager> dedup_manager)
+    std::shared_ptr<IDeduplicationCache> dedup_cache)
     : config_(config),
       repository_(std::move(repository)),
-      dedup_manager_(std::move(dedup_manager)) {
+      dedup_cache_(std::move(dedup_cache)) {
 
     input_queue_ = std::make_shared<BoundedIngestionQueue>(config_.max_queued_events);
     validated_queue_ = std::make_shared<BoundedIngestionQueue>(config_.max_queued_events);
     batch_queue_ = std::make_shared<BoundedBatchQueue>(32);
 
     validation_pool_ = std::make_shared<ValidationWorkerPool>(
-        config_.workers, input_queue_, validated_queue_, dedup_manager_);
+        config_.workers, input_queue_, validated_queue_, nullptr);
 
     batch_aggregator_ = std::make_shared<BatchAggregator>(
         config_.batch_size, std::chrono::milliseconds(config_.batch_flush_interval_ms),
