@@ -2972,3 +2972,15 @@ target_link_libraries(securecloud_audit_deduplication_cache_test PRIVATE
         GTest::gtest_main
 )
 gtest_discover_tests(securecloud_audit_deduplication_cache_test)
+
+# Audit Service Acknowledgement Manager Test (AUDIT-006-T03)
+add_executable(securecloud_audit_acknowledgement_manager_test
+        audit/acknowledgement_manager_test.cpp
+)
+target_link_libraries(securecloud_audit_acknowledgement_manager_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_acknowledgement_manager_test)
