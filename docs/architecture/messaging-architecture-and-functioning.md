@@ -1213,6 +1213,5 @@ spec:
 ### 27.2 Milestone M3 Completion Sign-Off
 Card **MSG-012** is formally completed. With all 12 Messaging cards (`MSG-001` through `MSG-012`) fully implemented, tested, and verified, **Milestone M3 (Secure Messaging Platform)** is officially concluded and ready for downstream integration with Phase 5 (Encrypted File Storage & Transfer).
 
-**Lead Systems Architect & Security Gatekeeper:** *Antigravity AI Agentic Lead*  
 **Date:** *October 29, 2026*  
 **Final Status:** **READY FOR RELEASE / MILESTONE M3 SIGNED OFF**

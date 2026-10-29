@@ -321,15 +321,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
         switch (e.key) {
             case 'ArrowRight':
-            case 'PageDown':
             case ' ':
                 e.preventDefault();
                 goToSlide(currentSlideIndex + 1);
                 break;
             case 'ArrowLeft':
-            case 'PageUp':
                 e.preventDefault();
                 goToSlide(currentSlideIndex - 1);
+                break;
+            case 'ArrowDown':
+            case 'PageDown':
+                e.preventDefault();
+                slides[currentSlideIndex].scrollBy({ top: 120, behavior: 'smooth' });
+                break;
+            case 'ArrowUp':
+            case 'PageUp':
+                e.preventDefault();
+                slides[currentSlideIndex].scrollBy({ top: -120, behavior: 'smooth' });
                 break;
             case 'Home':
                 e.preventDefault();

@@ -1060,7 +1060,7 @@
                     </p>
 
                     <!-- 4 Overview Glass Cards -->
-                    <div class="overview-grid" style="margin-bottom: 1rem;">
+                    <div class="overview-grid compact-grid" style="margin-bottom: 0.65rem;">
                         <div class="card glass-card hover-glow">
                             <div class="card-icon teal-glow">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
@@ -1099,8 +1099,8 @@
                     </div>
 
                     <!-- Animated SVG Diagram: Blind Diplomatic Courier Transport Model -->
-                    <div class="diagram-container">
-                        <svg class="svg-diagram" viewBox="0 0 1150 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <div class="diagram-container" style="padding: 0.6rem 1rem;">
+                        <svg class="svg-diagram" viewBox="0 0 1150 162" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <defs>
                                 <linearGradient id="grad-teal-blue" x1="0%" y1="0%" x2="100%" y2="100%">
                                     <stop offset="0%" stop-color="#2dd4bf" stop-opacity="0.25"/>
@@ -1208,7 +1208,7 @@
                         Mental Model: A sealed diplomatic courier service sorting, ordering, and dispatching tamper-evident lockboxes, never opening cargo or issuing travel passports.
                     </p>
 
-                    <div class="dichotomy-container" style="margin-bottom: 0.8rem;">
+                    <div class="dichotomy-container compact-dichotomy" style="margin-bottom: 0.6rem;">
                         <!-- What Messaging Owns -->
                         <div class="dichotomy-box owns-box" style="border-color: rgba(45, 212, 191, 0.35); background: rgba(13, 35, 48, 0.75);">
                             <div class="box-header">
@@ -1221,11 +1221,11 @@
                             <ul class="dichotomy-list">
                                 <li>
                                     <strong>Monotonic Total Sequencing:</strong>
-                                    Allocates atomic, gapless 64-bit sequence numbers per (conversation_id, YYYY-MM) bucket; defeats clock drift.
+                                    Allocates atomic, gapless 64-bit sequence numbers per (conversation, month) bucket.
                                 </li>
                                 <li>
                                     <strong>ScyllaDB Monthly Partition Bucketing:</strong>
-                                    Enforces bounded partition sizes (max 100k msgs / 50 MB); zero ALLOW FILTERING full-table scans.
+                                    Bounded partition sizes (max 100k msgs / 50 MB); zero ALLOW FILTERING full-table scans.
                                 </li>
                                 <li>
                                     <strong>3-Tier Priority Scheduling & Backpressure:</strong>
@@ -1237,11 +1237,11 @@
                                 </li>
                                 <li>
                                     <strong>Non-Conflation Axiom Enforcement:</strong>
-                                    Maintains decoupled state machines: transport delivery (DeliveredAt) never conflated with user reads (ReadAt).
+                                    Decoupled state machines: transport delivery (DeliveredAt) never conflated with user reads (ReadAt).
                                 </li>
                                 <li>
                                     <strong>Realtime Fast-Track & Outbox Recovery:</strong>
-                                    Sub-2ms direct socket push for active connections; cold-start outbox replay recovering 500 tasks in 4.33 ms.
+                                    Sub-2ms direct socket push for active connections; cold-start replay recovering 500 tasks in 4.33 ms.
                                 </li>
                             </ul>
                         </div>
@@ -1285,8 +1285,8 @@
                     </div>
 
                     <!-- Animated SVG Boundary Defense Firewall -->
-                    <div class="diagram-container" style="padding: 0.6rem 1rem;">
-                        <svg class="svg-diagram" viewBox="0 0 1150 70" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <div class="diagram-container" style="padding: 0.45rem 1rem;">
+                        <svg class="svg-diagram" viewBox="0 0 1150 62" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <!-- Inbound Request Channels -->
                             <text x="15" y="40" fill="#94a3b8" font-family="var(--font-mono)" font-size="9.5" font-weight="700">INBOUND MESH:</text>
                             
