@@ -1022,3 +1022,36 @@ endif()
 
 gtest_discover_tests(securecloud_messaging_presence_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files Gateway & Audit E2E Integration Test Suite (FILES-010-T05)
+add_executable(securecloud_files_e2e_gateway_audit_integration_test
+    files_e2e_gateway_audit_integration_test.cpp
+)
+
+target_link_libraries(securecloud_files_e2e_gateway_audit_integration_test PRIVATE
+    securecloud::files_audit
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_config
+    securecloud::common
+    securecloud::httplib
+    securecloud_proto
+    securecloud::json
+    OpenSSL::Crypto
+    OpenSSL::SSL
+    securecloud::compiler_flags
+    GTest::gmock
+    GTest::gtest
+)
+
+target_compile_definitions(securecloud_files_e2e_gateway_audit_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_files_e2e_gateway_audit_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_files_e2e_gateway_audit_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+

@@ -171,6 +171,363 @@ paths:
           $ref: '#/components/responses/400BadRequest'
         '401':
           $ref: '#/components/responses/401Unauthorized'
+  /api/v1/files/upload/init:
+    post:
+      summary: Initialize a resumable file upload session
+      description: >
+        Initiates a new chunked resumable upload session. The caller must match owner_user_id.
+        Server returns upload_id and file_id.
+      operationId: initUpload
+      tags:
+        - Files
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Optional correlation identifier for request tracing.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitUploadRequest'
+      responses:
+        '201':
+          description: Upload session initialized successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitUploadResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+
+  /api/v1/files/upload/chunk:
+    post:
+      summary: Upload an encrypted file chunk
+      description: >
+        Uploads an encrypted chunk (<= 5 MiB) associated with an active upload session.
+      operationId: uploadChunk
+      tags:
+        - Files
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: Upload-Id
+          in: header
+          required: true
+          schema:
+            type: string
+          description: Active upload session ID.
+        - name: Chunk-Index
+          in: header
+          required: true
+          schema:
+            type: integer
+          description: 0-based chunk index.
+        - name: X-Ciphertext-SHA256
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Hex SHA-256 integrity hash of this encrypted chunk.
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '200':
+          description: Chunk uploaded and staged successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadChunkResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '413':
+          description: Chunk size exceeds max allowed chunk size
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+
+  /api/v1/files/upload/finalize:
+    post:
+      summary: Finalize a resumable file upload session
+      description: >
+        Validates all chunks have been received and moves the file to AVAILABLE lifecycle state.
+      operationId: finalizeUpload
+      tags:
+        - Files
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinalizeUploadRequest'
+      responses:
+        '200':
+          description: File finalized successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinalizeUploadResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+
+  /api/v1/files/upload/cancel:
+    post:
+      summary: Cancel an in-progress upload session
+      description: >
+        Aborts an upload session and cleans up any staged chunks.
+      operationId: cancelUpload
+      tags:
+        - Files
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelUploadRequest'
+      responses:
+        '200':
+          description: Upload session cancelled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelUploadResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+
+  /api/v1/files/{file_id}/metadata:
+    get:
+      summary: Retrieve encrypted file metadata
+      description: >
+        Retrieves metadata and encrypted header for the specified file.
+        Requires ownership or valid X-File-Capability header.
+      operationId: getFileMetadata
+      tags:
+        - Files
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-File-Capability
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Ed25519-signed capability token for delegated access.
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File metadata retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileMetadataResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+
+  /api/v1/files/{file_id}/chunks/{chunk_index}:
+    get:
+      summary: Download a single encrypted file chunk
+      description: >
+        Retrieves a single encrypted chunk by index.
+      operationId: downloadChunk
+      tags:
+        - Files
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: chunk_index
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 0
+        - name: X-File-Capability
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Encrypted chunk payload
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+
+  /api/v1/files/{file_id}/download:
+    get:
+      summary: Streaming chunked download of entire encrypted file
+      description: >
+        Streams all encrypted chunks sequentially with chunked transfer encoding and bounded memory footprint.
+      operationId: downloadFileStreaming
+      tags:
+        - Files
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-File-Capability
+          in: header
+          required: false
+          schema:
+            type: string
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Chunked encrypted binary stream
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '404':
+          $ref: '#/components/responses/404NotFound'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+
+  /api/v1/files/{file_id}:
+    delete:
+      summary: Soft-delete / tombstone a file
+      description: >
+        Marks a file as DELETED / TOMBSTONE, immediately revoking access.
+      operationId: deleteFile
+      tags:
+        - Files
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: file_id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: X-Request-Id
+          in: header
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: File deleted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteFileResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '404':
+          $ref: '#/components/responses/404NotFound'
         '503':
           $ref: '#/components/responses/503ServiceUnavailable'
 
@@ -261,6 +618,169 @@ components:
           type: string
           description: Correlation identifier for request tracing.
 
+    InitUploadRequest:
+      type: object
+      required:
+        - encrypted_size_bytes
+        - expected_chunk_count
+      properties:
+        file_id:
+          type: string
+          description: Optional pre-generated client file ID.
+        owner_user_id:
+          type: string
+          format: uuid
+          description: Owner user ID (must match caller context).
+        owner_device_id:
+          type: string
+          description: Owner device ID.
+        encrypted_size_bytes:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Total ciphertext size in bytes.
+        expected_chunk_count:
+          type: integer
+          minimum: 1
+          description: Total number of chunks that will be uploaded.
+        encryption_version:
+          type: string
+          description: Encryption scheme version (e.g. XChaCha20-Poly1305).
+
+    InitUploadResponse:
+      type: object
+      required:
+        - file_id
+        - upload_id
+        - status
+        - expires_at_unix_ms
+      properties:
+        file_id:
+          type: string
+        upload_id:
+          type: string
+        status:
+          type: string
+          example: TRANSFER_STATUS_PENDING
+        expires_at_unix_ms:
+          type: integer
+          format: int64
+
+    UploadChunkResponse:
+      type: object
+      required:
+        - upload_id
+        - chunk_index
+        - accepted
+        - received_sha256
+      properties:
+        upload_id:
+          type: string
+        chunk_index:
+          type: integer
+        accepted:
+          type: boolean
+        received_sha256:
+          type: string
+          description: Hex SHA-256 hash computed over received chunk.
+
+    FinalizeUploadRequest:
+      type: object
+      required:
+        - upload_id
+        - file_id
+      properties:
+        upload_id:
+          type: string
+        file_id:
+          type: string
+        expected_ciphertext_sha256:
+          type: string
+          description: Optional expected SHA-256 of the whole file.
+
+    FinalizeUploadResponse:
+      type: object
+      required:
+        - file_id
+        - lifecycle_state
+        - available_at_unix_ms
+      properties:
+        file_id:
+          type: string
+        lifecycle_state:
+          type: string
+          example: FILE_LIFECYCLE_STATE_AVAILABLE
+        available_at_unix_ms:
+          type: integer
+          format: int64
+
+    CancelUploadRequest:
+      type: object
+      required:
+        - upload_id
+      properties:
+        upload_id:
+          type: string
+        reason:
+          type: string
+
+    CancelUploadResponse:
+      type: object
+      required:
+        - upload_id
+        - status
+      properties:
+        upload_id:
+          type: string
+        status:
+          type: string
+          example: TRANSFER_STATUS_CANCELLED
+
+    FileMetadataResponse:
+      type: object
+      required:
+        - file_id
+        - encrypted_size_bytes
+        - chunk_count
+        - encryption_version
+        - lifecycle_state
+        - created_at_unix_ms
+        - available_at_unix_ms
+      properties:
+        file_id:
+          type: string
+        encrypted_size_bytes:
+          type: integer
+          format: int64
+        chunk_count:
+          type: integer
+        encryption_version:
+          type: string
+        lifecycle_state:
+          type: string
+          example: FILE_LIFECYCLE_STATE_AVAILABLE
+        created_at_unix_ms:
+          type: integer
+          format: int64
+        available_at_unix_ms:
+          type: integer
+          format: int64
+
+    DeleteFileResponse:
+      type: object
+      required:
+        - file_id
+        - lifecycle_state
+        - deleted
+      properties:
+        file_id:
+          type: string
+        lifecycle_state:
+          type: string
+          example: FILE_LIFECYCLE_STATE_DELETED
+        deleted:
+          type: boolean
+
   responses:
     400BadRequest:
       description: Invalid request payload, malformed JSON, or missing required fields.
@@ -276,6 +796,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     403Forbidden:
       description: Access forbidden (e.g. caller attempting to modify presence of another user).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    404NotFound:
+      description: Requested resource was not found.
       content:
         application/json:
           schema:

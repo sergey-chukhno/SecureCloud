@@ -169,6 +169,7 @@ class VerificationOrchestrator:
         skip_build: bool = False,
         skip_contracts: bool = False,
         skip_tests: bool = False,
+        test_regex: Optional[str] = None,
         run_tidy: bool = False,
         run_full: bool = False,
     ) -> int:
@@ -235,6 +236,8 @@ class VerificationOrchestrator:
 
         setup_windows_environment(self.preset)
         cmd_test = ["ctest", "--preset", self.preset, "--output-on-failure"]
+        if test_regex:
+            cmd_test.extend(["-R", test_regex])
         if not self._execute_stage("5. CTest Execution Suite", cmd_test, skip=skip_tests):
             return self._summarize_and_exit(total_start)
 
@@ -584,6 +587,12 @@ def main() -> int:
         help="Execute extended verification scripts (dev-pki, service config) if on POSIX",
     )
     parser.add_argument(
+        "--test-regex",
+        "-R",
+        default=None,
+        help="Run tests matching regular expression (passed to ctest -R)",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -628,6 +637,7 @@ def main() -> int:
         skip_build=args.skip_build,
         skip_contracts=args.skip_contracts,
         skip_tests=args.skip_tests,
+        test_regex=args.test_regex,
         run_tidy=args.tidy,
         run_full=args.full,
     )
