@@ -1188,50 +1188,61 @@
                         Deterministic path of an encrypted payload from client hardware enclave through API Gateway, monotonic sequencing, ScyllaDB persistence, and multi-device push.
                     </p>
 
-                    <!-- 4 Horizontal Phase Cards -->
-                    <div class="overview-grid compact-grid" style="margin-bottom: 0.75rem;">
+                    <!-- 5-Phase End-to-End Pipeline Cards -->
+                    <div class="overview-grid-5">
                         <div class="card glass-card hover-glow">
                             <div class="card-icon teal-glow">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
                             </div>
-                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">1. Ingestion &amp; Quarantine</h4>
-                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
-                                Gateway authenticates JWT &amp; injects <code>x-device-id</code>. Messaging verifies anti-spoofing, payload bounds, and Signal PQXDH envelope format.
+                            <h4 style="font-size: 0.82rem; margin-bottom: 0.15rem;">1. Auth &amp; Validation</h4>
+                            <p style="font-size: 0.72rem; line-height: 1.3; color: var(--text-secondary);">
+                                Gateway injects <code>x-device-id</code>. Messaging verifies caller binding, PQXDH structure, and Shannon entropy.
                             </p>
-                            <div class="card-footer-meta" style="font-size: 0.7rem;">&lt; 0.05 ms · Rejects Impersonation</div>
+                            <div class="card-footer-meta" style="font-size: 0.65rem;">&lt; 0.05 ms · Zero Plaintext</div>
                         </div>
 
                         <div class="card glass-card hover-glow">
                             <div class="card-icon blue-glow">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
                             </div>
-                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">2. Sequencing &amp; Idempotency</h4>
-                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
-                                Client idempotency token checked against lock-striped cache. Atomic monotonic sequence allocated per (conversation, month) partition.
+                            <h4 style="font-size: 0.82rem; margin-bottom: 0.15rem;">2. Deduplication</h4>
+                            <p style="font-size: 0.72rem; line-height: 1.3; color: var(--text-secondary);">
+                                64-stripe mutex lock. Validates client idempotency token &amp; canonical SHA-256 payload fingerprint.
                             </p>
-                            <div class="card-footer-meta" style="font-size: 0.7rem;">P50: 78 µs · Gapless Ordering</div>
+                            <div class="card-footer-meta" style="font-size: 0.65rem;">P50: 78 µs · 409 on Conflict</div>
                         </div>
 
                         <div class="card glass-card hover-glow">
                             <div class="card-icon emerald-glow">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
                             </div>
-                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">3. ScyllaDB Dual-Write</h4>
-                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
-                                Atomically commits immutable envelope to <code>messages_by_conversation</code> and per-device records to <code>outbox_events</code> table.
+                            <h4 style="font-size: 0.82rem; margin-bottom: 0.15rem;">3. Persistence &amp; Outbox</h4>
+                            <p style="font-size: 0.72rem; line-height: 1.3; color: var(--text-secondary);">
+                                Allocates monotonic sequence in monthly bucket. Writes <code>messages_by_conversation</code> &amp; outbox event.
                             </p>
-                            <div class="card-footer-meta" style="font-size: 0.7rem;">Partition &lt; 50 MB · 0 Scan</div>
+                            <div class="card-footer-meta" style="font-size: 0.65rem;">Bound &lt; 50 MB · Local Commit</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon amber-glow">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                            </div>
+                            <h4 style="font-size: 0.82rem; margin-bottom: 0.15rem;">4. Connection Registry</h4>
+                            <p style="font-size: 0.72rem; line-height: 1.3; color: var(--text-secondary);">
+                                O(1) in-memory lookup in <code>channels_</code> hash map: checks socket open state &amp; 60s lease timestamp.
+                            </p>
+                            <div class="card-footer-meta" style="font-size: 0.65rem;">O(1) Status · Heartbeat Lease</div>
                         </div>
 
                         <div class="card glass-card hover-glow">
                             <div class="card-icon purple-glow">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
                             </div>
-                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">4. Fast-Track Fan-Out</h4>
-                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
-                                Active sockets receive direct push in 1.24 ms (P50: 24.9 µs). Offline devices remain spooled in durable outbox for auto-drain upon reconnect.
+                            <h4 style="font-size: 0.82rem; margin-bottom: 0.15rem;">5. Dual-Path Dispatch</h4>
+                            <p style="font-size: 0.72rem; line-height: 1.3; color: var(--text-secondary);">
+                                Online: BoundedDeliveryScheduler (DRR) pushes in 24.9 µs. Reconnect: RealtimeAccelerator drains in 1.24 ms.
                             </p>
-                            <div class="card-footer-meta" style="font-size: 0.7rem;">Sub-2ms Push · Outbox Fallback</div>
+                            <div class="card-footer-meta" style="font-size: 0.65rem;">P50: 24.9 µs · Auto-Sweep</div>
                         </div>
                     </div>
 
@@ -1269,30 +1280,30 @@
                             <!-- Step 2: Gateway -> Messaging -->
                             <path d="M 330 95 L 570 95" stroke="#2dd4bf" stroke-width="2" class="flow-line-fast"/>
                             <polygon points="565,91 570,95 565,99" fill="#2dd4bf"/>
-                            <text x="350" y="88" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5">gRPC SendMessage(Envelope + x-device-id)</text>
+                            <text x="350" y="88" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5">1. Validate &amp; 2. Lock-Stripe Deduplicate</text>
 
                             <!-- Step 3: Sequencing & Persist -->
                             <path d="M 570 130 L 815 130" stroke="#10b981" stroke-width="2" class="flow-line-fast"/>
                             <polygon points="810,126 815,130 810,134" fill="#10b981"/>
-                            <text x="590" y="123" fill="#10b981" font-family="var(--font-mono)" font-size="8.5">Seq #42 Allocated · Write messages &amp; outbox_events</text>
+                            <text x="590" y="123" fill="#10b981" font-family="var(--font-mono)" font-size="8.5">3. Seq #42 Allocated · Persist timeline &amp; outbox</text>
 
                             <!-- Step 4: Storage ACK -->
                             <path d="M 815 155 L 570 155" stroke="#10b981" stroke-width="1.8" class="flow-line-reverse"/>
                             <polygon points="575,151 570,155 575,159" fill="#10b981"/>
-                            <text x="635" y="150" fill="#10b981" font-family="var(--font-mono)" font-size="8">ScyllaDB ACK (Quorum Committed)</text>
+                            <text x="635" y="150" fill="#10b981" font-family="var(--font-mono)" font-size="8">ScyllaDB ACK (4. Lookup ConnectionRegistry)</text>
 
                             <!-- Step 5: Fast-Track to Online Bob Dev 1 -->
                             <path d="M 570 185 L 1050 185" stroke="#a855f7" stroke-width="2" class="flow-line-fast"/>
                             <polygon points="1045,181 1050,185 1045,189" fill="#a855f7"/>
-                            <text x="700" y="178" fill="#a855f7" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Fast-Track Direct Push to Bob Dev 1 (P50: 24.9 µs)</text>
+                            <text x="700" y="178" fill="#a855f7" font-family="var(--font-mono)" font-size="8.5" font-weight="700">5a. Online: DeliveryScheduler (DRR) Push (P50: 24.9 µs)</text>
 
                             <!-- Step 6: Spool Bob Dev 2 (Offline) & Client ACK -->
                             <path d="M 570 215 L 100 215" stroke="#38bdf8" stroke-width="1.8" class="flow-line-reverse"/>
                             <polygon points="105,211 100,215 105,219" fill="#38bdf8"/>
                             <text x="210" y="210" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5">200 OK { sequence_number: 42, status: ACCEPTED }</text>
 
-                            <rect x="740" y="202" width="295" height="24" rx="4" fill="rgba(245, 158, 11, 0.15)" stroke="#f59e0b"/>
-                            <text x="750" y="218" fill="#fbbf24" font-family="var(--font-mono)" font-size="8">Bob Dev 2 (Offline): Spooled in outbox for auto-drain</text>
+                            <rect x="730" y="202" width="315" height="24" rx="4" fill="rgba(245, 158, 11, 0.15)" stroke="#f59e0b"/>
+                            <text x="738" y="218" fill="#fbbf24" font-family="var(--font-mono)" font-size="8">5b. Reconnect: RealtimeAccelerator sweeps outbox (1.24 ms)</text>
                         </svg>
                     </div>
                 </div>
@@ -1414,97 +1425,144 @@
                 </div>
             </section>
 
-            <!-- SLIDE 17: ScyllaDB Storage Topology, Partitions & Indexes -->
+            <!-- SLIDE 17: ScyllaDB Storage Topology: 11 Production Tables across 5 Domains -->
             <section class="slide" id="slide-17" data-index="17" data-title="Messaging: ScyllaDB Storage Topology">
                 <div class="slide-content">
                     <div class="slide-badge-row">
-                        <span class="badge badge-teal">SCYLLADB TOPOLOGY</span>
-                        <span class="badge badge-blue">MONTHLY PARTITION BUCKETING</span>
+                        <span class="badge badge-teal">SCYLLADB ARCHITECTURE</span>
+                        <span class="badge badge-blue">11 PRODUCTION TABLES · 5 DOMAINS</span>
                         <span class="badge badge-emerald">ZERO ALLOW FILTERING</span>
                     </div>
 
                     <h2 class="slide-title">
-                        ScyllaDB Storage Topology: <span class="gradient-text">Partitions, Clustering &amp; Indexes</span>
+                        ScyllaDB Storage Topology: <span class="gradient-text">Complete 11-Table Architecture</span>
                     </h2>
                     <p class="slide-lead">
-                        High-throughput Cassandra/ScyllaDB schema designed to keep partition sizes strictly under 50 MB / 100,000 messages with zero cluster-wide table scans.
+                        High-throughput Cassandra/ScyllaDB schema organized across 5 decoupled domains to keep partition sizes strictly under 50 MB / 100,000 messages with O(1) point lookups.
                     </p>
 
-                    <div class="overview-grid compact-grid" style="margin-bottom: 0.75rem;">
-                        <div class="card glass-card hover-glow">
-                            <div class="card-icon teal-glow">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>
+                    <!-- 5-Domain Architecture Matrix -->
+                    <div class="scylla-topology-matrix">
+                        <!-- Domain 1: Conversation Metadata & Membership (5 tables) -->
+                        <div class="card glass-card hover-glow scylla-domain-card">
+                            <div class="scylla-domain-header">
+                                <span class="scylla-domain-tag tag-blue">01. Metadata &amp; Membership</span>
+                                <span class="badge badge-blue" style="font-size: 0.65rem;">5 TABLES</span>
                             </div>
-                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">messages_by_conversation</h4>
-                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
-                                Partition key: <code>((conversation_id, month_bucket), sequence_number)</code>. Keeps partition size &lt; 50 MB; clustered ascending for fast history streaming.
-                            </p>
-                            <div class="card-footer-meta" style="font-size: 0.7rem;">Primary Partition &lt; 50 MB · Monotonic Clustering</div>
+                            <div class="scylla-table-list">
+                                <div class="scylla-table-entry">
+                                    <div class="table-name">conversations_by_id</div>
+                                    <div class="table-keys"><span class="pk-badge">PK</span> <code>conversation_id</code></div>
+                                    <div class="table-desc">O(1) lookup of conversation type, creator, and metadata version.</div>
+                                </div>
+                                <div class="scylla-table-entry">
+                                    <div class="table-name">direct_conversation_by_users</div>
+                                    <div class="table-keys"><span class="pk-badge">PK</span> <code>((user_a, user_b))</code></div>
+                                    <div class="table-desc">Idempotent 1:1 chat resolution; prevents duplicate 1:1 conversation IDs.</div>
+                                </div>
+                                <div class="scylla-table-entry">
+                                    <div class="table-name">group_metadata_by_conversation</div>
+                                    <div class="table-keys"><span class="pk-badge">PK</span> <code>conversation_id</code></div>
+                                    <div class="table-desc">Group room name, ACTIVE/CLOSED status, and admin users.</div>
+                                </div>
+                                <div class="scylla-table-entry">
+                                    <div class="table-name">conversation_members_by_conversation</div>
+                                    <div class="table-keys"><span class="pk-badge">PK</span> <code>((conv_id), user_id)</code></div>
+                                    <div class="table-desc">Participant roster &amp; authorization firewall before message submission.</div>
+                                </div>
+                                <div class="scylla-table-entry">
+                                    <div class="table-name">conversations_by_user</div>
+                                    <div class="table-keys"><span class="pk-badge">PK</span> <code>((user_id), last_activity_at DESC)</code></div>
+                                    <div class="table-desc">Powers client inbox list sorted chronologically by activity.</div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="card glass-card hover-glow">
-                            <div class="card-icon blue-glow">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                        <!-- Domain 2: The Core Message Timeline (1 table + index) -->
+                        <div class="card glass-card hover-glow scylla-domain-card">
+                            <div class="scylla-domain-header">
+                                <span class="scylla-domain-tag tag-teal">02. Core Message Timeline</span>
+                                <span class="badge badge-teal" style="font-size: 0.65rem;">BOUNDED PARTITIONS</span>
                             </div>
-                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">outbox_events Table</h4>
-                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
-                                Partition key: <code>((device_id, month_bucket), sequence_number)</code>. Per-device durable outbox enabling reconnect catch-up and tombstoned delivery ACKs.
-                            </p>
-                            <div class="card-footer-meta" style="font-size: 0.7rem;">Per-Device Outbox Queue · Tombstone Cleanup</div>
+                            <div class="scylla-table-list">
+                                <div class="scylla-table-entry featured-entry">
+                                    <div class="table-name">messages_by_conversation</div>
+                                    <div class="table-keys">
+                                        <span class="pk-badge">PK</span> <code>((conv_id, YYYYMM))</code>
+                                        <span class="ck-badge">CK</span> <code>sequence ASC, message_id ASC</code>
+                                    </div>
+                                    <div class="table-desc">
+                                        <strong>The immutable chat timeline.</strong> Monthly partition bucketing keeps size strictly &lt; 50 MB / 100k messages. Ascending clustering guarantees gapless chronological history streaming.
+                                    </div>
+                                </div>
+                                <div class="scylla-table-entry">
+                                    <div class="table-name">idx_messages_by_id (Secondary Index)</div>
+                                    <div class="table-keys"><span class="idx-badge">INDEX</span> on <code>message_id</code></div>
+                                    <div class="table-desc">Direct O(1) message lookup by UUIDv7 without cluster-wide table scans.</div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="card glass-card hover-glow">
-                            <div class="card-icon emerald-glow">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        <!-- Domain 3: Delivery Spool & Receipts (2 tables) -->
+                        <div class="card glass-card hover-glow scylla-domain-card">
+                            <div class="scylla-domain-header">
+                                <span class="scylla-domain-tag tag-emerald">03. Delivery Spool &amp; Receipts</span>
+                                <span class="badge badge-emerald" style="font-size: 0.65rem;">NON-CONFLATION</span>
                             </div>
-                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">O(1) Secondary Index Lookup</h4>
-                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
-                                Lookup table mapping <code>message_id -&gt; (conversation_id, month_bucket, sequence_number)</code>. Resolves any message by UUID without <code>ALLOW FILTERING</code>.
-                            </p>
-                            <div class="card-footer-meta" style="font-size: 0.7rem;">Point-Query Index · Zero Table Scans</div>
+                            <div class="scylla-table-list">
+                                <div class="scylla-table-entry">
+                                    <div class="table-name">pending_deliveries_by_device</div>
+                                    <div class="table-keys">
+                                        <span class="pk-badge">PK</span> <code>((device_id, YYYYMM))</code>
+                                        <span class="ck-badge">CK</span> <code>accepted_at ASC, message_id ASC</code>
+                                    </div>
+                                    <div class="table-desc">Per-device offline spool queue. Reconnecting devices drain up to 50 envelopes in 1.24 ms.</div>
+                                </div>
+                                <div class="scylla-table-entry">
+                                    <div class="table-name">delivery_state_by_message</div>
+                                    <div class="table-keys"><span class="pk-badge">PK</span> <code>((message_id), recipient_device_id)</code></div>
+                                    <div class="table-desc">Multi-device fan-out tracker. Strictly decouples transport <code>DeliveredAt</code> from user <code>ReadAt</code>.</div>
+                                </div>
+                            </div>
                         </div>
 
-                        <div class="card glass-card hover-glow">
-                            <div class="card-icon purple-glow">
-                                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+                        <!-- Domain 4: Device Sync Cursors (1 table) -->
+                        <div class="card glass-card hover-glow scylla-domain-card">
+                            <div class="scylla-domain-header">
+                                <span class="scylla-domain-tag tag-amber">04. Sync &amp; Catch-Up</span>
+                                <span class="badge badge-amber" style="font-size: 0.65rem;">CURSOR CHECKPOINTS</span>
                             </div>
-                            <h4 style="font-size: 0.9rem; margin-bottom: 0.25rem;">conversation_sequence_counters</h4>
-                            <p style="font-size: 0.78rem; line-height: 1.35; color: var(--text-secondary);">
-                                Partition key: <code>(conversation_id, month_bucket)</code> with counter column. Initialized on cold start, backed by in-memory atomic CAS primitives.
-                            </p>
-                            <div class="card-footer-meta" style="font-size: 0.7rem;">Cold-Start Anchor · Lock-Free CAS Memory</div>
+                            <div class="scylla-table-list">
+                                <div class="scylla-table-entry">
+                                    <div class="table-name">sync_state_by_device</div>
+                                    <div class="table-keys"><span class="pk-badge">PK</span> <code>((device_id), conversation_id)</code></div>
+                                    <div class="table-desc">Stores <code>last_synced_sequence</code> watermark so mobile devices wake up and resume sync without duplicates.</div>
+                                </div>
+                            </div>
                         </div>
-                    </div>
 
-                    <!-- Partition Bucketing Rollover Diagram -->
-                    <div class="diagram-container" style="padding: 0.8rem 1rem;">
-                        <svg class="svg-diagram" viewBox="0 0 1150 180" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <!-- Timeline Header -->
-                            <text x="25" y="25" fill="#2dd4bf" font-family="var(--font-heading)" font-size="12" font-weight="700">Monthly Partition Bucketing &amp; Bounded Boundary Rollover</text>
-
-                            <!-- Month 1: 2026-10 -->
-                            <rect x="25" y="45" width="520" height="110" rx="6" fill="rgba(13, 35, 48, 0.7)" stroke="#38bdf8" stroke-dasharray="0"/>
-                            <text x="40" y="70" fill="#38bdf8" font-family="var(--font-mono)" font-size="10.5" font-weight="700">Partition: ((conv_uuid, "2026-10"), sequence_number)</text>
-                            <text x="40" y="90" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8.5">• Row sequences: 1 ... 84,200 (Bounded strictly &lt; 100,000 entries / 50 MB)</text>
-                            <text x="40" y="108" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8.5">• In-Memory Lock-Striped Allocator: Counter = 84,200</text>
-                            <text x="40" y="126" fill="#10b981" font-family="var(--font-mono)" font-size="8.5">✓ Partition size: 6.76 MB (Empirical MSG-012 validation)</text>
-                            <rect x="40" y="136" width="480" height="8" rx="3" fill="rgba(56, 189, 248, 0.2)"/>
-                            <rect x="40" y="136" width="80" height="8" rx="3" fill="#38bdf8"/>
-
-                            <!-- Rollover Arrow -->
-                            <path d="M 555 100 L 595 100" stroke="#f59e0b" stroke-width="2" class="flow-line-fast"/>
-                            <polygon points="590,96 595,100 590,104" fill="#f59e0b"/>
-                            <text x="552" y="85" fill="#f59e0b" font-family="var(--font-mono)" font-size="8" font-weight="700">UTC Month Rollover</text>
-
-                            <!-- Month 2: 2026-11 -->
-                            <rect x="605" y="45" width="520" height="110" rx="6" fill="rgba(13, 35, 48, 0.7)" stroke="#10b981"/>
-                            <text x="620" y="70" fill="#10b981" font-family="var(--font-mono)" font-size="10.5" font-weight="700">Partition: ((conv_uuid, "2026-11"), sequence_number)</text>
-                            <text x="620" y="90" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8.5">• Fresh monthly partition starts cleanly at sequence_number = 1</text>
-                            <text x="620" y="108" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8.5">• Zero table locks or distributed coordination required across ScyllaDB nodes</text>
-                            <text x="620" y="126" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5">✓ Zero compaction penalties; instant cold-drop of historical months if TTL expired</text>
-                            <rect x="620" y="136" width="480" height="8" rx="3" fill="rgba(16, 185, 129, 0.2)"/>
-                            <rect x="620" y="136" width="15" height="8" rx="3" fill="#10b981"/>
-                        </svg>
+                        <!-- Domain 5: Idempotency & Transactional Outbox (2 tables) -->
+                        <div class="card glass-card hover-glow scylla-domain-card" style="grid-column: span 2;">
+                            <div class="scylla-domain-header">
+                                <span class="scylla-domain-tag tag-purple">05. Idempotency &amp; Transactional Outbox</span>
+                                <span class="badge badge-purple" style="font-size: 0.65rem;">AT-LEAST-ONCE DISSEMINATION</span>
+                            </div>
+                            <div class="scylla-table-list" style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem;">
+                                <div class="scylla-table-entry">
+                                    <div class="table-name">message_submission_by_idempotency_key</div>
+                                    <div class="table-keys"><span class="pk-badge">PK</span> <code>((sender_device_id), idempotency_key)</code></div>
+                                    <div class="table-desc">Deduplication cache with SHA-256 fingerprint &amp; status (Processing/Committed/Failed).</div>
+                                </div>
+                                <div class="scylla-table-entry">
+                                    <div class="table-name">messaging_outbox_events</div>
+                                    <div class="table-keys">
+                                        <span class="pk-badge">PK</span> <code>((outbox_bucket))</code>
+                                        <span class="ck-badge">CK</span> <code>created_at ASC, event_id ASC</code>
+                                    </div>
+                                    <div class="table-desc">Hourly UTC bucket (YYYYMMDDHH) for decoupled async event dissemination (Audit &amp; Push).</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </section>
