@@ -1,0 +1,1868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SecureCloud Platform — Gateway, Auth & Messaging Architecture</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Background Canvas & Image Overlay -->
+    <div class="bg-wrapper" id="bg-wrapper">
+        <div class="bg-image" style="background-image: url('assets/msf_securecloud_bg.jpg');"></div>
+        <div class="bg-overlay"></div>
+        <div class="cyber-grid"></div>
+        <div class="particle-field" id="particles"></div>
+    </div>
+
+    <!-- Presentation Container -->
+    <div class="presentation-container">
+        <!-- Top Navigation Header -->
+        <header class="pres-header">
+            <div class="brand-group">
+                <div class="msf-badge">
+                    <span class="msf-accent">SECURE</span>CLOUD
+                </div>
+                <div class="divider">/</div>
+                <span class="sub-brand">ARCHITECTURE DEEP DIVE: GATEWAY, AUTH & MESSAGING</span>
+            </div>
+            
+            <div class="header-status">
+                <span class="status-indicator online"></span>
+                <span class="status-text">GW :8443 · AUTH :50051 · MSG :50053 · SCYLLA :9042</span>
+                <span class="tls-chip">TLS 1.3 · mTLS · ScyllaDB</span>
+            </div>
+
+            <div class="header-controls">
+                <button class="icon-btn" id="btn-fullscreen" title="Toggle Fullscreen (F)">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+                </button>
+                <button class="icon-btn" id="btn-toc" title="Table of Contents (M)">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
+                </button>
+            </div>
+        </header>
+
+        <!-- Slides Viewport -->
+        <main class="slides-viewport" id="viewport">
+            
+            <!-- SLIDE 1: Executive Overview & The Mission Perimeter -->
+            <section class="slide active" id="slide-1" data-index="1" data-title="Executive Overview">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-red">MISSION PERIMETER SPECIFICATION</span>
+                        <span class="badge badge-blue">ADR-001 · ADR-008 · GW-001–010</span>
+                    </div>
+
+                    <h1 class="slide-title">
+                        SecureCloud Gateway <span class="gradient-text">Architecture</span>
+                    </h1>
+                    <p class="slide-lead">
+                        High-assurance, stateless zero-knowledge ingress shielding private humanitarian microservices across untrusted and degraded communication networks.
+                    </p>
+
+                    <div class="overview-grid">
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon blue-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            </div>
+                            <h3>Perimeter Hardening</h3>
+                            <p>Sole external entry point terminating strict TLS 1.3 with AEAD ciphers. Conceals internal microservices and database topologies completely from public IP routing.</p>
+                            <div class="card-footer-meta">Port 8443 (HTTPS) · Port 8080 (HTTP 308)</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon emerald-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                            </div>
+                            <h3>Zero-Trust Enforcement</h3>
+                            <p>Authoritative Bearer token validation and sanitization of spoofed perimeter headers (<code>X-User-Id</code>) before downstream traversal. Fails closed on degraded auth.</p>
+                            <div class="card-footer-meta">LRU Cache (2s TTL) + mTLS gRPC Auth</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon purple-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+                            </div>
+                            <h3>Protocol Translation</h3>
+                            <p>Transparently translates untrusted external REST/JSON & chunked HTTP/1.1 streaming into strongly typed, high-throughput gRPC over HTTP/2 with mTLS.</p>
+                            <div class="card-footer-meta">REST/JSON ➔ Protobuf / gRPC</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon amber-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M4.93 4.93l4.24 4.24"></path><path d="M14.83 9.17l4.24-4.24"></path><path d="M14.83 14.83l4.24 4.24"></path><path d="M9.17 14.83L4.93 19.07"></path></svg>
+                            </div>
+                            <h3>Transport Resilience</h3>
+                            <p>Absorbs satellite latency spikes, Slowloris threats, and overload via Workload Bulkheading, Circuit Breakers, clamped deadlines, and bounded streaming buffers.</p>
+                            <div class="card-footer-meta">Auth (100) · Msg (200) · Files (50)</div>
+                        </div>
+                    </div>
+
+                    <div class="zero-knowledge-callout">
+                        <div class="callout-icon">🛡️</div>
+                        <div class="callout-text">
+                            <strong>Zero-Knowledge Transport Invariant (ADR-008):</strong>
+                            The Gateway functions as a blind, tamper-evident pipeline for E2EE message and file ciphertext. It holds zero user keys, zero ratchet states, and has mathematically zero decryption capability.
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 2: Responsibilities & Non-Responsibilities (The Border Checkpoint Model) -->
+            <section class="slide" id="slide-2" data-index="2" data-title="Responsibilities vs Non-Responsibilities">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-purple">SYSTEM BOUNDARIES & ADR COMPLIANCE</span>
+                        <span class="badge badge-blue">ADR-005 · ADR-008 · ADR-009</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        The Border Checkpoint: <span class="gradient-text">Responsibilities vs Non-Responsibilities</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Mental Model: A hardened diplomatic checkpoint inspecting traveler credentials and luggage bounds, but never opening sealed diplomatic pouches or granting permanent citizenship.
+                    </p>
+
+                    <div class="dichotomy-container">
+                        <!-- What Gateway Owns -->
+                        <div class="dichotomy-box owns-box">
+                            <div class="box-header">
+                                <div class="box-indicator check-icon">✓</div>
+                                <div>
+                                    <h3>What Gateway Strictly Owns</h3>
+                                    <span class="box-subtitle">Stateless Perimeter Defense & Ingress Translation</span>
+                                </div>
+                            </div>
+                            <ul class="dichotomy-list">
+                                <li>
+                                    <strong>TLS 1.3 Termination & Cleartext Redirection:</strong>
+                                    Mandatory HTTP 308 upgrade on :8080 with HSTS preload; strict AEAD cipher enforcement on :8443.
+                                </li>
+                                <li>
+                                    <strong>Perimeter Identity Header Stripping:</strong>
+                                    In-place erasure of untrusted headers (<code>x-user-id</code>, <code>x-scopes</code>, <code>x-device-id</code>) before routing.
+                                </li>
+                                <li>
+                                    <strong>Token Verification & Fast-Fail:</strong>
+                                    Bearer token extraction, 2s local LRU cache lookup, and mTLS session validation with Auth Service.
+                                </li>
+                                <li>
+                                    <strong>Coarse Scope & Assurance Evaluation:</strong>
+                                    Route-level OAuth2 scope matching and MFA requirement checking (Primary vs MFA-verified).
+                                </li>
+                                <li>
+                                    <strong>Workload Bulkheading & Circuit Breaking:</strong>
+                                    Isolated concurrency pools preventing file transfers from starving auth/health requests; Nygard FSM breakers.
+                                </li>
+                                <li>
+                                    <strong>Streaming Bounded Buffers & Integrity:</strong>
+                                    Max 4 MiB chunks with 8 MiB memory ceiling, dual CV backpressure, and constant-time SHA-256 validation.
+                                </li>
+                            </ul>
+                        </div>
+
+                        <!-- What Gateway Deliberately Does NOT Own -->
+                        <div class="dichotomy-box avoids-box">
+                            <div class="box-header">
+                                <div class="box-indicator cross-icon">✗</div>
+                                <div>
+                                    <h3>What Gateway Deliberately Rejects</h3>
+                                    <span class="box-subtitle">Preserved Invariants & Architectural Non-Responsibilities</span>
+                                </div>
+                            </div>
+                            <ul class="dichotomy-list">
+                                <li>
+                                    <strong>Zero Database Connections (ADR-005):</strong>
+                                    Contains NO SQL or ScyllaDB drivers, NO connection pools, and connects to NO persistent data store.
+                                </li>
+                                <li>
+                                    <strong>Zero Object Storage Direct Access:</strong>
+                                    Never interacts directly with MinIO or S3; chunk persistence is delegated entirely to Files Service over mTLS.
+                                </li>
+                                <li>
+                                    <strong>No Cryptographic Token Authority:</strong>
+                                    Does not issue tokens, does not hold private signing keys, and does not store credentials (Auth owns authority).
+                                </li>
+                                <li>
+                                    <strong>Zero Decryption Keys or Plaintext (ADR-008):</strong>
+                                    Never possesses identity keys, signed prekeys, ratchet states, or symmetric file keys. Ciphertext is opaque octets.
+                                </li>
+                                <li>
+                                    <strong>No Fine-Grained Domain Authorization:</strong>
+                                    Does not check group memberships, room rosters, or file ACLs (respective backend services own fine-grained checks).
+                                </li>
+                                <li>
+                                    <strong>No Stateful Business Logic:</strong>
+                                    Operates completely statelessly, enabling instantaneous horizontal scaling and rolling restarts.
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 3: Gateway Internal Subsystem Architecture -->
+            <section class="slide" id="slide-3" data-index="3" data-title="Internal Subsystem Architecture">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-emerald">MODULAR SUBSYSTEM BREAKDOWN</span>
+                        <span class="badge badge-blue">src/gateway/ (7 Core Subsystems)</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Internal <span class="gradient-text">Subsystem Architecture</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Clean separation of concerns organized into seven specialized, loosely coupled subsystems under <code>src/gateway/</code>.
+                    </p>
+
+                    <div class="subsystems-layout">
+                        <!-- Subsystem Selector / Nav -->
+                        <div class="subsystem-tabs" id="subsystem-tabs">
+                            <button class="sub-tab active" data-sub="transport">
+                                <span class="tab-num">01</span>
+                                <span class="tab-label">Transport & Network</span>
+                            </button>
+                            <button class="sub-tab" data-sub="perimeter">
+                                <span class="tab-num">02</span>
+                                <span class="tab-label">Perimeter Security</span>
+                            </button>
+                            <button class="sub-tab" data-sub="resilience">
+                                <span class="tab-num">03</span>
+                                <span class="tab-label">Resilience & Flow-Control</span>
+                            </button>
+                            <button class="sub-tab" data-sub="routing">
+                                <span class="tab-num">04</span>
+                                <span class="tab-label">Routing & Proxy</span>
+                            </button>
+                            <button class="sub-tab" data-sub="grpc">
+                                <span class="tab-num">05</span>
+                                <span class="tab-label">Downstream gRPC</span>
+                            </button>
+                            <button class="sub-tab" data-sub="streaming">
+                                <span class="tab-num">06</span>
+                                <span class="tab-label">Streaming & Crypto</span>
+                            </button>
+                            <button class="sub-tab" data-sub="observability">
+                                <span class="tab-num">07</span>
+                                <span class="tab-label">Observability & Health</span>
+                            </button>
+                        </div>
+
+                        <!-- Subsystem Details Pane -->
+                        <div class="subsystem-detail glass-card" id="subsystem-detail">
+                            <!-- Injected by JavaScript based on active tab -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 4: Detailed Request Lifecycle -->
+            <section class="slide" id="slide-4" data-index="4" data-title="Request Lifecycle Pipeline">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-blue">INTERACTIVE PIPELINE EXECUTION</span>
+                        <span class="badge badge-emerald">END-TO-END FLOW: CLIENT ➔ GATEWAY ➔ BACKEND</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Detailed <span class="gradient-text">Request Lifecycle Pipeline</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Click any node along the pipeline to inspect in-flight transformations, latency budgets, and fail-closed defense triggers.
+                    </p>
+
+                    <div class="pipeline-visual-container">
+                        <!-- Interactive Pipeline Steps -->
+                        <div class="pipeline-track" id="pipeline-track">
+                            <div class="pipeline-node active" data-step="1">
+                                <div class="node-circle">1</div>
+                                <div class="node-label">TLS 1.3 Ingress</div>
+                            </div>
+                            <div class="pipeline-connector"></div>
+                            <div class="pipeline-node" data-step="2">
+                                <div class="node-circle">2</div>
+                                <div class="node-label">UUIDv7 Ingestion</div>
+                            </div>
+                            <div class="pipeline-connector"></div>
+                            <div class="pipeline-node" data-step="3">
+                                <div class="node-circle">3</div>
+                                <div class="node-label">Resource Bounds</div>
+                            </div>
+                            <div class="pipeline-connector"></div>
+                            <div class="pipeline-node" data-step="4">
+                                <div class="node-circle">4</div>
+                                <div class="node-label">Auth & Validate</div>
+                            </div>
+                            <div class="pipeline-connector"></div>
+                            <div class="pipeline-node" data-step="5">
+                                <div class="node-circle">5</div>
+                                <div class="node-label">Rate Limiter</div>
+                            </div>
+                            <div class="pipeline-connector"></div>
+                            <div class="pipeline-node" data-step="6">
+                                <div class="node-circle">6</div>
+                                <div class="node-label">Bulkhead & Breaker</div>
+                            </div>
+                            <div class="pipeline-connector"></div>
+                            <div class="pipeline-node" data-step="7">
+                                <div class="node-circle">7</div>
+                                <div class="node-label">mTLS gRPC Dispatch</div>
+                            </div>
+                            <div class="pipeline-connector"></div>
+                            <div class="pipeline-node" data-step="8">
+                                <div class="node-circle">8</div>
+                                <div class="node-label">RFC 7807 Response</div>
+                            </div>
+                        </div>
+
+                        <!-- Step Detail Card -->
+                        <div class="pipeline-step-card glass-card" id="pipeline-step-card">
+                            <!-- Populated dynamically via JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 5: Detailed 14-Stage Execution Breakdown -->
+            <section class="slide" id="slide-5" data-index="5" data-title="14-Stage Execution Breakdown">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-amber">LOW-LEVEL EXECUTION SEQUENCE</span>
+                        <span class="badge badge-blue">KERNEL SOCKET TO GRPC WIRE TRACE</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Stage-by-Stage <span class="gradient-text">Execution Breakdown</span>
+                    </h2>
+                    <p class="slide-lead">
+                        The exact 14 sequential operations applied to every inbound HTTP transaction across the Gateway filter chain.
+                    </p>
+
+                    <div class="stages-grid">
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">01</span>
+                            <h4>TLS 1.3 Termination</h4>
+                            <p>Kernel accepts TCP :8443. OpenSSL enforces TLS 1.3 AEAD ciphers only (TLS_AES_256_GCM, CHACHA20). Sub-1.3 fails at socket.</p>
+                            <span class="stage-tag">OpenSSL SSL_CTX</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">02</span>
+                            <h4>Correlation Injection</h4>
+                            <p>Extracts incoming <code>X-Request-ID</code> or generates cryptographically unique UUIDv7. Attached to log context & response.</p>
+                            <span class="stage-tag">RequestIdMiddleware</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">03</span>
+                            <h4>Graceful Drain Guard</h4>
+                            <p>Queries <code>DrainManager::is_draining()</code>. If shutdown active, fast-rejects with HTTP 503 SERVER_SHUTTING_DOWN & Retry-After: 5.</p>
+                            <span class="stage-tag">DrainMiddleware</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">04</span>
+                            <h4>Transport Bounds</h4>
+                            <p>Rejects headers &gt; 16 KiB (HTTP 431), bodies &gt; 10 MiB (HTTP 413), and global concurrent connections &gt; 1024 (HTTP 503).</p>
+                            <span class="stage-tag">ResourceLimiter</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">05</span>
+                            <h4>Perimeter Sanitizer</h4>
+                            <p>Erases client-injected <code>X-User-Id</code>, <code>X-Device-Id</code>, <code>X-Auth-Level</code>, and <code>X-Authenticated-*</code> in-place.</p>
+                            <span class="stage-tag">HeaderSanitizer</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">06</span>
+                            <h4>Authentication & Cache</h4>
+                            <p>Parses RFC 6750 Bearer token. Checks 2s LRU cache; on miss, validates session via mTLS gRPC against Auth. Fails closed on error.</p>
+                            <span class="stage-tag">AuthenticationMiddleware</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">07</span>
+                            <h4>Token-Bucket Rate Limit</h4>
+                            <p>Evaluates token bucket for authenticated <code>user_id</code> (or client IP). Rejection returns HTTP 429 TOO_MANY_REQUESTS.</p>
+                            <span class="stage-tag">RateLimiter</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">08</span>
+                            <h4>Scope Authorization</h4>
+                            <p>Evaluates granted scopes against declarative <code>GatewaySecurityPolicy</code> (supports wildcards e.g. <code>messages:*</code>). Rejection: HTTP 403.</p>
+                            <span class="stage-tag">AuthorizationMiddleware</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">09</span>
+                            <h4>Bulkhead Reservation</h4>
+                            <p>Acquires atomic slot for workload (Auth: 100, Msg: 200, Files: 50). Full capacity yields HTTP 503 BULKHEAD_LIMIT_EXCEEDED.</p>
+                            <span class="stage-tag">BulkheadManager</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">10</span>
+                            <h4>Circuit Breaker Check</h4>
+                            <p>Checks target downstream breaker state. If <code>OPEN</code>, fast-fails in &lt; 1 ms with HTTP 503 CIRCUIT_BREAKER_OPEN.</p>
+                            <span class="stage-tag">CircuitBreaker FSM</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">11</span>
+                            <h4>Deadline Clamping</h4>
+                            <p>Parses <code>X-Request-Timeout</code> and clamps budget to <code>[50ms, 10000ms]</code>. Dispatches remaining time to gRPC call context.</p>
+                            <span class="stage-tag">DeadlineManager</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">12</span>
+                            <h4>gRPC Dispatch & Retry</h4>
+                            <p>Dispatches RPC over persistent mTLS HTTP/2 channel. Bounded retries for safe reads. ActiveCallGuard cancels gRPC if client disconnects.</p>
+                            <span class="stage-tag">ActiveCallGuard + mTLS</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">13</span>
+                            <h4>RFC 7807 Error Mapping</h4>
+                            <p>Translates gRPC status codes into standardized RFC 7807 Problem Details. Masks internal storage/DB details completely.</p>
+                            <span class="stage-tag">ErrorMapper</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">14</span>
+                            <h4>Socket Flush & Cleanup</h4>
+                            <p>Emits HTTP response with <code>X-Request-ID</code>, logs sanitized metrics, decrements active guards, and releases bulkhead lease.</p>
+                            <span class="stage-tag">RAII Cleanup Pipeline</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 6: Resilience, Security Invariants & Field Assurance -->
+            <section class="slide" id="slide-6" data-index="6" data-title="Resilience & Security Invariants">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-red">OPERATIONAL & AUDIT COMPLIANCE</span>
+                        <span class="badge badge-emerald">HUMANITARIAN FIELD ASSURANCE (MSF E2EE)</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Field Resilience & <span class="gradient-text">Architectural Invariants</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Engineered to guarantee uptime, cryptographic confidentiality, and zero data leakage across contested satellite networks and remote field clinics.
+                    </p>
+
+                    <div class="invariants-grid">
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-01</span>
+                                <h3>Zero-Knowledge Ciphertext Invariant</h3>
+                            </div>
+                            <p>The Gateway acts as an agnostic transport conduit for E2EE payloads (Signal Double Ratchet & Argon2id encrypted files). It has no access to identity keys, prekeys, or session plaintext.</p>
+                            <div class="inv-badge green">CRYPTOGRAPHICALLY ISOLATED</div>
+                        </div>
+
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-02</span>
+                                <h3>Strict Database & Storage Isolation</h3>
+                            </div>
+                            <p>Enforces ADR-005: Zero SQL, PostgreSQL, ScyllaDB, MinIO, or ClickHouse client libraries are linked into the Gateway binary. Direct storage reachability is physically impossible.</p>
+                            <div class="inv-badge green">ZERO DIRECT STORAGE ACCESS</div>
+                        </div>
+
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-03</span>
+                                <h3>Degraded Satellite Network Adaptation</h3>
+                            </div>
+                            <p>Bounded 8 MiB streaming deque buffers with dual condition variable backpressure, 30s activity watchdog for dead connections, and socket disconnect propagation unblocking downstream storage I/O.</p>
+                            <div class="inv-badge blue">ADAPTIVE SATELLITE FLOW CONTROL</div>
+                        </div>
+
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-04</span>
+                                <h3>Two-Tier Defense-in-Depth Authorization</h3>
+                            </div>
+                            <p>Gateway enforces coarse-grained perimeter verification (token signature, expiry, scopes, MFA level). Fine-grained domain authorization (roster access, file ownership) is enforced downstream.</p>
+                            <div class="inv-badge purple">TWO-TIER DEFENSE-IN-DEPTH</div>
+                        </div>
+
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-05</span>
+                                <h3>Zero-Downtime Coordinated Drain</h3>
+                            </div>
+                            <p>Upon SIGTERM/SIGINT, enters graceful drain phase: rejects new ingress with HTTP 503 + Retry-After: 5 while allowing active in-flight requests up to 10 seconds to cleanly complete.</p>
+                            <div class="inv-badge amber">GRACEFUL DRAIN & RECOVERY</div>
+                        </div>
+
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-06</span>
+                                <h3>Secret Isolation in Observability</h3>
+                            </div>
+                            <p>Structured JSON access logs strictly redact and omit request bodies, authorization headers, bearer tokens, query parameters, and private key representations at the framework layer.</p>
+                            <div class="inv-badge red">SECRET-FREE AUDIT TRAIL</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ========================================================================= -->
+            <!-- AUTH SERVICE PRESENTATION SLIDES (SLIDES 7–13)                           -->
+            <!-- Based on docs/architecture/auth-architecture-and-functioning.md          -->
+            <!-- ========================================================================= -->
+
+            <!-- SLIDE 7: Auth Service Executive Overview & Cryptographic Trust Mission -->
+            <section class="slide" id="slide-7" data-index="7" data-title="Auth: Executive Overview">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-purple">CRYPTOGRAPHIC IDENTITY & TRUST ANCHOR</span>
+                        <span class="badge badge-blue">ADR-004 · ADR-005 · ADR-008 · AUTH-001–010</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Auth Service: <span class="gradient-text">Trust Anchor Architecture</span>
+                    </h2>
+                    <p class="slide-lead">
+                        High-assurance cryptographic authentication daemon providing memory-hard password verification, asymmetric Ed25519 token signing, and zero-knowledge Signal X3DH prekey distribution.
+                    </p>
+
+                    <div class="overview-grid">
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon red-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2l-2 2m-6.5 6.5l-3.5 3.5-2.5-2.5-4 4 2.5 2.5-4 4 3 3 4-4 2.5 2.5 4-4-2.5-2.5 3.5-3.5"></path></svg>
+                            </div>
+                            <h3>Memory-Hard Verification</h3>
+                            <p>Hardened against GPU/ASIC cluster cracking with Argon2id (t=3, m=64 MB, p=4). Enforces constant-time verifier comparisons to defeat side-channel timing analysis.</p>
+                            <div class="card-footer-meta">Argon2id Hybrid · CRYPTO_memcmp</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon purple-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                            </div>
+                            <h3>Asymmetric Token Signing</h3>
+                            <p>Tokens signed with pure Ed25519 digital signatures on the Twisted Edwards curve. The private signing key never leaves the Auth enclave; Gateway verifies via cached public keys.</p>
+                            <div class="card-footer-meta">Ed25519 Digital Signatures · RFC 8032</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon amber-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                            </div>
+                            <h3>Rotating Refresh Tokens</h3>
+                            <p>Single-use refresh token rotation on every exchange. Automatic replay detection triggers user-wide cascading session invalidation to neutralize token theft immediately.</p>
+                            <div class="card-footer-meta">Single-Use Rotation · Replay Cascade</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon emerald-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 8v8m-4-4h8"></path></svg>
+                            </div>
+                            <h3>Signal X3DH & PQXDH Prekeys</h3>
+                            <p>Authoritative zero-knowledge public identity key and prekey directory. Atomic, race-free prekey claims via PostgreSQL <code>SELECT ... FOR UPDATE SKIP LOCKED</code>.</p>
+                            <div class="card-footer-meta">X3DH Handshakes · Post-Quantum Ready</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 8: Auth Core Responsibilities vs. Deliberate Non-Responsibilities -->
+            <section class="slide" id="slide-8" data-index="8" data-title="Auth: Responsibilities Matrix">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-purple">DOMAIN BOUNDARY SPECIFICATION</span>
+                        <span class="badge badge-blue">HEXAGONAL ARCHITECTURE (ADR-002)</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Auth Service: <span class="gradient-text">Responsibilities vs Non-Responsibilities</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Mental Model: The cryptographic trust anchor issuing digital passports and hosting public keys, but never inspecting encrypted cargo or handling public internet traffic.
+                    </p>
+
+                    <div class="dichotomy-container">
+                        <!-- What Auth Owns -->
+                        <div class="dichotomy-box owns-box">
+                            <div class="box-header">
+                                <div class="box-indicator check-icon">✓</div>
+                                <div>
+                                    <h3>What Auth Strictly Owns</h3>
+                                    <span class="box-subtitle">Authoritative Domain Capabilities</span>
+                                </div>
+                            </div>
+                            <ul class="dichotomy-list">
+                                <li>
+                                    <strong>Memory-Hard Password Verification:</strong>
+                                    Argon2id hashing (<code>m=64 MB, t=3, p=4</code>) with threadpool isolation and <code>CRYPTO_memcmp</code> constant-time verification.
+                                </li>
+                                <li>
+                                    <strong>Asymmetric Token Issuance & Signing:</strong>
+                                    Issues compact base64url access tokens signed with private Ed25519 key; distributes public signing keys for Gateway verification.
+                                </li>
+                                <li>
+                                    <strong>Rotating Session & Replay Defense:</strong>
+                                    Maintains active session tables, rotates single-use refresh tokens, and triggers cascading revocation upon theft detection.
+                                </li>
+                                <li>
+                                    <strong>Multi-Factor Authentication (MFA):</strong>
+                                    RFC 6238 TOTP verification, AES-256-GCM envelope encryption for secret seeds, and single-use Argon2id recovery codes.
+                                </li>
+                                <li>
+                                    <strong>Device Trust & Ephemeral Pairing:</strong>
+                                    Physical device registry, ephemeral pairing codes, and instant device revocation cascades.
+                                </li>
+                                <li>
+                                    <strong>Signal X3DH & PQXDH Prekey Directory:</strong>
+                                    Authoritative prekey directory with atomic, race-free prekey claims via PostgreSQL <code>SELECT ... FOR UPDATE SKIP LOCKED</code>.
+                                </li>
+                            </ul>
+                        </div>
+
+                        <!-- What Auth Deliberately Rejects -->
+                        <div class="dichotomy-box avoids-box">
+                            <div class="box-header">
+                                <div class="box-indicator cross-icon">✗</div>
+                                <div>
+                                    <h3>What Auth Deliberately Rejects</h3>
+                                    <span class="box-subtitle">Preserved Invariants & Architectural Non-Responsibilities</span>
+                                </div>
+                            </div>
+                            <ul class="dichotomy-list">
+                                <li>
+                                    <strong>No Public Internet Exposure:</strong>
+                                    Auth never binds to public network interfaces; operates strictly within the internal mTLS service mesh behind Gateway (:8443).
+                                </li>
+                                <li>
+                                    <strong>Zero Plaintext Message/File Access (ADR-008):</strong>
+                                    Zero plaintext invariant: Auth never stores, inspects, or processes end-to-end encrypted message or file content.
+                                </li>
+                                <li>
+                                    <strong>No End-to-End Private Key Hosting:</strong>
+                                    User private identity keys and ratchet keys remain exclusively in client device hardware enclaves.
+                                </li>
+                                <li>
+                                    <strong>No Direct Cross-Service Database Access:</strong>
+                                    PostgreSQL port 5433 is exclusively accessible by Auth. Auth never connects to Messaging ScyllaDB or Files S3.
+                                </li>
+                                <li>
+                                    <strong>No Long-Term Audit Storage:</strong>
+                                    Security audit logs are dispatched asynchronously to ClickHouse via the Audit Service, not stored locally.
+                                </li>
+                                <li>
+                                    <strong>No Perimeter HTTP Routing or TLS Termination:</strong>
+                                    Gateway owns HTTP/1.1 REST ingress and perimeter TLS 1.3; Auth only serves strongly typed gRPC over mTLS (:50051).
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 9: Auth Internal Subsystem Architecture -->
+            <section class="slide" id="slide-9" data-index="9" data-title="Auth: Subsystem Explorer">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-purple">MODULAR SUBSYSTEM TOPOLOGY</span>
+                        <span class="badge badge-blue">HEXAGONAL REPOSITORY PORTS</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Auth Internal <span class="gradient-text">Subsystem Architecture</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Interactive exploration of the 7 decoupled domain engines powering credential verification, cryptographic signatures, token rotation, and prekey storage.
+                    </p>
+
+                    <div class="subsystems-layout">
+                        <!-- Navigation Tabs (Left Sidebar) -->
+                        <div class="subsystem-tabs">
+                            <button class="sub-tab auth-sub-tab active" data-sub="auth_facade">
+                                <span class="tab-num">01</span>
+                                <span class="tab-label">gRPC Protocol Facade</span>
+                            </button>
+
+                            <button class="sub-tab auth-sub-tab" data-sub="auth_crypto">
+                                <span class="tab-num">02</span>
+                                <span class="tab-label">Credential & Crypto Engine</span>
+                            </button>
+
+                            <button class="sub-tab auth-sub-tab" data-sub="auth_session">
+                                <span class="tab-num">03</span>
+                                <span class="tab-label">Session & Token Manager</span>
+                            </button>
+
+                            <button class="sub-tab auth-sub-tab" data-sub="auth_mfa">
+                                <span class="tab-num">04</span>
+                                <span class="tab-label">MFA & Secret Enclave</span>
+                            </button>
+
+                            <button class="sub-tab auth-sub-tab" data-sub="auth_device">
+                                <span class="tab-num">05</span>
+                                <span class="tab-label">Device Trust & Pairing</span>
+                            </button>
+
+                            <button class="sub-tab auth-sub-tab" data-sub="auth_prekeys">
+                                <span class="tab-num">06</span>
+                                <span class="tab-label">Signal X3DH Prekeys</span>
+                            </button>
+
+                            <button class="sub-tab auth-sub-tab" data-sub="auth_db">
+                                <span class="tab-num">07</span>
+                                <span class="tab-label">PostgreSQL 17 (Port 5433)</span>
+                            </button>
+                        </div>
+
+                        <!-- Dynamic Detail Display (Right Area) -->
+                        <div class="subsystem-detail glass-card" id="auth-subsystem-detail">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 10: Auth Core Request Lifecycles -->
+            <section class="slide" id="slide-10" data-index="10" data-title="Auth: Request Lifecycles">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-purple">DISTRIBUTED PROTOCOL EXECUTION</span>
+                        <span class="badge badge-emerald">CRYPTOGRAPHIC STATE TRANSITIONS</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Auth Core <span class="gradient-text">Request Lifecycles</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Interactive walk-through of the end-to-end cryptographic and stateful lifecycles executing across Auth subsystems and persistence boundaries.
+                    </p>
+
+                    <div class="pipeline-visual-container">
+                        <!-- Horizontal Flow Stepper -->
+                        <div class="pipeline-track">
+                            <div class="pipeline-node auth-pipeline-node active" data-step="1">
+                                <div class="node-circle">1</div>
+                                <div class="node-label">Primary Login</div>
+                            </div>
+
+                            <div class="pipeline-connector"></div>
+
+                            <div class="pipeline-node auth-pipeline-node" data-step="2">
+                                <div class="node-circle">2</div>
+                                <div class="node-label">Token Rotation</div>
+                            </div>
+
+                            <div class="pipeline-connector"></div>
+
+                            <div class="pipeline-node auth-pipeline-node" data-step="3">
+                                <div class="node-circle">3</div>
+                                <div class="node-label">MFA Step-Up</div>
+                            </div>
+
+                            <div class="pipeline-connector"></div>
+
+                            <div class="pipeline-node auth-pipeline-node" data-step="4">
+                                <div class="node-circle">4</div>
+                                <div class="node-label">Device Pairing</div>
+                            </div>
+
+                            <div class="pipeline-connector"></div>
+
+                            <div class="pipeline-node auth-pipeline-node" data-step="5">
+                                <div class="node-circle">5</div>
+                                <div class="node-label">X3DH Bundle</div>
+                            </div>
+                        </div>
+
+                        <!-- Step Detail Card -->
+                        <div class="pipeline-step-card glass-card" id="auth-pipeline-step-card">
+                            <!-- Populated dynamically by JS -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 11: 12-Stage Primary Authentication Deep Dive -->
+            <section class="slide" id="slide-11" data-index="11" data-title="Auth: 12-Stage Execution Deep Dive">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-purple">DEEP DIVE EXECUTION TRACE</span>
+                        <span class="badge badge-blue">SUB-MILLISECOND INVARIANTS</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        12-Stage Primary Authentication <span class="gradient-text">Deep Dive</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Granular stage-by-stage execution trace of a <code>LoginWithPassword</code> request from mTLS ingress to database commitment and audit emission.
+                    </p>
+
+                    <div class="stages-grid">
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">01</span>
+                            <h4>mTLS Transport Ingress</h4>
+                            <p>Terminates TLS 1.3 on port 50051. Confirms client peer certificate is issued by Cluster CA with SAN matching <code>DNS:gateway</code>.</p>
+                            <span class="stage-tag">Latency: ~0.1 ms · SAN Validation</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">02</span>
+                            <h4>Throttling & Lockout</h4>
+                            <p>Verifies identifier against rate-limiting token bucket and failed-attempt counter. Prevents brute-force denial of service.</p>
+                            <span class="stage-tag">Latency: &lt; 0.2 ms · Token Bucket</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">03</span>
+                            <h4>PostgreSQL Credential Retrieval</h4>
+                            <p>Fetches Argon2id verifier record, salt, iteration count, and memory parameters from PostgreSQL 17 via connection pool lease.</p>
+                            <span class="stage-tag">Latency: ~1.5–3 ms · Parameterized Query</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">04</span>
+                            <h4>Argon2id CPU Offloading</h4>
+                            <p>Dispatches memory-hard computation (m=64 MB, t=3, p=4) to dedicated CPU worker pool, preventing gRPC I/O thread starvation.</p>
+                            <span class="stage-tag">Latency: ~45–65 ms · Threadpool Isolation</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">05</span>
+                            <h4>Constant-Time Comparison</h4>
+                            <p>Executes <code>CRYPTO_memcmp(computed, stored, 32)</code> to evaluate verifiers without leaking timing information to side-channel attackers.</p>
+                            <span class="stage-tag">Latency: &lt; 0.01 ms · Zero-Leakage</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">06</span>
+                            <h4>Device Trust Evaluation</h4>
+                            <p>Evaluates client device ID. If recognized, confirms active status; if unverified, initiates new device registration quarantine workflow.</p>
+                            <span class="stage-tag">Latency: ~1 ms · Device Registry</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">07</span>
+                            <h4>MFA Challenge Evaluation</h4>
+                            <p>If TOTP MFA is enrolled, issues an ephemeral <code>mfa_token</code> and returns <code>MFA_REQUIRED</code> challenge status to client.</p>
+                            <span class="stage-tag">Latency: ~0.5 ms · Ephemeral Challenge</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">08</span>
+                            <h4>Session Entity Generation</h4>
+                            <p>Allocates cryptographically strong UUIDv7 session identifier, user ID, device ID, and sets TTL (15-min access, 7-day refresh).</p>
+                            <span class="stage-tag">Latency: &lt; 0.1 ms · UUIDv7 RFC 9562</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">09</span>
+                            <h4>Refresh Token Hashing</h4>
+                            <p>Generates high-entropy 256-bit refresh token, computes SHA-256 hash for database storage, and commits session atomically.</p>
+                            <span class="stage-tag">Latency: ~2 ms · SHA-256 Storage</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">10</span>
+                            <h4>Ed25519 Token Signing</h4>
+                            <p>Formats JSON claims (sub, dev, iss, exp, scopes), serializes to base64url, and signs with Ed25519 private key in memory enclave.</p>
+                            <span class="stage-tag">Latency: ~0.15 ms · 64-byte Signature</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">11</span>
+                            <h4>Audit Event Emission</h4>
+                            <p>Publishes <code>auth.login.succeeded</code> event with user UUID, device UUID, and timestamp. Strictly redacts passwords and tokens.</p>
+                            <span class="stage-tag">Latency: ~0.2 ms · Zero-Secret Audit</span>
+                        </div>
+
+                        <div class="stage-item glass-card">
+                            <span class="stage-num">12</span>
+                            <h4>Response & Memory Wipe</h4>
+                            <p>Packages access token, rotating refresh token, and timestamps into gRPC response. Plaintext password buffer wiped with <code>OPENSSL_cleanse</code>.</p>
+                            <span class="stage-tag">Latency: &lt; 0.1 ms · Memory Sanitization</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 12: Cryptographic Foundations & Mathematical Specifications -->
+            <section class="slide" id="slide-12" data-index="12" data-title="Auth: Cryptographic Foundations">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-purple">CRYPTOGRAPHIC SPECIFICATION</span>
+                        <span class="badge badge-blue">POST-QUANTUM READINESS</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Mathematical & <span class="gradient-text">Cryptographic Foundations</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Formal specifications of the Twisted Edwards curve digital signature scheme, hybrid memory-hard hashing algorithm, and 4-way Diffie-Hellman prekey derivations.
+                    </p>
+
+                    <div class="overview-grid">
+                        <div class="card glass-card">
+                            <div class="card-icon purple-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+                            </div>
+                            <h3>Ed25519 Digital Signatures</h3>
+                            <p style="font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent-blue); margin: 0.5rem 0;">
+                                -x^2 + y^2 = 1 - (121665/121666) x^2 y^2
+                            </p>
+                            <p>Defined over finite field F(2^255 - 19). Projective coordinates (X:Y:Z:T) eliminate modular divisions. Signature (R, S) is 64 bytes, validated without secret keys.</p>
+                            <div class="card-footer-meta">Twisted Edwards · Curve25519 · RFC 8032</div>
+                        </div>
+
+                        <div class="card glass-card">
+                            <div class="card-icon red-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                            </div>
+                            <h3>Argon2id Hybrid Hashing</h3>
+                            <p style="font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent-red); margin: 0.5rem 0;">
+                                m=65536 KiB (64 MB), t=3, p=4
+                            </p>
+                            <p>First half of pass 1 uses Argon2i (data-independent memory access) to resist side-channels; remaining passes use Argon2d (data-dependent) to defeat GPU/ASIC crackers.</p>
+                            <div class="card-footer-meta">Memory-Hard · RFC 9106 · Zero Timing Leaks</div>
+                        </div>
+
+                        <div class="card glass-card">
+                            <div class="card-icon emerald-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg>
+                            </div>
+                            <h3>Signal X3DH 4-Way Agreement</h3>
+                            <p style="font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent-emerald); margin: 0.5rem 0;">
+                                SK = KDF(DH_1 || DH_2 || DH_3 || DH_4)
+                            </p>
+                            <p>DH_1 = (IK_A, SPK_B), DH_2 = (EK_A, IK_B), DH_3 = (EK_A, SPK_B), DH_4 = (EK_A, OPK_B). Delivers mathematical forward secrecy and cryptographic deniability.</p>
+                            <div class="card-footer-meta">Extended Triple Diffie-Hellman · PQXDH Ready</div>
+                        </div>
+
+                        <div class="card glass-card">
+                            <div class="card-icon amber-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            </div>
+                            <h3>AES-256-GCM Envelope Encryption</h3>
+                            <p style="font-family: var(--font-mono); font-size: 0.85rem; color: var(--accent-amber); margin: 0.5rem 0;">
+                                C, T = AES-GCM(K_env, IV_96, Seed_TOTP)
+                            </p>
+                            <p>MFA seeds are encrypted under hardware-backed master key before PostgreSQL storage. Recovery codes are stored strictly as Argon2id hashes with single-use consumption.</p>
+                            <div class="card-footer-meta">Envelope Encryption · NIST SP 800-38D</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 13: Auth Security Invariants & STRIDE Threat Model -->
+            <section class="slide" id="slide-13" data-index="13" data-title="Auth: Invariants & Threat Model">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-purple">STRIDE THREAT MITIGATION</span>
+                        <span class="badge badge-emerald">ACID DURABILITY (PORT 5433)</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Auth Security Invariants & <span class="gradient-text">STRIDE Threat Model</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Rigorous defense-in-depth model protecting humanitarian credentials, preventing token theft, and ensuring cold restart resilience.
+                    </p>
+
+                    <div class="invariants-grid">
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-A01</span>
+                                <h3>Zero Private Key Exposure Invariant</h3>
+                            </div>
+                            <p>The Ed25519 private signing key is generated and stored in a protected memory enclave with <code>mlock()</code> to prevent OS swapping. Verified externally strictly via public key distribution.</p>
+                            <div class="inv-badge green">ENCLAVE PROTECTED KEY</div>
+                        </div>
+
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-A02</span>
+                                <h3>Strict Port 5433 PostgreSQL Isolation</h3>
+                            </div>
+                            <p>Enforces ADR-003: Auth daemon fails closed immediately on startup if configured with standard port 5432 or Files port. Eliminates database cross-talk and connection collision.</p>
+                            <div class="inv-badge green">STRICT PORT 5433 ENFORCEMENT</div>
+                        </div>
+
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-A03</span>
+                                <h3>Cascading Token Invalidation on Theft</h3>
+                            </div>
+                            <p>Single-use refresh token reuse triggers immediate revocation of the entire session family. If a compromised token is replayed, the legitimate user is safely prompted to re-authenticate.</p>
+                            <div class="inv-badge amber">THEFT REPLAY CASCADE</div>
+                        </div>
+
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-A04</span>
+                                <h3>Atomic Race-Free Prekey Allocation</h3>
+                            </div>
+                            <p>Prekey consumption utilizes PostgreSQL 17 <code>SELECT ... FOR UPDATE SKIP LOCKED</code>, guaranteeing zero concurrent duplicate claims under heavy multi-client handshakes.</p>
+                            <div class="inv-badge purple">ACID SKIP LOCKED CONCURRENCY</div>
+                        </div>
+
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-A05</span>
+                                <h3>Side-Channel & Timing Attack Defense</h3>
+                            </div>
+                            <p>All verifier evaluations, token hash checks, and recovery code lookups use constant-time memory comparisons (<code>CRYPTO_memcmp</code>), preventing microarchitectural cache-timing leaks.</p>
+                            <div class="inv-badge blue">CONSTANT-TIME COMPARISONS</div>
+                        </div>
+
+                        <div class="invariant-card glass-card">
+                            <div class="inv-header">
+                                <span class="inv-num">INV-A06</span>
+                                <h3>Zero Sensitive Data in Observability</h3>
+                            </div>
+                            <p>Structured JSON audit logs emit opaque entity UUIDs and event outcomes. Passwords, token entropy, TOTP seeds, and prekey secrets are strictly omitted from log streams.</p>
+                            <div class="inv-badge red">SECRET-FREE AUDIT TRAIL</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        
+            <!-- ========================================================================= -->
+            <!-- MESSAGING SERVICE PRESENTATION SLIDES (SLIDES 14–19)                      -->
+            <!-- Based on docs/architecture/messaging-architecture-and-functioning.md     -->
+            <!-- ========================================================================= -->
+
+            <!-- SLIDE 14: Messaging Service Executive Overview & The Blind Courier -->
+            <section class="slide" id="slide-14" data-index="14" data-title="Messaging: Executive Overview">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-teal">BLIND DIPLOMATIC COURIER</span>
+                        <span class="badge badge-blue">ADR-002 · ADR-005 · ADR-008 · MSG-001–012</span>
+                        <span class="badge badge-emerald">ZERO-KNOWLEDGE TRANSPORT</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Messaging Service: <span class="gradient-text">Blind Diplomatic Courier Architecture</span>
+                    </h2>
+                    <p class="slide-lead">
+                        High-throughput, strictly ordered E2EE dispatch daemon routing Signal Double Ratchet ciphertext across degraded satellite networks with zero access to user keys or ratchet states.
+                    </p>
+
+                    <!-- 4 Overview Glass Cards -->
+                    <div class="overview-grid" style="margin-bottom: 1rem;">
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon teal-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                            </div>
+                            <h3>Monotonic Total Ordering</h3>
+                            <p>Allocates atomic, gapless sequence numbers per (conversation, month) partition. Eliminates clock drift vulnerabilities across remote field devices.</p>
+                            <div class="card-footer-meta">Atomic Per-Conv Counters · Gapless Replay</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon emerald-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                            </div>
+                            <h3>Zero-Knowledge Transport</h3>
+                            <p>Enforces ADR-008: Messages are transported as blind opaque envelopes. Server holds zero identity keys, zero ratchet states, and has mathematically zero decryption capability.</p>
+                            <div class="card-footer-meta">Signal PQXDH Envelopes · Zero Canary Leaks</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon purple-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                            </div>
+                            <h3>3-Tier Fair Priority Ring</h3>
+                            <p>Deficit round-robin scheduling prioritizing Emergency distress pings over standard delivery and historical sync, with drop-to-durable backpressure under load.</p>
+                            <div class="card-footer-meta">Emergency > Delivery > Sync · DRR Quanta</div>
+                        </div>
+
+                        <div class="card glass-card hover-glow">
+                            <div class="card-icon blue-glow">
+                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                            </div>
+                            <h3>Multi-Device Fast-Track</h3>
+                            <p>Resolves recipient hardware rosters and pushes directly via active gRPC bi-di stream in 1.24 ms (P50: 24.9 µs), spooling offline devices to durable ScyllaDB outbox.</p>
+                            <div class="card-footer-meta">Sub-2ms Direct Socket Push · Auto-Drain</div>
+                        </div>
+                    </div>
+
+                    <!-- Animated SVG Diagram: Blind Diplomatic Courier Transport Model -->
+                    <div class="diagram-container">
+                        <svg class="svg-diagram" viewBox="0 0 1150 170" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <linearGradient id="grad-teal-blue" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#2dd4bf" stop-opacity="0.25"/>
+                                    <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.08"/>
+                                </linearGradient>
+                                <linearGradient id="grad-border-emerald" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" stop-color="#10b981"/>
+                                    <stop offset="100%" stop-color="#38bdf8"/>
+                                </linearGradient>
+                                <filter id="glow-teal" x="-20%" y="-20%" width="140%" height="140%">
+                                    <feGaussianBlur stdDeviation="3" result="blur"/>
+                                    <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+                                </filter>
+                            </defs>
+
+                            <!-- Client Alice Enclave (Left) -->
+                            <rect x="20" y="25" width="220" height="120" rx="10" fill="rgba(13, 23, 42, 0.85)" stroke="#38bdf8" stroke-width="1.5"/>
+                            <text x="35" y="48" fill="#38bdf8" font-family="var(--font-heading)" font-size="12" font-weight="700">SENDER CLIENT ENCLAVE</text>
+                            <text x="35" y="68" fill="#fff" font-family="var(--font-mono)" font-size="11" font-weight="600">Alice Hardware Device</text>
+                            <rect x="35" y="80" width="190" height="24" rx="4" fill="rgba(56, 189, 248, 0.12)" stroke="rgba(56, 189, 248, 0.3)"/>
+                            <text x="43" y="96" fill="#38bdf8" font-family="var(--font-mono)" font-size="9.5">Local Ratchet Keys (IK_A, EK_A)</text>
+                            <rect x="35" y="112" width="190" height="22" rx="4" fill="rgba(16, 185, 129, 0.15)" stroke="rgba(16, 185, 129, 0.4)"/>
+                            <text x="45" y="127" fill="#10b981" font-family="var(--font-mono)" font-size="9.5">AES-256-GCM Sealed Payload</text>
+
+                            <!-- Connection Line: Alice -> Gateway -->
+                            <path d="M 240 85 L 310 85" stroke="#38bdf8" stroke-width="2" class="flow-line-fast"/>
+                            <circle cx="275" cy="85" r="4" fill="#38bdf8" filter="url(#glow-teal)"/>
+                            <text x="247" y="75" fill="#94a3b8" font-family="var(--font-mono)" font-size="8">TLS 1.3 :8443</text>
+
+                            <!-- Gateway Ingress (Middle-Left) -->
+                            <rect x="310" y="35" width="140" height="100" rx="8" fill="rgba(15, 23, 42, 0.85)" stroke="rgba(56, 189, 248, 0.4)" stroke-width="1.2"/>
+                            <text x="325" y="58" fill="#38bdf8" font-family="var(--font-heading)" font-size="11" font-weight="700">GATEWAY INGRESS</text>
+                            <text x="325" y="78" fill="#cbd5e1" font-family="var(--font-mono)" font-size="9">• Strips Headers</text>
+                            <text x="325" y="96" fill="#cbd5e1" font-family="var(--font-mono)" font-size="9">• Binds Auth Sub</text>
+                            <text x="325" y="114" fill="#10b981" font-family="var(--font-mono)" font-size="9">✓ Fails Closed</text>
+
+                            <!-- Connection Line: Gateway -> Messaging Daemon -->
+                            <path d="M 450 85 L 520 85" stroke="#10b981" stroke-width="2" class="flow-line"/>
+                            <circle cx="485" cy="85" r="4" fill="#10b981" filter="url(#glow-teal)"/>
+                            <text x="460" y="75" fill="#94a3b8" font-family="var(--font-mono)" font-size="8">mTLS :50053</text>
+
+                            <!-- SecureCloud Messaging Daemon (Center Bounded Enclave) -->
+                            <rect x="520" y="15" width="360" height="140" rx="10" fill="url(#grad-teal-blue)" stroke="url(#grad-border-emerald)" stroke-width="2"/>
+                            <rect x="530" y="24" width="340" height="22" rx="4" fill="rgba(7, 13, 24, 0.8)"/>
+                            <text x="540" y="39" fill="#2dd4bf" font-family="var(--font-heading)" font-size="11" font-weight="800">BLIND COURIER PERIMETER (ZERO-KNOWLEDGE)</text>
+                            <text x="795" y="39" fill="#10b981" font-family="var(--font-mono)" font-size="9" font-weight="700">ZERO KEYS</text>
+
+                            <!-- Messaging Subcomponents inside Courier -->
+                            <g transform="translate(530, 52)">
+                                <rect x="0" y="0" width="105" height="42" rx="5" fill="rgba(13, 23, 42, 0.85)" stroke="rgba(56, 189, 248, 0.3)"/>
+                                <text x="8" y="17" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Sequencer</text>
+                                <text x="8" y="32" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">Atomic Seq #k</text>
+
+                                <rect x="115" y="0" width="110" height="42" rx="5" fill="rgba(13, 23, 42, 0.85)" stroke="rgba(16, 185, 129, 0.3)"/>
+                                <text x="123" y="17" fill="#10b981" font-family="var(--font-mono)" font-size="8.5" font-weight="700">ScyllaDB Ring</text>
+                                <text x="123" y="32" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">Monthly Buckets</text>
+
+                                <rect x="235" y="0" width="100" height="42" rx="5" fill="rgba(13, 23, 42, 0.85)" stroke="rgba(168, 85, 247, 0.3)"/>
+                                <text x="243" y="17" fill="#a855f7" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Scheduler</text>
+                                <text x="243" y="32" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">3-Tier Priority</text>
+
+                                <rect x="0" y="48" width="335" height="44" rx="5" fill="rgba(7, 13, 24, 0.75)" stroke="rgba(239, 68, 68, 0.35)"/>
+                                <text x="12" y="65" fill="#f87171" font-family="var(--font-heading)" font-size="9" font-weight="700">🛡️ ZeroPlaintextGuard (ADR-008 Invariant)</text>
+                                <text x="12" y="81" fill="#94a3b8" font-family="var(--font-mono)" font-size="8.2">Blind opaque octet transport · Zero plaintext canary leakage · Zero private key storage</text>
+                            </g>
+
+                            <!-- Fan-Out Branches (Messaging -> Devices) -->
+                            <!-- Branch 1: to Bob Phone (Online) -->
+                            <path d="M 880 55 L 945 42" stroke="#10b981" stroke-width="2" class="flow-line-fast"/>
+                            <rect x="945" y="20" width="185" height="38" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#10b981" stroke-width="1.3"/>
+                            <circle cx="958" cy="39" r="4" fill="#10b981" class="pulse-glow-emerald"/>
+                            <text x="968" y="34" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="700">Bob Phone (Online)</text>
+                            <text x="968" y="48" fill="#10b981" font-family="var(--font-mono)" font-size="8">FAST-TRACK PUSH: 1.24 ms</text>
+
+                            <!-- Branch 2: to Bob Tablet (Offline Spool) -->
+                            <path d="M 880 85 L 945 85" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="4 3"/>
+                            <rect x="945" y="66" width="185" height="38" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#f59e0b" stroke-width="1.3"/>
+                            <circle cx="958" cy="85" r="4" fill="#f59e0b"/>
+                            <text x="968" y="80" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="700">Bob Tablet (Offline)</text>
+                            <text x="968" y="94" fill="#f59e0b" font-family="var(--font-mono)" font-size="8">ScyllaDB Outbox Spool (Safe)</text>
+
+                            <!-- Branch 3: to Alice Laptop (Companion Sync) -->
+                            <path d="M 880 115 L 945 128" stroke="#38bdf8" stroke-width="2" class="flow-line"/>
+                            <rect x="945" y="112" width="185" height="38" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#38bdf8" stroke-width="1.3"/>
+                            <circle cx="958" cy="131" r="4" fill="#38bdf8" class="pulse-glow-blue"/>
+                            <text x="968" y="126" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="700">Alice Laptop (Companion)</text>
+                            <text x="968" y="140" fill="#38bdf8" font-family="var(--font-mono)" font-size="8">Sender History Sync Cursor</text>
+                        </svg>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 15: Messaging Responsibilities vs Deliberate Non-Responsibilities -->
+            <section class="slide" id="slide-15" data-index="15" data-title="Messaging: Responsibilities Matrix">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-teal">BOUNDED CONTEXT & ADR COMPLIANCE</span>
+                        <span class="badge badge-blue">ADR-005 · ADR-008 · ADR-009</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Messaging Service: <span class="gradient-text">Responsibilities vs Non-Responsibilities</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Mental Model: A sealed diplomatic courier service sorting, ordering, and dispatching tamper-evident lockboxes, never opening cargo or issuing travel passports.
+                    </p>
+
+                    <div class="dichotomy-container" style="margin-bottom: 0.8rem;">
+                        <!-- What Messaging Owns -->
+                        <div class="dichotomy-box owns-box" style="border-color: rgba(45, 212, 191, 0.35); background: rgba(13, 35, 48, 0.75);">
+                            <div class="box-header">
+                                <div class="box-indicator check-icon" style="border-color: #2dd4bf; color: #2dd4bf;">✓</div>
+                                <div>
+                                    <h3>What Messaging Strictly Owns</h3>
+                                    <span class="box-subtitle">E2EE Dispatch, Sequencing & Delivery Orchestration</span>
+                                </div>
+                            </div>
+                            <ul class="dichotomy-list">
+                                <li>
+                                    <strong>Monotonic Total Sequencing:</strong>
+                                    Allocates atomic, gapless 64-bit sequence numbers per (conversation_id, YYYY-MM) bucket; defeats clock drift.
+                                </li>
+                                <li>
+                                    <strong>ScyllaDB Monthly Partition Bucketing:</strong>
+                                    Enforces bounded partition sizes (max 100k msgs / 50 MB); zero ALLOW FILTERING full-table scans.
+                                </li>
+                                <li>
+                                    <strong>3-Tier Priority Scheduling & Backpressure:</strong>
+                                    Emergency bypass > Delivery fair DRR > Sync; drop-to-durable buffer under traffic bursts.
+                                </li>
+                                <li>
+                                    <strong>Multi-Device Roster Resolution & Fan-Out:</strong>
+                                    Expands 1 inbound envelope to all active recipient hardware devices and sender companion devices.
+                                </li>
+                                <li>
+                                    <strong>Non-Conflation Axiom Enforcement:</strong>
+                                    Maintains decoupled state machines: transport delivery (DeliveredAt) never conflated with user reads (ReadAt).
+                                </li>
+                                <li>
+                                    <strong>Realtime Fast-Track & Outbox Recovery:</strong>
+                                    Sub-2ms direct socket push for active connections; cold-start outbox replay recovering 500 tasks in 4.33 ms.
+                                </li>
+                            </ul>
+                        </div>
+
+                        <!-- What Messaging Deliberately Rejects -->
+                        <div class="dichotomy-box avoids-box">
+                            <div class="box-header">
+                                <div class="box-indicator cross-icon">✗</div>
+                                <div>
+                                    <h3>What Messaging Deliberately Rejects</h3>
+                                    <span class="box-subtitle">Preserved Invariants & Inviolable Boundaries</span>
+                                </div>
+                            </div>
+                            <ul class="dichotomy-list">
+                                <li>
+                                    <strong>Zero Plaintext Inspection or Decryption (ADR-008):</strong>
+                                    Holds zero user identity keys, signed prekeys, or ratchet states. Payloads are strictly opaque ciphertext.
+                                </li>
+                                <li>
+                                    <strong>No Cryptographic Token Authority:</strong>
+                                    Does not issue tokens, verify passwords, or store identity credentials (Auth Service owns authentication).
+                                </li>
+                                <li>
+                                    <strong>No Direct Public Internet Exposure:</strong>
+                                    Never binds to external ports; operates strictly within the internal mTLS mesh on port 50053 behind Gateway.
+                                </li>
+                                <li>
+                                    <strong>No Relational SQL Transactions:</strong>
+                                    Avoids multi-table ACID joins; utilizes Cassandra-native append logs optimized for high-throughput I/O.
+                                </li>
+                                <li>
+                                    <strong>No Binary Media/File Storage:</strong>
+                                    Does not store large files or attachments; files are encrypted client-side and hosted by Files Service / S3.
+                                </li>
+                                <li>
+                                    <strong>No Message Content Indexing or Full-Text Search:</strong>
+                                    Plaintext search on the server is mathematically impossible; client devices execute search locally in enclaves.
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Animated SVG Boundary Defense Firewall -->
+                    <div class="diagram-container" style="padding: 0.6rem 1rem;">
+                        <svg class="svg-diagram" viewBox="0 0 1150 70" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <!-- Inbound Request Channels -->
+                            <text x="15" y="40" fill="#94a3b8" font-family="var(--font-mono)" font-size="9.5" font-weight="700">INBOUND MESH:</text>
+                            
+                            <!-- Path 1: Ciphertext Envelope -> ALLOWED -->
+                            <rect x="110" y="15" width="220" height="38" rx="6" fill="rgba(16, 185, 129, 0.12)" stroke="#10b981"/>
+                            <text x="122" y="32" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="600">Sealed Ciphertext Envelope</text>
+                            <text x="122" y="46" fill="#10b981" font-family="var(--font-mono)" font-size="8">PQXDH V1 · Canary Clean</text>
+                            <path d="M 330 34 L 380 34" stroke="#10b981" stroke-width="2" class="flow-line-fast"/>
+                            <rect x="380" y="20" width="100" height="28" rx="4" fill="rgba(16, 185, 129, 0.2)" stroke="#10b981"/>
+                            <text x="390" y="38" fill="#10b981" font-family="var(--font-mono)" font-size="9" font-weight="700">✓ ACCEPTED</text>
+
+                            <!-- Path 2: Plaintext Inspection -> BLOCKED -->
+                            <rect x="500" y="15" width="220" height="38" rx="6" fill="rgba(239, 68, 68, 0.12)" stroke="#ef4444"/>
+                            <text x="512" y="32" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="600">Plaintext Inspection / Key Read</text>
+                            <text x="512" y="46" fill="#f87171" font-family="var(--font-mono)" font-size="8">Anti-Plaintext Heuristic Trip</text>
+                            <path d="M 720 34 L 770 34" stroke="#ef4444" stroke-width="2"/>
+                            <rect x="770" y="20" width="100" height="28" rx="4" fill="rgba(239, 68, 68, 0.2)" stroke="#ef4444"/>
+                            <text x="780" y="38" fill="#f87171" font-family="var(--font-mono)" font-size="9" font-weight="700">✗ REJECTED</text>
+
+                            <!-- Path 3: Media File Chunk -> ROUTED -->
+                            <rect x="890" y="15" width="245" height="38" rx="6" fill="rgba(56, 189, 248, 0.12)" stroke="#38bdf8"/>
+                            <text x="902" y="32" fill="#fff" font-family="var(--font-heading)" font-size="10" font-weight="600">Media Chunks & Token Claims</text>
+                            <text x="902" y="46" fill="#38bdf8" font-family="var(--font-mono)" font-size="8">Routed to Files :50052 / Auth :50051</text>
+                        </svg>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 16: Messaging Internal Subsystem Architecture (Interactive Subsystem Explorer) -->
+            <section class="slide" id="slide-16" data-index="16" data-title="Messaging: Subsystem Explorer">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-teal">MODULAR SUBSYSTEM TOPOLOGY</span>
+                        <span class="badge badge-blue">src/messaging/ (6 Decoupled Engines)</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Messaging Internal <span class="gradient-text">Subsystem Architecture</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Interactive exploration of the 6 decoupled engines powering anti-impersonation, monotonic sequencing, ScyllaDB persistence, priority scheduling, and device push.
+                    </p>
+
+                    <!-- Animated Subsystem Connectivity Topology Banner -->
+                    <div class="diagram-container" style="margin-bottom: 1rem; padding: 0.6rem 1rem;">
+                        <svg class="svg-diagram" viewBox="0 0 1150 55" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <!-- 6 Subsystem Flow Nodes -->
+                            <!-- Node 1: Facade -->
+                            <rect class="svg-subsystem-node active-svg-subsystem" data-sub="msg_facade" x="15" y="10" width="160" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#2dd4bf" stroke-width="1.2"/>
+                            <text x="25" y="27" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5" font-weight="700">01 Facade & Context</text>
+                            <text x="25" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Anti-Impersonation</text>
+
+                            <path d="M 175 27 L 205 27" stroke="#2dd4bf" stroke-width="1.5" class="flow-line"/>
+
+                            <!-- Node 2: Sequencer -->
+                            <rect class="svg-subsystem-node" data-sub="msg_sequencing" x="205" y="10" width="165" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#38bdf8" stroke-width="1.2"/>
+                            <text x="215" y="27" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">02 Monotonic Sequencer</text>
+                            <text x="215" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Gapless UTC Monthly</text>
+
+                            <path d="M 370 27 L 400 27" stroke="#38bdf8" stroke-width="1.5" class="flow-line"/>
+
+                            <!-- Node 3: Storage -->
+                            <rect class="svg-subsystem-node" data-sub="msg_storage" x="400" y="10" width="165" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#10b981" stroke-width="1.2"/>
+                            <text x="410" y="27" fill="#10b981" font-family="var(--font-mono)" font-size="8.5" font-weight="700">03 ScyllaDB Repository</text>
+                            <text x="410" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Zero ALLOW FILTERING</text>
+
+                            <path d="M 565 27 L 595 27" stroke="#10b981" stroke-width="1.5" class="flow-line"/>
+
+                            <!-- Node 4: Scheduler -->
+                            <rect class="svg-subsystem-node" data-sub="msg_delivery" x="595" y="10" width="165" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#a855f7" stroke-width="1.2"/>
+                            <text x="605" y="27" fill="#a855f7" font-family="var(--font-mono)" font-size="8.5" font-weight="700">04 Bounded Scheduler</text>
+                            <text x="605" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">3-Tier Fair DRR Ring</text>
+
+                            <path d="M 760 27 L 790 27" stroke="#a855f7" stroke-width="1.5" class="flow-line"/>
+
+                            <!-- Node 5: Connection -->
+                            <rect class="svg-subsystem-node" data-sub="msg_connection" x="790" y="10" width="165" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#f59e0b" stroke-width="1.2"/>
+                            <text x="800" y="27" fill="#f59e0b" font-family="var(--font-mono)" font-size="8.5" font-weight="700">05 Connection Registry</text>
+                            <text x="800" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Fast-Track Accelerator</text>
+
+                            <path d="M 955 27 L 985 27" stroke="#f59e0b" stroke-width="1.5" class="flow-line"/>
+
+                            <!-- Node 6: Status & Sync -->
+                            <rect class="svg-subsystem-node" data-sub="msg_status" x="985" y="10" width="150" height="35" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#38bdf8" stroke-width="1.2"/>
+                            <text x="995" y="27" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">06 Status & Sync</text>
+                            <text x="995" y="38" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Non-Conflation Axiom</text>
+                        </svg>
+                    </div>
+
+                    <div class="subsystems-layout" style="height: 380px;">
+                        <!-- Navigation Tabs (Left Sidebar) -->
+                        <div class="subsystem-tabs">
+                            <button class="sub-tab msg-sub-tab active" data-sub="msg_facade">
+                                <span class="tab-num">01</span>
+                                <span class="tab-label">gRPC Facade & Anti-Impersonation</span>
+                            </button>
+
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_sequencing">
+                                <span class="tab-num">02</span>
+                                <span class="tab-label">Monotonic Sequencer & Idempotency</span>
+                            </button>
+
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_storage">
+                                <span class="tab-num">03</span>
+                                <span class="tab-label">ScyllaDB Monthly Repositories</span>
+                            </button>
+
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_delivery">
+                                <span class="tab-num">04</span>
+                                <span class="tab-label">Bounded Scheduler & Priority Ring</span>
+                            </button>
+
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_connection">
+                                <span class="tab-num">05</span>
+                                <span class="tab-label">Device Registry & Fast-Track Push</span>
+                            </button>
+
+                            <button class="sub-tab msg-sub-tab" data-sub="msg_status">
+                                <span class="tab-num">06</span>
+                                <span class="tab-label">Delivery & Read Status Tracker</span>
+                            </button>
+                        </div>
+
+                        <!-- Dynamic Detail Display (Right Area) -->
+                        <div class="subsystem-detail glass-card" id="msg-subsystem-detail">
+                            <!-- Injected by JavaScript -->
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 17: Storage Partitioning & 3-Tier Priority Scheduling Foundations -->
+            <section class="slide" id="slide-17" data-index="17" data-title="Messaging: Storage & Scheduling">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-teal">STORAGE & FLOW CONTROL FOUNDATIONS</span>
+                        <span class="badge badge-emerald">ZERO ALLOW FILTERING (ADR-007)</span>
+                        <span class="badge badge-purple">DEFICIT ROUND-ROBIN (DRR)</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        ScyllaDB Monthly Partitioning & <span class="gradient-text">3-Tier Priority Scheduling</span>
+                    </h2>
+                    <p class="slide-lead">
+                        High-throughput Cassandra-native storage with monthly bucket bounds, paired with strict 3-tier priority queues and non-conflation state machines.
+                    </p>
+
+                    <div class="diagram-split-layout">
+                        <!-- Column 1: ScyllaDB Monthly Bucket Partitioning -->
+                        <div class="card glass-card hover-glow" style="padding: 1.25rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                                <h3 style="font-family: var(--font-heading); color: #fff; font-size: 1.15rem;">ScyllaDB Monthly Partition Bucketing</h3>
+                                <span class="badge badge-emerald">ADR-007 AUDITED</span>
+                            </div>
+                            <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.75rem; line-height: 1.45;">
+                                Primary Key: <code>((conversation_id, YYYY-MM), sequence_number ASC)</code>. Bounded partition sizing (&le; 100k msgs / 50 MB) eliminates SSTable tombstone scanning overhead.
+                            </p>
+
+                            <!-- Animated SVG: ScyllaDB Partition Ring -->
+                            <div class="diagram-container" style="padding: 0.5rem; margin-bottom: 0.75rem;">
+                                <svg class="svg-diagram" viewBox="0 0 520 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <!-- Partition 1: 2026-09 (Historical) -->
+                                    <rect x="15" y="15" width="145" height="100" rx="8" fill="rgba(15, 23, 42, 0.85)" stroke="rgba(56, 189, 248, 0.3)"/>
+                                    <text x="25" y="35" fill="#38bdf8" font-family="var(--font-mono)" font-size="9.5" font-weight="700">Bucket 2026-09</text>
+                                    <text x="25" y="52" fill="#94a3b8" font-family="var(--font-mono)" font-size="8">Seq #1 .. #84,210</text>
+                                    <rect x="25" y="62" width="125" height="16" rx="3" fill="rgba(56, 189, 248, 0.08)"/>
+                                    <text x="32" y="74" fill="#cbd5e1" font-family="var(--font-mono)" font-size="7.5">Immutable / Compacted</text>
+                                    <text x="25" y="100" fill="#10b981" font-family="var(--font-mono)" font-size="8">✓ 0 Tombstones</text>
+
+                                    <!-- Partition 2: 2026-10 (Active Append) -->
+                                    <rect x="180" y="10" width="165" height="110" rx="8" fill="rgba(20, 184, 166, 0.12)" stroke="#2dd4bf" stroke-width="1.8"/>
+                                    <circle cx="195" cy="28" r="4" fill="#2dd4bf" class="pulse-glow-emerald"/>
+                                    <text x="205" y="32" fill="#fff" font-family="var(--font-mono)" font-size="10" font-weight="700">Bucket 2026-10 (ACTIVE)</text>
+                                    <text x="195" y="50" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5">Seq #84,211 .. #84,215</text>
+                                    
+                                    <!-- Incoming message arrow -->
+                                    <path d="M 230 65 L 290 65" stroke="#2dd4bf" stroke-width="2" class="flow-line-fast"/>
+                                    <text x="220" y="82" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">Append: Seq #84,216</text>
+                                    <text x="195" y="105" fill="#10b981" font-family="var(--font-mono)" font-size="8" font-weight="700">P50 Commit: 79.38 µs</text>
+
+                                    <!-- Partition 3: 2026-11 (Pre-allocated) -->
+                                    <rect x="365" y="15" width="140" height="100" rx="8" fill="rgba(15, 23, 42, 0.65)" stroke="rgba(255, 255, 255, 0.1)"/>
+                                    <text x="375" y="35" fill="#94a3b8" font-family="var(--font-mono)" font-size="9.5">Bucket 2026-11</text>
+                                    <text x="375" y="52" fill="#64748b" font-family="var(--font-mono)" font-size="8">Seq #0 (Ready)</text>
+                                    <rect x="375" y="62" width="120" height="16" rx="3" fill="rgba(255, 255, 255, 0.03)"/>
+                                    <text x="382" y="74" fill="#64748b" font-family="var(--font-mono)" font-size="7.5">Auto-Rollover</text>
+                                </svg>
+                            </div>
+
+                            <div style="font-size: 0.8rem; color: #cbd5e1; line-height: 1.45;">
+                                <strong>CQL Audit Outcome:</strong> 33 prepared statements verified across all repositories. Exactly <strong>0 queries</strong> use <code>ALLOW FILTERING</code>. Secondary indexes on <code>message_id</code> resolve UUIDs in O(1).
+                            </div>
+                        </div>
+
+                        <!-- Column 2: 3-Tier Priority Scheduling & Non-Conflation Axiom -->
+                        <div class="card glass-card hover-glow" style="padding: 1.25rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                                <h3 style="font-family: var(--font-heading); color: #fff; font-size: 1.15rem;">3-Tier Fair Priority Scheduler</h3>
+                                <span class="badge badge-purple">DRR QUANTUM: 16</span>
+                            </div>
+                            <p style="font-size: 0.82rem; color: var(--text-secondary); margin-bottom: 0.75rem; line-height: 1.45;">
+                                Enforces strict priority queues (Emergency &gt; Delivery &gt; Sync) with Fair Deficit Round-Robin across devices and drop-to-durable backpressure under saturation.
+                            </p>
+
+                            <!-- Animated SVG: 3-Tier Priority Queue -->
+                            <div class="diagram-container" style="padding: 0.5rem; margin-bottom: 0.75rem;">
+                                <svg class="svg-diagram" viewBox="0 0 520 130" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <!-- Priority 0: EMERGENCY -->
+                                    <rect x="15" y="10" width="370" height="28" rx="5" fill="rgba(239, 68, 68, 0.15)" stroke="#ef4444" stroke-width="1.2"/>
+                                    <text x="25" y="28" fill="#f87171" font-family="var(--font-mono)" font-size="9" font-weight="700">P0 EMERGENCY (Distress / Revoke): Strict Preemption</text>
+                                    <path d="M 390 24 L 435 24" stroke="#ef4444" stroke-width="2" class="flow-line-fast"/>
+                                    <rect x="440" y="12" width="65" height="24" rx="4" fill="rgba(239, 68, 68, 0.25)" stroke="#ef4444"/>
+                                    <text x="448" y="28" fill="#f87171" font-family="var(--font-mono)" font-size="8.5" font-weight="700">BYPASS</text>
+
+                                    <!-- Priority 1: DELIVERY -->
+                                    <rect x="15" y="46" width="370" height="34" rx="5" fill="rgba(56, 189, 248, 0.12)" stroke="#38bdf8" stroke-width="1.2"/>
+                                    <text x="25" y="63" fill="#38bdf8" font-family="var(--font-mono)" font-size="9" font-weight="700">P1 DELIVERY: Fair Deficit Round-Robin Ring</text>
+                                    <text x="25" y="75" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Dev A (16) ➔ Dev B (16) ➔ Dev C (16) · Max 1000 Tasks/Dev</text>
+                                    <path d="M 390 63 L 435 63" stroke="#38bdf8" stroke-width="2" class="flow-line"/>
+                                    <rect x="440" y="52" width="65" height="24" rx="4" fill="rgba(56, 189, 248, 0.2)" stroke="#38bdf8"/>
+                                    <text x="446" y="68" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">DISPATCH</text>
+
+                                    <!-- Priority 2: SYNC & Backpressure -->
+                                    <rect x="15" y="88" width="260" height="30" rx="5" fill="rgba(168, 85, 247, 0.12)" stroke="#a855f7" stroke-width="1.2"/>
+                                    <text x="25" y="103" fill="#a855f7" font-family="var(--font-mono)" font-size="9" font-weight="700">P2 SYNC (Catch-Up): Opportunistic</text>
+                                    <text x="25" y="113" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Yields to active live chat</text>
+
+                                    <!-- Drop to Durable Guard Box -->
+                                    <rect x="290" y="88" width="215" height="30" rx="5" fill="rgba(245, 158, 11, 0.12)" stroke="#f59e0b" stroke-width="1.2"/>
+                                    <text x="300" y="102" fill="#fbbf24" font-family="var(--font-mono)" font-size="8.5" font-weight="700">DROP-TO-DURABLE (>1000)</text>
+                                    <text x="300" y="113" fill="#cbd5e1" font-family="var(--font-mono)" font-size="7.5">Safely buffers to ScyllaDB outbox</text>
+                                </svg>
+                            </div>
+
+                            <div style="font-size: 0.8rem; color: #cbd5e1; line-height: 1.45;">
+                                <strong>Non-Conflation Axiom:</strong> Transport delivery ACK (<code>DeliveredAt</code>) never advances read status (<code>ReadAt</code>). Reading requires explicit recipient UI action, preserving confidentiality.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 18: Multi-Device Fan-Out, Fast-Track Push & Security Perimeter -->
+            <section class="slide" id="slide-18" data-index="18" data-title="Messaging: Fan-Out & Security">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-teal">MULTI-DEVICE DELIVERY MECHANICS</span>
+                        <span class="badge badge-blue">SUB-2MS FAST-TRACK ACCELERATOR</span>
+                        <span class="badge badge-red">ANTI-IMPERSONATION BOUNDARY</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Multi-Device Fan-Out, Fast-Track & <span class="gradient-text">Security Perimeter</span>
+                    </h2>
+                    <p class="slide-lead">
+                        High-concurrency hardware fan-out with instant sub-2ms direct push acceleration, reinforced by caller anti-impersonation and instant revocation quarantine.
+                    </p>
+
+                    <div class="diagram-split-layout">
+                        <!-- Left: Core Capabilities & Invariants -->
+                        <div style="display: flex; flex-direction: column; gap: 0.85rem;">
+                            <div class="card glass-card hover-glow" style="padding: 1rem;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.3rem;">
+                                    🚀 Sub-2ms Fast-Track Accelerator (ADR-010)
+                                </h4>
+                                <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                    Online devices bypass batch scheduler queue polling. <code>RealtimeDeliveryAccelerator</code> drains pending envelopes directly over the active gRPC streaming socket in <strong>1.24 ms</strong> (P50: <strong>24.9 µs</strong>).
+                                </p>
+                            </div>
+
+                            <div class="card glass-card hover-glow" style="padding: 1rem;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.3rem;">
+                                    👥 Zero-Allocation Multi-Device Fan-Out
+                                </h4>
+                                <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                    Resolves all recipient hardware devices and sender companion devices. Tested under 50 participants / 150 devices: fanned out <strong>14,900 envelopes</strong> in 613 ms with 100% delivery integrity.
+                                </p>
+                            </div>
+
+                            <div class="card glass-card hover-glow" style="padding: 1rem;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.3rem;">
+                                    🛡️ Anti-Impersonation Caller Binding
+                                </h4>
+                                <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                    Enforces strict binding between Gateway-injected <code>x-device-id</code>, verified token sub, and envelope sender. Evaluated against 200 adversarial forgery attempts: <strong>100% rejected</strong> in &lt; 0.05 ms.
+                                </p>
+                            </div>
+
+                            <div class="card glass-card hover-glow" style="padding: 1rem;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.3rem;">
+                                    ⚡ Fail-Closed Revocation Quarantine
+                                </h4>
+                                <p style="font-size: 0.82rem; color: var(--text-secondary); line-height: 1.4;">
+                                    Device revocation or token reuse cascade purges in-memory queues in &lt; <strong>0.15 ms</strong>. Replay attacks and revoked device ACKs are rejected with immediate terminal error.
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Right: Animated Multi-Device Fan-Out Sequence Diagram -->
+                        <div class="diagram-container" style="padding: 1rem;">
+                            <div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--accent-blue); margin-bottom: 0.5rem; text-transform: uppercase;">
+                                Live Real-Time Multi-Device Fan-Out Trace
+                            </div>
+                            <svg class="svg-diagram" viewBox="0 0 540 380" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <!-- Actor Headers -->
+                                <rect x="15" y="10" width="85" height="26" rx="4" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8"/>
+                                <text x="24" y="27" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Alice Dev 1</text>
+
+                                <rect x="140" y="10" width="105" height="26" rx="4" fill="rgba(45, 212, 191, 0.15)" stroke="#2dd4bf"/>
+                                <text x="148" y="27" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Messaging Hub</text>
+
+                                <rect x="290" y="10" width="105" height="26" rx="4" fill="rgba(16, 185, 129, 0.15)" stroke="#10b981"/>
+                                <text x="298" y="27" fill="#10b981" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Bob Dev 1 (On)</text>
+
+                                <rect x="425" y="10" width="100" height="26" rx="4" fill="rgba(245, 158, 11, 0.15)" stroke="#f59e0b"/>
+                                <text x="433" y="27" fill="#f59e0b" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Bob Dev 2 (Off)</text>
+
+                                <!-- Lifelines -->
+                                <line x1="57" y1="36" x2="57" y2="365" stroke="rgba(255, 255, 255, 0.1)" stroke-dasharray="3 3"/>
+                                <line x1="192" y1="36" x2="192" y2="365" stroke="rgba(45, 212, 191, 0.3)" stroke-dasharray="3 3"/>
+                                <line x1="342" y1="36" x2="342" y2="365" stroke="rgba(16, 185, 129, 0.3)" stroke-dasharray="3 3"/>
+                                <line x1="475" y1="36" x2="475" y2="365" stroke="rgba(245, 158, 11, 0.3)" stroke-dasharray="3 3"/>
+
+                                <!-- Message 1: Alice -> Messaging (Submit) -->
+                                <path d="M 57 70 L 192 70" stroke="#38bdf8" stroke-width="2" class="flow-line-fast"/>
+                                <polygon points="187,66 192,70 187,74" fill="#38bdf8"/>
+                                <text x="70" y="63" fill="#fff" font-family="var(--font-mono)" font-size="8">SendMessage(Envelope)</text>
+
+                                <!-- Sequencer Commitment Box -->
+                                <rect x="150" y="85" width="85" height="30" rx="4" fill="rgba(13, 23, 42, 0.95)" stroke="#2dd4bf"/>
+                                <text x="156" y="99" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8" font-weight="700">Seq #42 Allocated</text>
+                                <text x="156" y="110" fill="#cbd5e1" font-family="var(--font-mono)" font-size="7">ScyllaDB: 79 µs</text>
+
+                                <!-- Fan-Out 1: Fast-Track Push to Bob Dev 1 -->
+                                <path d="M 192 135 L 342 135" stroke="#10b981" stroke-width="2" class="flow-line-fast"/>
+                                <polygon points="337,131 342,135 337,139" fill="#10b981"/>
+                                <text x="205" y="128" fill="#10b981" font-family="var(--font-mono)" font-size="8" font-weight="700">Fast-Track Push (24.9 µs)</text>
+
+                                <!-- Fan-Out 2: Spool to Bob Dev 2 (Offline) -->
+                                <path d="M 192 165 L 475 165" stroke="#f59e0b" stroke-width="1.8" stroke-dasharray="4 3"/>
+                                <polygon points="470,161 475,165 470,169" fill="#f59e0b"/>
+                                <text x="215" y="158" fill="#f59e0b" font-family="var(--font-mono)" font-size="8">Spool to ScyllaDB Outbox</text>
+
+                                <!-- ACK from Bob Dev 1 -->
+                                <path d="M 342 205 L 192 205" stroke="#10b981" stroke-width="1.8" class="flow-line-reverse"/>
+                                <polygon points="197,201 192,205 197,209" fill="#10b981"/>
+                                <text x="220" y="198" fill="#10b981" font-family="var(--font-mono)" font-size="8">AcknowledgeDelivery()</text>
+
+                                <!-- State Update: Delivered (Read NOT touched) -->
+                                <rect x="145" y="220" width="95" height="32" rx="4" fill="rgba(16, 185, 129, 0.15)" stroke="#10b981"/>
+                                <text x="152" y="234" fill="#10b981" font-family="var(--font-mono)" font-size="7.5" font-weight="700">DeliveredAt Set</text>
+                                <text x="152" y="246" fill="#f87171" font-family="var(--font-mono)" font-size="7">ReadAt: UNTOUCHED</text>
+
+                                <!-- Event: Bob Dev 2 Reconnects -->
+                                <rect x="420" y="265" width="110" height="22" rx="4" fill="rgba(245, 158, 11, 0.2)" stroke="#f59e0b"/>
+                                <text x="428" y="280" fill="#fbbf24" font-family="var(--font-mono)" font-size="8" font-weight="700">⚡ Reconnect Event</text>
+
+                                <!-- Accelerator Sweeper Auto-Drains -->
+                                <path d="M 192 310 L 475 310" stroke="#2dd4bf" stroke-width="2" class="flow-line-fast"/>
+                                <polygon points="470,306 475,310 470,314" fill="#2dd4bf"/>
+                                <text x="225" y="303" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8" font-weight="700">Accelerator Direct Drain (1.24 ms)</text>
+
+                                <!-- Terminal Result -->
+                                <rect x="135" y="335" width="270" height="25" rx="5" fill="rgba(7, 13, 24, 0.9)" stroke="#10b981"/>
+                                <text x="145" y="352" fill="#10b981" font-family="var(--font-mono)" font-size="8.5" font-weight="700">✓ 100% In-Order Delivery Across All Hardware</text>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SLIDE 19: Comprehensive Test Matrix, Chaos Hardening & Empirical Benchmarks -->
+            <section class="slide" id="slide-19" data-index="19" data-title="Messaging: Benchmarks & M3 Sign-off">
+                <div class="slide-content">
+                    <div class="slide-badge-row">
+                        <span class="badge badge-teal">CAPACITY LOAD TEST VALIDATION</span>
+                        <span class="badge badge-emerald">2,279 PASSING CTESTS (100%)</span>
+                        <span class="badge badge-blue">MILESTONE M3 SIGN-OFF ACCEPTED</span>
+                    </div>
+
+                    <h2 class="slide-title">
+                        Empirical Benchmarks, Chaos Hardening & <span class="gradient-text">Milestone M3 Sign-off</span>
+                    </h2>
+                    <p class="slide-lead">
+                        Unified benchmark telemetry under 50-user / 150-device saturation load, zero ALLOW FILTERING verification, chaos recovery resilience, and 100% green regression test suite.
+                    </p>
+
+                    <div class="benchmark-grid">
+                        <!-- Left Panel: Empirical Benchmark Telemetry -->
+                        <div class="metric-panel">
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
+                                <h3 style="font-family: var(--font-heading); font-size: 1.05rem; color: #fff;">Empirical Performance Metrics</h3>
+                                <span class="badge badge-teal">TICKET MSG-012-T06</span>
+                            </div>
+
+                            <!-- Metric 1: Ingress Throughput -->
+                            <div class="metric-row">
+                                <div class="metric-label-group">
+                                    <span class="metric-name">Sustained Ingress Throughput</span>
+                                    <span class="metric-sla">SLA: &ge; 5,000 msgs/sec</span>
+                                </div>
+                                <div class="metric-value-group">
+                                    <span class="metric-num emerald">7,557 – 8,015 msgs/s</span>
+                                    <span class="metric-badge green">+51% EXCEEDED</span>
+                                </div>
+                            </div>
+
+                            <!-- Metric 2: 2-Device Submit Latency P50 / P99 -->
+                            <div class="metric-row">
+                                <div class="metric-label-group">
+                                    <span class="metric-name">E2E Submission Latency (P50 / P99)</span>
+                                    <span class="metric-sla">SLA: P50 &le; 5,000 µs · P99 &le; 20,000 µs</span>
+                                </div>
+                                <div class="metric-value-group">
+                                    <span class="metric-num blue">79.38 µs / 99.21 µs</span>
+                                    <span class="metric-badge green">60x FASTER</span>
+                                </div>
+                            </div>
+
+                            <!-- Latency Percentile Progress Visual -->
+                            <div class="latency-bar-container">
+                                <div class="latency-bar-header">
+                                    <span style="color: var(--accent-blue);">P50 Latency Budget: 79.38 µs of 5,000 µs SLA (1.6% consumed)</span>
+                                    <span style="color: var(--accent-emerald);">98.4% HEADROOM</span>
+                                </div>
+                                <div class="latency-bar-track">
+                                    <div class="latency-bar-fill" style="width: 1.6%;"></div>
+                                </div>
+                            </div>
+
+                            <!-- Metric 3: Online Fast-Track Push -->
+                            <div class="metric-row">
+                                <div class="metric-label-group">
+                                    <span class="metric-name">Real-Time Online Socket Push</span>
+                                    <span class="metric-sla">SLA: &le; 2,000 µs</span>
+                                </div>
+                                <div class="metric-value-group">
+                                    <span class="metric-num emerald">24.92 µs (P50)</span>
+                                    <span class="metric-badge green">PASSED</span>
+                                </div>
+                            </div>
+
+                            <!-- Metric 4: 50-User / 150-Device Fan-Out -->
+                            <div class="metric-row">
+                                <div class="metric-label-group">
+                                    <span class="metric-name">50-User / 150-Device Group Fan-Out</span>
+                                    <span class="metric-sla">14,900 envelopes fanned out in 613 ms</span>
+                                </div>
+                                <div class="metric-value-group">
+                                    <span class="metric-num blue">P50: 5.53 ms</span>
+                                    <span class="metric-badge green">ZERO LOSS</span>
+                                </div>
+                            </div>
+
+                            <!-- Metric 5: ScyllaDB CQL Allow Filtering Audit -->
+                            <div class="metric-row">
+                                <div class="metric-label-group">
+                                    <span class="metric-name">ScyllaDB CQL ALLOW FILTERING Audit</span>
+                                    <span class="metric-sla">33 prepared statements audited</span>
+                                </div>
+                                <div class="metric-value-group">
+                                    <span class="metric-num emerald">0 Violations</span>
+                                    <span class="metric-badge green">100% CLEAN</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Panel: Chaos Hardening & M3 Acceptance -->
+                        <div class="metric-panel">
+                            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 0.5rem;">
+                                <h3 style="font-family: var(--font-heading); font-size: 1.05rem; color: #fff;">Chaos Resilience & Test Matrix</h3>
+                                <span class="badge badge-emerald">2,279 / 2,279 CTESTS</span>
+                            </div>
+
+                            <!-- Metric 6: Abrupt Crash Recovery -->
+                            <div class="metric-row">
+                                <div class="metric-label-group">
+                                    <span class="metric-name">Cold Crash Recovery (500 staged tasks)</span>
+                                    <span class="metric-sla">SLA: &le; 500 ms</span>
+                                </div>
+                                <div class="metric-value-group">
+                                    <span class="metric-num emerald">4.33 ms</span>
+                                    <span class="metric-badge green">115x FASTER</span>
+                                </div>
+                            </div>
+
+                            <!-- Metric 7: Connection Reaper Sweep -->
+                            <div class="metric-row">
+                                <div class="metric-label-group">
+                                    <span class="metric-name">Connection Reaper (50 expired leases)</span>
+                                    <span class="metric-sla">SLA: &le; 10.0 ms</span>
+                                </div>
+                                <div class="metric-value-group">
+                                    <span class="metric-num emerald">0.052 ms</span>
+                                    <span class="metric-badge green">PASSED</span>
+                                </div>
+                            </div>
+
+                            <!-- Metric 8: Full CTest Verification Suite -->
+                            <div class="metric-row">
+                                <div class="metric-label-group">
+                                    <span class="metric-name">Verification Orchestrator Suite</span>
+                                    <span class="metric-sla">Stage 1-5 (Configure, Format, Build, Tests)</span>
+                                </div>
+                                <div class="metric-value-group">
+                                    <span class="metric-num blue">2,279 / 2,279 Pass</span>
+                                    <span class="metric-badge green">100% GREEN (229.7s)</span>
+                                </div>
+                            </div>
+
+                            <!-- Milestone M3 Formal Acceptance Certification -->
+                            <div class="certification-box" style="margin-top: 0.5rem;">
+                                <div class="cert-icon">✓</div>
+                                <div class="cert-text">
+                                    <h4>Milestone M3 Architectural Sign-off: COMPLETE</h4>
+                                    <p>
+                                        All capacity, ordering, multi-device fan-out, zero-knowledge, and chaos recovery gates for Phase 2 Milestone M3 are empirically validated, hardened, and accepted into SecureCloud main.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+</main>
+
+        <!-- Bottom Controls & Progress Bar -->
+        <footer class="pres-footer">
+            <div class="slide-navigation">
+                <button class="nav-btn" id="btn-prev" title="Previous Slide (← / Up)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                    <span>PREV</span>
+                </button>
+
+                <div class="slide-dots" id="slide-dots">
+                    <!-- Dots dynamically generated -->
+                </div>
+
+                <button class="nav-btn" id="btn-next" title="Next Slide (→ / Down / Space)">
+                    <span>NEXT</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+                </button>
+            </div>
+
+            <div class="footer-center">
+                <span class="slide-counter" id="slide-counter">Slide 1 of 19</span>
+            </div>
+
+            <div class="footer-right">
+                <div class="keyboard-hints">
+                    <span class="kbd">←</span> <span class="kbd">→</span> navigate · <span class="kbd">↑</span> <span class="kbd">↓</span> scroll · <span class="kbd">F</span> fullscreen
+                </div>
+            </div>
+
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progress-bar"></div>
+            </div>
+        </footer>
+
+        <!-- Table of Contents Modal -->
+        <div class="modal-overlay" id="toc-modal">
+            <div class="modal-content glass-card">
+                <div class="modal-header">
+                    <h3>Table of Contents</h3>
+                    <button class="close-btn" id="btn-close-toc">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <ul class="toc-list" id="toc-list">
+                        <!-- Populated by JS -->
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Presentation Script -->
+    <script src="presentation.js"></script>
+</body>
+</html>
