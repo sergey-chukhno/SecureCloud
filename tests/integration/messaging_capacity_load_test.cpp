@@ -737,7 +737,7 @@ TEST_F(MessagingCapacityLoadTest, TenThousandMessagesSustainedPipelineThroughput
 #if defined(_WIN32) && !defined(NDEBUG)
     GTEST_SKIP() << "Skipped on Windows Debug CI VM due to 2-core virtualization scheduler overhead "
                     "(executed on Release and macOS/Linux)";
-#endif
+#else
     constexpr size_t kMessageVolume = 10000;
     constexpr size_t kEnvelopeBytes = 512;
     constexpr size_t kAdr010PartitionLimitBytes = 50ULL * 1024ULL * 1024ULL; // 50 MB hard ceiling (ADR-007 / ADR-010)
@@ -816,6 +816,7 @@ TEST_F(MessagingCapacityLoadTest, TenThousandMessagesSustainedPipelineThroughput
               << "msgs=" << kMessageVolume << ", elapsed_s=" << elapsed_sec << ", throughput_msgs_sec=" << msgs_per_sec
               << ", conv_partition_MB=" << (static_cast<double>(conv_partition_bytes) / (1024.0 * 1024.0))
               << ", dev_partition_MB=" << (static_cast<double>(dev_partition_bytes) / (1024.0 * 1024.0)) << "\n";
+#endif
 }
 
 // ----------------------------------------------------------------------------
@@ -892,7 +893,7 @@ TEST_F(MessagingCapacityLoadTest, EndToEndLatencyPercentilesP50P90P95P99AgainstA
 #if defined(_WIN32) && !defined(NDEBUG)
     GTEST_SKIP() << "Skipped on Windows Debug CI VM due to 2-core virtualization scheduler overhead "
                     "(executed on Release and macOS/Linux)";
-#endif
+#else
     constexpr size_t kSampleCount = 1000;
 
     const auto conv_id = ConversationId::generate_v7();
@@ -1047,6 +1048,7 @@ TEST_F(MessagingCapacityLoadTest, EndToEndLatencyPercentilesP50P90P95P99AgainstA
               << " P95=" << ack_pct.p95_us << " P99=" << ack_pct.p99_us << "\n"
               << "  Sync Batch (100m):  P50=" << sync_pct.p50_us << " P90=" << sync_pct.p90_us
               << " P95=" << sync_pct.p95_us << " P99=" << sync_pct.p99_us << "\n";
+#endif
 }
 
 } // namespace
