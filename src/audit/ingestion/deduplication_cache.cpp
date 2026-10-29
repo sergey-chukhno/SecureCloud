@@ -1,4 +1,5 @@
 #include "ingestion/deduplication_cache.hpp"
+
 #include "ingestion/deduplication_metrics.hpp"
 
 #include <algorithm>
@@ -9,7 +10,8 @@ namespace securecloud::audit::ingestion {
 BoundedDeduplicationCache::BoundedDeduplicationCache(uint32_t capacity, std::chrono::milliseconds ttl,
                                                      uint32_t num_shards)
     : total_capacity_(capacity == 0 ? 1u : capacity), ttl_(ttl) {
-    if (num_shards == 0) num_shards = 1;
+    if (num_shards == 0)
+        num_shards = 1;
     num_shards_ = std::bit_ceil(num_shards);
     shard_mask_ = num_shards_ - 1;
     shard_capacity_ = std::max(1u, (total_capacity_ + num_shards_ - 1) / num_shards_);
@@ -21,7 +23,7 @@ BoundedDeduplicationCache::BoundedDeduplicationCache(uint32_t capacity, std::chr
 }
 
 size_t BoundedDeduplicationCache::get_shard_index(const domain::EventId& event_id) const noexcept {
-    return std::hash<domain::EventId>{}(event_id) & shard_mask_;
+    return std::hash<domain::EventId>{}(event_id)&shard_mask_;
 }
 
 DedupAcquireResult BoundedDeduplicationCache::try_acquire(const domain::EventId& event_id,
@@ -38,10 +40,12 @@ DedupAcquireResult BoundedDeduplicationCache::try_acquire(const domain::EventId&
             // Lazy eviction of TTL-expired entry
             shard.committed_lru_list.erase(lru_it);
             shard.committed_map.erase(committed_it);
-            DeduplicationMetrics::instance().audit_dedup_cache_evictions_ttl_total.fetch_add(1, std::memory_order_relaxed);
+            DeduplicationMetrics::instance().audit_dedup_cache_evictions_ttl_total.fetch_add(1,
+                                                                                             std::memory_order_relaxed);
         } else {
             if (lru_it->fingerprint != fingerprint) {
-                DeduplicationMetrics::instance().audit_dedup_payload_conflicts_total.fetch_add(1, std::memory_order_relaxed);
+                DeduplicationMetrics::instance().audit_dedup_payload_conflicts_total.fetch_add(
+                    1, std::memory_order_relaxed);
                 return DedupAcquireResult{.decision = DedupAcquireResult::Decision::PayloadConflict};
             }
             // LRU promotion
@@ -58,10 +62,12 @@ DedupAcquireResult BoundedDeduplicationCache::try_acquire(const domain::EventId&
     auto in_flight_it = shard.in_flight_map.find(event_id);
     if (in_flight_it != shard.in_flight_map.end()) {
         if (in_flight_it->second.fingerprint != fingerprint) {
-            DeduplicationMetrics::instance().audit_dedup_payload_conflicts_total.fetch_add(1, std::memory_order_relaxed);
+            DeduplicationMetrics::instance().audit_dedup_payload_conflicts_total.fetch_add(1,
+                                                                                           std::memory_order_relaxed);
             return DedupAcquireResult{.decision = DedupAcquireResult::Decision::PayloadConflict};
         }
-        DeduplicationMetrics::instance().audit_dedup_hits_inflight_coalesced_total.fetch_add(1, std::memory_order_relaxed);
+        DeduplicationMetrics::instance().audit_dedup_hits_inflight_coalesced_total.fetch_add(1,
+                                                                                             std::memory_order_relaxed);
         return DedupAcquireResult{.decision = DedupAcquireResult::Decision::CoalescedInFlight,
                                   .committed_received_at = {},
                                   .in_flight_future = in_flight_it->second.in_flight_future,
@@ -120,7 +126,8 @@ void BoundedDeduplicationCache::mark_committed(const domain::EventId& event_id,
                 auto tail_it = std::prev(shard.committed_lru_list.end());
                 shard.committed_map.erase(tail_it->event_id);
                 shard.committed_lru_list.pop_back();
-                DeduplicationMetrics::instance().audit_dedup_cache_evictions_lru_total.fetch_add(1, std::memory_order_relaxed);
+                DeduplicationMetrics::instance().audit_dedup_cache_evictions_lru_total.fetch_add(
+                    1, std::memory_order_relaxed);
             } else {
                 break;
             }
@@ -177,7 +184,8 @@ size_t BoundedDeduplicationCache::evict_expired(std::chrono::steady_clock::time_
                 shard->committed_map.erase(it->event_id);
                 it = shard->committed_lru_list.erase(it);
                 ++total_evicted;
-                DeduplicationMetrics::instance().audit_dedup_cache_evictions_ttl_total.fetch_add(1, std::memory_order_relaxed);
+                DeduplicationMetrics::instance().audit_dedup_cache_evictions_ttl_total.fetch_add(
+                    1, std::memory_order_relaxed);
             } else {
                 ++it;
             }

@@ -179,12 +179,10 @@ TEST_F(BoundedDeduplicationCacheTestSuite, RollbackInFlightRestoresUnseenState) 
     auto acq1 = cache.try_acquire(event.event_id, fp, now);
     EXPECT_EQ(acq1.decision, DedupAcquireResult::Decision::AcquiredNewInFlight);
 
-    PersistAckResult fail_res{
-        .status = IngestionOutcomeStatus::PersistenceFailed,
-        .event_id = event.event_id,
-        .error_code = "UNAVAILABLE",
-        .diagnostic_message = "ClickHouse down"
-    };
+    PersistAckResult fail_res{.status = IngestionOutcomeStatus::PersistenceFailed,
+                              .event_id = event.event_id,
+                              .error_code = "UNAVAILABLE",
+                              .diagnostic_message = "ClickHouse down"};
 
     cache.rollback_in_flight(event.event_id, fail_res);
     EXPECT_EQ(cache.size(), 0u);

@@ -1,11 +1,11 @@
-#include "service/audit_ingestion_service.hpp"
 #include "ingestion/deduplication_cache.hpp"
 #include "ingestion/deduplication_metrics.hpp"
+#include "service/audit_ingestion_service.hpp"
 
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <gtest/gtest.h>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -44,19 +44,16 @@ class PipelineMockRepository : public repository::IAuditEventRepository {
         }
 
         if (fail_mode_ == FailMode::DeterministicFailure) {
-            return repository::RepositoryBatchWriteResult{
-                .status = repository::RepositoryWriteStatus::DeterministicFailure,
-                .error_code = "UNAVAILABLE",
-                .sanitized_reason = "Connection refused"
-            };
+            return repository::RepositoryBatchWriteResult{.status =
+                                                              repository::RepositoryWriteStatus::DeterministicFailure,
+                                                          .error_code = "UNAVAILABLE",
+                                                          .sanitized_reason = "Connection refused"};
         }
 
         if (fail_mode_ == FailMode::AmbiguousOutcome) {
-            return repository::RepositoryBatchWriteResult{
-                .status = repository::RepositoryWriteStatus::AmbiguousOutcome,
-                .error_code = "DEADLINE_EXCEEDED",
-                .sanitized_reason = "HTTP socket timeout"
-            };
+            return repository::RepositoryBatchWriteResult{.status = repository::RepositoryWriteStatus::AmbiguousOutcome,
+                                                          .error_code = "DEADLINE_EXCEEDED",
+                                                          .sanitized_reason = "HTTP socket timeout"};
         }
 
         insert_count_.fetch_add(1, std::memory_order_relaxed);
@@ -65,10 +62,7 @@ class PipelineMockRepository : public repository::IAuditEventRepository {
             inserted_events_.push_back(evt);
         }
         return repository::RepositoryBatchWriteResult{
-            .status = repository::RepositoryWriteStatus::Committed,
-            .error_code = "",
-            .sanitized_reason = ""
-        };
+            .status = repository::RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
     }
 
     std::vector<domain::AuditEvent> query_by_time_range(std::chrono::system_clock::time_point,
@@ -78,7 +72,7 @@ class PipelineMockRepository : public repository::IAuditEventRepository {
     }
 
     std::vector<domain::AuditEvent> query_by_producer(const std::string&, std::chrono::system_clock::time_point,
-                                                     std::chrono::system_clock::time_point, uint32_t) override {
+                                                      std::chrono::system_clock::time_point, uint32_t) override {
         std::lock_guard<std::mutex> lock(mutex_);
         return inserted_events_;
     }
@@ -146,9 +140,7 @@ class PipelineMockRepository : public repository::IAuditEventRepository {
 
 class AuditDeduplicationPipelineTest : public ::testing::Test {
   protected:
-    void SetUp() override {
-        ingestion::DeduplicationMetrics::instance().reset();
-    }
+    void SetUp() override { ingestion::DeduplicationMetrics::instance().reset(); }
 
     domain::AuditEvent build_sample_event(const std::string& uuid_str, const std::string& actor = "user_1") {
         domain::AuditEvent event;
@@ -237,9 +229,7 @@ TEST_F(AuditDeduplicationPipelineTest, ConcurrentSubmissionsOfSameEventCoalesceW
     std::vector<service::IngestionResult> results(thread_count);
 
     for (int i = 0; i < thread_count; ++i) {
-        threads.emplace_back([&service, event, &results, i] {
-            results[i] = service.ingest_single(event);
-        });
+        threads.emplace_back([&service, event, &results, i] { results[i] = service.ingest_single(event); });
     }
 
     for (auto& t : threads) {
