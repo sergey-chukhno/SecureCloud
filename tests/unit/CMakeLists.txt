@@ -3123,4 +3123,22 @@ target_link_libraries(securecloud_messaging_sync_reconnect_storm_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_sync_reconnect_storm_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Messaging Security Boundary & Zero-Knowledge Cryptographic Audit (MSG-012-T05)
+add_executable(securecloud_messaging_security_regression_test
+    messaging/messaging_security_regression_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_security_regression_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    securecloud::json
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_security_regression_test ${SECURECLOUD_TEST_PROPERTIES})
+
+
 
