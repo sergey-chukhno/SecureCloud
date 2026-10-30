@@ -24,6 +24,10 @@ class FakeOutboxRepository : public FilesOutboxRepository {
   public:
     FakeOutboxRepository() : FilesOutboxRepository(nullptr) {}
 
+    using FilesOutboxRepository::fetch_pending_events;
+    using FilesOutboxRepository::mark_failed;
+    using FilesOutboxRepository::mark_published;
+
     std::vector<FilesOutboxEntity> pending_events;
     std::vector<std::string> published_ids;
     std::vector<std::string> failed_ids;
@@ -34,7 +38,7 @@ class FakeOutboxRepository : public FilesOutboxRepository {
         for (size_t i = 0; i < n; ++i) {
             res.push_back(pending_events[i]);
         }
-        pending_events.erase(pending_events.begin(), pending_events.begin() + n);
+        pending_events.erase(pending_events.begin(), pending_events.begin() + static_cast<std::ptrdiff_t>(n));
         return res;
     }
 
