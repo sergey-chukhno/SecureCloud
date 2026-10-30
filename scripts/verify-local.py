@@ -169,6 +169,7 @@ class VerificationOrchestrator:
         skip_build: bool = False,
         skip_contracts: bool = False,
         skip_tests: bool = False,
+        test_regex: Optional[str] = None,
         run_tidy: bool = False,
         run_full: bool = False,
     ) -> int:
@@ -189,6 +190,20 @@ class VerificationOrchestrator:
                     pass
 
         cmd_config = ["cmake", "--preset", self.preset]
+        if platform.system() == "Windows" and "msvc" in self.preset.lower():
+            vcpkg_toolchain = None
+            for cand in [
+                os.environ.get("VCPKG_ROOT"),
+                os.environ.get("VCPKG_INSTALLATION_ROOT"),
+                "C:/vcpkg",
+            ]:
+                if cand:
+                    toolchain_path = Path(cand) / "scripts" / "buildsystems" / "vcpkg.cmake"
+                    if toolchain_path.exists():
+                        vcpkg_toolchain = str(toolchain_path.resolve())
+                        break
+            if vcpkg_toolchain:
+                cmd_config.append(f"-DCMAKE_TOOLCHAIN_FILE={vcpkg_toolchain}")
         if run_tidy:
             cmd_config.append("-DENABLE_CLANG_TIDY=ON")
         if not self._execute_stage("1. CMake Configure", cmd_config, skip=skip_configure):
@@ -221,6 +236,8 @@ class VerificationOrchestrator:
 
         setup_windows_environment(self.preset)
         cmd_test = ["ctest", "--preset", self.preset, "--output-on-failure"]
+        if test_regex:
+            cmd_test.extend(["-R", test_regex])
         if not self._execute_stage("5. CTest Execution Suite", cmd_test, skip=skip_tests):
             return self._summarize_and_exit(total_start)
 
@@ -570,6 +587,12 @@ def main() -> int:
         help="Execute extended verification scripts (dev-pki, service config) if on POSIX",
     )
     parser.add_argument(
+        "--test-regex",
+        "-R",
+        default=None,
+        help="Run tests matching regular expression (passed to ctest -R)",
+    )
+    parser.add_argument(
         "--verbose",
         "-v",
         action="store_true",
@@ -614,6 +637,7 @@ def main() -> int:
         skip_build=args.skip_build,
         skip_contracts=args.skip_contracts,
         skip_tests=args.skip_tests,
+        test_regex=args.test_regex,
         run_tidy=args.tidy,
         run_full=args.full,
     )

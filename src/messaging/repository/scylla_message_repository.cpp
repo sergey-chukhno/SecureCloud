@@ -75,7 +75,7 @@ void ScyllaMessageRepository::init_prepared_statements() {
         "SELECT conversation_id, message_bucket, message_sequence, message_id, sender_user_id, sender_device_id, "
         "message_priority, accepted_at, ciphertext_envelope, envelope_version, file_reference_ids "
         "FROM securecloud_messaging.messages_by_conversation "
-        "WHERE conversation_id = ? AND message_bucket = ? AND message_id = ? ALLOW FILTERING;");
+        "WHERE conversation_id = ? AND message_bucket = ? AND message_id = ?;");
 
     prep_list_range_ = session_->prepare(
         "msg_repo_list_range",

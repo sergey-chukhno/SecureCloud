@@ -74,9 +74,8 @@ std::string make_pseudorandom_ciphertext(size_t length = 64) {
     return s;
 }
 
-E2EMessageEnvelope make_test_envelope(const UserId& sender_user, const DeviceId& sender_dev, const UserId& recp_user,
-                                      const DeviceId& recp_dev) {
-    PerDeviceEnvelope dev_env{
+PerDeviceEnvelope make_test_per_device_envelope(const UserId& recp_user, const DeviceId& recp_dev) {
+    return PerDeviceEnvelope{
         .recipient_user_id = recp_user,
         .recipient_device_id = recp_dev,
         .protocol_version = E2EProtocolVersion::V1_Signal_PQXDH_DoubleRatchet,
@@ -87,7 +86,10 @@ E2EMessageEnvelope make_test_envelope(const UserId& sender_user, const DeviceId&
         .auth_tag = std::vector<uint8_t>(16, 0xCC),
         .one_time_prekey_id = std::nullopt,
     };
+}
 
+E2EMessageEnvelope make_test_envelope(const UserId& sender_user, const DeviceId& sender_dev, const UserId& recp_user,
+                                      const DeviceId& recp_dev) {
     return E2EMessageEnvelope{
         .message_id = MessageId::generate_v7(),
         .conversation_id = ConversationId::generate_v7(),
@@ -97,7 +99,7 @@ E2EMessageEnvelope make_test_envelope(const UserId& sender_user, const DeviceId&
         .priority = MessagePriority::Normal,
         .created_at = std::chrono::system_clock::now(),
         .expires_at = std::chrono::system_clock::now() + std::chrono::hours(24),
-        .per_device_envelopes = {dev_env},
+        .per_device_envelopes = {make_test_per_device_envelope(recp_user, recp_dev)},
     };
 }
 
@@ -408,6 +410,76 @@ TEST(E2EEnvelopeValidatorTest, DetectsSelectiveDeviceOmission) {
     EXPECT_EQ(res2.error_code, v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE);
     ASSERT_EQ(res2.omitted_device_ids.size(), 1u);
     EXPECT_EQ(res2.omitted_device_ids[0], dev_bob2);
+}
+
+TEST(E2EEnvelopeValidatorTest, Rule3_RejectsEnvelopeTargetingSenderDeviceItself) {
+    auto mock_client = std::make_shared<MockAuthDirectoryClient>();
+    UserId alice{"018f2d52-0000-7000-8000-000000000001"};
+    UserId bob{"018f2d52-0000-7000-8000-000000000002"};
+    DeviceId dev_alice{"dev-alice-phone"};
+    DeviceId dev_bob{"dev-bob-phone"};
+
+    mock_client->add_device(alice, dev_alice, securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+    mock_client->add_device(bob, dev_bob, securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+
+    auto resolution_service = std::make_shared<RecipientDeviceResolutionService>(mock_client);
+    E2EEnvelopeValidator validator(resolution_service);
+
+    // Target dev_alice (self) alongside dev_bob
+    auto envelope = make_test_envelope(alice, dev_alice, bob, dev_bob);
+    // Add target for dev_alice (self-targeting)
+    envelope.per_device_envelopes.push_back(make_test_per_device_envelope(alice, dev_alice));
+
+    auto caller_ctx = make_caller_context(alice, dev_alice);
+    std::vector<UserId> participants = {alice, bob};
+
+    auto res = validator.validate(envelope, caller_ctx, participants);
+    EXPECT_FALSE(res.is_valid);
+    EXPECT_EQ(res.error_code, v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE);
+    EXPECT_NE(res.error_message.find("cannot target itself"), std::string::npos);
+}
+
+TEST(E2EEnvelopeValidatorTest, EnforcesSenderCompanionDeviceFanoutUnderCompleteness) {
+    auto mock_client = std::make_shared<MockAuthDirectoryClient>();
+    UserId alice{"018f2d52-0000-7000-8000-000000000001"};
+    UserId bob{"018f2d52-0000-7000-8000-000000000002"};
+    DeviceId dev_alice_phone{"dev-alice-phone"};
+    DeviceId dev_alice_laptop{"dev-alice-laptop"};
+    DeviceId dev_bob{"dev-bob-phone"};
+
+    mock_client->add_device(alice, dev_alice_phone, securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+    mock_client->add_device(alice, dev_alice_laptop, securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+    mock_client->add_device(bob, dev_bob, securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+
+    auto resolution_service = std::make_shared<RecipientDeviceResolutionService>(mock_client);
+    E2EEnvelopeValidator validator(resolution_service);
+
+    auto caller_ctx = make_caller_context(alice, dev_alice_phone);
+    std::vector<UserId> participants = {alice, bob};
+
+    // Case 1: Incomplete envelope - targets Bob Phone only, omitting companion Alice Laptop
+    auto incomplete_envelope = make_test_envelope(alice, dev_alice_phone, bob, dev_bob);
+
+    // With enforce_completeness = false -> valid, omitted contains dev_alice_laptop
+    auto res1 = validator.validate(incomplete_envelope, caller_ctx, participants, /*enforce_completeness=*/false);
+    EXPECT_TRUE(res1.is_valid);
+    ASSERT_EQ(res1.omitted_device_ids.size(), 1u);
+    EXPECT_EQ(res1.omitted_device_ids[0], dev_alice_laptop);
+
+    // With enforce_completeness = true -> rejected
+    auto res2 = validator.validate(incomplete_envelope, caller_ctx, participants, /*enforce_completeness=*/true);
+    EXPECT_FALSE(res2.is_valid);
+    EXPECT_EQ(res2.error_code, v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE);
+    ASSERT_EQ(res2.omitted_device_ids.size(), 1u);
+    EXPECT_EQ(res2.omitted_device_ids[0], dev_alice_laptop);
+
+    // Case 2: Complete envelope - targets Bob Phone and Alice Laptop
+    auto complete_envelope = make_test_envelope(alice, dev_alice_phone, bob, dev_bob);
+    complete_envelope.per_device_envelopes.push_back(make_test_per_device_envelope(alice, dev_alice_laptop));
+
+    auto res3 = validator.validate(complete_envelope, caller_ctx, participants, /*enforce_completeness=*/true);
+    EXPECT_TRUE(res3.is_valid);
+    EXPECT_TRUE(res3.omitted_device_ids.empty());
 }
 
 } // namespace

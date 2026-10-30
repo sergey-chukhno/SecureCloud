@@ -8,8 +8,11 @@
 #include "securecloud/messaging/v1/messaging.pb.h"
 #include "service/conversation_service.hpp" // for ServiceResult
 
+#include <array>
 #include <chrono>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -20,6 +23,7 @@ struct DeliveryAckCommand {
     domain::MessageId message_id;
     domain::DeviceId recipient_device_id;
     domain::UserId caller_user_id;
+    domain::DeviceId caller_device_id{};
     std::chrono::system_clock::time_point delivered_at;
     std::optional<domain::ConversationId> conversation_id{std::nullopt};
 };
@@ -41,17 +45,22 @@ struct DeliveryAckResponse {
  * 2. Device Ownership & Authorization: Confirms caller owns the acknowledging device.
  * 3. Idempotent Delivery Receipts: Duplicate receipts for DELIVERED or READ messages succeed deterministically.
  * 4. Dual-Write Safety (ADR-005): Emits `ConversationOutboxEventType::MessageDelivered` via Transactional Outbox.
+ * 5. Device Revocation Check: Revoked devices cannot acknowledge delivery.
  */
 class DeliveryService {
   public:
+    /// Callback predicate returning true if the device is currently in DEVICE_STATUS_ACTIVE.
+    using DeviceStatusChecker = std::function<bool(const domain::DeviceId&)>;
+
     DeliveryService(std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
-                    std::shared_ptr<repository::IOutboxRepository> outbox_repo);
+                    std::shared_ptr<repository::IOutboxRepository> outbox_repo,
+                    DeviceStatusChecker device_status_checker = nullptr);
     ~DeliveryService() = default;
 
     DeliveryService(const DeliveryService&) = delete;
     DeliveryService& operator=(const DeliveryService&) = delete;
-    DeliveryService(DeliveryService&&) = default;
-    DeliveryService& operator=(DeliveryService&&) = default;
+    DeliveryService(DeliveryService&&) = delete;
+    DeliveryService& operator=(DeliveryService&&) = delete;
 
     /**
      * @brief Authoritatively records a recipient device's affirmative delivery receipt.
@@ -64,6 +73,10 @@ class DeliveryService {
   private:
     std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<repository::IOutboxRepository> outbox_repo_;
+    DeviceStatusChecker device_status_checker_{nullptr};
+
+    static constexpr size_t kNumStripes = 64;
+    mutable std::array<std::mutex, kNumStripes> ack_stripes_;
 };
 
 } // namespace securecloud::messaging::service

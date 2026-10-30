@@ -46,6 +46,11 @@ class DeviceDirectoryCache {
     void invalidate(const domain::UserId& user_id);
 
     /**
+     * @brief Explicitly invalidates cached records containing a specific device ID.
+     */
+    void invalidate_device(const domain::DeviceId& device_id);
+
+    /**
      * @brief Flushes all cached entries.
      */
     void clear();
@@ -128,6 +133,17 @@ class RecipientDeviceResolutionService {
      * @brief Explicitly invalidates the cache for a specific user.
      */
     void invalidate_user_cache(const domain::UserId& user_id);
+
+    /**
+     * @brief Explicitly invalidates the cache for any user possessing the specified device ID.
+     */
+    void invalidate_device(const domain::DeviceId& device_id);
+
+    /**
+     * @brief Resolves and returns current device lifecycle status if found.
+     */
+    [[nodiscard]] std::optional<securecloud::auth::v1::DeviceStatus>
+    get_device_status(const domain::UserId& user_id, const domain::DeviceId& device_id);
 
     /**
      * @brief Clears the entire in-memory cache.

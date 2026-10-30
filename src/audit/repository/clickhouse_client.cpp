@@ -1,8 +1,8 @@
 #include "clickhouse_client.hpp"
+
 #include "audit_repository_exceptions.hpp"
 
 #include <httplib.h>
-
 #include <queue>
 #include <sstream>
 
@@ -39,7 +39,8 @@ struct ClickHouseClient::Impl {
     }
 
     void release_connection(std::unique_ptr<httplib::Client> cli) {
-        if (!cli) return;
+        if (!cli)
+            return;
         std::lock_guard<std::mutex> lock(pool_mutex);
         if (connection_pool.size() < config.max_connections) {
             connection_pool.push(std::move(cli));
@@ -47,22 +48,18 @@ struct ClickHouseClient::Impl {
     }
 
     httplib::Headers build_headers() const {
-        return {
-            {"X-ClickHouse-User", config.user},
-            {"X-ClickHouse-Key", config.password.expose_unredacted_secret()},
-            {"Accept-Encoding", "gzip, deflate"}
-        };
+        return {{"X-ClickHouse-User", config.user},
+                {"X-ClickHouse-Key", config.password.expose_unredacted_secret()},
+                {"Accept-Encoding", "gzip, deflate"}};
     }
 };
 
-ClickHouseClient::ClickHouseClient(const ClickHouseConfig& config)
-    : impl_(std::make_unique<Impl>(config)) {}
+ClickHouseClient::ClickHouseClient(const ClickHouseConfig& config) : impl_(std::make_unique<Impl>(config)) {}
 
 ClickHouseClient::~ClickHouseClient() = default;
 
-bool ClickHouseClient::execute_query(const std::string& query,
-                                      std::string* out_response,
-                                      std::chrono::milliseconds timeout) {
+bool ClickHouseClient::execute_query(const std::string& query, std::string* out_response,
+                                     std::chrono::milliseconds timeout) {
     auto cli = impl_->acquire_connection(timeout);
     if (!cli) {
         throw ClickHouseConnectionException("Connection pool exhausted or timeout");
@@ -98,9 +95,8 @@ bool ClickHouseClient::execute_query(const std::string& query,
     return true;
 }
 
-bool ClickHouseClient::execute_insert(const std::string& query,
-                                       const std::string& body_data,
-                                       std::chrono::milliseconds timeout) {
+bool ClickHouseClient::execute_insert(const std::string& query, const std::string& body_data,
+                                      std::chrono::milliseconds timeout) {
     auto cli = impl_->acquire_connection(timeout);
     if (!cli) {
         throw ClickHouseConnectionException("Connection pool exhausted or timeout");
