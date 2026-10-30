@@ -1571,111 +1571,173 @@
             <section class="slide" id="slide-18" data-index="18" data-title="Messaging: Data Structures & Flow Control">
                 <div class="slide-content">
                     <div class="slide-badge-row">
-                        <span class="badge badge-teal">CONCURRENCY &amp; FLOW CONTROL</span>
+                        <span class="badge badge-teal">CONCURRENCY &amp; SCHEDULING</span>
+                        <span class="badge badge-red">GLOBAL EMERGENCY PREEMPTION</span>
                         <span class="badge badge-blue">DEFICIT ROUND ROBIN (DRR)</span>
                         <span class="badge badge-emerald">DROP-TO-DURABLE BUFFER</span>
                     </div>
 
                     <h2 class="slide-title">
-                        Core Data Structures &amp; <span class="gradient-text">Flow Control Mechanics</span>
+                        Core Scheduling Architecture &amp; <span class="gradient-text">Deficit Round Robin</span>
                     </h2>
                     <p class="slide-lead">
-                        Lock-free concurrency primitives, 3-tier fair priority scheduling, and fail-safe backpressure preventing memory exhaustion under high burst loads.
+                        Production memory topology of <code>BoundedDeliveryScheduler</code>: global preemption for SOS distress beacons, per-device DRR fairness, and drop-to-durable backpressure.
                     </p>
 
                     <div class="diagram-split-layout">
-                        <!-- Left: 3-Tier Priority Queue & Concurrency -->
-                        <div style="display: flex; flex-direction: column; gap: 0.75rem;">
-                            <div class="card glass-card hover-glow" style="padding: 0.9rem;">
-                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem;">
-                                    <span style="color: #f43f5e;">⚡ Tier 1: Emergency Ring</span>
-                                    <span class="badge badge-red" style="padding: 0.15rem 0.4rem; font-size: 0.65rem;">Highest Priority</span>
+                        <!-- Left: Concrete Scheduler Data Structures -->
+                        <div style="display: flex; flex-direction: column; gap: 0.7rem;">
+                            <div class="card glass-card hover-glow" style="padding: 0.85rem; border-left: 3px solid #f43f5e;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.92rem; margin-bottom: 0.3rem; display: flex; align-items: center; justify-content: space-between;">
+                                    <span style="color: #f43f5e; display: flex; align-items: center; gap: 0.35rem;">
+                                        ⚡ <code>emergency_queue_</code> (Global Shared)
+                                    </span>
+                                    <span class="badge badge-red" style="padding: 0.15rem 0.4rem; font-size: 0.65rem;">Strict Preemption</span>
                                 </h4>
-                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
-                                    SOS distress beacons and safety alerts bypass DRR round-robin limits and queue locks entirely. Dispatched immediately with zero queue latency.
+                                <p style="font-size: 0.78rem; color: var(--text-secondary); line-height: 1.35; margin: 0;">
+                                    <strong>ONE global queue for ALL devices.</strong> 1,000 dedicated reserved slots. SOS distress signals cut all lines and preempt round-robin execution immediately, dispatching to worker threads with sub-millisecond priority.
                                 </p>
                             </div>
 
-                            <div class="card glass-card hover-glow" style="padding: 0.9rem;">
-                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem;">
-                                    <span style="color: #38bdf8;">🔄 Tier 2: Delivery Ring (DRR Quantum = 16)</span>
+                            <div class="card glass-card hover-glow" style="padding: 0.85rem; border-left: 3px solid #38bdf8;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.92rem; margin-bottom: 0.3rem; display: flex; align-items: center; justify-content: space-between;">
+                                    <span style="color: #38bdf8; display: flex; align-items: center; gap: 0.35rem;">
+                                        🔄 <code>per_device_queues_</code> (1 Per Device)
+                                    </span>
+                                    <span class="badge badge-blue" style="padding: 0.15rem 0.4rem; font-size: 0.65rem;">Max 50 Tasks / Dev</span>
                                 </h4>
-                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
-                                    Real-time conversation messages. Deficit Round Robin scheduler allocates a quantum of 16 envelopes per conversation, preventing noisy group starvation.
+                                <p style="font-size: 0.78rem; color: var(--text-secondary); line-height: 1.35; margin: 0;">
+                                    <code>std::unordered_map&lt;DeviceId, deque&lt;DeliveryTask&gt;&gt;</code>. Each recipient device has its own isolated FIFO queue. Urgent packets (ACKs, session ratchets) precede Normal bulk chatter inside the queue.
                                 </p>
                             </div>
 
-                            <div class="card glass-card hover-glow" style="padding: 0.9rem;">
-                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem;">
-                                    <span style="color: #a855f7;">📦 Tier 3: Sync Ring (DRR Quantum = 4)</span>
+                            <div class="card glass-card hover-glow" style="padding: 0.85rem; border-left: 3px solid #a855f7;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.92rem; margin-bottom: 0.3rem; display: flex; align-items: center; justify-content: space-between;">
+                                    <span style="color: #a855f7; display: flex; align-items: center; gap: 0.35rem;">
+                                        🎡 <code>active_device_ring_</code> (DRR Fair Ring)
+                                    </span>
+                                    <span class="badge" style="background: rgba(168,85,247,0.2); color: #c084fc; border: 1px solid rgba(168,85,247,0.4); padding: 0.15rem 0.4rem; font-size: 0.65rem;">Quantum = 5 Tasks</span>
                                 </h4>
-                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
-                                    Bulk background synchronization and offline device catch-up. Allocated 4 packets per round; automatically throttles during live traffic bursts.
+                                <p style="font-size: 0.78rem; color: var(--text-secondary); line-height: 1.35; margin: 0;">
+                                    Maintains active non-empty devices. Worker threads process up to 5 tasks per turn per device. Once a device reaches its quantum, it yields to the back of the ring, preventing chatty group floods from starving quiet direct chats.
                                 </p>
                             </div>
 
-                            <div class="card glass-card hover-glow" style="padding: 0.9rem;">
-                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.95rem; margin-bottom: 0.35rem; display: flex; align-items: center; gap: 0.4rem;">
-                                    <span style="color: #10b981;">🔒 64 Lock-Striped Concurrency Buckets</span>
+                            <div class="card glass-card hover-glow" style="padding: 0.85rem; border-left: 3px solid #10b981;">
+                                <h4 style="font-family: var(--font-heading); color: #fff; font-size: 0.92rem; margin-bottom: 0.3rem; display: flex; align-items: center; justify-content: space-between;">
+                                    <span style="color: #10b981; display: flex; align-items: center; gap: 0.35rem;">
+                                        🛡️ Drop-to-Durable Backpressure
+                                    </span>
+                                    <span class="badge badge-emerald" style="padding: 0.15rem 0.4rem; font-size: 0.65rem;">Zero RAM Exhaustion</span>
                                 </h4>
-                                <p style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
-                                    Sequence allocation strips conversation locks into 64 memory stripes using MurmurHash3, eliminating lock contention across concurrent conversations.
+                                <p style="font-size: 0.78rem; color: var(--text-secondary); line-height: 1.35; margin: 0;">
+                                    If a device queue hits 50 tasks or global memory ceiling hits 10,000 tasks, excess envelopes spill safely to ScyllaDB <code>pending_deliveries_by_device</code> outbox with zero dropped packets and bounded memory.
                                 </p>
                             </div>
                         </div>
 
-                        <!-- Right: Drop-to-Durable Buffer Diagram -->
-                        <div class="diagram-container" style="padding: 1rem;">
-                            <div style="font-family: var(--font-mono); font-size: 0.75rem; color: var(--accent-blue); margin-bottom: 0.5rem; text-transform: uppercase;">
-                                Drop-to-Durable Backpressure Flow
+                        <!-- Right: Concrete Architecture SVG Diagram -->
+                        <div class="diagram-container" style="padding: 0.85rem;">
+                            <div style="font-family: var(--font-mono); font-size: 0.72rem; color: var(--accent-blue); margin-bottom: 0.4rem; text-transform: uppercase; display: flex; justify-content: space-between;">
+                                <span>BoundedDeliveryScheduler Memory Topology</span>
+                                <span style="color: var(--text-muted);">ADR-007 / ADR-010</span>
                             </div>
-                            <svg class="svg-diagram" viewBox="0 0 540 340" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                <!-- Inbound Burst Stream -->
-                                <rect x="20" y="20" width="130" height="35" rx="5" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8"/>
-                                <text x="30" y="37" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">Inbound Traffic Burst</text>
-                                <text x="30" y="47" fill="#cbd5e1" font-family="var(--font-mono)" font-size="7.5">&gt; 10,000 envelopes/sec</text>
+                            <svg class="svg-diagram" viewBox="0 0 540 375" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <!-- Inbound Task Submissions -->
+                                <rect x="15" y="15" width="130" height="75" rx="6" fill="rgba(15, 23, 42, 0.85)" stroke="#38bdf8" stroke-width="1.2"/>
+                                <text x="25" y="32" fill="#38bdf8" font-family="var(--font-mono)" font-size="8.5" font-weight="700">schedule(task)</text>
+                                <text x="25" y="47" fill="#f43f5e" font-family="var(--font-mono)" font-size="7.5">🔴 Emergency (SOS)</text>
+                                <text x="25" y="60" fill="#38bdf8" font-family="var(--font-mono)" font-size="7.5">🟡 Urgent (ACK / Key)</text>
+                                <text x="25" y="73" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">⚪ Normal (Chat Traffic)</text>
 
-                                <path d="M 150 37 L 210 37" stroke="#38bdf8" stroke-width="2" class="flow-line-fast"/>
-                                <polygon points="205,33 210,37 205,41" fill="#38bdf8"/>
+                                <!-- Emergency Branch: Top (Cuts All Lines) -->
+                                <path d="M 145 42 L 200 42" stroke="#f43f5e" stroke-width="2" class="flow-line-fast"/>
+                                <polygon points="195,38 200,42 195,46" fill="#f43f5e"/>
 
-                                <!-- In-Memory Priority Queue Ring -->
-                                <rect x="210" y="15" width="305" height="110" rx="8" fill="rgba(13, 23, 42, 0.9)" stroke="#2dd4bf" stroke-width="1.5"/>
-                                <text x="225" y="35" fill="#2dd4bf" font-family="var(--font-heading)" font-size="10.5" font-weight="700">In-Memory Priority Ring (Capacity: 50,000)</text>
+                                <rect x="200" y="20" width="320" height="46" rx="6" fill="rgba(244, 63, 94, 0.12)" stroke="#f43f5e" stroke-width="1.5"/>
+                                <text x="212" y="36" fill="#f43f5e" font-family="var(--font-heading)" font-size="9" font-weight="700">emergency_queue_ [ONE Global Queue for ALL Devices]</text>
+                                <text x="212" y="52" fill="#cbd5e1" font-family="var(--font-mono)" font-size="7.5">Capacity: 1,000 Reserved Slots • Strict Preemption • Bypasses DRR Ring</text>
 
-                                <!-- Ring Slots -->
-                                <rect x="225" y="48" width="80" height="22" rx="3" fill="rgba(244, 63, 94, 0.25)" stroke="#f43f5e"/>
-                                <text x="233" y="63" fill="#f43f5e" font-family="var(--font-mono)" font-size="7.5" font-weight="700">Tier 1: SOS (100%)</text>
+                                <!-- Direct Preempt to Worker Pool -->
+                                <path d="M 520 43 L 530 43 L 530 195 L 490 195" stroke="#f43f5e" stroke-width="2" stroke-dasharray="3 2"/>
+                                <polygon points="495,191 490,195 495,199" fill="#f43f5e"/>
+                                <text x="440" y="115" fill="#f43f5e" font-family="var(--font-mono)" font-size="7" font-weight="700">PREEMPT</text>
 
-                                <rect x="312" y="48" width="95" height="22" rx="3" fill="rgba(56, 189, 248, 0.2)" stroke="#38bdf8"/>
-                                <text x="318" y="63" fill="#38bdf8" font-family="var(--font-mono)" font-size="7.5">Tier 2: Delivery (DRR)</text>
+                                <!-- Normal/Urgent Branch: Enters Per-Device Queues -->
+                                <path d="M 145 70 L 175 70 L 175 125 L 200 125" stroke="#38bdf8" stroke-width="1.8"/>
+                                <polygon points="195,121 200,125 195,129" fill="#38bdf8"/>
 
-                                <rect x="414" y="48" width="90" height="22" rx="3" fill="rgba(168, 85, 247, 0.2)" stroke="#a855f7"/>
-                                <text x="424" y="63" fill="#a855f7" font-family="var(--font-mono)" font-size="7.5">Tier 3: Sync</text>
+                                <!-- Per-Device FIFO Queues Map -->
+                                <rect x="200" y="80" width="320" height="95" rx="6" fill="rgba(13, 23, 42, 0.9)" stroke="#38bdf8" stroke-width="1.2"/>
+                                <text x="212" y="97" fill="#38bdf8" font-family="var(--font-heading)" font-size="9" font-weight="700">per_device_queues_ [std::unordered_map&lt;DeviceId, deque&gt;]</text>
 
-                                <!-- Watermark Threshold Line -->
-                                <line x1="225" y1="85" x2="505" y2="85" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4 3"/>
-                                <text x="225" y="98" fill="#fbbf24" font-family="var(--font-mono)" font-size="7.5">⚠️ High Watermark: 85% Memory Capacity Threshold</text>
-                                <text x="225" y="112" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">Zero Packets Dropped: Non-emergency overflow spills to disk</text>
+                                <!-- Device 1 (Bob) -->
+                                <rect x="212" y="106" width="90" height="30" rx="4" fill="rgba(56, 189, 248, 0.15)" stroke="#38bdf8"/>
+                                <text x="218" y="119" fill="#fff" font-family="var(--font-mono)" font-size="7.5" font-weight="700">dev_1 (Bob)</text>
+                                <text x="218" y="130" fill="#38bdf8" font-family="var(--font-mono)" font-size="6.5">Depth: 42 / 50</text>
 
-                                <!-- Spilling to ScyllaDB Outbox -->
-                                <path d="M 360 125 L 360 175" stroke="#f59e0b" stroke-width="2" class="flow-line-fast"/>
-                                <polygon points="356,170 360,175 364,170" fill="#f59e0b"/>
-                                <text x="370" y="152" fill="#fbbf24" font-family="var(--font-mono)" font-size="8" font-weight="700">Drop-to-Durable Buffer</text>
+                                <!-- Device 2 (Alice) -->
+                                <rect x="312" y="106" width="90" height="30" rx="4" fill="rgba(168, 85, 247, 0.15)" stroke="#a855f7"/>
+                                <text x="318" y="119" fill="#fff" font-family="var(--font-mono)" font-size="7.5" font-weight="700">dev_2 (Alice)</text>
+                                <text x="318" y="130" fill="#c084fc" font-family="var(--font-mono)" font-size="6.5">Depth: 1 / 50</text>
 
-                                <!-- Durable Outbox Storage -->
-                                <rect x="210" y="175" width="305" height="75" rx="8" fill="rgba(13, 35, 48, 0.85)" stroke="#10b981" stroke-width="1.5"/>
-                                <text x="225" y="197" fill="#10b981" font-family="var(--font-heading)" font-size="10.5" font-weight="700">ScyllaDB Durable outbox_events</text>
-                                <text x="225" y="215" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">• Overflow envelopes safely committed to persistent NVMe</text>
-                                <text x="225" y="232" fill="#cbd5e1" font-family="var(--font-mono)" font-size="8">• Background sweeper drains batch when watermark &lt; 65%</text>
+                                <!-- Device 3 (Charlie) -->
+                                <rect x="412" y="106" width="95" height="30" rx="4" fill="rgba(16, 185, 129, 0.15)" stroke="#10b981"/>
+                                <text x="418" y="119" fill="#fff" font-family="var(--font-mono)" font-size="7.5" font-weight="700">dev_3 (Charlie)</text>
+                                <text x="418" y="130" fill="#34d399" font-family="var(--font-mono)" font-size="6.5">Depth: 3 / 50</text>
 
-                                <!-- Sweeper Drain Path -->
-                                <path d="M 210 215 L 120 215 L 120 280 L 210 280" stroke="#2dd4bf" stroke-width="1.8" class="flow-line-fast"/>
-                                <polygon points="205,276 210,280 205,284" fill="#2dd4bf"/>
-                                <text x="35" y="250" fill="#2dd4bf" font-family="var(--font-mono)" font-size="7.5" font-weight="700">Auto-Draining Engine</text>
+                                <text x="212" y="162" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">FIFO Ordering per device: Urgent ACKs front-loaded ahead of Normal chat</text>
 
-                                <rect x="210" y="265" width="305" height="40" rx="6" fill="rgba(7, 13, 24, 0.9)" stroke="#2dd4bf"/>
-                                <text x="225" y="285" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8.5" font-weight="700">✓ Resilient Flow: 0 Lost Messages, Bounded RAM Footprint</text>
-                                <text x="225" y="297" fill="#94a3b8" font-family="var(--font-mono)" font-size="7.5">Empirically validated under 10k sustained message load in CI</text>
+                                <!-- Deficit Round Robin Active Ring -->
+                                <rect x="15" y="185" width="460" height="85" rx="6" fill="rgba(15, 23, 42, 0.95)" stroke="#c084fc" stroke-width="1.5"/>
+                                <text x="25" y="202" fill="#c084fc" font-family="var(--font-heading)" font-size="9.5" font-weight="700">Deficit Round Robin (DRR) Scheduler: active_device_ring_</text>
+
+                                <!-- DRR Ring Visual -->
+                                <g transform="translate(25, 212)">
+                                    <!-- Current Turn Badge -->
+                                    <rect x="0" y="0" width="105" height="28" rx="4" fill="rgba(56, 189, 248, 0.25)" stroke="#38bdf8" stroke-width="1.5"/>
+                                    <text x="8" y="13" fill="#38bdf8" font-family="var(--font-mono)" font-size="7" font-weight="700">HEAD: dev_1 (Bob)</text>
+                                    <text x="8" y="23" fill="#fff" font-family="var(--font-mono)" font-size="6.5">Quanta: 3 / 5 sent</text>
+
+                                    <!-- Next in Line -->
+                                    <path d="M 105 14 L 125 14" stroke="#c084fc" stroke-width="1.5"/>
+                                    <polygon points="120,11 125,14 120,17" fill="#c084fc"/>
+
+                                    <rect x="125" y="0" width="105" height="28" rx="4" fill="rgba(168, 85, 247, 0.15)" stroke="#a855f7"/>
+                                    <text x="133" y="13" fill="#c084fc" font-family="var(--font-mono)" font-size="7" font-weight="700">NEXT: dev_2 (Alice)</text>
+                                    <text x="133" y="23" fill="#cbd5e1" font-family="var(--font-mono)" font-size="6.5">Protected from starvation!</text>
+
+                                    <path d="M 230 14 L 250 14" stroke="#c084fc" stroke-width="1.5"/>
+                                    <polygon points="245,11 250,14 245,17" fill="#c084fc"/>
+
+                                    <rect x="250" y="0" width="105" height="28" rx="4" fill="rgba(16, 185, 129, 0.15)" stroke="#10b981"/>
+                                    <text x="258" y="13" fill="#34d399" font-family="var(--font-mono)" font-size="7" font-weight="700">TAIL: dev_3 (Charlie)</text>
+                                    <text x="258" y="23" fill="#cbd5e1" font-family="var(--font-mono)" font-size="6.5">Next quantum turn</text>
+
+                                    <!-- Ring Rotation Arrow -->
+                                    <path d="M 80 28 C 80 44, 330 44, 330 28" stroke="#f59e0b" stroke-width="1.2" stroke-dasharray="3 2"/>
+                                    <polygon points="327,33 330,28 333,33" fill="#f59e0b"/>
+                                    <text x="130" y="44" fill="#fbbf24" font-family="var(--font-mono)" font-size="6.5">Quantum &gt;= 5: pop_front() -&gt; push_back() [Yields Turn]</text>
+                                </g>
+
+                                <!-- Worker Thread Pool Dispatch -->
+                                <path d="M 475 225 L 495 225" stroke="#2dd4bf" stroke-width="2" class="flow-line-fast"/>
+                                <polygon points="490,221 495,225 490,229" fill="#2dd4bf"/>
+
+                                <rect x="495" y="180" width="35" height="95" rx="5" fill="rgba(45, 212, 191, 0.15)" stroke="#2dd4bf"/>
+                                <text x="506" y="215" fill="#2dd4bf" font-family="var(--font-mono)" font-size="8" font-weight="700" transform="rotate(90, 506, 215)">WORKERS</text>
+
+                                <!-- Drop-to-Durable Spillover (Bottom) -->
+                                <g transform="translate(15, 285)">
+                                    <rect x="0" y="0" width="510" height="52" rx="6" fill="rgba(13, 35, 48, 0.9)" stroke="#10b981" stroke-width="1.2"/>
+                                    <text x="12" y="16" fill="#10b981" font-family="var(--font-heading)" font-size="8.5" font-weight="700">Drop-to-Durable Overflow Path (ScyllaDB pending_deliveries_by_device)</text>
+                                    <text x="12" y="30" fill="#cbd5e1" font-family="var(--font-mono)" font-size="7">• If device queue &gt;= 50 or global queue &gt;= 10,000 tasks: schedule() returns DeviceQueueFull</text>
+                                    <text x="12" y="42" fill="#94a3b8" font-family="var(--font-mono)" font-size="7">• Task spools to ScyllaDB durable queue without dropping envelopes. Background sweeper drains on drain_device_queue()</text>
+
+                                    <!-- Overflow trigger link -->
+                                    <path d="M 90 -8 L 90 0" stroke="#f59e0b" stroke-width="1.5"/>
+                                    <polygon points="87,-2 90,0 93,-2" fill="#f59e0b"/>
+                                </g>
                             </svg>
                         </div>
                     </div>
