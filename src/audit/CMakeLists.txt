@@ -36,6 +36,26 @@ target_link_libraries(securecloud_audit_config PUBLIC
         securecloud::compiler_flags
 )
 
+add_library(securecloud_audit_repository STATIC
+        repository/schema_initializer.cpp
+        repository/clickhouse_client.cpp
+        repository/clickhouse_event_serializer.cpp
+        repository/clickhouse_audit_event_repository.cpp
+)
+
+add_library(securecloud::audit_repository ALIAS securecloud_audit_repository)
+
+target_include_directories(securecloud_audit_repository PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(securecloud_audit_repository PUBLIC
+        securecloud_audit_config
+        securecloud::common
+        securecloud::httplib
+        securecloud::compiler_flags
+)
+
 add_library(securecloud_audit_server STATIC
         audit_server.cpp
 )
@@ -49,6 +69,7 @@ target_include_directories(securecloud_audit_server PUBLIC
 target_link_libraries(securecloud_audit_server PUBLIC
         securecloud_audit_config
         securecloud_audit_domain
+        securecloud_audit_repository
         securecloud::common
         securecloud::compiler_flags
 )

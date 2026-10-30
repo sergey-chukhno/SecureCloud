@@ -3190,5 +3190,31 @@ target_link_libraries(securecloud_messaging_security_regression_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_security_regression_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Audit Service ClickHouse Serializer Unit Test Suite (AUDIT-003-T06)
+add_executable(securecloud_audit_clickhouse_event_serializer_test
+    audit/clickhouse_event_serializer_test.cpp
+)
 
+target_link_libraries(securecloud_audit_clickhouse_event_serializer_test PRIVATE
+    securecloud::audit_repository
+    securecloud::audit_domain
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
 
+gtest_discover_tests(securecloud_audit_clickhouse_event_serializer_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service ClickHouse Client Unit Test Suite (AUDIT-003-T06)
+add_executable(securecloud_audit_clickhouse_client_test
+    audit/clickhouse_client_test.cpp
+)
+
+target_link_libraries(securecloud_audit_clickhouse_client_test PRIVATE
+    securecloud::audit_repository
+    securecloud::common
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_clickhouse_client_test ${SECURECLOUD_TEST_PROPERTIES})
