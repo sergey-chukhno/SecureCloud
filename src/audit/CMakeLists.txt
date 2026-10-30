@@ -22,6 +22,24 @@ target_link_libraries(securecloud_audit_domain PUBLIC
         OpenSSL::Crypto
 )
 
+add_library(securecloud_audit_query STATIC
+        query/audit_page_cursor.cpp
+)
+
+add_library(securecloud::audit_query ALIAS securecloud_audit_query)
+
+target_include_directories(securecloud_audit_query PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(securecloud_audit_query PUBLIC
+        securecloud_audit_domain
+        securecloud_audit_config
+        securecloud::common
+        securecloud::compiler_flags
+        OpenSSL::Crypto
+)
+
 add_library(securecloud_audit_config STATIC
         audit_config.cpp
 )
@@ -99,6 +117,7 @@ target_include_directories(securecloud_audit_server PUBLIC
 target_link_libraries(securecloud_audit_server PUBLIC
         securecloud_audit_config
         securecloud_audit_domain
+        securecloud_audit_query
         securecloud_audit_repository
         securecloud_audit_service
         securecloud::common

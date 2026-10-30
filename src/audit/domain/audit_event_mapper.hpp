@@ -16,6 +16,9 @@ class AuditEventMapper {
 
     /// Maps a canonical C++20 domain AuditEvent to Protobuf AuditEventProto.
     [[nodiscard]] static securecloud::audit::v1::AuditEventProto to_proto(const AuditEvent& domain);
+
+    /// Maps a canonical C++20 domain AuditEvent to PersistedAuditEventProto (includes received_at_ms).
+    [[nodiscard]] static securecloud::audit::v1::PersistedAuditEventProto to_persisted_proto(const AuditEvent& domain);
 };
 
 } // namespace securecloud::audit::domain

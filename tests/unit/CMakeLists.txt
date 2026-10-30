@@ -3020,3 +3020,15 @@ target_link_libraries(securecloud_audit_deduplication_pipeline_test PRIVATE
         GTest::gtest_main
 )
 gtest_discover_tests(securecloud_audit_deduplication_pipeline_test)
+
+# Audit Page Cursor Codec Test (AUDIT-007-T01)
+add_executable(securecloud_audit_page_cursor_test
+        audit/audit_page_cursor_test.cpp
+)
+target_link_libraries(securecloud_audit_page_cursor_test PRIVATE
+        securecloud::audit_query
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_page_cursor_test)
