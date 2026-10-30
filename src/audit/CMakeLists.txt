@@ -24,6 +24,8 @@ target_link_libraries(securecloud_audit_domain PUBLIC
 
 add_library(securecloud_audit_query STATIC
         query/audit_page_cursor.cpp
+        query/audit_query_validator.cpp
+        query/audit_query_authorizer.cpp
 )
 
 add_library(securecloud::audit_query ALIAS securecloud_audit_query)
@@ -37,6 +39,7 @@ target_link_libraries(securecloud_audit_query PUBLIC
         securecloud_audit_config
         securecloud::common
         securecloud::compiler_flags
+        gRPC::grpc++
         OpenSSL::Crypto
 )
 
