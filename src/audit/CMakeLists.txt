@@ -56,6 +56,27 @@ target_link_libraries(securecloud_audit_repository PUBLIC
         securecloud::compiler_flags
 )
 
+add_library(securecloud_audit_service STATIC
+        service/audit_proto_mapper.cpp
+        service/audit_ingestion_service.cpp
+        service/audit_service_impl.cpp
+        security/grpc_producer_identity_validator.cpp
+)
+
+add_library(securecloud::audit_service ALIAS securecloud_audit_service)
+
+target_include_directories(securecloud_audit_service PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(securecloud_audit_service PUBLIC
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        gRPC::grpc++
+)
+
 add_library(securecloud_audit_server STATIC
         audit_server.cpp
 )
@@ -70,6 +91,7 @@ target_link_libraries(securecloud_audit_server PUBLIC
         securecloud_audit_config
         securecloud_audit_domain
         securecloud_audit_repository
+        securecloud_audit_service
         securecloud::common
         securecloud::compiler_flags
 )
