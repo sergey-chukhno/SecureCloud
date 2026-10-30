@@ -9,12 +9,26 @@
 
 namespace securecloud::messaging::delivery {
 
+/// Configuration options controlling device and user connection capacity boundaries.
+struct ConnectionCapacityConfig {
+    size_t max_devices_per_user{10};
+    size_t max_global_connections{100'000};
+    std::chrono::milliseconds default_lease_timeout{std::chrono::seconds(60)};
+};
+
+/// Exception thrown when registering a device breaches configured per-user or global connection capacity.
+class ConnectionLimitExceededException : public std::runtime_error {
+  public:
+    explicit ConnectionLimitExceededException(const std::string& message) : std::runtime_error(message) {}
+};
+
 /// Production implementation of IDeviceConnectionRegistry.
 /// Provides thread-safe, high-concurrency tracking of connected client devices
 /// using std::mutex synchronization.
 class DeviceConnectionRegistry final : public IDeviceConnectionRegistry {
   public:
     explicit DeviceConnectionRegistry(std::chrono::milliseconds default_lease_timeout = std::chrono::seconds(60));
+    explicit DeviceConnectionRegistry(ConnectionCapacityConfig config);
     ~DeviceConnectionRegistry() override = default;
 
     // Non-copyable, non-movable (owns synchronization primitives)
@@ -43,7 +57,15 @@ class DeviceConnectionRegistry final : public IDeviceConnectionRegistry {
     void register_disconnect_callback(DisconnectCallback callback) override;
 
     /// Configured default lease timeout for idle channels.
-    [[nodiscard]] std::chrono::milliseconds default_lease_timeout() const noexcept { return default_lease_timeout_; }
+    [[nodiscard]] std::chrono::milliseconds default_lease_timeout() const noexcept {
+        return config_.default_lease_timeout;
+    }
+
+    /// Configured capacity settings.
+    [[nodiscard]] const ConnectionCapacityConfig& capacity_config() const noexcept { return config_; }
+
+    /// Returns the number of currently active connected devices for a given user.
+    [[nodiscard]] size_t user_device_count(const domain::UserId& user_id) const noexcept;
 
   private:
     struct ChannelEntry {
@@ -53,9 +75,10 @@ class DeviceConnectionRegistry final : public IDeviceConnectionRegistry {
 
     void notify_disconnect(const domain::DeviceId& device_id);
 
-    const std::chrono::milliseconds default_lease_timeout_;
+    ConnectionCapacityConfig config_;
     mutable std::mutex mutex_;
     std::unordered_map<domain::DeviceId, ChannelEntry> channels_;
+    std::unordered_map<domain::UserId, std::vector<domain::DeviceId>> user_to_devices_;
 
     mutable std::mutex callback_mutex_;
     std::vector<DisconnectCallback> disconnect_callbacks_;

@@ -111,6 +111,12 @@ class ConversationService {
     /// Clears recorded outbox events (useful after publishing / testing).
     void clear_outbox_events();
 
+    /// Evaluates the Mutual-Conversation Privacy Guard (MSG-010):
+    /// Returns true if caller is target or if they share at least one mutual active conversation.
+    [[nodiscard]] bool shares_mutual_conversation(const domain::UserId& caller, const domain::UserId& target) const {
+        return auth_service_.shares_mutual_conversation(caller, target);
+    }
+
   private:
     repository::IConversationRepository& conversation_repo_;
     repository::IMembershipRepository& membership_repo_;

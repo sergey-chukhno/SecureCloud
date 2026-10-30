@@ -73,6 +73,11 @@ SyncCursorUpdateOutcome SyncCursorManager::update_cursor(const domain::DeviceId&
                                        .error_message = "Conversation ID must be a valid non-nil UUID"};
     }
 
+    // Lock-striped concurrency control per (device_id, conversation_id) (MSG-012-T02)
+    const size_t stripe_idx =
+        std::hash<std::string>{}(device_id.str() + ":" + conversation_id.to_string()) % kNumStripes;
+    std::lock_guard<std::mutex> stripe_lock(cursor_stripes_[stripe_idx]);
+
     // 2. Stream ceiling boundary check (cannot advance beyond highest allocated sequence)
     auto ceiling = get_conversation_sequence_ceiling(conversation_id);
     if (new_sequence > ceiling) {

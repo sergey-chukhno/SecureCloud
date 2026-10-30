@@ -101,6 +101,56 @@ nlohmann::json sync_cursor_to_json(const securecloud::messaging::v1::SyncCursor&
     return j;
 }
 
+std::string presence_status_to_string(securecloud::messaging::v1::PresenceStatus status) {
+    switch (status) {
+    case securecloud::messaging::v1::PRESENCE_STATUS_ONLINE:
+        return "online";
+    case securecloud::messaging::v1::PRESENCE_STATUS_AWAY:
+        return "away";
+    case securecloud::messaging::v1::PRESENCE_STATUS_BUSY:
+        return "busy";
+    case securecloud::messaging::v1::PRESENCE_STATUS_OFFLINE:
+        return "offline";
+    default:
+        return "offline";
+    }
+}
+
+bool parse_presence_status_str(std::string_view status_str, securecloud::messaging::v1::PresenceStatus& out_status) {
+    std::string lower;
+    lower.reserve(status_str.size());
+    for (char c : status_str) {
+        lower.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+    }
+
+    if (lower == "online" || lower == "presence_status_online") {
+        out_status = securecloud::messaging::v1::PRESENCE_STATUS_ONLINE;
+        return true;
+    }
+    if (lower == "away" || lower == "idle" || lower == "presence_status_away") {
+        out_status = securecloud::messaging::v1::PRESENCE_STATUS_AWAY;
+        return true;
+    }
+    if (lower == "busy" || lower == "dnd" || lower == "do_not_disturb" || lower == "presence_status_busy") {
+        out_status = securecloud::messaging::v1::PRESENCE_STATUS_BUSY;
+        return true;
+    }
+    if (lower == "offline" || lower == "presence_status_offline") {
+        out_status = securecloud::messaging::v1::PRESENCE_STATUS_OFFLINE;
+        return true;
+    }
+    return false;
+}
+
+nlohmann::json user_presence_to_json(const securecloud::messaging::v1::UserPresence& presence) {
+    nlohmann::json j;
+    j["user_id"] = presence.user_id();
+    j["status"] = presence_status_to_string(presence.status());
+    j["last_active_unix_ms"] = presence.last_active_unix_ms();
+    j["custom_status_message"] = presence.custom_status_message();
+    return j;
+}
+
 } // namespace
 
 MessagingProxyHandler::MessagingProxyHandler(std::shared_ptr<grpc::IMessagingClient> messaging_client,
@@ -306,6 +356,59 @@ void MessagingProxyHandler::register_routes(Router& router) {
     });
     router.put_authenticated("/v1/devices/:device_id/cursor", [this](const auto& req, auto& res, const auto& ctx) {
         handle_update_sync_cursor(req, res, ctx);
+    });
+
+    // MSG-010 User Presence Endpoints
+    router.put_authenticated("/v1/users/:userId/presence", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_update_presence(req, res, ctx);
+    });
+    router.put_authenticated("/api/v1/users/:userId/presence", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_update_presence(req, res, ctx);
+    });
+    router.put_authenticated("/v1/users/:user_id/presence", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_update_presence(req, res, ctx);
+    });
+    router.put_authenticated("/api/v1/users/:user_id/presence", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_update_presence(req, res, ctx);
+    });
+
+    router.put_authenticated("/v1/presence/me", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_update_presence(req, res, ctx);
+    });
+    router.put_authenticated("/api/v1/presence/me", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_update_presence(req, res, ctx);
+    });
+
+    router.get_authenticated("/v1/users/:userId/presence", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_get_presence(req, res, ctx);
+    });
+    router.get_authenticated("/api/v1/users/:userId/presence", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_get_presence(req, res, ctx);
+    });
+    router.get_authenticated("/v1/users/:user_id/presence", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_get_presence(req, res, ctx);
+    });
+    router.get_authenticated("/api/v1/users/:user_id/presence", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_get_presence(req, res, ctx);
+    });
+
+    router.get_authenticated(
+        "/v1/presence/me", [this](const auto& req, auto& res, const auto& ctx) { handle_get_presence(req, res, ctx); });
+    router.get_authenticated("/api/v1/presence/me", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_get_presence(req, res, ctx);
+    });
+
+    router.post_authenticated("/v1/users/presence/batch", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_batch_get_presence(req, res, ctx);
+    });
+    router.post_authenticated("/api/v1/users/presence/batch", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_batch_get_presence(req, res, ctx);
+    });
+    router.post_authenticated("/v1/presence/batch", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_batch_get_presence(req, res, ctx);
+    });
+    router.post_authenticated("/api/v1/presence/batch", [this](const auto& req, auto& res, const auto& ctx) {
+        handle_batch_get_presence(req, res, ctx);
     });
 }
 
@@ -1267,9 +1370,22 @@ void MessagingProxyHandler::handle_sync_messages(const httplib::Request& req, ht
         }
     }
 
+    std::string requested_device_id = ctx.device_id();
+    if (req.has_param("recipient_device_id")) {
+        requested_device_id = req.get_param_value("recipient_device_id");
+    } else if (req.has_param("device_id")) {
+        requested_device_id = req.get_param_value("device_id");
+    }
+
+    if (!ctx.device_id().empty() && !requested_device_id.empty() && requested_device_id != ctx.device_id()) {
+        ErrorMapper::write_error(res, 403, "PERMISSION_DENIED",
+                                 "Requested device ID does not match authenticated device context", request_id);
+        return;
+    }
+
     securecloud::messaging::v1::SyncDeviceMessagesRequest grpc_req;
     grpc_req.set_conversation_id(conversation_id);
-    grpc_req.set_device_id(ctx.device_id());
+    grpc_req.set_device_id(requested_device_id);
     grpc_req.set_since_sequence(since_sequence);
     grpc_req.set_max_messages(limit);
 
@@ -1499,6 +1615,249 @@ void MessagingProxyHandler::handle_update_sync_cursor(const httplib::Request& re
 
     res.status = 200;
     res.set_content(response_body.dump(), k_content_type_json);
+}
+
+// ============================================================================
+// MSG-010 User Presence Handlers
+// ============================================================================
+
+void MessagingProxyHandler::handle_update_presence(const httplib::Request& req, httplib::Response& res,
+                                                   const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string user_id = Router::get_path_param(req, "userId");
+    if (user_id.empty()) {
+        user_id = Router::get_path_param(req, "user_id");
+    }
+    if (user_id.empty()) {
+        user_id = Router::get_path_param(req, "id");
+    }
+
+    // Default to caller ID if path is /presence/me
+    if (user_id.empty()) {
+        user_id = ctx.user_id();
+    } else if (user_id != ctx.user_id()) {
+        // Enforce caller_user_id == route_user_id (mismatched caller IDs return 403 Forbidden)
+        ErrorMapper::write_error(res, 403, "PERMISSION_DENIED", "Cannot update presence of another user", request_id);
+        return;
+    }
+
+    nlohmann::json body;
+    try {
+        body = nlohmann::json::parse(req.body);
+    } catch (const std::exception&) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid JSON body", request_id);
+        return;
+    }
+
+    if (!body.is_object() || !body.contains("status") || !body["status"].is_string()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing or invalid 'status' field in request body",
+                                 request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::PresenceStatus status = securecloud::messaging::v1::PRESENCE_STATUS_UNSPECIFIED;
+    if (!parse_presence_status_str(body["status"].get<std::string>(), status)) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT",
+                                 "Invalid status value. Must be online, away, busy, or offline", request_id);
+        return;
+    }
+
+    std::string custom_status_message;
+    if (body.contains("custom_status_message") && body["custom_status_message"].is_string()) {
+        custom_status_message = body["custom_status_message"].get<std::string>();
+    } else if (body.contains("status_message") && body["status_message"].is_string()) {
+        custom_status_message = body["status_message"].get<std::string>();
+    }
+
+    securecloud::messaging::v1::UpdatePresenceRequest grpc_req;
+    grpc_req.set_status(status);
+    grpc_req.set_custom_status_message(custom_status_message);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->update_presence(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    const auto& resp = result.value();
+    nlohmann::json response_body = user_presence_to_json(resp.presence());
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+void MessagingProxyHandler::handle_get_presence(const httplib::Request& req, httplib::Response& res,
+                                                const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    std::string user_id = Router::get_path_param(req, "userId");
+    if (user_id.empty()) {
+        user_id = Router::get_path_param(req, "user_id");
+    }
+    if (user_id.empty()) {
+        user_id = Router::get_path_param(req, "id");
+    }
+    if (user_id.empty()) {
+        user_id = ctx.user_id();
+    }
+
+    if (user_id.empty()) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing user ID", request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::GetPresenceRequest grpc_req;
+    grpc_req.set_user_id(user_id);
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->get_presence(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    const auto& resp = result.value();
+    nlohmann::json response_body = user_presence_to_json(resp.presence());
+    res.status = 200;
+    res.set_content(response_body.dump(), k_content_type_json);
+}
+
+void MessagingProxyHandler::handle_batch_get_presence(const httplib::Request& req, httplib::Response& res,
+                                                      const AuthenticatedContext& ctx) {
+    const std::string request_id = extract_request_id(req);
+
+    auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Messaging) : BulkheadLease{};
+    if (bulkhead_manager_ && !lease) {
+        BulkheadManager::write_rejection(res, request_id);
+        return;
+    }
+    if (circuit_breaker_ && !circuit_breaker_->allow_request()) {
+        CircuitBreaker::write_rejection(res, request_id);
+        return;
+    }
+
+    nlohmann::json body;
+    try {
+        body = nlohmann::json::parse(req.body);
+    } catch (const std::exception&) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Invalid JSON body", request_id);
+        return;
+    }
+
+    std::vector<std::string> user_ids;
+    if (body.is_array()) {
+        for (const auto& item : body) {
+            if (!item.is_string()) {
+                ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "All elements of 'user_ids' must be strings",
+                                         request_id);
+                return;
+            }
+            user_ids.push_back(item.get<std::string>());
+        }
+    } else if (body.is_object() && body.contains("user_ids") && body["user_ids"].is_array()) {
+        for (const auto& item : body["user_ids"]) {
+            if (!item.is_string()) {
+                ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "All elements of 'user_ids' must be strings",
+                                         request_id);
+                return;
+            }
+            user_ids.push_back(item.get<std::string>());
+        }
+    } else {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Missing or invalid 'user_ids' array in request body",
+                                 request_id);
+        return;
+    }
+
+    if (user_ids.size() > 100) {
+        ErrorMapper::write_error(res, 400, "INVALID_ARGUMENT", "Batch size exceeds maximum limit of 100 user IDs",
+                                 request_id);
+        return;
+    }
+
+    securecloud::messaging::v1::BatchGetPresenceRequest grpc_req;
+    for (const auto& uid : user_ids) {
+        grpc_req.add_user_ids(uid);
+    }
+
+    const auto timeout = compute_timeout(req);
+    grpc::ClientCallContext call_ctx(timeout);
+    call_ctx.add_metadata("x-user-id", ctx.user_id());
+    call_ctx.add_metadata("x-device-id", ctx.device_id());
+    call_ctx.add_metadata("x-correlation-id", request_id);
+
+    auto result = messaging_client_->batch_get_presence(grpc_req, call_ctx);
+    if (circuit_breaker_) {
+        if (result.has_value()) {
+            circuit_breaker_->record_success();
+        } else if (result.error().kind == grpc::DependencyErrorKind::ServiceUnavailable ||
+                   result.error().kind == grpc::DependencyErrorKind::Timeout) {
+            circuit_breaker_->record_failure();
+        }
+    }
+
+    if (result.has_error()) {
+        write_grpc_error(res, result.error(), request_id);
+        return;
+    }
+
+    const auto& resp = result.value();
+    nlohmann::json presences_json = nlohmann::json::array();
+    for (const auto& p : resp.presences()) {
+        presences_json.push_back(user_presence_to_json(p));
+    }
+
+    res.status = 200;
+    res.set_content(presences_json.dump(), k_content_type_json);
 }
 
 } // namespace securecloud::gateway::http

@@ -49,6 +49,13 @@ class IDeliveryStateRepository {
     [[nodiscard]] virtual std::vector<domain::RecipientDeliveryState>
     get_delivery_states_for_message(const domain::MessageId& message_id) = 0;
 
+    /// Retrieves a device delivery record (including per-device encrypted envelope) for a specific device and message.
+    /// Returns std::nullopt if the message was never targeted to this device (e.g., pre-enrollment history).
+    [[nodiscard]] virtual std::optional<domain::DeviceDeliveryRecord>
+    get_delivery_record_for_device(const domain::DeviceId& /*device_id*/, const domain::MessageId& /*message_id*/) {
+        return std::nullopt;
+    }
+
     /// Updates delivery state monotonically in delivery_state_by_message. Rejects regressions (e.g. DELIVERED ->
     /// RETRY_WAIT) using DeliveryStateTransitionGuard and returns false. Returns true on successful forward or
     /// idempotent update.
