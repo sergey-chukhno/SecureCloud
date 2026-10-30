@@ -80,6 +80,32 @@ std::string FilesProxyHandler::extract_file_id(const httplib::Request& req) {
     return "";
 }
 
+std::string FilesProxyHandler::extract_capability_token(const httplib::Request& req) {
+    if (req.has_header("X-File-Capability")) {
+        return req.get_header_value("X-File-Capability");
+    }
+    if (req.has_header("X-File-Access-Capability")) {
+        return req.get_header_value("X-File-Access-Capability");
+    }
+    if (req.has_param("capability_token")) {
+        return req.get_param_value("capability_token");
+    }
+    return "";
+}
+
+void FilesProxyHandler::populate_call_metadata(grpc::ClientCallContext& call_ctx, const AuthenticatedContext& ctx,
+                                               const std::string& capability_token) {
+    if (!ctx.user_id().empty()) {
+        call_ctx.add_metadata("x-user-id", ctx.user_id());
+    }
+    if (!ctx.device_id().empty()) {
+        call_ctx.add_metadata("x-device-id", ctx.device_id());
+    }
+    if (!capability_token.empty()) {
+        call_ctx.add_metadata("x-file-capability", capability_token);
+    }
+}
+
 std::chrono::milliseconds FilesProxyHandler::compute_timeout(const httplib::Request& req) const {
     if (deadline_manager_) {
         return deadline_manager_->compute_effective_deadline(
@@ -212,7 +238,13 @@ void FilesProxyHandler::handle_upload_init(const httplib::Request& req, httplib:
     std::string owner_user = ctx.user_id();
     if (body.contains("owner_user_id") && body["owner_user_id"].is_string() &&
         !body["owner_user_id"].get<std::string>().empty()) {
-        owner_user = body["owner_user_id"].get<std::string>();
+        const std::string requested_owner = body["owner_user_id"].get<std::string>();
+        if (!ctx.user_id().empty() && requested_owner != ctx.user_id()) {
+            ErrorMapper::write_error(res, 403, "PERMISSION_DENIED",
+                                     "Requested owner_user_id does not match authenticated user identity", request_id);
+            return;
+        }
+        owner_user = requested_owner;
     }
     grpc_req.set_owner_user_id(owner_user);
 
@@ -245,6 +277,7 @@ void FilesProxyHandler::handle_upload_init(const httplib::Request& req, httplib:
 
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
+    populate_call_metadata(call_ctx, ctx);
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->create_file_upload(grpc_req, call_ctx);
@@ -277,7 +310,7 @@ void FilesProxyHandler::handle_upload_init(const httplib::Request& req, httplib:
 
 // 2. POST /api/v1/files/upload/chunk
 void FilesProxyHandler::handle_upload_chunk(const httplib::Request& req, httplib::Response& res,
-                                            const AuthenticatedContext& /*ctx*/) {
+                                            const AuthenticatedContext& ctx) {
     const std::string request_id = extract_request_id(req);
 
     auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Files) : BulkheadLease{};
@@ -359,6 +392,7 @@ void FilesProxyHandler::handle_upload_chunk(const httplib::Request& req, httplib
 
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
+    populate_call_metadata(call_ctx, ctx);
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->upload_chunk(grpc_req, call_ctx);
@@ -391,7 +425,7 @@ void FilesProxyHandler::handle_upload_chunk(const httplib::Request& req, httplib
 
 // 3. POST /api/v1/files/upload/finalize
 void FilesProxyHandler::handle_upload_finalize(const httplib::Request& req, httplib::Response& res,
-                                               const AuthenticatedContext& /*ctx*/) {
+                                               const AuthenticatedContext& ctx) {
     const std::string request_id = extract_request_id(req);
 
     auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Files) : BulkheadLease{};
@@ -434,6 +468,7 @@ void FilesProxyHandler::handle_upload_finalize(const httplib::Request& req, http
 
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
+    populate_call_metadata(call_ctx, ctx);
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->finalize_file_upload(grpc_req, call_ctx);
@@ -465,7 +500,7 @@ void FilesProxyHandler::handle_upload_finalize(const httplib::Request& req, http
 
 // 4. POST /api/v1/files/upload/cancel
 void FilesProxyHandler::handle_upload_cancel(const httplib::Request& req, httplib::Response& res,
-                                             const AuthenticatedContext& /*ctx*/) {
+                                             const AuthenticatedContext& ctx) {
     const std::string request_id = extract_request_id(req);
 
     auto lease = bulkhead_manager_ ? bulkhead_manager_->acquire(WorkloadCategory::Files) : BulkheadLease{};
@@ -501,6 +536,7 @@ void FilesProxyHandler::handle_upload_cancel(const httplib::Request& req, httpli
 
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
+    populate_call_metadata(call_ctx, ctx);
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->cancel_file_upload(grpc_req, call_ctx);
@@ -531,7 +567,7 @@ void FilesProxyHandler::handle_upload_cancel(const httplib::Request& req, httpli
 
 // 5. GET /api/v1/files/:file_id/metadata
 void FilesProxyHandler::handle_get_metadata(const httplib::Request& req, httplib::Response& res,
-                                            const AuthenticatedContext& /*ctx*/) {
+                                            const AuthenticatedContext& ctx) {
     const std::string request_id = extract_request_id(req);
     const std::string file_id = extract_file_id(req);
 
@@ -556,6 +592,7 @@ void FilesProxyHandler::handle_get_metadata(const httplib::Request& req, httplib
 
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
+    populate_call_metadata(call_ctx, ctx);
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->get_file_metadata(grpc_req, call_ctx);
@@ -591,7 +628,7 @@ void FilesProxyHandler::handle_get_metadata(const httplib::Request& req, httplib
 
 // 6. GET /api/v1/files/:file_id/chunks/:chunk_index
 void FilesProxyHandler::handle_download_chunk(const httplib::Request& req, httplib::Response& res,
-                                              const AuthenticatedContext& /*ctx*/) {
+                                              const AuthenticatedContext& ctx) {
     const std::string request_id = extract_request_id(req);
     const std::string file_id = extract_file_id(req);
 
@@ -644,8 +681,10 @@ void FilesProxyHandler::handle_download_chunk(const httplib::Request& req, httpl
     grpc_req.set_file_id(file_id);
     grpc_req.set_chunk_index(chunk_index);
 
+    const std::string capability_token = extract_capability_token(req);
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
+    populate_call_metadata(call_ctx, ctx, capability_token);
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->download_chunk(grpc_req, call_ctx);
@@ -674,7 +713,7 @@ void FilesProxyHandler::handle_download_chunk(const httplib::Request& req, httpl
 
 // 7. GET /api/v1/files/:file_id/download
 void FilesProxyHandler::handle_streaming_download(const httplib::Request& req, httplib::Response& res,
-                                                  const AuthenticatedContext& /*ctx*/) {
+                                                  const AuthenticatedContext& ctx) {
     const std::string request_id = extract_request_id(req);
     const std::string file_id = extract_file_id(req);
 
@@ -694,6 +733,8 @@ void FilesProxyHandler::handle_streaming_download(const httplib::Request& req, h
         return;
     }
 
+    const std::string capability_token = extract_capability_token(req);
+
     // Step 1: Query metadata
     securecloud::files::v1::GetFileMetadataRequest meta_req;
     meta_req.set_file_id(file_id);
@@ -702,6 +743,7 @@ void FilesProxyHandler::handle_streaming_download(const httplib::Request& req, h
     securecloud::files::v1::GetFileMetadataResponse meta;
     {
         grpc::ClientCallContext meta_ctx(timeout);
+        populate_call_metadata(meta_ctx, ctx, capability_token);
         ActiveCallGuard meta_guard(*this, request_id, meta_ctx);
 
         auto meta_result = files_client_->get_file_metadata(meta_req, meta_ctx);
@@ -713,37 +755,85 @@ void FilesProxyHandler::handle_streaming_download(const httplib::Request& req, h
     }
 
     const uint32_t chunk_count = meta.chunk_count();
-
-    // Step 2: Stream/aggregate chunks
-    std::string full_payload;
-    full_payload.reserve(meta.encrypted_size_bytes());
-
-    for (uint32_t i = 0; i < chunk_count; ++i) {
-        securecloud::files::v1::DownloadChunkRequest chunk_req;
-        chunk_req.set_file_id(file_id);
-        chunk_req.set_chunk_index(i);
-
-        grpc::ClientCallContext chunk_ctx(timeout);
-        ActiveCallGuard chunk_guard(*this, request_id, chunk_ctx);
-
-        auto chunk_res = files_client_->download_chunk(chunk_req, chunk_ctx);
-        if (chunk_res.has_error()) {
-            write_grpc_error(res, chunk_res.error(), request_id);
-            return;
-        }
-        full_payload.append(chunk_res.value().encrypted_data());
-    }
+    const uint64_t total_size = meta.encrypted_size_bytes();
 
     res.status = 200;
-    res.set_header("Content-Type", k_content_type_octet);
-    res.set_header("Content-Length", std::to_string(full_payload.size()));
-    res.set_header("ETag", "\"" + StreamingSha256Validator::compute_hex(full_payload) + "\"");
-    res.body = std::move(full_payload);
+    if (!meta.ciphertext_integrity_hash().empty()) {
+        res.set_header("ETag", "\"" + meta.ciphertext_integrity_hash() + "\"");
+    }
+
+    // Step 2: Stream chunk-by-chunk using ContentProviderWithoutLength / chunked transfer
+    // Single chunk resident memory invariant: only one chunk is loaded into RAM at any time.
+    struct StreamDownloadState {
+        uint32_t current_chunk{0};
+        uint32_t total_chunks{0};
+        std::string file_id;
+        std::string request_id;
+        AuthenticatedContext auth_ctx;
+        std::string capability_token;
+        std::chrono::milliseconds timeout{5000};
+        BulkheadLease lease;
+    };
+
+    auto state = std::make_shared<StreamDownloadState>(StreamDownloadState{
+        .current_chunk = 0,
+        .total_chunks = chunk_count,
+        .file_id = file_id,
+        .request_id = request_id,
+        .auth_ctx = ctx,
+        .capability_token = capability_token,
+        .timeout = timeout,
+        .lease = std::move(lease),
+    });
+
+    res.set_content_provider(
+        total_size, k_content_type_octet,
+        [this, state](size_t /*offset*/, size_t /*length*/, httplib::DataSink& sink) -> bool {
+            if (state->current_chunk >= state->total_chunks) {
+                return false; // EOF
+            }
+
+            if (sink.is_writable && !sink.is_writable()) {
+                // Client disconnected
+                return false;
+            }
+
+            securecloud::files::v1::DownloadChunkRequest chunk_req;
+            chunk_req.set_file_id(state->file_id);
+            chunk_req.set_chunk_index(state->current_chunk);
+
+            grpc::ClientCallContext chunk_ctx(state->timeout);
+            populate_call_metadata(chunk_ctx, state->auth_ctx, state->capability_token);
+            ActiveCallGuard chunk_guard(*this, state->request_id, chunk_ctx);
+
+            auto chunk_res = files_client_->download_chunk(chunk_req, chunk_ctx);
+            if (chunk_res.has_error()) {
+                return false;
+            }
+
+            const auto& chunk_data = chunk_res.value().encrypted_data();
+            if (sink.write) {
+                if (!sink.write(chunk_data.data(), chunk_data.size())) {
+                    return false;
+                }
+            } else {
+                sink.os.write(chunk_data.data(), static_cast<std::streamsize>(chunk_data.size()));
+                if (!sink.os) {
+                    return false;
+                }
+            }
+
+            state->current_chunk++;
+            return true;
+        },
+        [state](bool /*success*/) {
+            // Releaser: lease releases when state is destructed
+        });
 }
 
 // 8. DELETE /api/v1/files/:file_id
 void FilesProxyHandler::handle_delete_file(const httplib::Request& req, httplib::Response& res,
-                                           const AuthenticatedContext& /*ctx*/) {
+                                           const AuthenticatedContext& ctx) {
     const std::string request_id = extract_request_id(req);
     const std::string file_id = extract_file_id(req);
 
@@ -768,6 +858,7 @@ void FilesProxyHandler::handle_delete_file(const httplib::Request& req, httplib:
 
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
+    populate_call_metadata(call_ctx, ctx);
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->delete_file(grpc_req, call_ctx);

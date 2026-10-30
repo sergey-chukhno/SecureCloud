@@ -1,16 +1,14 @@
 #include "service/audit_proto_mapper.hpp"
 
-#include <gtest/gtest.h>
 #include <chrono>
+#include <gtest/gtest.h>
 
 namespace securecloud::audit::service::testing {
 
 TEST(AuditProtoMapperTest, BidirectionalRoundTrip) {
     domain::AuditEvent original{};
     original.event_id = domain::EventId::generate_v7();
-    original.occurred_at = std::chrono::time_point_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now()
-    );
+    original.occurred_at = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
     original.event_type = "user.authentication.login";
     original.severity = domain::Severity::Security;
     original.producer_service = domain::ProducerService::Auth;

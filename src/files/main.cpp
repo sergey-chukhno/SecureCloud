@@ -1,6 +1,9 @@
+#include "files/audit/files_outbox_relay.hpp"
+#include "files/audit/grpc_audit_client.hpp"
 #include "files/db/files_connection_pool.hpp"
 #include "files/files_config.hpp"
 #include "files/health/files_health_evaluator.hpp"
+#include "files/repository/files_outbox_repository.hpp"
 #include "files/service/files_service_impl.hpp"
 #include "files/storage/s3_client.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
@@ -100,6 +103,22 @@ int run_service() {
     health_manager.set_live(true);
     health_evaluator.evaluate_once();
 
+    // Initialize Outbox Repository and Relay background worker
+    auto outbox_repo = std::make_shared<securecloud::files::FilesOutboxRepository>(db_pool);
+    std::string audit_endpoint = env_source.get("SECURECLOUD_AUDIT_ENDPOINT").value_or("localhost:50054");
+    bool use_tls = !config.common.tls_credentials.ca_cert_path.empty();
+    securecloud::files::audit::GrpcAuditClientConfig audit_config{
+        .target_endpoint = audit_endpoint,
+        .ca_cert_path = config.common.tls_credentials.ca_cert_path.string(),
+        .client_cert_path = config.common.tls_credentials.service_cert_path.string(),
+        .client_key_path = config.common.tls_credentials.service_key_path.string(),
+        .timeout = std::chrono::milliseconds(2000),
+        .use_tls = use_tls,
+    };
+    auto audit_client = std::make_shared<securecloud::files::audit::GrpcAuditClient>(audit_config);
+    securecloud::files::audit::FilesOutboxRelay outbox_relay(outbox_repo, audit_client);
+    outbox_relay.start();
+
     std::cout << "[SecureCloud] [" << config.common.service_name << "] mTLS server listening strictly on "
               << server_address << " with service identity 'DNS:" << config.common.service_name << "'\n";
 
@@ -109,6 +128,9 @@ int run_service() {
 
     health_manager.set_shutting_down(true);
     health_evaluator.stop();
+    std::cout << "[SecureCloud] [" << config.common.service_name << "] Stopping outbox relay...\n";
+    outbox_relay.stop();
+
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down mTLS server...\n";
     server->Shutdown(std::chrono::system_clock::now() + std::chrono::seconds(5));
 

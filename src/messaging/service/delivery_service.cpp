@@ -10,8 +10,10 @@
 namespace securecloud::messaging::service {
 
 DeliveryService::DeliveryService(std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
-                                 std::shared_ptr<repository::IOutboxRepository> outbox_repo)
-    : delivery_repo_(std::move(delivery_repo)), outbox_repo_(std::move(outbox_repo)) {}
+                                 std::shared_ptr<repository::IOutboxRepository> outbox_repo,
+                                 DeviceStatusChecker device_status_checker)
+    : delivery_repo_(std::move(delivery_repo)), outbox_repo_(std::move(outbox_repo)),
+      device_status_checker_(std::move(device_status_checker)) {}
 
 ServiceResult<DeliveryAckResponse> DeliveryService::acknowledge_delivery(const DeliveryAckCommand& cmd) {
     if (!delivery_repo_) {
@@ -26,6 +28,11 @@ ServiceResult<DeliveryAckResponse> DeliveryService::acknowledge_delivery(const D
 
     const auto now = std::chrono::system_clock::now();
     const auto effective_delivered_at = (cmd.delivered_at.time_since_epoch().count() > 0) ? cmd.delivered_at : now;
+
+    // Lock-striped concurrency control per (message_id, recipient_device_id) (MSG-012-T01)
+    const size_t stripe_idx =
+        std::hash<std::string>{}(cmd.message_id.to_string() + ":" + cmd.recipient_device_id.str()) % kNumStripes;
+    std::lock_guard<std::mutex> stripe_lock(ack_stripes_[stripe_idx]);
 
     // 1. Fetch fan-out delivery states for the message from ScyllaDB
     const auto states = delivery_repo_->get_delivery_states_for_message(cmd.message_id);
@@ -48,6 +55,20 @@ ServiceResult<DeliveryAckResponse> DeliveryService::acknowledge_delivery(const D
         return ServiceResult<DeliveryAckResponse>::fail(
             v1::MESSAGING_ERROR_CODE_NOT_A_PARTICIPANT,
             "Caller is not authorized to acknowledge delivery for this device");
+    }
+
+    // 3b. Anti-Impersonation Perimeter Guard (ADR-008, MSG-011-T02):
+    // Assert caller device matches recipient device (cannot mutate companion device state)
+    if (!cmd.caller_device_id.empty() && cmd.caller_device_id != cmd.recipient_device_id) {
+        return ServiceResult<DeliveryAckResponse>::fail(
+            v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+            "Caller device cannot acknowledge delivery on behalf of a different device");
+    }
+
+    // 3c. Fail-Closed Device Revocation Check (ADR-008, MSG-011-T03):
+    if (device_status_checker_ && !device_status_checker_(cmd.recipient_device_id)) {
+        return ServiceResult<DeliveryAckResponse>::fail(v1::MESSAGING_ERROR_CODE_DEVICE_REVOKED,
+                                                        "Recipient device has been revoked or is not active");
     }
 
     // 4. Idempotency Check: if already DELIVERED or READ, return success deterministically

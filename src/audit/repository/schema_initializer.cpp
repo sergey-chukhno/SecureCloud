@@ -1,8 +1,7 @@
 #include "repository/schema_initializer.hpp"
 
-#include <httplib.h>
-
 #include <chrono>
+#include <httplib.h>
 #include <iostream>
 #include <sstream>
 
@@ -38,8 +37,7 @@ TTL occurred_at + INTERVAL 36 MONTH;
 
 } // namespace
 
-SchemaInitializer::SchemaInitializer(const ClickHouseConfig& config)
-    : config_(config) {}
+SchemaInitializer::SchemaInitializer(const ClickHouseConfig& config) : config_(config) {}
 
 bool SchemaInitializer::execute_http_query(const std::string& query, std::string* out_response) const {
     httplib::Client client(config_.host, config_.port);
@@ -50,10 +48,8 @@ bool SchemaInitializer::execute_http_query(const std::string& query, std::string
     client.set_read_timeout(req_sec);
     client.set_write_timeout(req_sec);
 
-    httplib::Headers headers = {
-        {"X-ClickHouse-User", config_.user},
-        {"X-ClickHouse-Key", config_.password.expose_unredacted_secret()}
-    };
+    httplib::Headers headers = {{"X-ClickHouse-User", config_.user},
+                                {"X-ClickHouse-Key", config_.password.expose_unredacted_secret()}};
 
     auto res = client.Post("/?database=" + config_.db_name, headers, query, "text/plain");
 

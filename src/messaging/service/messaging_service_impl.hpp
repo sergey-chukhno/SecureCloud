@@ -25,6 +25,7 @@
 #include "service/message_sync_service.hpp"
 #include "service/presence_coordinator_interface.hpp"
 #include "service/read_receipt_service.hpp"
+#include "service/recipient_device_resolution_service.hpp"
 #include "service/sync_cursor_manager.hpp"
 
 #include <chrono>
@@ -51,7 +52,8 @@ class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingS
                                   std::shared_ptr<ReadReceiptService> read_receipt_service = nullptr,
                                   std::shared_ptr<MessageSyncService> sync_service = nullptr,
                                   std::shared_ptr<SyncCursorManager> cursor_manager = nullptr,
-                                  std::shared_ptr<IPresenceCoordinator> presence_coordinator = nullptr);
+                                  std::shared_ptr<IPresenceCoordinator> presence_coordinator = nullptr,
+                                  std::shared_ptr<RecipientDeviceResolutionService> resolution_service = nullptr);
     ~MessagingServiceImpl() override = default;
 
     MessagingServiceImpl(const MessagingServiceImpl&) = delete;
@@ -184,6 +186,7 @@ class MessagingServiceImpl final : public securecloud::messaging::v1::MessagingS
     std::shared_ptr<MessageSyncService> sync_service_;
     std::shared_ptr<SyncCursorManager> cursor_manager_;
     std::shared_ptr<IPresenceCoordinator> presence_coordinator_;
+    std::shared_ptr<RecipientDeviceResolutionService> resolution_service_;
 
     mutable std::mutex presence_rate_limit_mutex_;
     std::unordered_map<domain::UserId, std::deque<std::chrono::steady_clock::time_point>> presence_rate_limits_;

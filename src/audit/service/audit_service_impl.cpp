@@ -7,10 +7,9 @@ namespace securecloud::audit::service {
 AuditServiceImpl::AuditServiceImpl(std::shared_ptr<AuditIngestionService> ingestion_service)
     : ingestion_service_(std::move(ingestion_service)) {}
 
-grpc::Status AuditServiceImpl::SubmitAuditEvent(
-    grpc::ServerContext* context,
-    const v1::SubmitAuditEventRequest* request,
-    v1::SubmitAuditEventResponse* response) {
+grpc::Status AuditServiceImpl::SubmitAuditEvent(grpc::ServerContext* context,
+                                                const v1::SubmitAuditEventRequest* request,
+                                                v1::SubmitAuditEventResponse* response) {
 
     if (context->IsCancelled()) {
         return grpc::Status(grpc::StatusCode::CANCELLED, "Client cancelled request");
@@ -38,17 +37,15 @@ grpc::Status AuditServiceImpl::SubmitAuditEvent(
     response->set_success(true);
     response->set_event_id(domain_event.event_id.to_string());
 
-    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(
-        result.received_at.time_since_epoch()).count();
+    auto millis = std::chrono::duration_cast<std::chrono::milliseconds>(result.received_at.time_since_epoch()).count();
     response->set_received_at_ms(millis);
 
     return grpc::Status::OK;
 }
 
-grpc::Status AuditServiceImpl::BatchSubmitAuditEvents(
-    grpc::ServerContext* context,
-    const v1::BatchSubmitAuditEventsRequest* request,
-    v1::BatchSubmitAuditEventsResponse* response) {
+grpc::Status AuditServiceImpl::BatchSubmitAuditEvents(grpc::ServerContext* context,
+                                                      const v1::BatchSubmitAuditEventsRequest* request,
+                                                      v1::BatchSubmitAuditEventsResponse* response) {
 
     if (context->IsCancelled()) {
         return grpc::Status(grpc::StatusCode::CANCELLED, "Client cancelled request");
