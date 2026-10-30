@@ -106,7 +106,7 @@ class MockAuditIngestionService final : public securecloud::audit::v1::AuditInge
         for (const auto& ev : request->events()) {
             received_events.push_back(ev);
         }
-        response->set_accepted_count(request->events_size());
+        response->set_accepted_count(static_cast<uint32_t>(request->events_size()));
         response->set_rejected_count(0);
         return ::grpc::Status::OK;
     }
@@ -123,6 +123,11 @@ class MockAuditIngestionService final : public securecloud::audit::v1::AuditInge
 class InMemoryOutboxRepository : public FilesOutboxRepository {
   public:
     InMemoryOutboxRepository() : FilesOutboxRepository(nullptr) {}
+
+    using FilesOutboxRepository::fetch_pending_events;
+    using FilesOutboxRepository::mark_failed;
+    using FilesOutboxRepository::mark_published;
+    using FilesOutboxRepository::stage_event;
 
     std::mutex mtx_;
     std::vector<FilesOutboxEntity> staged_;
@@ -141,7 +146,7 @@ class InMemoryOutboxRepository : public FilesOutboxRepository {
         for (size_t i = 0; i < n; ++i) {
             res.push_back(staged_[i]);
         }
-        staged_.erase(staged_.begin(), staged_.begin() + n);
+        staged_.erase(staged_.begin(), staged_.begin() + static_cast<std::ptrdiff_t>(n));
         return res;
     }
 
