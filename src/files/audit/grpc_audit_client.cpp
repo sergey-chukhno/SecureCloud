@@ -1,8 +1,7 @@
 #include "files/audit/grpc_audit_client.hpp"
 
-#include <securecloud/security/mtls_config.hpp>
-
 #include <fstream>
+#include <securecloud/security/mtls_config.hpp>
 #include <sstream>
 
 namespace securecloud::files::audit {
@@ -25,14 +24,12 @@ std::shared_ptr<::grpc::Channel> create_channel(const GrpcAuditClientConfig& con
 
 } // namespace
 
-GrpcAuditClient::GrpcAuditClient(
-    std::shared_ptr<securecloud::audit::v1::AuditIngestionService::StubInterface> stub,
-    std::chrono::milliseconds timeout)
+GrpcAuditClient::GrpcAuditClient(std::shared_ptr<securecloud::audit::v1::AuditIngestionService::StubInterface> stub,
+                                 std::chrono::milliseconds timeout)
     : stub_(std::move(stub)), timeout_(timeout) {}
 
 GrpcAuditClient::GrpcAuditClient(const GrpcAuditClientConfig& config)
-    : stub_(securecloud::audit::v1::AuditIngestionService::NewStub(create_channel(config))),
-      timeout_(config.timeout) {}
+    : stub_(securecloud::audit::v1::AuditIngestionService::NewStub(create_channel(config))), timeout_(config.timeout) {}
 
 bool GrpcAuditClient::submit_batch(const std::vector<securecloud::audit::v1::AuditEventProto>& events) {
     if (events.empty()) {

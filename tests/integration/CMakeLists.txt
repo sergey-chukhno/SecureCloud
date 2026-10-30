@@ -641,7 +641,7 @@ target_link_libraries(securecloud_auth_token_integration_test PRIVATE
     OpenSSL::Crypto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 if(WIN32)
@@ -663,7 +663,7 @@ target_link_libraries(securecloud_auth_mfa_integration_test PRIVATE
     OpenSSL::Crypto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 if(WIN32)
@@ -685,7 +685,7 @@ target_link_libraries(securecloud_auth_device_integration_test PRIVATE
     OpenSSL::Crypto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 if(WIN32)
@@ -707,7 +707,7 @@ target_link_libraries(securecloud_auth_crypto_identity_integration_test PRIVATE
     OpenSSL::Crypto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 if(WIN32)
@@ -728,7 +728,7 @@ target_link_libraries(securecloud_auth_prekey_concurrency_integration_test PRIVA
     OpenSSL::Crypto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 if(WIN32)
@@ -754,7 +754,7 @@ target_link_libraries(securecloud_gateway_auth_e2e_integration_test PRIVATE
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_gateway_auth_e2e_integration_test PRIVATE
@@ -778,7 +778,7 @@ target_link_libraries(securecloud_messaging_service_lifecycle_integration_test P
     securecloud_proto
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_messaging_service_lifecycle_integration_test PRIVATE
@@ -808,7 +808,7 @@ target_link_libraries(securecloud_messaging_conversation_integration_test PRIVAT
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_messaging_conversation_integration_test PRIVATE
@@ -858,7 +858,7 @@ target_link_libraries(securecloud_messaging_submission_integration_test PRIVATE
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_messaging_submission_integration_test PRIVATE
@@ -888,7 +888,7 @@ target_link_libraries(securecloud_messaging_e2e_envelope_integration_test PRIVAT
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_messaging_e2e_envelope_integration_test PRIVATE
@@ -923,7 +923,7 @@ target_link_libraries(securecloud_msg_read_receipts_integration_test PRIVATE
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_msg_read_receipts_integration_test PRIVATE
@@ -978,7 +978,7 @@ target_link_libraries(securecloud_messaging_online_sync_integration_test PRIVATE
     OpenSSL::SSL
     securecloud::compiler_flags
     GTest::gtest_main
-    GTest::gmock
+    GTest::gmock_main
 )
 
 target_compile_definitions(securecloud_messaging_online_sync_integration_test PRIVATE
@@ -1021,6 +1021,77 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_messaging_presence_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Multi-Device E2E Integration Test Suite (MSG-011-T06)
+add_executable(securecloud_messaging_multi_device_integration_test
+    messaging_multi_device_integration_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_multi_device_integration_test PRIVATE
+    securecloud::messaging
+    securecloud::gateway_http
+    securecloud::gateway_grpc
+    securecloud::gateway_config
+    securecloud::common
+    securecloud::httplib
+    securecloud_proto
+    securecloud::json
+    OpenSSL::Crypto
+    OpenSSL::SSL
+    securecloud::compiler_flags
+    GTest::gtest_main
+    GTest::gmock
+)
+
+target_compile_definitions(securecloud_messaging_multi_device_integration_test PRIVATE
+    SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_messaging_multi_device_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_messaging_multi_device_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Capacity, Multi-Device Fan-Out & ScyllaDB Access Pattern Load Test Suite (MSG-012-T03)
+add_executable(securecloud_messaging_capacity_load_test
+    messaging_capacity_load_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_capacity_load_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_messaging_capacity_load_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_messaging_capacity_load_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Fault Recovery & Chaos Engineering Test Suite (MSG-012-T04)
+add_executable(securecloud_messaging_fault_recovery_integration_test
+    messaging_fault_recovery_integration_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_fault_recovery_integration_test PRIVATE
+    securecloud::messaging
+    securecloud::common
+    securecloud_proto
+    OpenSSL::Crypto
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_messaging_fault_recovery_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_messaging_fault_recovery_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Files Gateway & Audit E2E Integration Test Suite (FILES-010-T05)
 add_executable(securecloud_files_e2e_gateway_audit_integration_test

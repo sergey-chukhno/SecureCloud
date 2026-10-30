@@ -6,11 +6,8 @@
 namespace securecloud::files::audit {
 
 FilesOutboxRelay::FilesOutboxRelay(std::shared_ptr<FilesOutboxRepository> outbox_repo,
-                                   std::shared_ptr<IFilesAuditClient> audit_client,
-                                   FilesOutboxRelayConfig config)
-    : outbox_repo_(std::move(outbox_repo)),
-      audit_client_(std::move(audit_client)),
-      config_(config) {}
+                                   std::shared_ptr<IFilesAuditClient> audit_client, FilesOutboxRelayConfig config)
+    : outbox_repo_(std::move(outbox_repo)), audit_client_(std::move(audit_client)), config_(config) {}
 
 FilesOutboxRelay::~FilesOutboxRelay() {
     stop();
@@ -98,25 +95,19 @@ void FilesOutboxRelay::run() {
             size_t processed = poll_and_dispatch(config_.batch_size);
             if (processed == 0 && running_.load()) {
                 std::unique_lock<std::mutex> lock(cv_mutex_);
-                cv_.wait_for(lock, config_.poll_interval_ms, [this]() {
-                    return !running_.load();
-                });
+                cv_.wait_for(lock, config_.poll_interval_ms, [this]() { return !running_.load(); });
             }
         } catch (const std::exception& ex) {
             std::cerr << "[SecureCloud] [files-outbox-relay] Worker thread error: " << ex.what() << "\n";
             if (running_.load()) {
                 std::unique_lock<std::mutex> lock(cv_mutex_);
-                cv_.wait_for(lock, config_.poll_interval_ms, [this]() {
-                    return !running_.load();
-                });
+                cv_.wait_for(lock, config_.poll_interval_ms, [this]() { return !running_.load(); });
             }
         } catch (...) {
             std::cerr << "[SecureCloud] [files-outbox-relay] Unknown worker thread error\n";
             if (running_.load()) {
                 std::unique_lock<std::mutex> lock(cv_mutex_);
-                cv_.wait_for(lock, config_.poll_interval_ms, [this]() {
-                    return !running_.load();
-                });
+                cv_.wait_for(lock, config_.poll_interval_ms, [this]() { return !running_.load(); });
             }
         }
     }

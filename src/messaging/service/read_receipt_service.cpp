@@ -35,6 +35,14 @@ ServiceResult<ReadReceiptResponse> ReadReceiptService::record_read_receipt(const
                                                         "Caller user ID must not be empty");
     }
 
+    // Anti-Impersonation Perimeter Guard (ADR-008, MSG-011-T02):
+    // Assert caller device matches reader device (cannot mutate companion device read state)
+    if (!cmd.caller_device_id.empty() && cmd.caller_device_id != cmd.reader_device_id) {
+        return ServiceResult<ReadReceiptResponse>::fail(
+            v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE,
+            "Caller device cannot submit read receipts on behalf of a different device");
+    }
+
     // 1. Authorize conversation membership if membership repo is present
     if (membership_repo_ && cmd.conversation_id != domain::ConversationId{}) {
         auto participant = membership_repo_->find_participant(cmd.conversation_id, cmd.caller_user_id);
@@ -51,6 +59,11 @@ ServiceResult<ReadReceiptResponse> ReadReceiptService::record_read_receipt(const
             v1::MESSAGING_ERROR_CODE_DEVICE_REVOKED,
             "Reader device has been revoked and cannot submit valid read receipts");
     }
+
+    // Lock-striped concurrency control per (message_id, reader_device_id) (MSG-012-T01)
+    const size_t stripe_idx =
+        std::hash<std::string>{}(cmd.message_id.to_string() + ":" + cmd.reader_device_id.str()) % kNumStripes;
+    std::lock_guard<std::mutex> stripe_lock(receipt_stripes_[stripe_idx]);
 
     // 3. Fetch fan-out delivery states for the message from ScyllaDB
     const auto states = delivery_repo_->get_delivery_states_for_message(cmd.message_id);

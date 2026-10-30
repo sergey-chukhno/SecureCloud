@@ -72,11 +72,20 @@ TEST(ChannelManagerLifecycleTest, UncachedServiceStateTransitions) {
 
     // Uncached without try_to_connect returns SHUTDOWN
     EXPECT_EQ(manager.get_connection_state(GrpcChannelManager::k_service_auth, false), GRPC_CHANNEL_SHUTDOWN);
+    EXPECT_FALSE(manager.is_channel_healthy(GrpcChannelManager::k_service_auth));
+    EXPECT_FALSE(manager.is_channel_ready(GrpcChannelManager::k_service_auth));
 
-    // Uncached with try_to_connect initializes channel into IDLE or CONNECTING
-    auto state = manager.get_connection_state(GrpcChannelManager::k_service_auth, true);
-    EXPECT_TRUE(state == GRPC_CHANNEL_IDLE || state == GRPC_CHANNEL_CONNECTING);
+    // Initializing channel via get_auth_channel initializes into IDLE state
+    auto channel = manager.get_auth_channel();
+    ASSERT_NE(channel, nullptr);
     EXPECT_TRUE(manager.is_channel_healthy(GrpcChannelManager::k_service_auth));
+    EXPECT_FALSE(manager.is_channel_ready(GrpcChannelManager::k_service_auth));
+
+    // With try_to_connect transitions out of SHUTDOWN (IDLE, CONNECTING, or TRANSIENT_FAILURE on fast RST)
+    auto state = manager.get_connection_state(GrpcChannelManager::k_service_auth, true);
+    EXPECT_NE(state, GRPC_CHANNEL_SHUTDOWN);
+    EXPECT_TRUE(state == GRPC_CHANNEL_IDLE || state == GRPC_CHANNEL_CONNECTING ||
+                state == GRPC_CHANNEL_TRANSIENT_FAILURE);
     EXPECT_FALSE(manager.is_channel_ready(GrpcChannelManager::k_service_auth));
 }
 

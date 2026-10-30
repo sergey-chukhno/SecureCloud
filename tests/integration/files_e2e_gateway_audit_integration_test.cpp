@@ -99,10 +99,9 @@ class MockAuditIngestionService final : public securecloud::audit::v1::AuditInge
     std::mutex mutex_;
     std::vector<securecloud::audit::v1::AuditEventProto> received_events;
 
-    ::grpc::Status BatchSubmitAuditEvents(
-        ::grpc::ServerContext* /*context*/,
-        const securecloud::audit::v1::BatchSubmitAuditEventsRequest* request,
-        securecloud::audit::v1::BatchSubmitAuditEventsResponse* response) override {
+    ::grpc::Status BatchSubmitAuditEvents(::grpc::ServerContext* /*context*/,
+                                          const securecloud::audit::v1::BatchSubmitAuditEventsRequest* request,
+                                          securecloud::audit::v1::BatchSubmitAuditEventsResponse* response) override {
         std::lock_guard<std::mutex> lock(mutex_);
         for (const auto& ev : request->events()) {
             received_events.push_back(ev);
@@ -215,7 +214,8 @@ class ControllableMockFilesService final : public securecloud::files::v1::FilesS
             ev.aggregate_id = file_id;
             ev.event_type = "FILE_CREATED";
             ev.created_at = std::chrono::system_clock::now();
-            ev.payload_json = "{\"owner_user_id\":\"" + request->owner_user_id() + "\",\"file_id\":\"" + file_id + "\"}";
+            ev.payload_json =
+                "{\"owner_user_id\":\"" + request->owner_user_id() + "\",\"file_id\":\"" + file_id + "\"}";
             outbox_repo->stage_event(ev);
         }
 
@@ -302,9 +302,8 @@ class ControllableMockFilesService final : public securecloud::files::v1::FilesS
 
         auto client_metadata = context->client_metadata();
         auto cap_it = client_metadata.find("x-file-capability");
-        std::string cap_token = (cap_it != client_metadata.end())
-                                    ? std::string(cap_it->second.data(), cap_it->second.length())
-                                    : "";
+        std::string cap_token =
+            (cap_it != client_metadata.end()) ? std::string(cap_it->second.data(), cap_it->second.length()) : "";
 
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = files_.find(request->file_id());
@@ -337,9 +336,8 @@ class ControllableMockFilesService final : public securecloud::files::v1::FilesS
 
         auto client_metadata = context->client_metadata();
         auto cap_it = client_metadata.find("x-file-capability");
-        std::string cap_token = (cap_it != client_metadata.end())
-                                    ? std::string(cap_it->second.data(), cap_it->second.length())
-                                    : "";
+        std::string cap_token =
+            (cap_it != client_metadata.end()) ? std::string(cap_it->second.data(), cap_it->second.length()) : "";
 
         if (cap_token == "invalid-cap") {
             return ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, "Invalid capability token");
@@ -383,7 +381,8 @@ class ControllableMockFilesService final : public securecloud::files::v1::FilesS
             ev.aggregate_id = request->file_id();
             ev.event_type = "FILE_DELETED";
             ev.created_at = std::chrono::system_clock::now();
-            ev.payload_json = "{\"owner_user_id\":\"" + it->second.owner_user_id + "\",\"file_id\":\"" + request->file_id() + "\"}";
+            ev.payload_json =
+                "{\"owner_user_id\":\"" + it->second.owner_user_id + "\",\"file_id\":\"" + request->file_id() + "\"}";
             outbox_repo->stage_event(ev);
         }
 
@@ -432,13 +431,13 @@ class FilesE2EGatewayAuditIntegrationTest : public ::testing::Test {
         files_client_ = std::make_shared<gateway::grpc::FilesServiceClient>(files_channel);
 
         // 5. Setup Resilience & Proxy Handler
-        circuit_breaker_ = std::make_shared<gateway::http::CircuitBreaker>(
-            "files", gateway::GatewayCircuitBreakerConfig{
-                         .enabled = true,
-                         .failure_threshold = 2,
-                         .recovery_timeout_ms = 1000,
-                         .half_open_probe_count = 1,
-                     });
+        circuit_breaker_ =
+            std::make_shared<gateway::http::CircuitBreaker>("files", gateway::GatewayCircuitBreakerConfig{
+                                                                         .enabled = true,
+                                                                         .failure_threshold = 2,
+                                                                         .recovery_timeout_ms = 1000,
+                                                                         .half_open_probe_count = 1,
+                                                                     });
         bulkhead_manager_ = std::make_shared<gateway::http::BulkheadManager>();
         retry_policy_ = std::make_shared<gateway::http::RetryPolicy>();
         deadline_manager_ = std::make_shared<gateway::http::DeadlineManager>();
@@ -459,30 +458,34 @@ class FilesE2EGatewayAuditIntegrationTest : public ::testing::Test {
             proxy_handler_->handle_upload_chunk(req, res, make_test_context(caller));
         });
 
-        http_server_->Post("/api/v1/files/upload/finalize", [this](const httplib::Request& req, httplib::Response& res) {
-            std::string caller = req.has_header("X-Caller-Id") ? req.get_header_value("X-Caller-Id") : "alice-uuid";
-            proxy_handler_->handle_upload_finalize(req, res, make_test_context(caller));
-        });
+        http_server_->Post(
+            "/api/v1/files/upload/finalize", [this](const httplib::Request& req, httplib::Response& res) {
+                std::string caller = req.has_header("X-Caller-Id") ? req.get_header_value("X-Caller-Id") : "alice-uuid";
+                proxy_handler_->handle_upload_finalize(req, res, make_test_context(caller));
+            });
 
         http_server_->Post("/api/v1/files/upload/cancel", [this](const httplib::Request& req, httplib::Response& res) {
             std::string caller = req.has_header("X-Caller-Id") ? req.get_header_value("X-Caller-Id") : "alice-uuid";
             proxy_handler_->handle_upload_cancel(req, res, make_test_context(caller));
         });
 
-        http_server_->Get(R"(/api/v1/files/([^/]+)/metadata)", [this](const httplib::Request& req, httplib::Response& res) {
-            std::string caller = req.has_header("X-Caller-Id") ? req.get_header_value("X-Caller-Id") : "alice-uuid";
-            proxy_handler_->handle_get_metadata(req, res, make_test_context(caller));
-        });
+        http_server_->Get(
+            R"(/api/v1/files/([^/]+)/metadata)", [this](const httplib::Request& req, httplib::Response& res) {
+                std::string caller = req.has_header("X-Caller-Id") ? req.get_header_value("X-Caller-Id") : "alice-uuid";
+                proxy_handler_->handle_get_metadata(req, res, make_test_context(caller));
+            });
 
-        http_server_->Get(R"(/api/v1/files/([^/]+)/chunks/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
-            std::string caller = req.has_header("X-Caller-Id") ? req.get_header_value("X-Caller-Id") : "alice-uuid";
-            proxy_handler_->handle_download_chunk(req, res, make_test_context(caller));
-        });
+        http_server_->Get(
+            R"(/api/v1/files/([^/]+)/chunks/(\d+))", [this](const httplib::Request& req, httplib::Response& res) {
+                std::string caller = req.has_header("X-Caller-Id") ? req.get_header_value("X-Caller-Id") : "alice-uuid";
+                proxy_handler_->handle_download_chunk(req, res, make_test_context(caller));
+            });
 
-        http_server_->Get(R"(/api/v1/files/([^/]+)/download)", [this](const httplib::Request& req, httplib::Response& res) {
-            std::string caller = req.has_header("X-Caller-Id") ? req.get_header_value("X-Caller-Id") : "alice-uuid";
-            proxy_handler_->handle_streaming_download(req, res, make_test_context(caller));
-        });
+        http_server_->Get(
+            R"(/api/v1/files/([^/]+)/download)", [this](const httplib::Request& req, httplib::Response& res) {
+                std::string caller = req.has_header("X-Caller-Id") ? req.get_header_value("X-Caller-Id") : "alice-uuid";
+                proxy_handler_->handle_streaming_download(req, res, make_test_context(caller));
+            });
 
         http_server_->Delete(R"(/api/v1/files/([^/]+))", [this](const httplib::Request& req, httplib::Response& res) {
             std::string caller = req.has_header("X-Caller-Id") ? req.get_header_value("X-Caller-Id") : "alice-uuid";
@@ -659,8 +662,7 @@ TEST_F(FilesE2EGatewayAuditIntegrationTest, Scenario4_ChunkedStreamingDownload) 
             {"Upload-Id", upload_session_id},
             {"Chunk-Index", std::to_string(i)},
         };
-        auto chunk_res =
-            cli.Post("/api/v1/files/upload/chunk", chunk_headers, chunks[i], "application/octet-stream");
+        auto chunk_res = cli.Post("/api/v1/files/upload/chunk", chunk_headers, chunks[i], "application/octet-stream");
         ASSERT_TRUE(chunk_res && chunk_res->status == 200);
     }
 

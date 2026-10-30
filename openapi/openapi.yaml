@@ -531,7 +531,111 @@ paths:
         '503':
           $ref: '#/components/responses/503ServiceUnavailable'
 
+  /v1/conversations/{conversationId}/messages:
+    get:
+      summary: Synchronize device-specific encrypted messages for a conversation
+      description: >
+        Retrieves ordered conversation messages for the authenticated device (`X-Device-Id`).
+        Returns only the per-device encrypted envelope targeted to the calling device.
+        Messages accepted prior to the calling device's enrollment omit `delivery_targets`
+        (Zero-Retroactive-Synthesis Invariant, ADR-008).
+      operationId: syncConversationMessages
+      tags:
+        - Messaging
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: since_sequence
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            minimum: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Synchronized message batch for the calling device
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SyncMessagesResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+
+  /v1/conversations/{conversationId}/messages/{messageId}/delivery-status:
+    get:
+      summary: Query multi-device delivery and logical recipient read status
+      description: >
+        Returns the authoritative per-device delivery state breakdown (`device_statuses`)
+        and per-user logical read status (`recipient_read_statuses`) for a message (MSG-008, MSG-011).
+      operationId: getMessageDeliveryStatus
+      tags:
+        - Messaging
+      security:
+        - bearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/DeviceIdHeader'
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: messageId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Multi-device delivery summary and read status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageDeliveryStatusResponse'
+        '400':
+          $ref: '#/components/responses/400BadRequest'
+        '401':
+          $ref: '#/components/responses/401Unauthorized'
+        '403':
+          $ref: '#/components/responses/403Forbidden'
+        '404':
+          description: Message or conversation not found
+        '503':
+          $ref: '#/components/responses/503ServiceUnavailable'
+
 components:
+  parameters:
+    DeviceIdHeader:
+      name: X-Device-Id
+      in: header
+      required: true
+      description: Canonical UUID of the authenticated calling physical device bound to the session.
+      schema:
+        type: string
+        format: uuid
+
   securitySchemes:
     bearerAuth:
       type: http
@@ -595,6 +699,187 @@ components:
             format: uuid
           maxItems: 100
           description: List of user IDs to query (max 100).
+
+    EncryptedPayload:
+      type: object
+      required:
+        - ciphertext_blob
+        - algorithm
+      properties:
+        ciphertext_blob:
+          type: string
+          description: Device-specific AEAD ciphertext blob (opaque to server, ADR-008).
+        ephemeral_public_key:
+          type: string
+        initialization_vector:
+          type: string
+        auth_tag:
+          type: string
+        algorithm:
+          type: string
+          example: XChaCha20-Poly1305
+
+    PerDeviceDeliveryTarget:
+      type: object
+      required:
+        - recipient_device_id
+        - state
+      properties:
+        recipient_user_id:
+          type: string
+          format: uuid
+        recipient_device_id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [QUEUED, DELIVERING, DELIVERED, RETRY_WAIT, EXPIRED, UNSPECIFIED]
+        updated_at_unix_ms:
+          type: integer
+          format: int64
+        encrypted_payload:
+          $ref: '#/components/schemas/EncryptedPayload'
+
+    MessageEnvelope:
+      type: object
+      required:
+        - message_id
+        - conversation_id
+        - sender_user_id
+        - sender_device_id
+        - delivery_targets
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        sender_user_id:
+          type: string
+          format: uuid
+        sender_device_id:
+          type: string
+          format: uuid
+        priority:
+          type: string
+          enum: [normal, urgent, emergency]
+        created_at_unix_ms:
+          type: integer
+          format: int64
+        expires_at_unix_ms:
+          type: integer
+          format: int64
+        client_idempotency_token:
+          type: string
+        delivery_targets:
+          type: array
+          items:
+            $ref: '#/components/schemas/PerDeviceDeliveryTarget'
+
+    SyncMessagesResponse:
+      type: object
+      required:
+        - device_id
+        - conversation_id
+        - has_more
+        - next_sequence
+        - latest_sequence
+        - messages
+      properties:
+        device_id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        has_more:
+          type: boolean
+        next_sequence:
+          type: integer
+          format: int64
+        latest_sequence:
+          type: integer
+          format: int64
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/MessageEnvelope'
+
+    DeviceDeliveryStatus:
+      type: object
+      required:
+        - device_id
+        - recipient_user_id
+        - delivery_state
+      properties:
+        device_id:
+          type: string
+          format: uuid
+        recipient_user_id:
+          type: string
+          format: uuid
+        delivery_state:
+          type: string
+          enum: [QUEUED, DELIVERING, DELIVERED, RETRY_WAIT, EXPIRED, UNSPECIFIED]
+        delivered_at_unix_ms:
+          type: integer
+          format: int64
+        attempt_count:
+          type: integer
+
+    LogicalRecipientReadStatus:
+      type: object
+      required:
+        - user_id
+        - is_read
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        is_read:
+          type: boolean
+        read_at_unix_ms:
+          type: integer
+          format: int64
+        reader_device_id:
+          type: string
+          format: uuid
+
+    MessageDeliveryStatusResponse:
+      type: object
+      required:
+        - message_id
+        - conversation_id
+        - summary
+        - device_statuses
+        - recipient_read_statuses
+      properties:
+        message_id:
+          type: string
+          format: uuid
+        conversation_id:
+          type: string
+          format: uuid
+        summary:
+          type: object
+          properties:
+            total_targets:
+              type: integer
+            delivered_targets:
+              type: integer
+            pending_targets:
+              type: integer
+            expired_targets:
+              type: integer
+        device_statuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/DeviceDeliveryStatus'
+        recipient_read_statuses:
+          type: array
+          items:
+            $ref: '#/components/schemas/LogicalRecipientReadStatus'
 
     ErrorResponse:
       type: object

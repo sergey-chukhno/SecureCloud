@@ -1370,9 +1370,22 @@ void MessagingProxyHandler::handle_sync_messages(const httplib::Request& req, ht
         }
     }
 
+    std::string requested_device_id = ctx.device_id();
+    if (req.has_param("recipient_device_id")) {
+        requested_device_id = req.get_param_value("recipient_device_id");
+    } else if (req.has_param("device_id")) {
+        requested_device_id = req.get_param_value("device_id");
+    }
+
+    if (!ctx.device_id().empty() && !requested_device_id.empty() && requested_device_id != ctx.device_id()) {
+        ErrorMapper::write_error(res, 403, "PERMISSION_DENIED",
+                                 "Requested device ID does not match authenticated device context", request_id);
+        return;
+    }
+
     securecloud::messaging::v1::SyncDeviceMessagesRequest grpc_req;
     grpc_req.set_conversation_id(conversation_id);
-    grpc_req.set_device_id(ctx.device_id());
+    grpc_req.set_device_id(requested_device_id);
     grpc_req.set_since_sequence(since_sequence);
     grpc_req.set_max_messages(limit);
 

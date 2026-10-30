@@ -1,9 +1,8 @@
-#include <gtest/gtest.h>
-
 #include "files/audit/files_audit_mapper.hpp"
 #include "files/domain/files_outbox_entity.hpp"
 
 #include <chrono>
+#include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
 namespace securecloud::files::audit {

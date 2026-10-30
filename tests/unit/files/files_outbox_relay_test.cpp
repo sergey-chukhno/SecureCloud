@@ -1,11 +1,10 @@
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
-
 #include "files/audit/audit_client_interface.hpp"
 #include "files/audit/files_outbox_relay.hpp"
 #include "files/repository/files_outbox_repository.hpp"
 
 #include <chrono>
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
 #include <memory>
 #include <string>
 #include <vector>

@@ -31,8 +31,7 @@ struct FilesOutboxRelayConfig {
 class FilesOutboxRelay {
   public:
     FilesOutboxRelay(std::shared_ptr<FilesOutboxRepository> outbox_repo,
-                     std::shared_ptr<IFilesAuditClient> audit_client,
-                     FilesOutboxRelayConfig config = {});
+                     std::shared_ptr<IFilesAuditClient> audit_client, FilesOutboxRelayConfig config = {});
     ~FilesOutboxRelay();
 
     FilesOutboxRelay(const FilesOutboxRelay&) = delete;

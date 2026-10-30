@@ -471,11 +471,13 @@ TEST_F(FilesProxyHandlerTest, UploadInitPropagatesCallerIdentity) {
 
 TEST_F(FilesProxyHandlerTest, UploadInitRejectsImpersonatedOwner) {
     httplib::Request req;
-    req.body = nlohmann::json{
-        {"encrypted_size_bytes", 1024},
-        {"expected_chunk_count", 1},
-        {"owner_user_id", "bob-999"}, // Impersonation attempt!
-    }.dump();
+    req.body =
+        nlohmann::json{
+            {"encrypted_size_bytes", 1024},
+            {"expected_chunk_count", 1},
+            {"owner_user_id", "bob-999"}, // Impersonation attempt!
+        }
+            .dump();
     httplib::Response res;
 
     // Caller authenticated as alice-123
