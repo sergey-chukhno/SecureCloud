@@ -2640,19 +2640,19 @@ target_link_libraries(securecloud_audit_event_validator_test PRIVATE
 
 gtest_discover_tests(securecloud_audit_event_validator_test ${SECURECLOUD_TEST_PROPERTIES})
 
-# Audit Service Security Guard Unit Test Suite (AUDIT-002-T06)
-add_executable(securecloud_audit_security_guard_test
+# Audit Service Sensitive Data Guard Unit Test Suite (AUDIT-002-T06)
+add_executable(securecloud_audit_sensitive_data_guard_test
         audit/sensitive_data_guard_test.cpp
 )
 
-target_link_libraries(securecloud_audit_security_guard_test PRIVATE
+target_link_libraries(securecloud_audit_sensitive_data_guard_test PRIVATE
         securecloud::audit_domain
         securecloud::common
         securecloud::compiler_flags
         GTest::gtest_main
 )
 
-gtest_discover_tests(securecloud_audit_security_guard_test ${SECURECLOUD_TEST_PROPERTIES})
+gtest_discover_tests(securecloud_audit_sensitive_data_guard_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Audit Service Producer Identity Validator Unit Test Suite (AUDIT-002-T06)
 add_executable(securecloud_audit_producer_identity_validator_test

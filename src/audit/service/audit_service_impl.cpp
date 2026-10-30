@@ -93,7 +93,8 @@ grpc::Status AuditServiceImpl::map_error_to_grpc_status(const IngestionResult& r
     if (result.error_code == "PERMISSION_DENIED") {
         return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, result.error_message);
     }
-    if (result.error_code == "REPOSITORY_ERROR") {
+    if (result.error_code == "REPOSITORY_ERROR" || result.error_code == "CLICKHOUSE_ERROR" ||
+        result.error_code == "DATABASE_ERROR" || result.error_code == "PERSISTENCE_FAILED") {
         return grpc::Status(grpc::StatusCode::UNAVAILABLE, result.error_message);
     }
     return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, result.error_message);
