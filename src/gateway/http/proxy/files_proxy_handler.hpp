@@ -88,6 +88,9 @@ class FilesProxyHandler {
   private:
     [[nodiscard]] static std::string extract_request_id(const httplib::Request& req);
     [[nodiscard]] static std::string extract_file_id(const httplib::Request& req);
+    [[nodiscard]] static std::string extract_capability_token(const httplib::Request& req);
+    static void populate_call_metadata(grpc::ClientCallContext& call_ctx, const AuthenticatedContext& ctx,
+                                       const std::string& capability_token = "");
     [[nodiscard]] std::chrono::milliseconds compute_timeout(const httplib::Request& req) const;
     void write_grpc_error(httplib::Response& res, const grpc::DependencyError& error,
                           const std::string& request_id) const;

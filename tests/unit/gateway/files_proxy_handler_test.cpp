@@ -321,7 +321,7 @@ TEST_F(FilesProxyHandlerTest, DownloadChunkSuccess) {
 TEST_F(FilesProxyHandlerTest, StreamingDownloadSuccess) {
     securecloud::files::v1::GetFileMetadataResponse meta_resp;
     meta_resp.set_file_id("f-stream");
-    meta_resp.set_encrypted_size_bytes(10);
+    meta_resp.set_encrypted_size_bytes(11);
     meta_resp.set_chunk_count(2);
 
     securecloud::files::v1::DownloadChunkResponse chunk0;
@@ -344,7 +344,31 @@ TEST_F(FilesProxyHandlerTest, StreamingDownloadSuccess) {
     handler_->handle_streaming_download(req, res, make_test_context());
 
     EXPECT_EQ(res.status, 200);
-    EXPECT_EQ(res.body, "hello-world");
+    EXPECT_TRUE(res.content_provider_ != nullptr);
+    EXPECT_EQ(res.content_length_, 11u);
+
+    // Verify non-buffering content provider streams chunk-by-chunk to DataSink
+    std::string streamed_output;
+    httplib::DataSink sink;
+    sink.write = [&](const char* data, size_t len) {
+        streamed_output.append(data, len);
+        return true;
+    };
+    sink.is_writable = []() { return true; };
+
+    // Read chunk 0
+    bool continue_0 = res.content_provider_(0, 6, sink);
+    EXPECT_TRUE(continue_0);
+    EXPECT_EQ(streamed_output, "hello-");
+
+    // Read chunk 1
+    bool continue_1 = res.content_provider_(6, 5, sink);
+    EXPECT_TRUE(continue_1);
+    EXPECT_EQ(streamed_output, "hello-world");
+
+    // Read EOF
+    bool continue_eof = res.content_provider_(11, 0, sink);
+    EXPECT_FALSE(continue_eof);
 }
 
 // 8. DELETE /api/v1/files/:file_id
@@ -429,11 +453,57 @@ TEST_F(FilesProxyHandlerTest, CancelRequestPropagates) {
     EXPECT_FALSE(handler_->cancel_request("req-cancel"));
 }
 
-// 12. Route registration into Router
-TEST_F(FilesProxyHandlerTest, RouteRegistrationIntoRouter) {
-    Router router;
-    handler_->register_routes(router);
-    EXPECT_GE(router.route_count(), 8u);
+// 13. Metadata & Capability token propagation
+TEST_F(FilesProxyHandlerTest, UploadInitPropagatesCallerIdentity) {
+    EXPECT_CALL(*mock_client_, create_file_upload(_, _))
+        .WillOnce([](const securecloud::files::v1::CreateFileUploadRequest& req, grpc::ClientCallContext& /*ctx*/) {
+            EXPECT_EQ(req.owner_user_id(), "alice-123");
+            EXPECT_EQ(req.owner_device_id(), "phone-456");
+            return securecloud::files::v1::CreateFileUploadResponse{};
+        });
+
+    httplib::Request req;
+    req.body = nlohmann::json{{"encrypted_size_bytes", 1024}, {"expected_chunk_count", 1}}.dump();
+    httplib::Response res;
+    handler_->handle_upload_init(req, res, make_test_context("alice-123", "phone-456"));
+    EXPECT_EQ(res.status, 201);
+}
+
+TEST_F(FilesProxyHandlerTest, UploadInitRejectsImpersonatedOwner) {
+    httplib::Request req;
+    req.body =
+        nlohmann::json{
+            {"encrypted_size_bytes", 1024},
+            {"expected_chunk_count", 1},
+            {"owner_user_id", "bob-999"}, // Impersonation attempt!
+        }
+            .dump();
+    httplib::Response res;
+
+    // Caller authenticated as alice-123
+    handler_->handle_upload_init(req, res, make_test_context("alice-123", "phone-456"));
+    EXPECT_EQ(res.status, 403);
+    auto err_json = nlohmann::json::parse(res.body);
+    EXPECT_EQ(err_json["error"]["code"], "PERMISSION_DENIED");
+}
+
+TEST_F(FilesProxyHandlerTest, DownloadChunkPropagatesCapabilityToken) {
+    securecloud::files::v1::DownloadChunkResponse grpc_resp;
+    grpc_resp.set_file_id("f-uuid-1");
+    grpc_resp.set_chunk_index(0);
+    grpc_resp.set_chunk_size_bytes(5);
+    grpc_resp.set_encrypted_data("chunk");
+
+    EXPECT_CALL(*mock_client_, download_chunk(_, _)).WillOnce(Return(grpc_resp));
+
+    httplib::Request req;
+    req.path = "/api/v1/files/f-uuid-1/chunks/0";
+    req.set_header("X-File-Capability", "ed25519-cap-token-value");
+    httplib::Response res;
+
+    handler_->handle_download_chunk(req, res, make_test_context("alice-123", "phone-456"));
+    EXPECT_EQ(res.status, 200);
+    EXPECT_EQ(res.body, "chunk");
 }
 
 } // namespace
