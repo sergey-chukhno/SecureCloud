@@ -95,6 +95,57 @@ bool ClickHouseClient::execute_query(const std::string& query, std::string* out_
     return true;
 }
 
+bool ClickHouseClient::execute_parameterized_query(
+    const ParameterizedClickHouseQuery& query,
+    std::string* out_response,
+    std::chrono::milliseconds timeout,
+    size_t max_bytes) {
+
+    auto cli = impl_->acquire_connection(timeout);
+    if (!cli) {
+        throw ClickHouseConnectionException("Connection pool exhausted or timeout");
+    }
+
+    httplib::Params params;
+    params.emplace("query", query.sql_template);
+    params.emplace("database", impl_->config.db_name);
+    params.emplace("readonly", "1");
+    params.emplace("max_execution_time",
+                   std::to_string(std::chrono::duration_cast<std::chrono::seconds>(timeout).count()));
+    params.emplace("max_result_bytes", std::to_string(max_bytes));
+
+    for (const auto& [param_name, param_val] : query.bind_params) {
+        params.emplace("param_" + param_name, param_val);
+    }
+
+    std::string path = "/?" + httplib::detail::params_to_query_str(params);
+    auto res = cli->Get(path.c_str(), impl_->build_headers());
+
+    impl_->release_connection(std::move(cli));
+
+    if (!res) {
+        if (res.error() == httplib::Error::Read || res.error() == httplib::Error::Write) {
+            throw ClickHouseTimeoutException("ClickHouse request timed out");
+        }
+        throw ClickHouseConnectionException("Failed to reach ClickHouse: httplib error code " +
+                                            std::to_string(static_cast<int>(res.error())));
+    }
+
+    if (res->status != 200) {
+        throw ClickHouseQueryException("ClickHouse rejected the parameterized query", res->status);
+    }
+
+    if (res->body.size() > max_bytes) {
+        throw ClickHouseQueryException("ClickHouse query result exceeded max_result_bytes limit", 413);
+    }
+
+    if (out_response) {
+        *out_response = res->body;
+    }
+
+    return true;
+}
+
 bool ClickHouseClient::execute_insert(const std::string& query, const std::string& body_data,
                                       std::chrono::milliseconds timeout) {
     auto cli = impl_->acquire_connection(timeout);

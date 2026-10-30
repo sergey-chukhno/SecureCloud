@@ -62,6 +62,7 @@ add_library(securecloud_audit_repository STATIC
         repository/schema_initializer.cpp
         repository/clickhouse_client.cpp
         repository/clickhouse_event_serializer.cpp
+        repository/clickhouse_query_builder.cpp
         repository/clickhouse_audit_event_repository.cpp
 )
 
@@ -73,6 +74,7 @@ target_include_directories(securecloud_audit_repository PUBLIC
 
 target_link_libraries(securecloud_audit_repository PUBLIC
         securecloud_audit_config
+        securecloud_audit_query
         securecloud::common
         securecloud::httplib
         securecloud::compiler_flags

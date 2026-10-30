@@ -2,6 +2,8 @@
 
 #include "domain/audit_event.hpp"
 #include "domain/event_id.hpp"
+#include "query/audit_page_cursor.hpp"
+#include "query/audit_query_types.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -64,7 +66,14 @@ class IAuditEventRepository {
     [[nodiscard]] virtual std::vector<domain::AuditEvent> query_by_correlation_id(const std::string& correlation_id,
                                                                                   uint32_t limit) = 0;
 
-    /// Finds a single audit event by its unique EventId.
+    /// Executes a parameterized read-only audit query with keyset cursor pagination.
+    [[nodiscard]] virtual std::vector<domain::AuditEvent> execute_paged_query(
+        const query::AuditQueryFilter& filter,
+        const std::optional<query::AuditPageCursor>& cursor = std::nullopt,
+        uint32_t timeout_sec = 10,
+        size_t max_bytes = 16777216) = 0;
+
+    /// Finds a single audit event by its unique EventId using partition pruning.
     [[nodiscard]] virtual std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId& event_id) = 0;
 
     /// Executes an analytical duplicate verification query across the ClickHouse database.

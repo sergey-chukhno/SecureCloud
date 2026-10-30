@@ -2,6 +2,7 @@
 
 #include "clickhouse_event_serializer.hpp"
 #include "domain/audit_event.hpp"
+#include "repository/clickhouse_query_builder.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -118,13 +119,27 @@ ClickHouseAuditEventRepository::query_by_correlation_id(const std::string& corre
     return ClickHouseEventSerializer::deserialize_from_query(response);
 }
 
-std::optional<domain::AuditEvent> ClickHouseAuditEventRepository::find_by_event_id(const domain::EventId& event_id) {
+std::vector<domain::AuditEvent> ClickHouseAuditEventRepository::execute_paged_query(
+    const query::AuditQueryFilter& filter,
+    const std::optional<query::AuditPageCursor>& cursor,
+    uint32_t timeout_sec,
+    size_t max_bytes) {
 
-    std::ostringstream ss;
-    ss << "SELECT * FROM audit_events WHERE event_id = '" << event_id.to_string() << "' LIMIT 1 FORMAT TabSeparated";
-
+    auto query = ClickHouseQueryBuilder::build_filter_query(filter, cursor);
     std::string response;
-    if (!client_->execute_query(ss.str(), &response)) {
+
+    if (!client_->execute_parameterized_query(query, &response, std::chrono::seconds(timeout_sec), max_bytes)) {
+        return {};
+    }
+
+    return ClickHouseEventSerializer::deserialize_from_query(response);
+}
+
+std::optional<domain::AuditEvent> ClickHouseAuditEventRepository::find_by_event_id(const domain::EventId& event_id) {
+    auto query = ClickHouseQueryBuilder::build_get_by_id_query(event_id);
+    std::string response;
+
+    if (!client_->execute_parameterized_query(query, &response, std::chrono::seconds(5), 1048576)) {
         return std::nullopt;
     }
 

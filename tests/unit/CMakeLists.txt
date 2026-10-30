@@ -3032,3 +3032,15 @@ target_link_libraries(securecloud_audit_page_cursor_test PRIVATE
         GTest::gtest_main
 )
 gtest_discover_tests(securecloud_audit_page_cursor_test)
+
+# ClickHouse Query Builder Test (AUDIT-007-T03)
+add_executable(securecloud_clickhouse_query_builder_test
+        audit/clickhouse_query_builder_test.cpp
+)
+target_link_libraries(securecloud_clickhouse_query_builder_test PRIVATE
+        securecloud::audit_repository
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_clickhouse_query_builder_test)

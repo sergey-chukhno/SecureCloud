@@ -26,6 +26,12 @@ class ClickHouseAuditEventRepository : public IAuditEventRepository {
 
     std::vector<domain::AuditEvent> query_by_correlation_id(const std::string& correlation_id, uint32_t limit) override;
 
+    std::vector<domain::AuditEvent> execute_paged_query(
+        const query::AuditQueryFilter& filter,
+        const std::optional<query::AuditPageCursor>& cursor = std::nullopt,
+        uint32_t timeout_sec = 10,
+        size_t max_bytes = 16777216) override;
+
     std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId& event_id) override;
 
     std::vector<DuplicateEventCount> find_duplicate_event_counts(uint32_t limit = 100) override;
