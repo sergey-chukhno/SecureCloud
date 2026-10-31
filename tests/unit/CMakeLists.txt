@@ -3056,3 +3056,15 @@ target_link_libraries(securecloud_audit_query_application_service_test PRIVATE
         GTest::gtest_main
 )
 gtest_discover_tests(securecloud_audit_query_application_service_test)
+
+# Audit Query Service Impl Test (AUDIT-007-T05)
+add_executable(securecloud_audit_query_service_impl_test
+        audit/audit_query_service_impl_test.cpp
+)
+target_link_libraries(securecloud_audit_query_service_impl_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_query_service_impl_test)

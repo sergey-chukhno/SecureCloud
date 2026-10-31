@@ -2,11 +2,13 @@
 
 #include "audit_config.hpp"
 #include "ingestion/audit_ingestion_pipeline.hpp"
+#include "query/audit_query_application_service.hpp"
 #include "repository/clickhouse_audit_event_repository.hpp"
 #include "repository/clickhouse_client.hpp"
 #include "securecloud/health/health_service_impl.hpp"
 #include "securecloud/health/health_status_manager.hpp"
 #include "service/audit_ingestion_service.hpp"
+#include "service/audit_query_service_impl.hpp"
 #include "service/audit_service_impl.hpp"
 
 #include <atomic>
@@ -30,7 +32,7 @@ class AuditServer {
     /// Deterministic startup sequence:
     /// 1. Loads mTLS server credentials via MtlsCredentialLoader.
     /// 2. Registers HealthServiceImpl with ClickHouse probe.
-    /// 3. Instantiates ClickHouse repository, ingestion engine, and gRPC AuditServiceImpl.
+    /// 3. Instantiates ClickHouse repository, ingestion engine, query engine, and gRPC services.
     /// 4. Binds gRPC mTLS port 50055 and registers services.
     /// 5. Transitions to Running and sets health probes to active.
     bool start();
@@ -48,6 +50,9 @@ class AuditServer {
     [[nodiscard]] const AuditConfig& config() const noexcept;
     [[nodiscard]] bool is_healthy() const noexcept;
     [[nodiscard]] std::shared_ptr<ingestion::AuditIngestionPipeline> pipeline() const noexcept { return pipeline_; }
+    [[nodiscard]] std::shared_ptr<query::AuditQueryApplicationService> query_app_service() const noexcept {
+        return query_app_service_;
+    }
 
   private:
     AuditConfig config_;
@@ -57,7 +62,10 @@ class AuditServer {
     std::shared_ptr<repository::ClickHouseAuditEventRepository> repository_;
     std::shared_ptr<ingestion::AuditIngestionPipeline> pipeline_;
     std::shared_ptr<service::AuditIngestionService> ingestion_service_;
+    std::shared_ptr<query::AuditQueryApplicationService> query_app_service_;
+
     std::unique_ptr<service::AuditServiceImpl> audit_service_;
+    std::unique_ptr<service::AuditQueryServiceImpl> query_service_;
 
     std::unique_ptr<grpc::Server> server_;
     std::shared_ptr<common::health::HealthStatusManager> health_manager_;

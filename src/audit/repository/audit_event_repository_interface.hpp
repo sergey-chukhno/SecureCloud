@@ -68,13 +68,17 @@ class IAuditEventRepository {
 
     /// Executes a parameterized read-only audit query with keyset cursor pagination.
     [[nodiscard]] virtual std::vector<domain::AuditEvent> execute_paged_query(
-        const query::AuditQueryFilter& filter,
-        const std::optional<query::AuditPageCursor>& cursor = std::nullopt,
-        uint32_t timeout_sec = 10,
-        size_t max_bytes = 16777216) = 0;
+        const query::AuditQueryFilter& /*filter*/,
+        const std::optional<query::AuditPageCursor>& /*cursor*/ = std::nullopt,
+        uint32_t /*timeout_sec*/ = 10,
+        size_t /*max_bytes*/ = 16777216) {
+        return {};
+    }
 
     /// Finds a single audit event by its unique EventId using partition pruning.
-    [[nodiscard]] virtual std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId& event_id) = 0;
+    [[nodiscard]] virtual std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId& /*event_id*/) {
+        return std::nullopt;
+    }
 
     /// Executes an analytical duplicate verification query across the ClickHouse database.
     [[nodiscard]] virtual std::vector<DuplicateEventCount> find_duplicate_event_counts(uint32_t limit = 100) {
