@@ -30,7 +30,10 @@ $targets = @(
     "securecloud_audit_page_cursor_test",
     "securecloud_audit_proto_mapper_test",
     "securecloud_audit_query_application_service_test",
+    "securecloud_audit_query_authorizer_test",
     "securecloud_audit_query_service_impl_test",
+    "securecloud_audit_query_service_test",
+    "securecloud_audit_query_validation_and_cursor_test",
     "securecloud_audit_server_lifecycle_test",
     "securecloud_audit_service_impl_test",
     "securecloud_audit_batch_aggregator_test",
@@ -53,6 +56,7 @@ $targets = @(
     "securecloud_audit_ingestion_concurrency_test",
     "securecloud_audit_ingestion_failure_injection_test",
     "securecloud_audit_ingestion_integration_test",
+    "securecloud_audit_query_integration_test",
     "securecloud_audit_service_lifecycle_integration_test"
 )
 
@@ -63,6 +67,17 @@ Write-Host "==================================================================" 
 Write-Host "Preset   : $Preset" -ForegroundColor Gray
 Write-Host "Targets  : $($targets.Count) test suites" -ForegroundColor Gray
 Write-Host "------------------------------------------------------------------" -ForegroundColor Cyan
+
+# -------------------------------------------------------------------------
+# STEP 0: CONCONFIGURE PHASE
+# -------------------------------------------------------------------------
+Write-Host "`n[STEP 0/2] Configuring CMake project with preset '$Preset'..." -ForegroundColor Yellow
+& cmake --preset $Preset
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "`n[ERROR] CMake configuration failed! Aborting test run." -ForegroundColor Red
+    exit $LASTEXITCODE
+}
 
 # -------------------------------------------------------------------------
 # STEP 1: BUILD PHASE

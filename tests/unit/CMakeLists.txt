@@ -3068,3 +3068,43 @@ target_link_libraries(securecloud_audit_query_service_impl_test PRIVATE
         GTest::gtest_main
 )
 gtest_discover_tests(securecloud_audit_query_service_impl_test)
+
+# Audit Query Validator and Cursor Test (AUDIT-007-T06)
+add_executable(securecloud_audit_query_validator_and_cursor_test
+        audit/audit_query_validator_and_cursor_test.cpp
+)
+target_link_libraries(securecloud_audit_query_validator_and_cursor_test PRIVATE
+        securecloud::audit_query
+        securecloud::audit_repository
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_query_validator_and_cursor_test)
+
+# Audit Query Authorizer Test (AUDIT-007-T06)
+add_executable(securecloud_audit_query_authorizer_test
+        audit/audit_query_authorizer_test.cpp
+)
+target_link_libraries(securecloud_audit_query_authorizer_test PRIVATE
+        securecloud::audit_query
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_query_authorizer_test)
+
+# Audit Query Application Service Test Suite (AUDIT-007-T06)
+add_executable(securecloud_audit_query_service_test
+        audit/audit_query_service_test.cpp
+)
+target_link_libraries(securecloud_audit_query_service_test PRIVATE
+        securecloud::audit_query
+        securecloud::audit_repository
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_query_service_test)
