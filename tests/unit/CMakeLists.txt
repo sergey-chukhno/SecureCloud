@@ -3044,3 +3044,15 @@ target_link_libraries(securecloud_clickhouse_query_builder_test PRIVATE
         GTest::gtest_main
 )
 gtest_discover_tests(securecloud_clickhouse_query_builder_test)
+
+# Audit Query Application Service Test (AUDIT-007-T04)
+add_executable(securecloud_audit_query_application_service_test
+        audit/audit_query_application_service_test.cpp
+)
+target_link_libraries(securecloud_audit_query_application_service_test PRIVATE
+        securecloud::audit_query
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_query_application_service_test)
