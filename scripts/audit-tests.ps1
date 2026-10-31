@@ -33,7 +33,7 @@ $targets = @(
     "securecloud_audit_query_authorizer_test",
     "securecloud_audit_query_service_impl_test",
     "securecloud_audit_query_service_test",
-    "securecloud_audit_query_validation_and_cursor_test",
+    "securecloud_audit_query_validator_and_cursor_test",
     "securecloud_audit_server_lifecycle_test",
     "securecloud_audit_service_impl_test",
     "securecloud_audit_batch_aggregator_test",
