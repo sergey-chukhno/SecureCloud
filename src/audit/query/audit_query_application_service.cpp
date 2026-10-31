@@ -2,6 +2,7 @@
 
 #include "domain/audit_event_mapper.hpp"
 #include "query/audit_page_cursor.hpp"
+#include "repository/audit_repository_exceptions.hpp"
 
 #include <chrono>
 
@@ -60,6 +61,9 @@ grpc::Status AuditQueryApplicationService::execute_query(
     std::vector<domain::AuditEvent> raw_events;
     try {
         raw_events = repository_->execute_paged_query(filter, cursor, timeout_sec, config_.max_result_bytes);
+    } catch (const repository::ClickHouseException&) {
+        metrics_.queries_failed_total.fetch_add(1, std::memory_order_relaxed);
+        throw;
     } catch (...) {
         metrics_.queries_failed_total.fetch_add(1, std::memory_order_relaxed);
         return grpc::Status(grpc::StatusCode::INTERNAL, "Database query execution failed");
@@ -128,6 +132,9 @@ grpc::Status AuditQueryApplicationService::get_event_by_id(
 
     try {
         out_event = repository_->find_by_event_id(*id_opt);
+    } catch (const repository::ClickHouseException&) {
+        metrics_.queries_failed_total.fetch_add(1, std::memory_order_relaxed);
+        throw;
     } catch (...) {
         metrics_.queries_failed_total.fetch_add(1, std::memory_order_relaxed);
         return grpc::Status(grpc::StatusCode::INTERNAL, "Database lookup failed");
