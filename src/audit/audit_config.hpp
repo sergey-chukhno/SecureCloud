@@ -45,7 +45,8 @@ struct QueryConfig {
 };
 
 struct RetentionConfig {
-    uint32_t retention_days{90};             // [1, 3650]
+    uint32_t retention_months{36};           // [1, 120] (36 months default per 05-audit-data-model.md §5.27)
+    uint32_t retention_days{1095};           // [1, 3650] (36 months = 1095 days)
     uint32_t shutdown_grace_period_ms{5000}; // [500, 30000]
 };
 

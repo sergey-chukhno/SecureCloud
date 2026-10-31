@@ -32,7 +32,11 @@ CREATE TABLE IF NOT EXISTS securecloud_audit.audit_events
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(occurred_at)
 ORDER BY (occurred_at, producer_service, event_type, event_id)
-TTL occurred_at + INTERVAL 36 MONTH;
+TTL toDateTime(occurred_at) + INTERVAL 36 MONTH DELETE;
+)";
+
+constexpr const char* DDL_ALTER_TTL = R"(
+ALTER TABLE securecloud_audit.audit_events MODIFY TTL toDateTime(occurred_at) + INTERVAL 36 MONTH DELETE;
 )";
 
 } // namespace
@@ -70,6 +74,10 @@ SchemaInitResult SchemaInitializer::initialize_schema() const {
     }
 
     if (!execute_http_query(DDL_CREATE_TABLE)) {
+        return SchemaInitResult::MigrationExecutionFailed;
+    }
+
+    if (!execute_http_query(DDL_ALTER_TTL)) {
         return SchemaInitResult::MigrationExecutionFailed;
     }
 
