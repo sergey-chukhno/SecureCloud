@@ -5,9 +5,9 @@
 
 namespace securecloud::audit::repository {
 
-ParameterizedClickHouseQuery ClickHouseQueryBuilder::build_filter_query(
-    const query::AuditQueryFilter& filter,
-    const std::optional<query::AuditPageCursor>& cursor) {
+ParameterizedClickHouseQuery
+ClickHouseQueryBuilder::build_filter_query(const query::AuditQueryFilter& filter,
+                                           const std::optional<query::AuditPageCursor>& cursor) {
 
     ParameterizedClickHouseQuery query;
     std::ostringstream sql;
@@ -17,14 +17,18 @@ ParameterizedClickHouseQuery ClickHouseQueryBuilder::build_filter_query(
            "causation_id, metadata FROM securecloud_audit.audit_events WHERE ";
 
     // 1. Mandatory time window bounds
-    sql << "occurred_at >= fromUnixTimestamp64Milli({start_ms:Int64}) AND occurred_at < fromUnixTimestamp64Milli({end_ms:Int64})";
+    sql << "occurred_at >= fromUnixTimestamp64Milli({start_ms:Int64}) AND occurred_at < "
+           "fromUnixTimestamp64Milli({end_ms:Int64})";
 
-    int64_t start_ms = filter.start_occurred_at.has_value()
-        ? std::chrono::duration_cast<std::chrono::milliseconds>(filter.start_occurred_at->time_since_epoch()).count()
-        : 0;
-    int64_t end_ms = filter.end_occurred_at.has_value()
-        ? std::chrono::duration_cast<std::chrono::milliseconds>(filter.end_occurred_at->time_since_epoch()).count()
-        : 0;
+    int64_t start_ms =
+        filter.start_occurred_at.has_value()
+            ? std::chrono::duration_cast<std::chrono::milliseconds>(filter.start_occurred_at->time_since_epoch())
+                  .count()
+            : 0;
+    int64_t end_ms =
+        filter.end_occurred_at.has_value()
+            ? std::chrono::duration_cast<std::chrono::milliseconds>(filter.end_occurred_at->time_since_epoch()).count()
+            : 0;
 
     query.bind_params["start_ms"] = std::to_string(start_ms);
     query.bind_params["end_ms"] = std::to_string(end_ms);
@@ -38,7 +42,8 @@ ParameterizedClickHouseQuery ClickHouseQueryBuilder::build_filter_query(
             sql << " AND producer_service IN (";
             for (size_t i = 0; i < filter.producer_services.size(); ++i) {
                 std::string key = "producer_" + std::to_string(i);
-                if (i > 0) sql << ", ";
+                if (i > 0)
+                    sql << ", ";
                 sql << "{" << key << ":String}";
                 query.bind_params[key] = domain::to_string(filter.producer_services[i]);
             }
@@ -55,7 +60,8 @@ ParameterizedClickHouseQuery ClickHouseQueryBuilder::build_filter_query(
             sql << " AND event_type IN (";
             for (size_t i = 0; i < filter.event_types.size(); ++i) {
                 std::string key = "event_type_" + std::to_string(i);
-                if (i > 0) sql << ", ";
+                if (i > 0)
+                    sql << ", ";
                 sql << "{" << key << ":String}";
                 query.bind_params[key] = filter.event_types[i];
             }
@@ -68,7 +74,8 @@ ParameterizedClickHouseQuery ClickHouseQueryBuilder::build_filter_query(
         sql << " AND severity IN (";
         for (size_t i = 0; i < filter.severities.size(); ++i) {
             std::string key = "severity_" + std::to_string(i);
-            if (i > 0) sql << ", ";
+            if (i > 0)
+                sql << ", ";
             sql << "{" << key << ":String}";
             query.bind_params[key] = domain::to_string(filter.severities[i]);
         }
@@ -99,7 +106,8 @@ ParameterizedClickHouseQuery ClickHouseQueryBuilder::build_filter_query(
     if (cursor.has_value()) {
         std::string comp = (filter.sort_order == query::SortOrder::Descending) ? "<" : ">";
         sql << " AND (occurred_at, producer_service, event_type, event_id) " << comp
-            << " (fromUnixTimestamp64Milli({cursor_ts:Int64}), {cursor_prod:String}, {cursor_type:String}, {cursor_id:UUID})";
+            << " (fromUnixTimestamp64Milli({cursor_ts:Int64}), {cursor_prod:String}, {cursor_type:String}, "
+               "{cursor_id:UUID})";
 
         query.bind_params["cursor_ts"] = std::to_string(cursor->last_occurred_at_ms);
         query.bind_params["cursor_prod"] = cursor->last_producer_service;

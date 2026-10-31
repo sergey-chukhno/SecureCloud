@@ -14,18 +14,17 @@ bool matches_event_type_pattern(std::string_view sv) {
 
 } // namespace
 
-grpc::Status AuditQueryValidator::validate_and_normalize(
-    AuditQueryFilter& filter,
-    const QueryConfig& config,
-    std::chrono::system_clock::time_point now) {
+grpc::Status AuditQueryValidator::validate_and_normalize(AuditQueryFilter& filter, const QueryConfig& config,
+                                                         std::chrono::system_clock::time_point now) {
 
     // 1. Time Window Validation
     if (!filter.start_occurred_at.has_value() && !filter.end_occurred_at.has_value()) {
         filter.start_occurred_at = now - std::chrono::hours(config.default_time_window_hours);
         filter.end_occurred_at = now + std::chrono::minutes(5);
     } else if (!filter.start_occurred_at.has_value() || !filter.end_occurred_at.has_value()) {
-        return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                            "MissingTimeRangeBound: Both start_occurred_at and end_occurred_at must be provided together");
+        return grpc::Status(
+            grpc::StatusCode::INVALID_ARGUMENT,
+            "MissingTimeRangeBound: Both start_occurred_at and end_occurred_at must be provided together");
     }
 
     if (*filter.start_occurred_at >= *filter.end_occurred_at) {
@@ -33,7 +32,8 @@ grpc::Status AuditQueryValidator::validate_and_normalize(
                             "InvalidTimeRangeOrder: start_occurred_at must be strictly less than end_occurred_at");
     }
 
-    auto window_duration = std::chrono::duration_cast<std::chrono::hours>(*filter.end_occurred_at - *filter.start_occurred_at);
+    auto window_duration =
+        std::chrono::duration_cast<std::chrono::hours>(*filter.end_occurred_at - *filter.start_occurred_at);
     if (window_duration.count() > static_cast<int64_t>(config.max_time_window_hours)) {
         return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
                             "TimeWindowExceeded: Requested time window exceeds maximum allowed duration");
@@ -67,20 +67,23 @@ grpc::Status AuditQueryValidator::validate_and_normalize(
                                 "InvalidActorTargetRequirement: actor_type must be specified when actor_id is present");
         }
         if (!is_safe_identifier(*filter.actor_id, 128)) {
-            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                                "InvalidCharacterInIdentifier: actor_id contains forbidden control, quote, or null characters");
+            return grpc::Status(
+                grpc::StatusCode::INVALID_ARGUMENT,
+                "InvalidCharacterInIdentifier: actor_id contains forbidden control, quote, or null characters");
         }
     }
 
     // Target validation
     if (filter.target_id.has_value()) {
         if (!filter.target_type.has_value() || static_cast<int>(*filter.target_type) == 0) {
-            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                                "InvalidActorTargetRequirement: target_type must be specified when target_id is present");
+            return grpc::Status(
+                grpc::StatusCode::INVALID_ARGUMENT,
+                "InvalidActorTargetRequirement: target_type must be specified when target_id is present");
         }
         if (!is_safe_identifier(*filter.target_id, 128)) {
-            return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT,
-                                "InvalidCharacterInIdentifier: target_id contains forbidden control, quote, or null characters");
+            return grpc::Status(
+                grpc::StatusCode::INVALID_ARGUMENT,
+                "InvalidCharacterInIdentifier: target_id contains forbidden control, quote, or null characters");
         }
     }
 

@@ -1,6 +1,5 @@
-#include "service/audit_query_service_impl.hpp"
-
 #include "repository/audit_repository_exceptions.hpp"
+#include "service/audit_query_service_impl.hpp"
 
 #include <gtest/gtest.h>
 
@@ -10,17 +9,22 @@ class MockQueryRepository : public repository::IAuditEventRepository {
   public:
     bool insert_batch(const std::vector<domain::AuditEvent>&) override { return true; }
     std::vector<domain::AuditEvent> query_by_time_range(std::chrono::system_clock::time_point,
-                                                        std::chrono::system_clock::time_point, uint32_t) override { return {}; }
+                                                        std::chrono::system_clock::time_point, uint32_t) override {
+        return {};
+    }
     std::vector<domain::AuditEvent> query_by_producer(const std::string&, std::chrono::system_clock::time_point,
-                                                      std::chrono::system_clock::time_point, uint32_t) override { return {}; }
+                                                      std::chrono::system_clock::time_point, uint32_t) override {
+        return {};
+    }
     std::vector<domain::AuditEvent> query_by_correlation_id(const std::string&, uint32_t) override { return {}; }
 
-    std::vector<domain::AuditEvent> execute_paged_query(
-        const query::AuditQueryFilter&,
-        const std::optional<query::AuditPageCursor>&,
-        uint32_t, size_t) override {
-        if (should_throw_timeout) throw repository::ClickHouseTimeoutException("Timeout");
-        if (should_throw_connection) throw repository::ClickHouseConnectionException("Refused");
+    std::vector<domain::AuditEvent> execute_paged_query(const query::AuditQueryFilter&,
+                                                        const std::optional<query::AuditPageCursor>&, uint32_t,
+                                                        size_t) override {
+        if (should_throw_timeout)
+            throw repository::ClickHouseTimeoutException("Timeout");
+        if (should_throw_connection)
+            throw repository::ClickHouseConnectionException("Refused");
 
         std::vector<domain::AuditEvent> evs;
         domain::AuditEvent ev;
@@ -33,7 +37,8 @@ class MockQueryRepository : public repository::IAuditEventRepository {
     }
 
     std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId& id) override {
-        if (should_throw_timeout) throw repository::ClickHouseTimeoutException("Timeout");
+        if (should_throw_timeout)
+            throw repository::ClickHouseTimeoutException("Timeout");
         domain::AuditEvent ev;
         ev.event_id = id;
         ev.occurred_at = std::chrono::system_clock::now();

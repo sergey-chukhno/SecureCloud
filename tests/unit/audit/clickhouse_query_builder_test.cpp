@@ -1,7 +1,7 @@
 #include "repository/clickhouse_query_builder.hpp"
 
-#include <gtest/gtest.h>
 #include <chrono>
+#include <gtest/gtest.h>
 
 namespace securecloud::audit::repository::testing {
 
@@ -37,7 +37,9 @@ TEST_F(ClickHouseQueryBuilderTest, BuildMinimalFilterQuery) {
     // SQL Template Assertions
     EXPECT_NE(query.sql_template.find("occurred_at >= fromUnixTimestamp64Milli({start_ms:Int64})"), std::string::npos);
     EXPECT_NE(query.sql_template.find("occurred_at < fromUnixTimestamp64Milli({end_ms:Int64})"), std::string::npos);
-    EXPECT_NE(query.sql_template.find("ORDER BY occurred_at DESC, producer_service DESC, event_type DESC, event_id DESC"), std::string::npos);
+    EXPECT_NE(
+        query.sql_template.find("ORDER BY occurred_at DESC, producer_service DESC, event_type DESC, event_id DESC"),
+        std::string::npos);
     EXPECT_NE(query.sql_template.find("LIMIT 1 BY event_id"), std::string::npos);
     EXPECT_NE(query.sql_template.find("LIMIT {limit_plus_one:UInt32} FORMAT TabSeparated"), std::string::npos);
 
@@ -59,15 +61,23 @@ TEST_F(ClickHouseQueryBuilderTest, BuildFilterQueryWithAllParametersAndCursor) {
     auto query = ClickHouseQueryBuilder::build_filter_query(filter, cursor);
 
     // Predicate checks in SQL Template
-    EXPECT_NE(query.sql_template.find("producer_service IN ({producer_0:String}, {producer_1:String})"), std::string::npos);
-    EXPECT_NE(query.sql_template.find("event_type IN ({event_type_0:String}, {event_type_1:String})"), std::string::npos);
+    EXPECT_NE(query.sql_template.find("producer_service IN ({producer_0:String}, {producer_1:String})"),
+              std::string::npos);
+    EXPECT_NE(query.sql_template.find("event_type IN ({event_type_0:String}, {event_type_1:String})"),
+              std::string::npos);
     EXPECT_NE(query.sql_template.find("severity IN ({severity_0:String}, {severity_1:String})"), std::string::npos);
-    EXPECT_NE(query.sql_template.find("actor_type = {actor_type:String} AND actor_id = {actor_id:String}"), std::string::npos);
-    EXPECT_NE(query.sql_template.find("target_type = {target_type:String} AND target_id = {target_id:String}"), std::string::npos);
+    EXPECT_NE(query.sql_template.find("actor_type = {actor_type:String} AND actor_id = {actor_id:String}"),
+              std::string::npos);
+    EXPECT_NE(query.sql_template.find("target_type = {target_type:String} AND target_id = {target_id:String}"),
+              std::string::npos);
     EXPECT_NE(query.sql_template.find("correlation_id = {correlation_id:String}"), std::string::npos);
 
     // Keyset Tuple Predicate check for Descending
-    EXPECT_NE(query.sql_template.find("(occurred_at, producer_service, event_type, event_id) < (fromUnixTimestamp64Milli({cursor_ts:Int64}), {cursor_prod:String}, {cursor_type:String}, {cursor_id:UUID})"), std::string::npos);
+    EXPECT_NE(
+        query.sql_template.find(
+            "(occurred_at, producer_service, event_type, event_id) < (fromUnixTimestamp64Milli({cursor_ts:Int64}), "
+            "{cursor_prod:String}, {cursor_type:String}, {cursor_id:UUID})"),
+        std::string::npos);
 
     // Parameter value bindings
     EXPECT_EQ(query.bind_params.at("start_ms"), "1710000000000");
@@ -101,8 +111,13 @@ TEST_F(ClickHouseQueryBuilderTest, BuildFilterQueryAscendingOrder) {
     auto query = ClickHouseQueryBuilder::build_filter_query(filter, cursor);
 
     // Keyset Tuple Predicate check for Ascending (uses > instead of <)
-    EXPECT_NE(query.sql_template.find("(occurred_at, producer_service, event_type, event_id) > (fromUnixTimestamp64Milli({cursor_ts:Int64}), {cursor_prod:String}, {cursor_type:String}, {cursor_id:UUID})"), std::string::npos);
-    EXPECT_NE(query.sql_template.find("ORDER BY occurred_at ASC, producer_service ASC, event_type ASC, event_id ASC"), std::string::npos);
+    EXPECT_NE(
+        query.sql_template.find(
+            "(occurred_at, producer_service, event_type, event_id) > (fromUnixTimestamp64Milli({cursor_ts:Int64}), "
+            "{cursor_prod:String}, {cursor_type:String}, {cursor_id:UUID})"),
+        std::string::npos);
+    EXPECT_NE(query.sql_template.find("ORDER BY occurred_at ASC, producer_service ASC, event_type ASC, event_id ASC"),
+              std::string::npos);
 }
 
 TEST_F(ClickHouseQueryBuilderTest, BuildGetByIdQueryWithPartitionPruning) {
@@ -110,8 +125,10 @@ TEST_F(ClickHouseQueryBuilderTest, BuildGetByIdQueryWithPartitionPruning) {
     auto query = ClickHouseQueryBuilder::build_get_by_id_query(id);
 
     // SQL Template verification
-    EXPECT_NE(query.sql_template.find("occurred_at >= fromUnixTimestamp64Milli({uuid_ts_min:Int64})"), std::string::npos);
-    EXPECT_NE(query.sql_template.find("occurred_at <= fromUnixTimestamp64Milli({uuid_ts_max:Int64})"), std::string::npos);
+    EXPECT_NE(query.sql_template.find("occurred_at >= fromUnixTimestamp64Milli({uuid_ts_min:Int64})"),
+              std::string::npos);
+    EXPECT_NE(query.sql_template.find("occurred_at <= fromUnixTimestamp64Milli({uuid_ts_max:Int64})"),
+              std::string::npos);
     EXPECT_NE(query.sql_template.find("event_id = {event_id:UUID} LIMIT 1 FORMAT TabSeparated"), std::string::npos);
 
     // Parameter bindings

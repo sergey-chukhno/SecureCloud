@@ -2,8 +2,8 @@
 #include "query/audit_query_validator.hpp"
 #include "repository/clickhouse_query_builder.hpp"
 
-#include <gtest/gtest.h>
 #include <chrono>
+#include <gtest/gtest.h>
 
 namespace securecloud::audit::query::testing {
 

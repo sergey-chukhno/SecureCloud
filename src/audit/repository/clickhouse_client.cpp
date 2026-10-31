@@ -95,11 +95,8 @@ bool ClickHouseClient::execute_query(const std::string& query, std::string* out_
     return true;
 }
 
-bool ClickHouseClient::execute_parameterized_query(
-    const ParameterizedClickHouseQuery& query,
-    std::string* out_response,
-    std::chrono::milliseconds timeout,
-    size_t max_bytes) {
+bool ClickHouseClient::execute_parameterized_query(const ParameterizedClickHouseQuery& query, std::string* out_response,
+                                                   std::chrono::milliseconds timeout, size_t max_bytes) {
 
     auto cli = impl_->acquire_connection(timeout);
     if (!cli) {

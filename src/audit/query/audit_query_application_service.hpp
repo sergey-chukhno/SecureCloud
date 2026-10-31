@@ -10,46 +10,40 @@
 
 #include <atomic>
 #include <chrono>
+#include <grpcpp/support/status.h>
 #include <memory>
 #include <optional>
 #include <string_view>
-#include <grpcpp/support/status.h>
 
 namespace securecloud::audit::query {
 
-    struct QueryServiceMetrics {
-        std::atomic<uint64_t> queries_executed_total{0};
-        std::atomic<uint64_t> queries_denied_total{0};
-        std::atomic<uint64_t> queries_failed_total{0};
-    };
+struct QueryServiceMetrics {
+    std::atomic<uint64_t> queries_executed_total{0};
+    std::atomic<uint64_t> queries_denied_total{0};
+    std::atomic<uint64_t> queries_failed_total{0};
+};
 
-    class AuditQueryApplicationService {
-    public:
-        AuditQueryApplicationService(
-            std::shared_ptr<repository::IAuditEventRepository> repository,
-            QueryConfig config);
+class AuditQueryApplicationService {
+  public:
+    AuditQueryApplicationService(std::shared_ptr<repository::IAuditEventRepository> repository, QueryConfig config);
 
-        /// Executes a filtered, paginated search query with authorization and bulkhead bounds.
-        [[nodiscard]] grpc::Status execute_query(
-            const domain::PeerIdentity& caller,
-            AuditQueryFilter filter,
-            AuditQueryPageResult& out_result);
+    /// Executes a filtered, paginated search query with authorization and bulkhead bounds.
+    [[nodiscard]] grpc::Status execute_query(const domain::PeerIdentity& caller, AuditQueryFilter filter,
+                                             AuditQueryPageResult& out_result);
 
-        /// Looks up a single audit event by UUIDv7 ID with partition pruning and bulkhead bounds.
-        [[nodiscard]] grpc::Status get_event_by_id(
-            const domain::PeerIdentity& caller,
-            std::string_view event_id_str,
-            std::optional<domain::AuditEvent>& out_event);
+    /// Looks up a single audit event by UUIDv7 ID with partition pruning and bulkhead bounds.
+    [[nodiscard]] grpc::Status get_event_by_id(const domain::PeerIdentity& caller, std::string_view event_id_str,
+                                               std::optional<domain::AuditEvent>& out_event);
 
-        [[nodiscard]] const QueryServiceMetrics& metrics() const noexcept { return metrics_; }
-        [[nodiscard]] QueryBulkheadLimiter& bulkhead() noexcept { return bulkhead_; }
-        [[nodiscard]] const QueryBulkheadLimiter& bulkhead() const noexcept { return bulkhead_; }
+    [[nodiscard]] const QueryServiceMetrics& metrics() const noexcept { return metrics_; }
+    [[nodiscard]] QueryBulkheadLimiter& bulkhead() noexcept { return bulkhead_; }
+    [[nodiscard]] const QueryBulkheadLimiter& bulkhead() const noexcept { return bulkhead_; }
 
-    private:
-        std::shared_ptr<repository::IAuditEventRepository> repository_;
-        QueryConfig config_;
-        QueryBulkheadLimiter bulkhead_;
-        QueryServiceMetrics metrics_{};
-    };
+  private:
+    std::shared_ptr<repository::IAuditEventRepository> repository_;
+    QueryConfig config_;
+    QueryBulkheadLimiter bulkhead_;
+    QueryServiceMetrics metrics_{};
+};
 
 } // namespace securecloud::audit::query

@@ -3,8 +3,8 @@
 #include "repository/clickhouse_audit_event_repository.hpp"
 #include "repository/clickhouse_client.hpp"
 
-#include <gtest/gtest.h>
 #include <chrono>
+#include <gtest/gtest.h>
 
 namespace securecloud::audit::integration {
 

@@ -119,11 +119,10 @@ ClickHouseAuditEventRepository::query_by_correlation_id(const std::string& corre
     return ClickHouseEventSerializer::deserialize_from_query(response);
 }
 
-std::vector<domain::AuditEvent> ClickHouseAuditEventRepository::execute_paged_query(
-    const query::AuditQueryFilter& filter,
-    const std::optional<query::AuditPageCursor>& cursor,
-    uint32_t timeout_sec,
-    size_t max_bytes) {
+std::vector<domain::AuditEvent>
+ClickHouseAuditEventRepository::execute_paged_query(const query::AuditQueryFilter& filter,
+                                                    const std::optional<query::AuditPageCursor>& cursor,
+                                                    uint32_t timeout_sec, size_t max_bytes) {
 
     auto query = ClickHouseQueryBuilder::build_filter_query(filter, cursor);
     std::string response;
