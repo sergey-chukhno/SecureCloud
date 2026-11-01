@@ -14,7 +14,7 @@ ClickHouseQueryBuilder::build_filter_query(const query::AuditQueryFilter& filter
 
     sql << "SELECT event_id, occurred_at, received_at, event_type, severity, producer_service, "
            "producer_instance, actor_type, actor_id, target_type, target_id, correlation_id, "
-           "causation_id, metadata FROM securecloud_audit.audit_events WHERE ";
+           "causation_id, event_data FROM securecloud_audit.audit_events WHERE ";
 
     // 1. Mandatory time window bounds
     sql << "occurred_at >= fromUnixTimestamp64Milli({start_ms:Int64}) AND occurred_at < "
@@ -146,7 +146,7 @@ ParameterizedClickHouseQuery ClickHouseQueryBuilder::build_get_by_id_query(const
     std::ostringstream sql;
     sql << "SELECT event_id, occurred_at, received_at, event_type, severity, producer_service, "
            "producer_instance, actor_type, actor_id, target_type, target_id, correlation_id, "
-           "causation_id, metadata FROM securecloud_audit.audit_events "
+           "causation_id, event_data FROM securecloud_audit.audit_events "
            "WHERE occurred_at >= fromUnixTimestamp64Milli({uuid_ts_min:Int64}) "
            "AND occurred_at <= fromUnixTimestamp64Milli({uuid_ts_max:Int64}) "
            "AND event_id = {event_id:UUID} LIMIT 1 FORMAT TabSeparated";

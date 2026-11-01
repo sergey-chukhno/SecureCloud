@@ -107,7 +107,7 @@ bool ClickHouseClient::execute_parameterized_query(const ParameterizedClickHouse
     httplib::Params params;
     params.emplace("query", query.sql_template);
     params.emplace("database", impl_->config.db_name);
-    params.emplace("readonly", "1");
+    // readonly enforced via ClickHouse user RBAC
     params.emplace("max_execution_time",
                    std::to_string(std::chrono::duration_cast<std::chrono::seconds>(timeout).count()));
     params.emplace("max_result_bytes", std::to_string(max_bytes));
@@ -130,7 +130,7 @@ bool ClickHouseClient::execute_parameterized_query(const ParameterizedClickHouse
     }
 
     if (res->status != 200) {
-        throw ClickHouseQueryException("ClickHouse rejected the parameterized query", res->status);
+        throw ClickHouseQueryException("ClickHouse rejected the parameterized query: " + res->body, res->status);
     }
 
     if (res->body.size() > max_bytes) {
