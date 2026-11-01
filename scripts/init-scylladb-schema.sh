@@ -51,7 +51,7 @@ run_cql_file() {
     log_info "Applying migration: ${file_name}..."
 
     if [ "$USE_COMPOSE" = true ]; then
-        docker compose -f "${COMPOSE_FILE}" exec -T scylladb cqlsh -f - < "${cql_file}"
+        docker compose -f "${COMPOSE_FILE}" exec -T scylladb cqlsh < "${cql_file}"
     else
         cqlsh "${SCYLLA_HOST:-127.0.0.1}" "${SCYLLA_PORT:-9042}" -f "${cql_file}"
     fi
