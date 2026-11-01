@@ -88,17 +88,74 @@ SchemaInitResult SchemaInitializer::initialize_schema() const {
     return SchemaInitResult::Success;
 }
 
-bool SchemaInitializer::verify_schema_integrity() const {
+SchemaVerificationReport SchemaInitializer::verify_effective_schema() const {
+    SchemaVerificationReport report;
     std::string response;
-    const std::string verification_query =
-        "SELECT count() FROM system.tables WHERE database = 'securecloud_audit' AND name = 'audit_events';";
 
-    if (!execute_http_query(verification_query, &response)) {
-        return false;
+    const std::string inspection_query = "SELECT engine, partition_key, sorting_key, create_table_query "
+                                         "FROM system.tables "
+                                         "WHERE database = 'securecloud_audit' AND name = 'audit_events' "
+                                         "FORMAT TabSeparated;";
+
+    if (!execute_http_query(inspection_query, &response) || response.empty()) {
+        report.violations.push_back("Failed to query system.tables or audit_events table does not exist.");
+        report.is_valid = false;
+        return report;
     }
 
-    // Response should be "1\n"
-    return response.find('1') != std::string::npos;
+    std::string line = response;
+    if (!line.empty() && line.back() == '\n') {
+        line.pop_back();
+    }
+    if (!line.empty() && line.back() == '\r') {
+        line.pop_back();
+    }
+
+    std::stringstream ss(line);
+    std::getline(ss, report.engine, '\t');
+    std::getline(ss, report.partition_key, '\t');
+    std::getline(ss, report.sorting_key, '\t');
+    std::getline(ss, report.create_table_query, '\t');
+
+    if (report.engine != "MergeTree") {
+        report.violations.push_back("Expected engine 'MergeTree', got '" + report.engine + "'");
+    }
+
+    if (report.partition_key != "toYYYYMM(occurred_at)") {
+        report.violations.push_back("Expected partition_key 'toYYYYMM(occurred_at)', got '" + report.partition_key +
+                                    "'");
+    }
+
+    if (report.sorting_key != "occurred_at, producer_service, event_type, event_id") {
+        report.violations.push_back(
+            "Expected sorting_key 'occurred_at, producer_service, event_type, event_id', got '" + report.sorting_key +
+            "'");
+    }
+
+    const std::string& ddl = report.create_table_query;
+    auto ttl_pos = ddl.find("TTL");
+    if (ttl_pos == std::string::npos) {
+        report.violations.push_back("create_table_query does not contain a TTL clause");
+    } else {
+        std::string ttl_clause = ddl.substr(ttl_pos);
+        if (ttl_clause.find("occurred_at") == std::string::npos) {
+            report.violations.push_back("TTL clause does not reference 'occurred_at'");
+        }
+        if (ttl_clause.find("36") == std::string::npos) {
+            report.violations.push_back("TTL clause does not specify 36-month retention interval");
+        }
+        if (ttl_clause.find("received_at") != std::string::npos) {
+            report.violations.push_back("TTL clause incorrectly references 'received_at' instead of 'occurred_at'");
+        }
+    }
+
+    report.is_valid = report.violations.empty();
+    return report;
+}
+
+bool SchemaInitializer::verify_schema_integrity() const {
+    auto report = verify_effective_schema();
+    return report.is_valid;
 }
 
 } // namespace securecloud::audit::repository
