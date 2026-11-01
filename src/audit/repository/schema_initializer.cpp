@@ -43,7 +43,7 @@ ALTER TABLE securecloud_audit.audit_events MODIFY TTL toDateTime(occurred_at) + 
 
 SchemaInitializer::SchemaInitializer(const ClickHouseConfig& config) : config_(config) {}
 
-bool SchemaInitializer::execute_http_query(const std::string& query, std::string* out_response) const {
+ bool SchemaInitializer::execute_http_query(const std::string& query, std::string* out_response) const {
     httplib::Client client(config_.host, config_.port);
 
     const auto conn_sec = std::chrono::milliseconds(config_.connect_timeout_ms);
@@ -55,7 +55,12 @@ bool SchemaInitializer::execute_http_query(const std::string& query, std::string
     httplib::Headers headers = {{"X-ClickHouse-User", config_.user},
                                 {"X-ClickHouse-Key", config_.password.expose_unredacted_secret()}};
 
-    auto res = client.Post("/?database=" + config_.db_name, headers, query, "text/plain");
+    std::string path = "/";
+    if (query.find("CREATE DATABASE") == std::string::npos && !config_.db_name.empty()) {
+        path += "?database=" + config_.db_name;
+    }
+
+    auto res = client.Post(path.c_str(), headers, query, "text/plain");
 
     if (!res || res->status != 200) {
         return false;

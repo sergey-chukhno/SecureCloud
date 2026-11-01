@@ -987,3 +987,18 @@ target_link_libraries(securecloud_audit_query_integration_test PRIVATE
         GTest::gtest_main
 )
 gtest_discover_tests(securecloud_audit_query_integration_test)
+
+# Audit Retention Integration Test (AUDIT-008-T06)
+add_executable(securecloud_audit_retention_integration_test
+        audit_retention_integration_test.cpp
+)
+
+target_link_libraries(securecloud_audit_retention_integration_test PRIVATE
+        securecloud_audit_domain
+        securecloud_audit_repository
+        securecloud_audit_config
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_retention_integration_test)
