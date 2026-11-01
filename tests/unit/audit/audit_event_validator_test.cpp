@@ -110,15 +110,42 @@ TEST(AuditEventValidatorTest, FutureClockSkewFails) {
     }
 }
 
-TEST(AuditEventValidatorTest, ExpiredTimestampFails) {
+TEST(AuditEventValidatorTest, DelayedAndOutOfOrderEventsWithinRetentionWindowPass) {
+    auto now = std::chrono::system_clock::now();
+    AuditEventValidationLimits limits;
+
+    // Delayed/out-of-order events within 36-month horizon (30, 400, 1000 days old)
+    const std::array<int, 3> days_old_list = {30, 400, 1000};
+
+    for (int days : days_old_list) {
+        auto event = create_valid_event();
+        event.occurred_at = now - std::chrono::hours(24 * days);
+        event.received_at = now; // Authoritative server timestamp at ingestion time
+
+        auto res = AuditEventValidator::validate(event, limits, now);
+        EXPECT_TRUE(res.is_valid()) << "Event " << days << " days old should be accepted within 36-month retention window";
+    }
+}
+
+TEST(AuditEventValidatorTest, EventExceeding36MonthRetentionHorizonFails) {
     auto now = std::chrono::system_clock::now();
     AuditEventValidationLimits limits;
 
     auto event = create_valid_event();
-    event.occurred_at = now - std::chrono::hours(24 * 400); // 400 days old
+    // 1100 days old (> 1095 days / 36 months) -> rejected
+    event.occurred_at = now - std::chrono::hours(24 * 1100);
 
     auto res = AuditEventValidator::validate(event, limits, now);
     EXPECT_FALSE(res.is_valid());
+
+    bool found_skew_err = false;
+    for (const auto& err : res.errors()) {
+        if (err.code == AuditValidationErrorCode::ClockSkewTooOld) {
+            found_skew_err = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found_skew_err);
 }
 
 TEST(AuditEventValidatorTest, ReceivedAtIntegrity) {
