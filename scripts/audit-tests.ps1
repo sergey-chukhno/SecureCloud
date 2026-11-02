@@ -21,6 +21,7 @@ $env:PATH = "C:\msys64\mingw64\bin;" + $env:PATH
 $targets = @(
     # Unit tests
     "securecloud_audit_acknowledgement_manager_test",
+    "securecloud_audit_anti_recursion_guard_test",
     "securecloud_audit_config_test",
     "securecloud_audit_deduplication_pipeline_test",
     "securecloud_audit_event_mapper_test",
@@ -48,6 +49,7 @@ $targets = @(
     "securecloud_audit_grpc_producer_identity_validator_test",
     "securecloud_audit_ingestion_pipeline_test",
     "securecloud_audit_insert_worker_pool_test",
+    "securecloud_audit_internal_security_event_factory_test",
     "securecloud_audit_internal_security_event_types_test",
     "securecloud_audit_producer_identity_validator_test",
     "securecloud_audit_sensitive_data_guard_test",
