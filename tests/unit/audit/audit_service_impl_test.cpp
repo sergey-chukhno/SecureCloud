@@ -1,5 +1,5 @@
-#include "service/audit_service_impl.hpp"
 #include "security/internal_security_event_recorder.hpp"
+#include "service/audit_service_impl.hpp"
 
 #include <chrono>
 #include <gmock/gmock.h>

@@ -1,6 +1,6 @@
-#include "security/internal_security_event_recorder.hpp"
 #include "domain/audit_event_validator.hpp"
 #include "repository/audit_event_repository_interface.hpp"
+#include "security/internal_security_event_recorder.hpp"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -56,18 +56,17 @@ class InternalSecurityEventRecorderUnitTest : public ::testing::Test {
 TEST_F(InternalSecurityEventRecorderUnitTest, EventClassificationAndCanonicalMapping) {
     InternalSecurityEventFactory factory{"audit-node-01"};
 
-    const std::vector<InternalSecurityEventType> all_types = {
-        InternalSecurityEventType::UnauthenticatedConnection,
-        InternalSecurityEventType::ProducerIdentityMismatch,
-        InternalSecurityEventType::UntrustedClientCertificate,
-        InternalSecurityEventType::SensitiveDataDetected,
-        InternalSecurityEventType::MalformedPayloadStructure,
-        InternalSecurityEventType::ExcessiveClockSkew,
-        InternalSecurityEventType::OversizedBatchRejected,
-        InternalSecurityEventType::IngestionQueueSaturated,
-        InternalSecurityEventType::PersistenceStorageFailure,
-        InternalSecurityEventType::ServiceStarted,
-        InternalSecurityEventType::ServiceDraining};
+    const std::vector<InternalSecurityEventType> all_types = {InternalSecurityEventType::UnauthenticatedConnection,
+                                                              InternalSecurityEventType::ProducerIdentityMismatch,
+                                                              InternalSecurityEventType::UntrustedClientCertificate,
+                                                              InternalSecurityEventType::SensitiveDataDetected,
+                                                              InternalSecurityEventType::MalformedPayloadStructure,
+                                                              InternalSecurityEventType::ExcessiveClockSkew,
+                                                              InternalSecurityEventType::OversizedBatchRejected,
+                                                              InternalSecurityEventType::IngestionQueueSaturated,
+                                                              InternalSecurityEventType::PersistenceStorageFailure,
+                                                              InternalSecurityEventType::ServiceStarted,
+                                                              InternalSecurityEventType::ServiceDraining};
 
     SecurityEventContext ctx;
     ctx.rpc_method = "TestPipeline";
@@ -138,10 +137,10 @@ TEST_F(InternalSecurityEventRecorderUnitTest, SensitiveDataExclusion) {
 // Test 5: Queue Saturation & Non-Blocking Drop
 TEST_F(InternalSecurityEventRecorderUnitTest, QueueSaturationAndNonBlockingDrop) {
     EXPECT_CALL(*mock_repo_, insert_batch_classified(_))
-        .WillRepeatedly(Return(repository::RepositoryBatchWriteResult{
-            .status = repository::RepositoryWriteStatus::DeterministicFailure,
-            .error_code = "QUEUE_FULL",
-            .sanitized_reason = "Ingestion queue saturated"}));
+        .WillRepeatedly(Return(
+            repository::RepositoryBatchWriteResult{.status = repository::RepositoryWriteStatus::DeterministicFailure,
+                                                   .error_code = "QUEUE_FULL",
+                                                   .sanitized_reason = "Ingestion queue saturated"}));
 
     SecurityEventContext ctx;
     for (int i = 0; i < 50; ++i) {

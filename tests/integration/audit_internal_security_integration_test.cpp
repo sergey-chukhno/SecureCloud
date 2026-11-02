@@ -1,10 +1,10 @@
+#include "repository/audit_event_repository_interface.hpp"
 #include "security/internal_security_event_recorder.hpp"
 #include "service/audit_service_impl.hpp"
-#include "repository/audit_event_repository_interface.hpp"
 
+#include <atomic>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-#include <atomic>
 #include <memory>
 #include <mutex>
 #include <thread>
@@ -24,24 +24,22 @@ class InMemoryTestRepository : public repository::IAuditEventRepository {
         return true;
     }
 
-    repository::RepositoryBatchWriteResult insert_batch_classified(
-        const std::vector<domain::AuditEvent>& events) override {
+    repository::RepositoryBatchWriteResult
+    insert_batch_classified(const std::vector<domain::AuditEvent>& events) override {
         insert_batch(events);
         return repository::RepositoryBatchWriteResult{
-            .status = repository::RepositoryWriteStatus::Committed,
-            .error_code = "",
-            .sanitized_reason = ""};
+            .status = repository::RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
     }
 
-    std::vector<domain::AuditEvent> query_by_time_range(
-        std::chrono::system_clock::time_point, std::chrono::system_clock::time_point, uint32_t) override {
+    std::vector<domain::AuditEvent> query_by_time_range(std::chrono::system_clock::time_point,
+                                                        std::chrono::system_clock::time_point, uint32_t) override {
         std::lock_guard<std::mutex> lock(mutex_);
         return events_;
     }
 
-    std::vector<domain::AuditEvent> query_by_producer(
-        const std::string& producer_service, std::chrono::system_clock::time_point,
-        std::chrono::system_clock::time_point, uint32_t) override {
+    std::vector<domain::AuditEvent> query_by_producer(const std::string& producer_service,
+                                                      std::chrono::system_clock::time_point,
+                                                      std::chrono::system_clock::time_point, uint32_t) override {
         std::lock_guard<std::mutex> lock(mutex_);
         std::vector<domain::AuditEvent> result;
         for (const auto& e : events_) {
@@ -52,13 +50,9 @@ class InMemoryTestRepository : public repository::IAuditEventRepository {
         return result;
     }
 
-    std::vector<domain::AuditEvent> query_by_correlation_id(const std::string&, uint32_t) override {
-        return {};
-    }
+    std::vector<domain::AuditEvent> query_by_correlation_id(const std::string&, uint32_t) override { return {}; }
 
-    std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId&) override {
-        return std::nullopt;
-    }
+    std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId&) override { return std::nullopt; }
 
     size_t stored_count() const {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -81,7 +75,8 @@ class AuditInternalSecurityIntegrationTest : public ::testing::Test {
         security::GrpcProducerIdentityValidator::set_bypass_peer_verification_for_testing(true);
         repo_ = std::make_shared<InMemoryTestRepository>();
         ingestion_service_ = std::make_shared<service::AuditIngestionService>(repo_);
-        recorder_ = std::make_shared<security::InternalSecurityEventRecorder>(ingestion_service_, "audit-integration-node");
+        recorder_ =
+            std::make_shared<security::InternalSecurityEventRecorder>(ingestion_service_, "audit-integration-node");
         service_ = std::make_unique<service::AuditServiceImpl>(ingestion_service_, recorder_);
     }
 
@@ -93,7 +88,8 @@ class AuditInternalSecurityIntegrationTest : public ::testing::Test {
         v1::AuditEventProto event;
         event.set_event_id("018f6e4a-7b3c-7000-8000-000000000001");
         event.set_occurred_at_ms(
-            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count());
         event.set_event_type("user.authentication.success");
         event.set_severity(v1::SEVERITY_INFO);
         event.set_producer_service(v1::PRODUCER_SERVICE_AUTH);
