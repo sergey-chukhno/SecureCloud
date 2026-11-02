@@ -405,7 +405,34 @@ TEST_F(MessagingDeliveryStateGrpcTest, SendReadReceiptRpc_ImpersonationRejected)
     state.delivery_state = DeliveryState::Delivered;
     delivery_repo_->save_recipient_delivery_states({state});
 
-    // Alice attempts to mark read for Bob's device
+    // Alice attempts to mark read for Bob's recipient delivery (user impersonation)
+    grpc::ClientContext context;
+    context.AddMetadata("x-user-id", user_alice.str());
+    context.AddMetadata("x-device-id", dev_bob.str());
+
+    v1::SendReadReceiptRequest request;
+    request.set_conversation_id(conv_id.to_string());
+    request.set_message_id(msg_id.to_string());
+    request.set_reader_device_id(dev_bob.str());
+
+    v1::SendReadReceiptResponse response;
+    auto status = stub_->SendReadReceipt(&context, request, &response);
+
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
+}
+
+TEST_F(MessagingDeliveryStateGrpcTest, SendReadReceiptRpc_CrossDeviceImpersonationRejected) {
+    auto conv_id = ConversationId::generate_v7();
+    auto msg_id = MessageId::generate_v7();
+    auto user_alice = *UserId::from_string("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+    DeviceId dev_bob("0191ec4d-91b4-7b4d-b6a9-8e41e3d36003");
+
+    ConversationParticipantEntity part_alice;
+    part_alice.conversation_id = conv_id;
+    part_alice.user_id = user_alice;
+    part_alice.status = MembershipStatus::Active;
+    membership_repo_->add_participant(part_alice);
+
     grpc::ClientContext context;
     context.AddMetadata("x-user-id", user_alice.str());
     context.AddMetadata("x-device-id", "0191ec4d-91b4-7b4d-b6a9-8e41e3d36004");
@@ -418,7 +445,7 @@ TEST_F(MessagingDeliveryStateGrpcTest, SendReadReceiptRpc_ImpersonationRejected)
     v1::SendReadReceiptResponse response;
     auto status = stub_->SendReadReceipt(&context, request, &response);
 
-    EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::FAILED_PRECONDITION);
 }
 
 TEST_F(MessagingDeliveryStateGrpcTest, SendReadReceiptRpc_RevokedDeviceRejected) {

@@ -71,12 +71,19 @@ void InsertWorkerPool::worker_loop() {
         }
 
         try {
-            repository_->insert_batch(events);
+            bool ok = repository_->insert_batch(events);
+            if (ok) {
+                total_inserted_batches_.fetch_add(1, std::memory_order_relaxed);
+                total_inserted_events_.fetch_add(events.size(), std::memory_order_relaxed);
 
-            total_inserted_batches_.fetch_add(1, std::memory_order_relaxed);
-            total_inserted_events_.fetch_add(events.size(), std::memory_order_relaxed);
+                AcknowledgementManager::complete_batch_success(batch);
+            } else {
+                total_failed_batches_.fetch_add(1, std::memory_order_relaxed);
+                total_failed_events_.fetch_add(events.size(), std::memory_order_relaxed);
 
-            AcknowledgementManager::complete_batch_success(batch);
+                AcknowledgementManager::complete_batch_failure(batch, "UNAVAILABLE",
+                                                               "ClickHouse batch persistence returned false");
+            }
         } catch (const repository::ClickHouseTimeoutException& ex) {
             (void)ex;
             total_failed_batches_.fetch_add(1, std::memory_order_relaxed);

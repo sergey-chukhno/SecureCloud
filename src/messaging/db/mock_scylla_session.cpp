@@ -128,6 +128,11 @@ void MockScyllaSession::set_ping_healthy(bool healthy) noexcept {
     ping_healthy_ = healthy;
 }
 
+std::unordered_map<std::string, std::string> MockScyllaSession::get_prepared_statements() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return prepared_statements_;
+}
+
 std::vector<std::string> MockScyllaSession::get_executed_queries() {
     std::lock_guard<std::mutex> lock(mutex_);
     return executed_queries_;

@@ -1,5 +1,19 @@
 enable_testing()
 
+if(TARGET GTest::gmock AND NOT TARGET GTest::gmock_main)
+    # Fallback for MSYS2/MinGW where GTestConfig.cmake omits GTest::gmock_main
+    find_library(GMOCK_LIB NAMES gmock gmockd)
+    find_library(GMOCK_MAIN_LIB NAMES gmock_main gmock_maind)
+
+    if(GMOCK_LIB AND GMOCK_MAIN_LIB)
+        add_library(GTest::gmock_main UNKNOWN IMPORTED)
+        set_target_properties(GTest::gmock_main PROPERTIES
+                IMPORTED_LOCATION "${GMOCK_MAIN_LIB}"
+                INTERFACE_LINK_LIBRARIES "GTest::gmock;${GMOCK_LIB}"
+        )
+    endif()
+endif()
+
 set(CMAKE_GTEST_DISCOVER_TESTS_DISCOVERY_MODE PRE_TEST)
 
 if(WIN32)

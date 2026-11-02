@@ -224,11 +224,11 @@ TEST_F(AuditDeduplicationPipelineTest, ConcurrentSubmissionsOfSameEventCoalesceW
 
     auto event = build_sample_event("018f6e4a-7b3c-7000-8000-000000000304");
 
-    const int thread_count = 32;
+    const size_t thread_count = 32;
     std::vector<std::thread> threads;
     std::vector<service::IngestionResult> results(thread_count);
 
-    for (int i = 0; i < thread_count; ++i) {
+    for (size_t i = 0; i < thread_count; ++i) {
         threads.emplace_back([&service, event, &results, i] { results[i] = service.ingest_single(event); });
     }
 
@@ -236,7 +236,7 @@ TEST_F(AuditDeduplicationPipelineTest, ConcurrentSubmissionsOfSameEventCoalesceW
         t.join();
     }
 
-    for (int i = 0; i < thread_count; ++i) {
+    for (size_t i = 0; i < thread_count; ++i) {
         EXPECT_TRUE(results[i].success);
     }
 

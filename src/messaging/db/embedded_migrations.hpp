@@ -166,4 +166,9 @@ ALTER TABLE securecloud_messaging.pending_deliveries_by_device ADD protocol_vers
 ALTER TABLE securecloud_messaging.pending_deliveries_by_device ADD one_time_prekey_id text;
 )CQL";
 
+inline constexpr std::string_view k_v005_message_id_indexes_cql = R"CQL(
+CREATE INDEX IF NOT EXISTS idx_messages_by_id ON securecloud_messaging.messages_by_conversation (message_id);
+CREATE INDEX IF NOT EXISTS idx_pending_deliveries_by_msg_id ON securecloud_messaging.pending_deliveries_by_device (message_id);
+)CQL";
+
 } // namespace securecloud::messaging::db
