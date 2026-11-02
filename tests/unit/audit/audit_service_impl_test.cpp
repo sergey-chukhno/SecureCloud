@@ -11,6 +11,7 @@
 namespace securecloud::audit::service::testing {
 
 using ::testing::_;
+using ::testing::NiceMock;
 using ::testing::Return;
 
 class MockAuditEventRepository : public repository::IAuditEventRepository {
@@ -33,9 +34,9 @@ class AuditServiceImplTest : public ::testing::Test {
   protected:
     void SetUp() override {
         security::GrpcProducerIdentityValidator::set_bypass_peer_verification_for_testing(true);
-        mock_repo_ = std::make_shared<MockAuditEventRepository>();
+        mock_repo_ = std::make_shared<NiceMock<MockAuditEventRepository>>();
 
-        // Allow un-mocked secondary persistence calls (like internal security events) to succeed by default
+        // Default behavior for secondary implicit persistence calls (e.g., internal security event logging)
         ON_CALL(*mock_repo_, insert_batch(_)).WillByDefault(Return(true));
 
         ingestion_service_ = std::make_shared<AuditIngestionService>(mock_repo_);
@@ -69,7 +70,7 @@ class AuditServiceImplTest : public ::testing::Test {
         return event;
     }
 
-    std::shared_ptr<MockAuditEventRepository> mock_repo_;
+    std::shared_ptr<NiceMock<MockAuditEventRepository>> mock_repo_;
     std::shared_ptr<AuditIngestionService> ingestion_service_;
     std::shared_ptr<security::InternalSecurityEventRecorder> security_recorder_;
     std::unique_ptr<AuditServiceImpl> service_;
