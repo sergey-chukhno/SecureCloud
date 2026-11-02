@@ -44,6 +44,9 @@ class BoundedDeliveryScheduler {
     /// Invoked when a device disconnects or is revoked.
     std::vector<domain::DeliveryTask> drain_device_queue(const domain::DeviceId& device_id);
 
+    /// Evicts and purges all queued tasks for a revoked device. Returns the count of purged tasks.
+    size_t purge_device_tasks(const domain::DeviceId& device_id);
+
     /// Clears all queues and discards all pending tasks.
     void clear();
 

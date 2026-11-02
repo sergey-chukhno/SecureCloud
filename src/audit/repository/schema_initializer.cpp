@@ -43,7 +43,7 @@ ALTER TABLE securecloud_audit.audit_events MODIFY TTL toDateTime(occurred_at) + 
 
 SchemaInitializer::SchemaInitializer(const ClickHouseConfig& config) : config_(config) {}
 
- bool SchemaInitializer::execute_http_query(const std::string& query, std::string* out_response) const {
+bool SchemaInitializer::execute_http_query(const std::string& query, std::string* out_response) const {
     httplib::Client client(config_.host, config_.port);
 
     const auto conn_sec = std::chrono::milliseconds(config_.connect_timeout_ms);

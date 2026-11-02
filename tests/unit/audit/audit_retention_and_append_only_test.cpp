@@ -4,8 +4,8 @@
 #include "repository/audit_repository_exceptions.hpp"
 #include "repository/schema_initializer.hpp"
 
-#include <gtest/gtest.h>
 #include <chrono>
+#include <gtest/gtest.h>
 
 namespace securecloud::audit::test {
 
@@ -24,8 +24,8 @@ TEST(AuditRetentionAndAppendOnlyUnitTest, AppendOnlySqlGuardPermitsSelectAndInse
     EXPECT_NO_THROW(AppendOnlySqlGuard::validate_query_sql(
         "SELECT event_id, occurred_at FROM securecloud_audit.audit_events WHERE occurred_at >= now()"));
 
-    EXPECT_NO_THROW(AppendOnlySqlGuard::validate_insert_sql(
-        "INSERT INTO securecloud_audit.audit_events FORMAT TabSeparated"));
+    EXPECT_NO_THROW(
+        AppendOnlySqlGuard::validate_insert_sql("INSERT INTO securecloud_audit.audit_events FORMAT TabSeparated"));
 }
 
 TEST(AuditRetentionAndAppendOnlyUnitTest, AppendOnlySqlGuardBlocksUpdateDeleteTruncateDropAndMultiStatement) {
@@ -37,8 +37,7 @@ TEST(AuditRetentionAndAppendOnlyUnitTest, AppendOnlySqlGuardBlocksUpdateDeleteTr
                      "ALTER TABLE securecloud_audit.audit_events UPDATE actor_id = 'forged' WHERE 1=1"),
                  AppendOnlyViolationException);
 
-    EXPECT_THROW(AppendOnlySqlGuard::validate_query_sql(
-                     "ALTER TABLE securecloud_audit.audit_events DELETE WHERE 1=1"),
+    EXPECT_THROW(AppendOnlySqlGuard::validate_query_sql("ALTER TABLE securecloud_audit.audit_events DELETE WHERE 1=1"),
                  AppendOnlyViolationException);
 
     // Destructive DML/DDL queries
@@ -56,8 +55,8 @@ TEST(AuditRetentionAndAppendOnlyUnitTest, AppendOnlySqlGuardBlocksUpdateDeleteTr
                      "SELECT * FROM securecloud_audit.audit_events; DROP TABLE securecloud_audit.audit_events"),
                  AppendOnlyViolationException);
 
-    EXPECT_THROW(AppendOnlySqlGuard::validate_insert_sql(
-                     "INSERT INTO securecloud_audit.audit_events FORMAT TabSeparated; DROP TABLE securecloud_audit.audit_events"),
+    EXPECT_THROW(AppendOnlySqlGuard::validate_insert_sql("INSERT INTO securecloud_audit.audit_events FORMAT "
+                                                         "TabSeparated; DROP TABLE securecloud_audit.audit_events"),
                  AppendOnlyViolationException);
 }
 
@@ -78,7 +77,8 @@ TEST(AuditRetentionAndAppendOnlyUnitTest, SchemaVerificationReportRejectsMissing
     }
 
     // Invalid: TTL references received_at instead of occurred_at
-    report.create_table_query = "CREATE TABLE securecloud_audit.audit_events (...) TTL toDateTime(received_at) + INTERVAL 36 MONTH DELETE";
+    report.create_table_query =
+        "CREATE TABLE securecloud_audit.audit_events (...) TTL toDateTime(received_at) + INTERVAL 36 MONTH DELETE";
     {
         auto r = report;
         std::string ttl_clause = r.create_table_query.substr(r.create_table_query.find("TTL"));

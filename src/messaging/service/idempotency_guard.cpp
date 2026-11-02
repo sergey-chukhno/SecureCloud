@@ -68,9 +68,10 @@ void MessageSubmissionIdempotencyGuard::mark_processing(const domain::MessageSub
     repo_->save_submission(record);
 }
 
-void MessageSubmissionIdempotencyGuard::mark_committed(const domain::MessageSubmissionCommand& cmd,
-                                                       const std::string& request_fingerprint,
-                                                       const domain::MessageId& message_id, uint64_t message_sequence) {
+void MessageSubmissionIdempotencyGuard::mark_committed(
+    const domain::MessageSubmissionCommand& cmd, const std::string& request_fingerprint,
+    const domain::MessageId& message_id, uint64_t message_sequence,
+    std::optional<std::chrono::system_clock::time_point> accepted_at) {
     domain::IdempotencyRecord record;
     record.sender_device_id = cmd.sender_device_id;
     record.idempotency_key = cmd.client_idempotency_token;
@@ -78,7 +79,7 @@ void MessageSubmissionIdempotencyGuard::mark_committed(const domain::MessageSubm
     record.conversation_id = cmd.conversation_id;
     record.message_sequence = message_sequence;
     record.submission_status = domain::SubmissionStatus::Committed;
-    record.created_at = std::chrono::system_clock::now();
+    record.created_at = accepted_at.value_or(std::chrono::system_clock::now());
     record.request_fingerprint = request_fingerprint;
 
     repo_->save_submission(record);

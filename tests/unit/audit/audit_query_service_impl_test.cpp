@@ -1,4 +1,5 @@
 #include "repository/audit_repository_exceptions.hpp"
+#include "security/grpc_producer_identity_validator.hpp"
 #include "service/audit_query_service_impl.hpp"
 
 #include <gtest/gtest.h>
@@ -52,11 +53,16 @@ class MockQueryRepository : public repository::IAuditEventRepository {
 class AuditQueryServiceImplTest : public ::testing::Test {
   protected:
     void SetUp() override {
+        security::GrpcProducerIdentityValidator::set_bypass_peer_verification_for_testing(true);
         repo_ = std::make_shared<MockQueryRepository>();
         QueryConfig cfg;
         cfg.workers = 4;
         app_service_ = std::make_shared<query::AuditQueryApplicationService>(repo_, cfg);
         service_impl_ = std::make_unique<AuditQueryServiceImpl>(app_service_);
+    }
+
+    void TearDown() override {
+        security::GrpcProducerIdentityValidator::set_bypass_peer_verification_for_testing(false);
     }
 
     std::shared_ptr<MockQueryRepository> repo_;

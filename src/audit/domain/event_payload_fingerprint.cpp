@@ -17,14 +17,26 @@ void update_uint8(EVP_MD_CTX* ctx, uint8_t val) {
 }
 
 void update_uint32_be(EVP_MD_CTX* ctx, uint32_t val) {
-    uint32_t be_val = std::endian::native == std::endian::big ? val : __builtin_bswap32(val);
-    EVP_DigestUpdate(ctx, &be_val, sizeof(be_val));
+    uint8_t buf[4];
+    buf[0] = static_cast<uint8_t>((val >> 24) & 0xFF);
+    buf[1] = static_cast<uint8_t>((val >> 16) & 0xFF);
+    buf[2] = static_cast<uint8_t>((val >> 8) & 0xFF);
+    buf[3] = static_cast<uint8_t>(val & 0xFF);
+    EVP_DigestUpdate(ctx, buf, sizeof(buf));
 }
 
 void update_int64_be(EVP_MD_CTX* ctx, int64_t val) {
-    uint64_t uval = static_cast<uint64_t>(val);
-    uint64_t be_val = std::endian::native == std::endian::big ? uval : __builtin_bswap64(uval);
-    EVP_DigestUpdate(ctx, &be_val, sizeof(be_val));
+    auto uval = static_cast<uint64_t>(val);
+    uint8_t buf[8];
+    buf[0] = static_cast<uint8_t>((uval >> 56) & 0xFF);
+    buf[1] = static_cast<uint8_t>((uval >> 48) & 0xFF);
+    buf[2] = static_cast<uint8_t>((uval >> 40) & 0xFF);
+    buf[3] = static_cast<uint8_t>((uval >> 32) & 0xFF);
+    buf[4] = static_cast<uint8_t>((uval >> 24) & 0xFF);
+    buf[5] = static_cast<uint8_t>((uval >> 16) & 0xFF);
+    buf[6] = static_cast<uint8_t>((uval >> 8) & 0xFF);
+    buf[7] = static_cast<uint8_t>(uval & 0xFF);
+    EVP_DigestUpdate(ctx, buf, sizeof(buf));
 }
 
 void update_string(EVP_MD_CTX* ctx, std::string_view str) {

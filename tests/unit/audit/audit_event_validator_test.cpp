@@ -123,7 +123,8 @@ TEST(AuditEventValidatorTest, DelayedAndOutOfOrderEventsWithinRetentionWindowPas
         event.received_at = now; // Authoritative server timestamp at ingestion time
 
         auto res = AuditEventValidator::validate(event, limits, now);
-        EXPECT_TRUE(res.is_valid()) << "Event " << days << " days old should be accepted within 36-month retention window";
+        EXPECT_TRUE(res.is_valid()) << "Event " << days
+                                    << " days old should be accepted within 36-month retention window";
     }
 }
 

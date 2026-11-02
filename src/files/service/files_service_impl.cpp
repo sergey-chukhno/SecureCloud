@@ -56,6 +56,22 @@ FilesServiceImpl::FilesServiceImpl(FilesServiceDependencies deps, std::string ex
     if (!deps_.chunk_storage_service) {
         deps_.chunk_storage_service = std::make_shared<ChunkStorageService>(deps_.db_pool, deps_.s3_client);
     }
+    if (!deps_.object_assembly_engine && deps_.s3_client) {
+        deps_.object_assembly_engine = std::make_shared<ObjectAssemblyEngine>(deps_.s3_client);
+    }
+    if (!deps_.finalization_service && deps_.object_assembly_engine && deps_.db_pool) {
+        deps_.finalization_service =
+            std::make_shared<FileFinalizationService>(deps_.db_pool, deps_.object_assembly_engine);
+    }
+    if (!deps_.download_manager && deps_.s3_client && deps_.db_pool) {
+        auto download_engine = std::make_shared<ChunkDownloadEngine>(deps_.s3_client);
+        deps_.download_manager = std::make_shared<DownloadManager>(deps_.db_pool, download_engine);
+    }
+    if (!deps_.capability_manager && deps_.db_pool) {
+        auto signer = std::make_shared<auth::crypto::Ed25519TokenSigner>("sc-files-v1");
+        auto verifier = auth::crypto::Ed25519TokenVerifier::from_signer(*signer);
+        deps_.capability_manager = std::make_shared<FileCapabilityManager>(deps_.db_pool, signer, std::move(verifier));
+    }
 }
 
 FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db_pool,
@@ -64,13 +80,26 @@ FilesServiceImpl::FilesServiceImpl(std::shared_ptr<db::FilesDbConnectionPool> db
           .db_pool = db_pool,
           .s3_client = s3_client,
           .upload_session_manager = std::make_shared<UploadSessionManager>(db_pool),
-          .download_manager = std::make_shared<DownloadManager>(),
+          .download_manager = (db_pool && s3_client) ? std::make_shared<DownloadManager>(
+                                                           db_pool, std::make_shared<ChunkDownloadEngine>(s3_client))
+                                                     : std::make_shared<DownloadManager>(),
           .storage_engine = std::make_shared<StorageEngine>(),
           .metadata_manager = std::make_shared<MetadataManager>(db_pool),
           .lifecycle_service = std::make_shared<FileLifecycleService>(db_pool),
           .chunk_storage_service = std::make_shared<ChunkStorageService>(db_pool, s3_client),
+          .object_assembly_engine = s3_client ? std::make_shared<ObjectAssemblyEngine>(s3_client) : nullptr,
+          .finalization_service = (db_pool && s3_client)
+                                      ? std::make_shared<FileFinalizationService>(
+                                            db_pool, std::make_shared<ObjectAssemblyEngine>(s3_client))
+                                      : nullptr,
       },
-      expected_client_identity_(std::move(expected_client_identity)) {}
+      expected_client_identity_(std::move(expected_client_identity)) {
+    if (deps_.db_pool && !deps_.capability_manager) {
+        auto signer = std::make_shared<auth::crypto::Ed25519TokenSigner>("sc-files-v1");
+        auto verifier = auth::crypto::Ed25519TokenVerifier::from_signer(*signer);
+        deps_.capability_manager = std::make_shared<FileCapabilityManager>(deps_.db_pool, signer, std::move(verifier));
+    }
+}
 
 const std::string& FilesServiceImpl::expected_client_identity() const noexcept {
     return expected_client_identity_;
@@ -151,6 +180,27 @@ grpc::Status FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ct
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid request or response pointer");
         logger.finish(status);
         return status;
+    }
+
+    BulkheadPermit upload_permit;
+    if (deps_.upload_bulkhead) {
+        upload_permit = deps_.upload_bulkhead->acquire_with_default_timeout();
+        if (!upload_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Upload concurrency capacity exhausted (domain: " + deps_.upload_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
+    }
+
+    if (request->encrypted_size_bytes() > 0) {
+        std::string size_err;
+        if (!validate_file_transfer_size(request->encrypted_size_bytes(), deps_.max_file_transfer_bytes, size_err)) {
+            auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, size_err);
+            logger.finish(status);
+            return status;
+        }
     }
 
     std::cout << "[SecureCloud] [files] RPC CreateFileUpload request received for file_id='" << request->file_id()
@@ -289,16 +339,50 @@ grpc::Status FilesServiceImpl::UploadChunk(const grpc::AuthContext* auth_ctx, co
         return status;
     }
 
-    // Zero-Plaintext Invariant: log upload_id, chunk_index, and size only; never log encrypted_data bytes
-    std::cout << "[SecureCloud] [files] RPC UploadChunk request received for upload_id='" << request->upload_id()
-              << "' chunk_index=" << request->chunk_index() << " size=" << request->chunk_size_bytes() << " bytes\n";
-
     if (!is_valid_uuid(request->upload_id())) {
         auto status =
             grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
         logger.finish(status);
         return status;
     }
+
+    BulkheadPermit upload_permit;
+    if (deps_.upload_bulkhead) {
+        upload_permit = deps_.upload_bulkhead->acquire_with_default_timeout();
+        if (!upload_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Upload concurrency capacity exhausted (domain: " + deps_.upload_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
+    }
+
+    // Chunk Request Size Cap (5 MiB default)
+    size_t chunk_bytes =
+        request->chunk_size_bytes() > 0 ? request->chunk_size_bytes() : request->encrypted_data().size();
+    std::string chunk_size_err;
+    if (!validate_chunk_request_size(chunk_bytes, deps_.max_chunk_request_bytes, chunk_size_err)) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, chunk_size_err);
+        logger.finish(status);
+        return status;
+    }
+
+    // Global Memory Buffer Reservation (Backpressure / Bounded Budget)
+    MemoryBufferReservation mem_reservation;
+    if (deps_.memory_tracker) {
+        mem_reservation = deps_.memory_tracker->try_reserve(chunk_bytes);
+        if (!mem_reservation) {
+            auto status = grpc::Status(grpc::StatusCode::RESOURCE_EXHAUSTED,
+                                       "Global memory buffer budget exhausted for incoming chunk");
+            logger.finish(status);
+            return status;
+        }
+    }
+
+    // Zero-Plaintext Invariant: log upload_id, chunk_index, and size only; never log encrypted_data bytes
+    std::cout << "[SecureCloud] [files] RPC UploadChunk request received for upload_id='" << request->upload_id()
+              << "' chunk_index=" << request->chunk_index() << " size=" << request->chunk_size_bytes() << " bytes\n";
 
     ChunkPayloadDto dto{
         .upload_id = request->upload_id(),
@@ -450,26 +534,91 @@ grpc::Status FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_
         return status;
     }
 
+    if (!is_valid_uuid(request->upload_id())) {
+        auto status =
+            grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "upload_id must be a valid RFC 4122 / UUIDv7 string");
+        logger.finish(status);
+        return status;
+    }
+
+    BulkheadPermit upload_permit;
+    if (deps_.upload_bulkhead) {
+        upload_permit = deps_.upload_bulkhead->acquire_with_default_timeout();
+        if (!upload_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Upload concurrency capacity exhausted (domain: " + deps_.upload_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
+    }
+
     if (!request->file_id().empty() && !is_valid_uuid(request->file_id())) {
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format");
         logger.finish(status);
         return status;
     }
 
-    // Lifecycle validation hook (FILES-004-T04): verify that UPLOADING -> FINALIZING is legal
-    if (!is_valid_state_transition(FileStatus::Uploading, FileStatus::Finalizing)) {
-        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION,
-                                   "State transition from UPLOADING to FINALIZING is disallowed");
+    if (!deps_.finalization_service) {
+        auto status = grpc::Status(grpc::StatusCode::UNAVAILABLE, "Finalization service uninitialized");
         logger.finish(status);
         return status;
     }
 
-    std::cout << "[SecureCloud] [files] RPC FinalizeFileUpload request received for upload_id='" << request->upload_id()
-              << "' file_id='" << request->file_id() << "'\n";
+    FinalizeUploadRequestDto dto{
+        .upload_id = request->upload_id(),
+        .file_id = request->file_id(),
+        .caller_user_id = "",
+        .expected_ciphertext_sha256 = request->expected_ciphertext_sha256(),
+    };
 
-    auto status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, std::string(k_unimplemented_skeleton_message));
-    logger.finish(status);
-    return status;
+    try {
+        auto result = deps_.finalization_service->finalize_file_upload(dto);
+        response->set_file_id(result.file_id);
+        response->set_lifecycle_state(v1::FILE_LIFECYCLE_STATE_AVAILABLE);
+        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(result.available_at.time_since_epoch()).count();
+        response->set_available_at_unix_ms(ms);
+
+        auto status = grpc::Status::OK;
+        logger.finish(status);
+        return status;
+    } catch (const EntityNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const FinalizationPreconditionException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const ChunkIntegrityException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3IntegrityException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3ObjectNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3AuthenticationException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3ConnectionException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::invalid_argument& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::exception& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, ex.what());
+        logger.finish(status);
+        return status;
+    }
 }
 
 // ==========================================
@@ -497,6 +646,18 @@ grpc::Status FilesServiceImpl::GetFileMetadata(const grpc::AuthContext* auth_ctx
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid request or response pointer");
         logger.finish(status);
         return status;
+    }
+
+    BulkheadPermit metadata_permit;
+    if (deps_.metadata_bulkhead) {
+        metadata_permit = deps_.metadata_bulkhead->acquire_with_default_timeout();
+        if (!metadata_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Metadata concurrency capacity exhausted (domain: " + deps_.metadata_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
     }
 
     std::cout << "[SecureCloud] [files] RPC GetFileMetadata request received for file_id='" << request->file_id()
@@ -575,11 +736,20 @@ grpc::Status FilesServiceImpl::GetFileMetadata(const grpc::AuthContext* auth_ctx
 grpc::Status FilesServiceImpl::DownloadChunk(grpc::ServerContext* context, const v1::DownloadChunkRequest* request,
                                              v1::DownloadChunkResponse* response) {
     const grpc::AuthContext* auth_ctx = (context != nullptr) ? context->auth_context().get() : nullptr;
-    return DownloadChunk(auth_ctx, request, response);
+    static const std::multimap<grpc::string_ref, grpc::string_ref> k_empty_metadata;
+    const auto& metadata = (context != nullptr) ? context->client_metadata() : k_empty_metadata;
+    return DownloadChunk(auth_ctx, request, response, metadata);
 }
 
 grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, const v1::DownloadChunkRequest* request,
                                              v1::DownloadChunkResponse* response) {
+    static const std::multimap<grpc::string_ref, grpc::string_ref> k_empty_metadata;
+    return DownloadChunk(auth_ctx, request, response, k_empty_metadata);
+}
+
+grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, const v1::DownloadChunkRequest* request,
+                                             v1::DownloadChunkResponse* response,
+                                             const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata) {
     std::string peer_identity;
     auto auth_status = check_peer_authorization(auth_ctx, "DownloadChunk", peer_identity);
     if (!auth_status.ok()) {
@@ -594,12 +764,143 @@ grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, 
         return status;
     }
 
-    std::cout << "[SecureCloud] [files] RPC DownloadChunk request received for file_id='" << request->file_id()
-              << "' chunk_index=" << request->chunk_index() << "\n";
+    BulkheadPermit download_permit;
+    if (deps_.download_bulkhead) {
+        download_permit = deps_.download_bulkhead->acquire_with_default_timeout();
+        if (!download_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Download concurrency capacity exhausted (domain: " + deps_.download_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
+    }
 
-    auto status = grpc::Status(grpc::StatusCode::UNIMPLEMENTED, std::string(k_unimplemented_skeleton_message));
-    logger.finish(status);
-    return status;
+    if (!is_valid_uuid(request->file_id())) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format: " + request->file_id());
+        logger.finish(status);
+        return status;
+    }
+
+    // Extract caller identity and capability token from client metadata
+    std::string user_id;
+    std::string device_id;
+    std::string capability_token;
+
+    for (const auto& [key_ref, val_ref] : client_metadata) {
+        std::string key(key_ref.data(), key_ref.size());
+        for (char& c : key)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+
+        if (key == "x-user-id" && user_id.empty()) {
+            user_id = std::string(val_ref.data(), val_ref.size());
+        } else if (key == "x-device-id" && device_id.empty()) {
+            device_id = std::string(val_ref.data(), val_ref.size());
+        } else if ((key == "x-file-access-capability" || key == "x-file-capability") && capability_token.empty()) {
+            capability_token = std::string(val_ref.data(), val_ref.size());
+        }
+    }
+
+    // If capability manager is configured and a capability token is presented, authorize it
+    if (deps_.capability_manager && !capability_token.empty()) {
+        try {
+            deps_.capability_manager->authorize_capability(capability_token, user_id, device_id, request->file_id(),
+                                                           FileCapabilityOperation::Read, 0);
+        } catch (const InvalidCapabilityException& ex) {
+            auto status = grpc::Status(grpc::StatusCode::UNAUTHENTICATED, ex.what());
+            logger.finish(status);
+            return status;
+        } catch (const UnauthorizedFileAccessException& ex) {
+            auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+            logger.finish(status);
+            return status;
+        } catch (const std::exception& ex) {
+            auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+            logger.finish(status);
+            return status;
+        }
+    }
+
+    if (!deps_.download_manager) {
+        auto status = grpc::Status(grpc::StatusCode::UNAVAILABLE, "DownloadManager is not configured");
+        logger.finish(status);
+        return status;
+    }
+
+    try {
+        auto chunk_res =
+            deps_.download_manager->get_chunk_versioned(request->file_id(), 0, request->chunk_index(), peer_identity);
+
+        // Validate chunk size bounds
+        std::string chunk_size_err;
+        if (!validate_chunk_request_size(chunk_res.chunk_size_bytes, deps_.max_chunk_request_bytes, chunk_size_err)) {
+            auto status = grpc::Status(grpc::StatusCode::OUT_OF_RANGE, chunk_size_err);
+            logger.finish(status);
+            return status;
+        }
+
+        // Reserve memory buffer budget for downstream transfer (Backpressure pipeline)
+        MemoryBufferReservation mem_reservation;
+        if (deps_.memory_tracker) {
+            mem_reservation = deps_.memory_tracker->try_reserve(chunk_res.chunk_size_bytes);
+            if (!mem_reservation) {
+                auto status = grpc::Status(grpc::StatusCode::RESOURCE_EXHAUSTED,
+                                           "Global memory buffer budget exhausted during chunk download");
+                logger.finish(status);
+                return status;
+            }
+        }
+
+        response->set_file_id(chunk_res.file_id);
+        response->set_chunk_index(chunk_res.chunk_index);
+        response->set_encrypted_data(chunk_res.encrypted_data);
+        response->set_chunk_size_bytes(chunk_res.chunk_size_bytes);
+        response->set_ciphertext_sha256(chunk_res.ciphertext_sha256);
+
+        auto status = grpc::Status::OK;
+        logger.finish(status);
+        return status;
+    } catch (const UnauthorizedFileAccessException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const FileNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const EntityNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const InvalidDownloadPreconditionException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::out_of_range& ex) {
+        auto status = grpc::Status(grpc::StatusCode::OUT_OF_RANGE, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3ObjectNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3ConnectionException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const storage::S3AuthenticationException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::invalid_argument& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::exception& ex) {
+        auto status = grpc::Status(grpc::StatusCode::INTERNAL, ex.what());
+        logger.finish(status);
+        return status;
+    }
 }
 
 // ==========================================
@@ -628,6 +929,18 @@ grpc::Status FilesServiceImpl::CancelFileUpload(const grpc::AuthContext* auth_ct
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid request or response pointer");
         logger.finish(status);
         return status;
+    }
+
+    BulkheadPermit metadata_permit;
+    if (deps_.metadata_bulkhead) {
+        metadata_permit = deps_.metadata_bulkhead->acquire_with_default_timeout();
+        if (!metadata_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Metadata concurrency capacity exhausted (domain: " + deps_.metadata_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
     }
 
     std::cout << "[SecureCloud] [files] RPC CancelFileUpload request received for upload_id='" << request->upload_id()
@@ -685,6 +998,18 @@ grpc::Status FilesServiceImpl::DeleteFile(const grpc::AuthContext* auth_ctx, con
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid request or response pointer");
         logger.finish(status);
         return status;
+    }
+
+    BulkheadPermit metadata_permit;
+    if (deps_.metadata_bulkhead) {
+        metadata_permit = deps_.metadata_bulkhead->acquire_with_default_timeout();
+        if (!metadata_permit) {
+            auto status = grpc::Status(
+                grpc::StatusCode::RESOURCE_EXHAUSTED,
+                "Metadata concurrency capacity exhausted (domain: " + deps_.metadata_bulkhead->domain_name() + ")");
+            logger.finish(status);
+            return status;
+        }
     }
 
     std::cout << "[SecureCloud] [files] RPC DeleteFile request received for file_id='" << request->file_id() << "'\n";

@@ -97,7 +97,7 @@ TEST_F(BoundedIngestionQueueTest, ConcurrentPushAndPop) {
 
     std::vector<std::thread> producers;
     for (int p = 0; p < num_producers; ++p) {
-        producers.emplace_back([&queue, p, items_per_producer]() {
+        producers.emplace_back([&queue, p]() {
             for (int i = 0; i < items_per_producer; ++i) {
                 IngestionEnvelope env;
                 env.event.event_type = "producer." + std::to_string(p);
