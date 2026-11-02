@@ -35,10 +35,13 @@ struct IngestionConfig {
 };
 
 struct QueryConfig {
-    uint32_t workers{4};              // [1, 32]
-    uint32_t max_page_limit{1000};    // [10, 10000]
-    uint32_t default_page_limit{100}; // [1, max_page_limit]
-    uint32_t query_timeout_ms{10000}; // [500, 60000]
+    uint32_t workers{4};                    // [1, 32]
+    uint32_t max_page_limit{1000};          // [10, 10000]
+    uint32_t default_page_limit{100};       // [1, max_page_limit]
+    uint32_t query_timeout_ms{10000};       // [500, 60000]
+    uint32_t default_time_window_hours{24}; // [1, max_time_window_hours]
+    uint32_t max_time_window_hours{744};    // [1, 2160] (31 days default, 90 days max)
+    uint32_t max_result_bytes{16777216};    // [1048576, 67108864] (16MB default)
 };
 
 struct RetentionConfig {
@@ -47,9 +50,6 @@ struct RetentionConfig {
 };
 
 /// Typed configuration model for Audit service.
-/// Holds common service settings, ClickHouse database connection settings,
-/// ingestion limits, query bounds, and data retention rules.
-/// Strictly excludes Auth/Messaging/Files credentials.
 struct AuditConfig {
     common::configuration::CommonServiceConfig common;
     ClickHouseConfig clickhouse;

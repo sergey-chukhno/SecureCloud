@@ -1187,3 +1187,17 @@ target_link_libraries(securecloud_audit_ingestion_failure_injection_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_ingestion_failure_injection_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Query Integration Test (AUDIT-007-T06)
+add_executable(securecloud_audit_query_integration_test
+        audit_query_integration_test.cpp
+)
+target_link_libraries(securecloud_audit_query_integration_test PRIVATE
+        securecloud::audit_query
+        securecloud::audit_repository
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+gtest_discover_tests(securecloud_audit_query_integration_test)

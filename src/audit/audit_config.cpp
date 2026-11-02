@@ -275,6 +275,36 @@ AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& 
         }
     }
 
+    // SECURECLOUD_AUDIT_DEFAULT_QUERY_WINDOW_HOURS [1, max_time_window_hours]
+    auto def_win_val = source.get("SECURECLOUD_AUDIT_DEFAULT_QUERY_WINDOW_HOURS");
+    if (def_win_val.has_value()) {
+        auto parsed = parse_uint32_bounded("SECURECLOUD_AUDIT_DEFAULT_QUERY_WINDOW_HOURS", def_win_val.value(),
+                                           out_errors, 1, 2160);
+        if (parsed.has_value()) {
+            config.query.default_time_window_hours = parsed.value();
+        }
+    }
+
+    // SECURECLOUD_AUDIT_MAX_QUERY_WINDOW_HOURS [1, 2160]
+    auto max_win_val = source.get("SECURECLOUD_AUDIT_MAX_QUERY_WINDOW_HOURS");
+    if (max_win_val.has_value()) {
+        auto parsed =
+            parse_uint32_bounded("SECURECLOUD_AUDIT_MAX_QUERY_WINDOW_HOURS", max_win_val.value(), out_errors, 1, 2160);
+        if (parsed.has_value()) {
+            config.query.max_time_window_hours = parsed.value();
+        }
+    }
+
+    // SECURECLOUD_AUDIT_QUERY_MAX_RESULT_BYTES [1048576, 67108864]
+    auto max_bytes_val = source.get("SECURECLOUD_AUDIT_QUERY_MAX_RESULT_BYTES");
+    if (max_bytes_val.has_value()) {
+        auto parsed = parse_uint32_bounded("SECURECLOUD_AUDIT_QUERY_MAX_RESULT_BYTES", max_bytes_val.value(),
+                                           out_errors, 1048576, 67108864);
+        if (parsed.has_value()) {
+            config.query.max_result_bytes = parsed.value();
+        }
+    }
+
     // --- Retention Configuration ---
 
     // SECURECLOUD_AUDIT_RETENTION_DAYS [1, 3650]
@@ -304,6 +334,13 @@ AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& 
                              "default_page_limit cannot exceed max_page_limit (" +
                                  std::to_string(config.query.default_page_limit) + " > " +
                                  std::to_string(config.query.max_page_limit) + ")");
+    }
+
+    if (config.query.default_time_window_hours > config.query.max_time_window_hours) {
+        out_errors.add_error("SECURECLOUD_AUDIT_DEFAULT_QUERY_WINDOW_HOURS",
+                             "default_time_window_hours cannot exceed max_time_window_hours (" +
+                                 std::to_string(config.query.default_time_window_hours) + " > " +
+                                 std::to_string(config.query.max_time_window_hours) + ")");
     }
 
     if (config.ingestion.batch_size > config.ingestion.max_queued_events) {

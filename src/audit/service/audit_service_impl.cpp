@@ -97,7 +97,8 @@ grpc::Status AuditServiceImpl::map_error_to_grpc_status(const IngestionResult& r
         return grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, result.error_message);
     }
     if (result.outcome_status == ingestion::IngestionOutcomeStatus::PersistenceFailed ||
-        result.error_code == "REPOSITORY_ERROR" || result.error_code == "PERSISTENCE_FAILED" ||
+        result.error_code == "REPOSITORY_ERROR" || result.error_code == "CLICKHOUSE_ERROR" ||
+        result.error_code == "DATABASE_ERROR" || result.error_code == "PERSISTENCE_FAILED" ||
         result.error_code == "UNAVAILABLE") {
         return grpc::Status(grpc::StatusCode::UNAVAILABLE, result.error_message);
     }

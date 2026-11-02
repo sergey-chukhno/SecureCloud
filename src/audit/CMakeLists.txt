@@ -22,6 +22,29 @@ target_link_libraries(securecloud_audit_domain PUBLIC
         OpenSSL::Crypto
 )
 
+add_library(securecloud_audit_query STATIC
+        query/audit_page_cursor.cpp
+        query/audit_query_validator.cpp
+        query/audit_query_authorizer.cpp
+        query/audit_query_application_service.cpp
+)
+
+add_library(securecloud::audit_query ALIAS securecloud_audit_query)
+
+target_include_directories(securecloud_audit_query PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(securecloud_audit_query PUBLIC
+        securecloud_audit_domain
+        securecloud_audit_config
+        securecloud_audit_repository
+        securecloud::common
+        securecloud::compiler_flags
+        gRPC::grpc++
+        OpenSSL::Crypto
+)
+
 add_library(securecloud_audit_config STATIC
         audit_config.cpp
 )
@@ -41,6 +64,7 @@ add_library(securecloud_audit_repository STATIC
         repository/schema_initializer.cpp
         repository/clickhouse_client.cpp
         repository/clickhouse_event_serializer.cpp
+        repository/clickhouse_query_builder.cpp
         repository/clickhouse_audit_event_repository.cpp
 )
 
@@ -52,6 +76,7 @@ target_include_directories(securecloud_audit_repository PUBLIC
 
 target_link_libraries(securecloud_audit_repository PUBLIC
         securecloud_audit_config
+        securecloud_audit_domain
         securecloud::common
         securecloud::httplib
         securecloud::compiler_flags
@@ -67,6 +92,7 @@ add_library(securecloud_audit_service STATIC
         ingestion/audit_ingestion_pipeline.cpp
         service/audit_proto_mapper.cpp
         service/audit_ingestion_service.cpp
+        service/audit_query_service_impl.cpp
         service/audit_service_impl.cpp
         security/grpc_producer_identity_validator.cpp
 )
@@ -79,6 +105,7 @@ target_include_directories(securecloud_audit_service PUBLIC
 
 target_link_libraries(securecloud_audit_service PUBLIC
         securecloud_audit_domain
+        securecloud_audit_query
         securecloud_audit_repository
         securecloud_proto
         securecloud::common
@@ -99,6 +126,7 @@ target_include_directories(securecloud_audit_server PUBLIC
 target_link_libraries(securecloud_audit_server PUBLIC
         securecloud_audit_config
         securecloud_audit_domain
+        securecloud_audit_query
         securecloud_audit_repository
         securecloud_audit_service
         securecloud::common

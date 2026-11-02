@@ -2,6 +2,7 @@
 
 #include "audit_config.hpp"
 #include "repository/audit_repository_exceptions.hpp"
+#include "repository/clickhouse_query_builder.hpp"
 
 #include <chrono>
 #include <memory>
@@ -24,6 +25,12 @@ class ClickHouseClient {
     /// Executes a read/command SQL query (e.g. SELECT, ALTER).
     [[nodiscard]] virtual bool execute_query(const std::string& query, std::string* out_response = nullptr,
                                              std::chrono::milliseconds timeout = std::chrono::milliseconds(3000));
+
+    /// Executes a read-only parameterized SQL query (readonly=1, param_<key>=val) with result size capping.
+    [[nodiscard]] virtual bool
+    execute_parameterized_query(const ParameterizedClickHouseQuery& query, std::string* out_response = nullptr,
+                                std::chrono::milliseconds timeout = std::chrono::milliseconds(10000),
+                                size_t max_bytes = 16777216);
 
     /// Executes an insert query with raw data payload in HTTP body.
     [[nodiscard]] virtual bool execute_insert(const std::string& query, const std::string& body_data,

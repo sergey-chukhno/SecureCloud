@@ -22,6 +22,12 @@ void GrpcProducerIdentityValidator::set_bypass_peer_verification_for_testing(boo
 
 domain::PeerIdentity GrpcProducerIdentityValidator::extract_peer_identity(const grpc::ServerContext& context) {
     domain::PeerIdentity identity{};
+    if (g_bypass_peer_verification.load(std::memory_order_relaxed)) {
+        identity.is_authenticated = true;
+        identity.common_name = "audit.securecloud.internal";
+        identity.san_dns_names.emplace_back("audit.securecloud.internal");
+        return identity;
+    }
     auto auth_ctx = context.auth_context();
     if (!auth_ctx || !auth_ctx->IsPeerAuthenticated()) {
         identity.is_authenticated = false;
