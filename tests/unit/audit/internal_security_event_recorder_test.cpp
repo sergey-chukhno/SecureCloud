@@ -1,5 +1,5 @@
-#include "security/internal_security_event_recorder.hpp"
 #include "repository/audit_event_repository_interface.hpp"
+#include "security/internal_security_event_recorder.hpp"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -12,7 +12,8 @@ class MockAuditEventRepository : public repository::IAuditEventRepository {
     MOCK_METHOD(repository::RepositoryBatchWriteResult, insert_batch_classified,
                 (const std::vector<domain::AuditEvent>& events), (override));
     MOCK_METHOD(std::vector<domain::AuditEvent>, query_by_time_range,
-                (std::chrono::system_clock::time_point start, std::chrono::system_clock::time_point end, uint32_t limit),
+                (std::chrono::system_clock::time_point start, std::chrono::system_clock::time_point end,
+                 uint32_t limit),
                 (override));
     MOCK_METHOD(std::vector<domain::AuditEvent>, query_by_producer,
                 (const std::string& producer_service, std::chrono::system_clock::time_point start,
@@ -20,8 +21,7 @@ class MockAuditEventRepository : public repository::IAuditEventRepository {
                 (override));
     MOCK_METHOD(std::vector<domain::AuditEvent>, query_by_correlation_id,
                 (const std::string& correlation_id, uint32_t limit), (override));
-    MOCK_METHOD(std::optional<domain::AuditEvent>, find_by_event_id,
-                (const domain::EventId& event_id), (override));
+    MOCK_METHOD(std::optional<domain::AuditEvent>, find_by_event_id, (const domain::EventId& event_id), (override));
 };
 
 class InternalSecurityEventRecorderTest : public ::testing::Test {
@@ -41,10 +41,7 @@ class InternalSecurityEventRecorderTest : public ::testing::Test {
 TEST_F(InternalSecurityEventRecorderTest, SuccessfulEventRecording) {
     EXPECT_CALL(*mock_repo_, insert_batch_classified(::testing::_))
         .WillOnce(::testing::Return(repository::RepositoryBatchWriteResult{
-            .status = repository::RepositoryWriteStatus::Committed,
-            .error_code = "",
-            .sanitized_reason = ""
-        }));
+            .status = repository::RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""}));
 
     SecurityEventContext ctx;
     ctx.verified_peer_identity = "auth.securecloud.internal";
@@ -60,11 +57,10 @@ TEST_F(InternalSecurityEventRecorderTest, SuccessfulEventRecording) {
 
 TEST_F(InternalSecurityEventRecorderTest, DroppedEventOnRepositoryFailure) {
     EXPECT_CALL(*mock_repo_, insert_batch_classified(::testing::_))
-        .WillOnce(::testing::Return(repository::RepositoryBatchWriteResult{
-            .status = repository::RepositoryWriteStatus::DeterministicFailure,
-            .error_code = "CONNECTION_ERROR",
-            .sanitized_reason = "ClickHouse unavailable"
-        }));
+        .WillOnce(::testing::Return(
+            repository::RepositoryBatchWriteResult{.status = repository::RepositoryWriteStatus::DeterministicFailure,
+                                                   .error_code = "CONNECTION_ERROR",
+                                                   .sanitized_reason = "ClickHouse unavailable"}));
 
     SecurityEventContext ctx;
     ctx.peer_socket_address = "10.0.0.5:50055";
@@ -85,10 +81,7 @@ TEST_F(InternalSecurityEventRecorderTest, AntiRecursionGuardDropsReentrantRecord
             EXPECT_FALSE(inner_res);
 
             return repository::RepositoryBatchWriteResult{
-                .status = repository::RepositoryWriteStatus::Committed,
-                .error_code = "",
-                .sanitized_reason = ""
-            };
+                .status = repository::RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
         }));
 
     SecurityEventContext ctx;

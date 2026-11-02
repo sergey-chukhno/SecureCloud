@@ -7,14 +7,12 @@
 
 namespace securecloud::audit::security {
 
-domain::AuditEvent InternalSecurityEventFactory::create_event(
-    InternalSecurityEventType type,
-    const SecurityEventContext& ctx) const {
+domain::AuditEvent InternalSecurityEventFactory::create_event(InternalSecurityEventType type,
+                                                              const SecurityEventContext& ctx) const {
     domain::AuditEvent event{};
 
     event.event_id = domain::EventId::generate_v7();
-    event.occurred_at = std::chrono::time_point_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now());
+    event.occurred_at = std::chrono::time_point_cast<std::chrono::milliseconds>(std::chrono::system_clock::now());
     event.received_at = event.occurred_at;
     event.event_type = std::string(to_event_type_string(type));
     event.severity = to_severity(type);

@@ -7,6 +7,7 @@
 #include "repository/clickhouse_client.hpp"
 #include "securecloud/health/health_service_impl.hpp"
 #include "securecloud/health/health_status_manager.hpp"
+#include "security/internal_security_event_recorder.hpp"
 #include "service/audit_ingestion_service.hpp"
 #include "service/audit_query_service_impl.hpp"
 #include "service/audit_service_impl.hpp"
@@ -62,6 +63,7 @@ class AuditServer {
     std::shared_ptr<repository::ClickHouseAuditEventRepository> repository_;
     std::shared_ptr<ingestion::AuditIngestionPipeline> pipeline_;
     std::shared_ptr<service::AuditIngestionService> ingestion_service_;
+    std::shared_ptr<security::InternalSecurityEventRecorder> security_recorder_;
     std::shared_ptr<query::AuditQueryApplicationService> query_app_service_;
 
     std::unique_ptr<service::AuditServiceImpl> audit_service_;

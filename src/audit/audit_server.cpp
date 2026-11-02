@@ -67,7 +67,9 @@ bool AuditServer::start() {
     pipeline_->start();
 
     ingestion_service_ = std::make_shared<service::AuditIngestionService>(repository_);
-    audit_service_ = std::make_unique<service::AuditServiceImpl>(ingestion_service_);
+    security_recorder_ =
+        std::make_shared<security::InternalSecurityEventRecorder>(ingestion_service_, config_.common.service_name);
+    audit_service_ = std::make_unique<service::AuditServiceImpl>(ingestion_service_, security_recorder_);
 
     query_app_service_ = std::make_shared<query::AuditQueryApplicationService>(repository_, config_.query);
     query_service_ = std::make_unique<service::AuditQueryServiceImpl>(query_app_service_);
@@ -92,6 +94,10 @@ bool AuditServer::start() {
     health_manager_->set_ready(true);
     state_.store(ServiceState::Running, std::memory_order_release);
 
+    security::SecurityEventContext start_ctx;
+    start_ctx.rpc_method = "start";
+    security_recorder_->record_event(security::InternalSecurityEventType::ServiceStarted, start_ctx);
+
     std::cout << "[SecureCloud] [" << config_.common.service_name << "] mTLS server listening strictly on "
               << server_address << " with service identity 'DNS:" << config_.common.service_name << "'\n";
 
@@ -105,6 +111,12 @@ void AuditServer::stop() {
     }
 
     std::cout << "[SecureCloud] [" << config_.common.service_name << "] Shutting down mTLS server...\n";
+
+    if (security_recorder_) {
+        security::SecurityEventContext drain_ctx;
+        drain_ctx.rpc_method = "stop";
+        security_recorder_->record_event(security::InternalSecurityEventType::ServiceDraining, drain_ctx);
+    }
 
     if (health_manager_) {
         health_manager_->set_shutting_down(true);

@@ -1,5 +1,5 @@
-#include "security/internal_security_event_factory.hpp"
 #include "domain/audit_event_validator.hpp"
+#include "security/internal_security_event_factory.hpp"
 
 #include <gtest/gtest.h>
 

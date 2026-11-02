@@ -1,7 +1,6 @@
 #include "security/anti_recursion_guard.hpp"
 
 #include <gtest/gtest.h>
-
 #include <stdexcept>
 #include <thread>
 
@@ -9,9 +8,7 @@ namespace securecloud::audit::security::testing {
 
 class AntiRecursionGuardTest : public ::testing::Test {
   protected:
-    void SetUp() override {
-        reset_recursion_prevented_count();
-    }
+    void SetUp() override { reset_recursion_prevented_count(); }
 };
 
 TEST_F(AntiRecursionGuardTest, ReentrancyBlockedOnSameThread) {
