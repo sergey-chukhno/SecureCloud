@@ -136,4 +136,35 @@ std::optional<domain::AuditEvent> ClickHouseAuditEventRepository::find_by_event_
     return events.front();
 }
 
+std::vector<DuplicateEventCount> ClickHouseAuditEventRepository::find_duplicate_event_counts(uint32_t limit) {
+    uint32_t clamped_limit = clamp_limit(limit);
+    std::ostringstream ss;
+    ss << "SELECT event_id, count() AS occurrences FROM audit_events GROUP BY event_id HAVING occurrences > 1 ORDER BY "
+          "occurrences DESC LIMIT "
+       << clamped_limit << " FORMAT TabSeparated";
+
+    std::string response;
+    if (!client_->execute_query(ss.str(), &response)) {
+        return {};
+    }
+
+    std::vector<DuplicateEventCount> duplicates;
+    std::istringstream iss(response);
+    std::string line;
+    while (std::getline(iss, line)) {
+        if (line.empty())
+            continue;
+        std::istringstream line_ss(line);
+        std::string event_id_str;
+        uint64_t occurrences = 0;
+        if (line_ss >> event_id_str >> occurrences) {
+            auto id_opt = domain::EventId::from_string(event_id_str);
+            if (id_opt) {
+                duplicates.push_back(DuplicateEventCount{.event_id = *id_opt, .occurrences = occurrences});
+            }
+        }
+    }
+    return duplicates;
+}
+
 } // namespace securecloud::audit::repository

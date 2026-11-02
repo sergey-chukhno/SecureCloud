@@ -1,6 +1,7 @@
 add_library(securecloud_audit_domain STATIC
         domain/enums.cpp
         domain/event_id.cpp
+        domain/event_payload_fingerprint.cpp
         domain/validation_result.cpp
         domain/audit_event_validator.cpp
         domain/sensitive_data_guard.cpp
@@ -58,6 +59,7 @@ target_link_libraries(securecloud_audit_repository PUBLIC
 
 add_library(securecloud_audit_service STATIC
         ingestion/bounded_ingestion_queue.cpp
+        ingestion/deduplication_cache.cpp
         ingestion/validation_worker_pool.cpp
         ingestion/batch_aggregator.cpp
         ingestion/acknowledgement_manager.cpp

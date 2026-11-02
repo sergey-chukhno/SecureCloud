@@ -1,7 +1,7 @@
 #pragma once
 
 #include "domain/audit_event.hpp"
-#include "service/audit_ingestion_service.hpp"
+#include "ingestion/idempotency_types.hpp"
 
 #include <chrono>
 #include <functional>

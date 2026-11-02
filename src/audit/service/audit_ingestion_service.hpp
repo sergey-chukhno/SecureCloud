@@ -1,6 +1,10 @@
 #pragma once
 
 #include "domain/audit_event.hpp"
+#include "domain/event_payload_fingerprint.hpp"
+#include "ingestion/acknowledgement_manager.hpp"
+#include "ingestion/deduplication_cache.hpp"
+#include "ingestion/idempotency_types.hpp"
 #include "repository/audit_event_repository_interface.hpp"
 
 #include <chrono>
@@ -11,22 +15,18 @@
 
 namespace securecloud::audit::service {
 
-struct IngestionResult {
-    bool success{false};
-    std::string error_code{};
-    std::string error_message{};
-    std::chrono::system_clock::time_point received_at{};
-};
-
 struct BatchIngestionResult {
     uint32_t accepted_count{0};
     uint32_t rejected_count{0};
+    std::vector<domain::EventId> rejected_event_ids{};
     std::vector<std::pair<domain::EventId, IngestionResult>> item_results{};
 };
 
 class AuditIngestionService {
   public:
-    explicit AuditIngestionService(std::shared_ptr<repository::IAuditEventRepository> repository);
+    explicit AuditIngestionService(std::shared_ptr<repository::IAuditEventRepository> repository,
+                                   std::shared_ptr<ingestion::IDeduplicationCache> dedup_cache = nullptr,
+                                   std::chrono::milliseconds in_flight_timeout = std::chrono::milliseconds(5000));
 
     [[nodiscard]] IngestionResult ingest_single(const domain::AuditEvent& event);
 
@@ -34,6 +34,9 @@ class AuditIngestionService {
 
   private:
     std::shared_ptr<repository::IAuditEventRepository> repository_;
+    std::shared_ptr<ingestion::IDeduplicationCache> dedup_cache_;
+    ingestion::AcknowledgementManager ack_manager_;
+    std::chrono::milliseconds in_flight_timeout_{5000};
 };
 
 } // namespace securecloud::audit::service

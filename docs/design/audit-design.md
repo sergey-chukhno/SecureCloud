@@ -864,3 +864,35 @@ The following decisions are fixed for implementation:
 * Retention is bounded and configurable.
 * Administrative audit access does not grant cryptographic privileges.
 * Exact ClickHouse schema, partitioning/order keys, event taxonomy, API messages, retention values and batch sizes are defined in `data-model.md` and API contracts.
+
+## 7.28 Two-Phase Deduplication State Machine & Lifecycle
+
+Audit ingestion uses a two-phase in-memory state machine (`UNSEEN -> IN_FLIGHT -> COMMITTED`) managed by `BoundedDeduplicationCache` across 64 lock-striped shards:
+
+1. **`UNSEEN`**: Event ID has not been observed. Calling `try_acquire` transitions the entry to `IN_FLIGHT` and grants the calling worker thread primary insertion ownership.
+2. **`IN_FLIGHT`**: Concurrent or intra-batch duplicate RPCs with matching payload SHA-256 fingerprints attach to a shared future (`shared_future<PersistAckResult>`) without enqueuing duplicate database writes.
+3. **`COMMITTED`**: Upon ClickHouse HTTP `200 OK` confirmation, entries transition to `COMMITTED` with a 10-minute TTL window. Any subsequent RPC with an identical ID returns `DuplicateCommitted` (`grpc::Status::OK`) immediately.
+
+## 7.29 SHA-256 Payload Fingerprint Conflict Detection
+
+To guard against event ID re-use attacks or corruption, every deduplication inspection validates the canonical SHA-256 fingerprint (`EventPayloadFingerprint` calculated over immutable event fields):
+
+- If an incoming event matches an existing `IN_FLIGHT` or `COMMITTED` entry's `event_id` but has a **different** SHA-256 payload fingerprint, the request is rejected with `IdempotencyConflict` (`grpc::StatusCode::ALREADY_EXISTS`).
+- This increments the `audit_dedup_payload_conflicts_total` operational counter as a potential integrity/security anomaly signal.
+
+## 7.30 Process Restart & Cache Eviction Boundaries
+
+The `BoundedDeduplicationCache` is explicitly bounded (`100,000` entries, `10-minute` TTL, LRU eviction) and process-volatile:
+
+- **Daemon Restart Boundary**: If the Audit Service daemon restarts, in-memory deduplication state is cleared. If a producer retries an event whose acknowledgement was lost during the restart, the event will be treated as `UNSEEN` and committed again to ClickHouse.
+- **LRU / TTL Boundary**: If an event ID is evicted from the cache after 10 minutes or due to LRU capacity pressure under heavy load, a subsequent producer outbox retry will re-insert the event into ClickHouse.
+- **At-Least-Once Guarantee**: These boundaries explicitly trade total global deduplication for bounded memory usage. Downstream analytical queries rely on the ClickHouse `find_duplicate_event_counts` helper query (`GROUP BY event_id HAVING count() > 1`) or ReplacingMergeTree engines for deduplication.
+
+## 7.31 Ambiguous ClickHouse Write Timeout & Recovery Semantics
+
+When a ClickHouse HTTP `INSERT` times out or experiences a socket disconnect after data transmission:
+
+1. The write result is classified as `RepositoryWriteStatus::AmbiguousOutcome`.
+2. The `AcknowledgementManager` automatically rolls back the `IN_FLIGHT` cache entry back to `UNSEEN` (incrementing `audit_persistence_ambiguous_outcomes_total`).
+3. The RPC returns `grpc::StatusCode::DEADLINE_EXCEEDED` / `UNAVAILABLE`.
+4. This ensures the producer transactional outbox will retry the batch, prioritizing at-least-once durability over preventing potential duplicate rows.

@@ -28,6 +28,8 @@ class ClickHouseAuditEventRepository : public IAuditEventRepository {
 
     std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId& event_id) override;
 
+    std::vector<DuplicateEventCount> find_duplicate_event_counts(uint32_t limit = 100) override;
+
   private:
     std::shared_ptr<ClickHouseClient> client_;
     static constexpr uint32_t kMaxQueryLimit = 1000;

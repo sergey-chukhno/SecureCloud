@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ingestion/bounded_ingestion_queue.hpp"
+#include "ingestion/ingestion_envelope.hpp"
 
 #include <atomic>
 #include <chrono>

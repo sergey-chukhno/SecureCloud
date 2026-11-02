@@ -84,17 +84,29 @@ grpc::Status AuditServiceImpl::BatchSubmitAuditEvents(grpc::ServerContext* conte
 }
 
 grpc::Status AuditServiceImpl::map_error_to_grpc_status(const IngestionResult& result) {
-    if (result.error_code == "BATCH_SIZE_EXCEEDED") {
+    if (result.outcome_status == ingestion::IngestionOutcomeStatus::IdempotencyConflict ||
+        result.error_code == "ALREADY_EXISTS") {
+        return grpc::Status(grpc::StatusCode::ALREADY_EXISTS, result.error_message);
+    }
+    if (result.outcome_status == ingestion::IngestionOutcomeStatus::QueueOverloaded ||
+        result.error_code == "BATCH_SIZE_EXCEEDED" || result.error_code == "RESOURCE_EXHAUSTED") {
         return grpc::Status(grpc::StatusCode::RESOURCE_EXHAUSTED, result.error_message);
     }
-    if (result.error_code == "UNAUTHORIZED" || result.error_code == "UNAUTHENTICATED") {
+    if (result.outcome_status == ingestion::IngestionOutcomeStatus::PersistenceAmbiguous ||
+        result.error_code == "DEADLINE_EXCEEDED") {
+        return grpc::Status(grpc::StatusCode::DEADLINE_EXCEEDED, result.error_message);
+    }
+    if (result.outcome_status == ingestion::IngestionOutcomeStatus::PersistenceFailed ||
+        result.error_code == "REPOSITORY_ERROR" || result.error_code == "PERSISTENCE_FAILED" ||
+        result.error_code == "UNAVAILABLE") {
+        return grpc::Status(grpc::StatusCode::UNAVAILABLE, result.error_message);
+    }
+    if (result.outcome_status == ingestion::IngestionOutcomeStatus::UnauthorizedProducer ||
+        result.error_code == "UNAUTHORIZED" || result.error_code == "UNAUTHENTICATED") {
         return grpc::Status(grpc::StatusCode::UNAUTHENTICATED, result.error_message);
     }
     if (result.error_code == "PERMISSION_DENIED") {
         return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, result.error_message);
-    }
-    if (result.error_code == "REPOSITORY_ERROR") {
-        return grpc::Status(grpc::StatusCode::UNAVAILABLE, result.error_message);
     }
     return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, result.error_message);
 }
