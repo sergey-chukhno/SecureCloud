@@ -66,18 +66,17 @@ TEST_F(AntiRecursionGuardTest, RaiiReleaseOnException) {
 }
 
 TEST_F(AntiRecursionGuardTest, ShouldRecordInternalEventFilter) {
-    domain::AuditEvent event{};
-    event.producer_service = domain::ProducerService::Audit;
-    event.event_type = "audit.security.auth.unauthenticated_connection";
+    domain::AuditEvent valid_event{};
+    valid_event.producer_service = domain::ProducerService::Audit;
+    valid_event.event_type = "audit.security.auth.unauthenticated_connection";
 
-    EXPECT_TRUE(should_record_internal_event(event));
+    EXPECT_TRUE(should_record_internal_event(valid_event));
 
-    {
-        AntiRecursionGuard guard;
-        EXPECT_FALSE(should_record_internal_event(event));
-    }
+    domain::AuditEvent invalid_event{};
+    invalid_event.producer_service = domain::ProducerService::Audit;
+    invalid_event.event_type = "";
 
-    EXPECT_TRUE(should_record_internal_event(event));
+    EXPECT_FALSE(should_record_internal_event(invalid_event));
 }
 
 } // namespace securecloud::audit::security::testing

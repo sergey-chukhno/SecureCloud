@@ -3560,3 +3560,21 @@ target_link_libraries(securecloud_audit_anti_recursion_guard_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_anti_recursion_guard_test)
+
+# Audit Service Internal Security Event Recorder Unit Test Suite (AUDIT-009-T04)
+add_executable(securecloud_audit_internal_security_event_recorder_test
+        audit/internal_security_event_recorder_test.cpp
+)
+
+target_link_libraries(securecloud_audit_internal_security_event_recorder_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_internal_security_event_recorder_test)
+

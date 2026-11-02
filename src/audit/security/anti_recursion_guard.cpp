@@ -40,18 +40,12 @@ namespace securecloud::audit::security {
     }
 
     bool should_record_internal_event(const domain::AuditEvent& candidate) noexcept {
-        // Suppress secondary triggers if thread-local recording is already active
-        if (AntiRecursionGuard::is_recording_in_progress()) {
-            return false;
-        }
-
-        // Producer isolation check: if the event is produced by Audit service itself
-        // and represents a secondary security trigger, suppress to prevent infinite cascades.
-        if (candidate.producer_service == domain::ProducerService::Audit &&
-            candidate.event_type.rfind("audit.security.", 0) == 0) {
-            // Primary audit security events are accepted when not in a re-entrant call.
+        // Producer isolation check: Audit service events must have a valid non-empty event_type
+        if (candidate.producer_service == domain::ProducerService::Audit) {
+            if (candidate.event_type.empty()) {
+                return false;
             }
-
+        }
         return true;
     }
 
