@@ -3531,3 +3531,17 @@ target_link_libraries(securecloud_audit_internal_security_event_types_test PRIVA
 
 gtest_discover_tests(securecloud_audit_internal_security_event_types_test)
 
+# Audit Service Internal Security Event Factory Unit Test Suite (AUDIT-009-T02)
+add_executable(securecloud_audit_internal_security_event_factory_test
+        audit/internal_security_event_factory_test.cpp
+)
+
+target_link_libraries(securecloud_audit_internal_security_event_factory_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_internal_security_event_factory_test)
