@@ -72,8 +72,20 @@ jobs:
 
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.11
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          ACTIONS_CACHE_URL: ${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: "on"
+          ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
 
       - name: Configure sccache Environment
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          ACTIONS_CACHE_URL: ${{ env.ACTIONS_CACHE_URL }}
+          ACTIONS_RUNTIME_TOKEN: ${{ env.ACTIONS_RUNTIME_TOKEN }}
+          ACTIONS_CACHE_SERVICE_V2: "on"
+          ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
         run: |
           echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
           echo "ACTIONS_CACHE_URL=${ACTIONS_CACHE_URL}" >> "$GITHUB_ENV"
@@ -82,6 +94,7 @@ jobs:
           echo "ACTIONS_RESULTS_URL=${ACTIONS_RESULTS_URL}" >> "$GITHUB_ENV"
           echo "CMAKE_C_COMPILER_LAUNCHER=sccache" >> "$GITHUB_ENV"
           echo "CMAKE_CXX_COMPILER_LAUNCHER=sccache" >> "$GITHUB_ENV"
+          sccache --stop-server 2>/dev/null || true
           sccache --start-server
           sccache --show-stats
 
@@ -182,8 +195,9 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-v2-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v3-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
+            vcpkg-msvc-v3-
             vcpkg-msvc-v2-
             vcpkg-msvc-
 
@@ -265,7 +279,7 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-v2-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v3-${{ hashFiles('vcpkg.json') }}
 
       - name: Build All Targets
         shell: pwsh

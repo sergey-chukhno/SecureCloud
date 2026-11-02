@@ -19,8 +19,8 @@ struct AuditEventValidationLimits {
     size_t max_target_id_length{128};
     size_t max_correlation_id_length{64};
     size_t max_causation_id_length{64};
-    std::chrono::seconds max_future_skew{300}; // 5 minutes max clock drift
-    std::chrono::hours max_past_age{24 * 365}; // 1 year historical window
+    std::chrono::seconds max_future_skew{300};  // 5 minutes max clock drift
+    std::chrono::hours max_past_age{24 * 1095}; // 36-month retention horizon (1,095 days = 26,280 hours)
 };
 
 class AuditEventValidator {

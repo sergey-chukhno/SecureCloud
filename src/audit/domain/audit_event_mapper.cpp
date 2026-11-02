@@ -194,4 +194,15 @@ securecloud::audit::v1::AuditEventProto AuditEventMapper::to_proto(const AuditEv
     return proto;
 }
 
+securecloud::audit::v1::PersistedAuditEventProto AuditEventMapper::to_persisted_proto(const AuditEvent& domain) {
+    securecloud::audit::v1::PersistedAuditEventProto persisted;
+    *persisted.mutable_event() = to_proto(domain);
+    const int64_t recv_ms =
+        domain.received_at.has_value()
+            ? std::chrono::duration_cast<std::chrono::milliseconds>(domain.received_at->time_since_epoch()).count()
+            : 0;
+    persisted.set_received_at_ms(recv_ms);
+    return persisted;
+}
+
 } // namespace securecloud::audit::domain

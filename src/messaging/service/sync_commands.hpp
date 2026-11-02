@@ -1,6 +1,7 @@
 #pragma once
 
 #include "domain/conversation_types.hpp"
+#include "domain/delivery_types.hpp"
 #include "domain/envelope_types.hpp"
 #include "domain/message_entity.hpp"
 #include "domain/message_types.hpp"
@@ -9,6 +10,8 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -73,6 +76,8 @@ struct SyncMessagesResult {
     domain::DeviceId device_id;
     std::optional<domain::ConversationId> conversation_id{std::nullopt};
     std::vector<domain::MessageEntity> messages{};
+    std::unordered_map<domain::MessageId, domain::DeviceDeliveryRecord> device_envelopes{};
+    std::unordered_set<domain::MessageId> untargeted_messages{};
     domain::DeviceSyncCursor cursor{};
     bool has_more{false};
     domain::MessageSequence next_sequence{0};
@@ -87,6 +92,8 @@ struct SyncMessagesResult {
                                   .device_id = std::move(dev_id),
                                   .conversation_id = std::move(conv_id),
                                   .messages = {},
+                                  .device_envelopes = {},
+                                  .untargeted_messages = {},
                                   .cursor = {},
                                   .has_more = false,
                                   .next_sequence = 0,

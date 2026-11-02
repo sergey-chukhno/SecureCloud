@@ -8,7 +8,9 @@
 #include "service/sequence_allocator_interface.hpp"
 #include "service/sync_commands.hpp"
 
+#include <array>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -92,6 +94,9 @@ class SyncCursorManager {
     std::shared_ptr<repository::ISyncCursorRepository> cursor_repo_;
     std::shared_ptr<repository::IMessageRepository> message_repo_;
     std::shared_ptr<ISequenceAllocator> sequence_allocator_;
+
+    static constexpr size_t kNumStripes = 64;
+    mutable std::array<std::mutex, kNumStripes> cursor_stripes_;
 };
 
 } // namespace securecloud::messaging::service

@@ -59,10 +59,25 @@ bool AuditServer::start() {
     health_service_ =
         std::make_unique<common::health::HealthServiceImpl>(config_.common.service_name, *health_manager_);
 
-    // 3. Build and start gRPC server
+    // 3. Initialize ClickHouse client, repository, pipeline, query service, and gRPC services
+    clickhouse_client_ = std::make_shared<repository::ClickHouseClient>(config_.clickhouse);
+    repository_ = std::make_shared<repository::ClickHouseAuditEventRepository>(clickhouse_client_);
+
+    pipeline_ = std::make_shared<ingestion::AuditIngestionPipeline>(config_.ingestion, repository_);
+    pipeline_->start();
+
+    ingestion_service_ = std::make_shared<service::AuditIngestionService>(repository_);
+    audit_service_ = std::make_unique<service::AuditServiceImpl>(ingestion_service_);
+
+    query_app_service_ = std::make_shared<query::AuditQueryApplicationService>(repository_, config_.query);
+    query_service_ = std::make_unique<service::AuditQueryServiceImpl>(query_app_service_);
+
+    // 4. Build and start gRPC server
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);
     builder.RegisterService(health_service_.get());
+    builder.RegisterService(audit_service_.get());
+    builder.RegisterService(query_service_.get());
 
     server_ = builder.BuildAndStart();
     if (!server_) {
@@ -72,7 +87,7 @@ bool AuditServer::start() {
         return false;
     }
 
-    // 4. Activate health probes and state
+    // 5. Activate health probes and state
     health_manager_->set_live(true);
     health_manager_->set_ready(true);
     state_.store(ServiceState::Running, std::memory_order_release);
@@ -94,6 +109,10 @@ void AuditServer::stop() {
     if (health_manager_) {
         health_manager_->set_shutting_down(true);
         health_manager_->set_ready(false);
+    }
+
+    if (pipeline_) {
+        pipeline_->shutdown(std::chrono::milliseconds(config_.retention.shutdown_grace_period_ms));
     }
 
     if (server_) {

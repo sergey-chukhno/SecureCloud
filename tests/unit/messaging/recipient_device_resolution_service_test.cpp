@@ -424,5 +424,78 @@ TEST(RecipientDeviceResolutionServiceTest, RejectsEmptyTargetEnvelopes) {
     EXPECT_NE(result.error_message.find("no delivery targets"), std::string::npos);
 }
 
+TEST(RecipientDeviceResolutionServiceTest, RejectsSenderTargetingItself) {
+    auto mock_client = std::make_shared<MockAuthCryptoDirectoryClient>();
+    UserId alice{"018f2d52-0000-7000-8000-000000000001"};
+    UserId bob{"018f2d52-0000-7000-8000-000000000002"};
+    DeviceId dev_alice_phone{"dev-alice-phone"};
+    DeviceId dev_bob_phone{"dev-bob-phone"};
+
+    mock_client->add_device(alice, dev_alice_phone, securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+    mock_client->add_device(bob, dev_bob_phone, securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+
+    RecipientDeviceResolutionService service(mock_client);
+
+    std::vector<UserId> participants = {alice, bob};
+    // Alice Phone (sender) targets itself alongside Bob
+    std::vector<PerDeviceEnvelope> envelopes = {
+        make_envelope(alice, dev_alice_phone),
+        make_envelope(bob, dev_bob_phone),
+    };
+
+    auto result = service.validate_submission_targets(participants, envelopes, dev_alice_phone, alice);
+    EXPECT_FALSE(result.is_valid);
+    EXPECT_EQ(result.error_code, v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE);
+    EXPECT_NE(result.error_message.find("cannot target itself"), std::string::npos);
+}
+
+TEST(RecipientDeviceResolutionServiceTest, SenderCompanionDeviceFanoutCompleteness) {
+    auto mock_client = std::make_shared<MockAuthCryptoDirectoryClient>();
+    UserId alice{"018f2d52-0000-7000-8000-000000000001"};
+    UserId bob{"018f2d52-0000-7000-8000-000000000002"};
+    DeviceId dev_alice_phone{"dev-alice-phone"};
+    DeviceId dev_alice_laptop{"dev-alice-laptop"};
+    DeviceId dev_bob_phone{"dev-bob-phone"};
+
+    mock_client->add_device(alice, dev_alice_phone, securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+    mock_client->add_device(alice, dev_alice_laptop, securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+    mock_client->add_device(bob, dev_bob_phone, securecloud::auth::v1::DEVICE_STATUS_ACTIVE);
+
+    RecipientDeviceResolutionService service(mock_client);
+
+    std::vector<UserId> participants = {alice, bob};
+
+    // Case 1: Alice Phone submits targeting Bob Phone and Alice Laptop (companion) -> Complete
+    std::vector<PerDeviceEnvelope> complete_envelopes = {
+        make_envelope(alice, dev_alice_laptop),
+        make_envelope(bob, dev_bob_phone),
+    };
+    auto r1 = service.validate_submission_targets(participants, complete_envelopes, dev_alice_phone, alice,
+                                                  /*enforce_completeness=*/true);
+    EXPECT_TRUE(r1.is_valid);
+    EXPECT_TRUE(r1.omitted_device_ids.empty());
+
+    // Case 2: Alice Phone submits targeting only Bob Phone, omitting companion Alice Laptop
+    std::vector<PerDeviceEnvelope> incomplete_envelopes = {
+        make_envelope(bob, dev_bob_phone),
+    };
+
+    // Under enforce_completeness = false -> valid, but omitted_device_ids contains Alice Laptop
+    auto r2 = service.validate_submission_targets(participants, incomplete_envelopes, dev_alice_phone, alice,
+                                                  /*enforce_completeness=*/false);
+    EXPECT_TRUE(r2.is_valid);
+    ASSERT_EQ(r2.omitted_device_ids.size(), 1u);
+    EXPECT_EQ(r2.omitted_device_ids[0], dev_alice_laptop);
+
+    // Under enforce_completeness = true -> rejected with INVALID_TARGET_DEVICE
+    auto r3 = service.validate_submission_targets(participants, incomplete_envelopes, dev_alice_phone, alice,
+                                                  /*enforce_completeness=*/true);
+    EXPECT_FALSE(r3.is_valid);
+    EXPECT_EQ(r3.error_code, v1::MESSAGING_ERROR_CODE_INVALID_TARGET_DEVICE);
+    ASSERT_EQ(r3.omitted_device_ids.size(), 1u);
+    EXPECT_EQ(r3.omitted_device_ids[0], dev_alice_laptop);
+    EXPECT_NE(r3.error_message.find("sender companion devices were omitted"), std::string::npos);
+}
+
 } // namespace
 } // namespace securecloud::messaging::service

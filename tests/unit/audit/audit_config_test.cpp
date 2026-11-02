@@ -33,6 +33,8 @@ TEST(AuditConfigTest, DefaultValuesAreValid) {
     EXPECT_EQ(config.query.workers, 4);
     EXPECT_EQ(config.ingestion.batch_size, 500);
     EXPECT_EQ(config.ingestion.batch_flush_interval_ms, 200);
+    EXPECT_EQ(config.retention.retention_months, 36);
+    EXPECT_EQ(config.retention.retention_days, 1095);
 }
 
 TEST(AuditConfigTest, CompleteEnvironmentOverride) {
@@ -52,7 +54,8 @@ TEST(AuditConfigTest, CompleteEnvironmentOverride) {
     source.set("SECURECLOUD_AUDIT_DEFAULT_PAGE_LIMIT", "50");
     source.set("SECURECLOUD_AUDIT_MAX_PAGE_LIMIT", "500");
     source.set("SECURECLOUD_AUDIT_QUERY_TIMEOUT_MS", "15000");
-    source.set("SECURECLOUD_AUDIT_RETENTION_DAYS", "180");
+    source.set("SECURECLOUD_AUDIT_RETENTION_MONTHS", "48");
+    source.set("SECURECLOUD_AUDIT_RETENTION_DAYS", "1460");
     source.set("SECURECLOUD_AUDIT_SHUTDOWN_GRACE_PERIOD_MS", "10000");
 
     common::configuration::ValidationResult errors;
@@ -74,7 +77,8 @@ TEST(AuditConfigTest, CompleteEnvironmentOverride) {
     EXPECT_EQ(config.query.default_page_limit, 50);
     EXPECT_EQ(config.query.max_page_limit, 500);
     EXPECT_EQ(config.query.query_timeout_ms, 15000);
-    EXPECT_EQ(config.retention.retention_days, 180);
+    EXPECT_EQ(config.retention.retention_months, 48);
+    EXPECT_EQ(config.retention.retention_days, 1460);
     EXPECT_EQ(config.retention.shutdown_grace_period_ms, 10000);
 }
 
@@ -166,6 +170,23 @@ TEST(AuditConfigTest, QueryLimitsValidation) {
     AuditConfig::load(source, errors);
 
     EXPECT_FALSE(errors.is_valid());
+}
+
+TEST(AuditConfigTest, RetentionMonthsBounds) {
+    {
+        auto source = create_valid_base_source();
+        source.set("SECURECLOUD_AUDIT_RETENTION_MONTHS", "0");
+        common::configuration::ValidationResult errors;
+        AuditConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+    {
+        auto source = create_valid_base_source();
+        source.set("SECURECLOUD_AUDIT_RETENTION_MONTHS", "121");
+        common::configuration::ValidationResult errors;
+        AuditConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
 }
 
 TEST(AuditConfigTest, SecretRedactionVerification) {

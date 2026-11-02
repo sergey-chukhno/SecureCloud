@@ -34,6 +34,10 @@ std::optional<uint32_t> parse_uint32_bounded(const std::string& key, std::string
     }
 }
 
+bool is_power_of_two(uint32_t n) noexcept {
+    return n != 0 && (n & (n - 1)) == 0;
+}
+
 } // namespace
 
 AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& source,
@@ -183,6 +187,52 @@ AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& 
         }
     }
 
+    // --- Deduplication Configuration Extensions ---
+
+    // AUDIT_INGESTION_DEDUP_CACHE_CAPACITY [1000, 1000000]
+    auto dedup_cap_val = source.get("AUDIT_INGESTION_DEDUP_CACHE_CAPACITY");
+    if (dedup_cap_val.has_value()) {
+        auto parsed = parse_uint32_bounded("AUDIT_INGESTION_DEDUP_CACHE_CAPACITY", dedup_cap_val.value(), out_errors,
+                                           1000, 1000000);
+        if (parsed.has_value()) {
+            config.ingestion.dedup_cache_capacity = parsed.value();
+        }
+    }
+
+    // AUDIT_INGESTION_DEDUP_CACHE_TTL_MS [10000, 86400000]
+    auto dedup_ttl_val = source.get("AUDIT_INGESTION_DEDUP_CACHE_TTL_MS");
+    if (dedup_ttl_val.has_value()) {
+        auto parsed = common::configuration::ConfigParser::parse_duration_ms(
+            "AUDIT_INGESTION_DEDUP_CACHE_TTL_MS", dedup_ttl_val.value(), out_errors, 10000, 86400000);
+        if (parsed.has_value()) {
+            config.ingestion.dedup_cache_ttl_ms = static_cast<uint32_t>(parsed->count());
+        }
+    }
+
+    // AUDIT_INGESTION_DEDUP_CACHE_SHARDS [1, 256]
+    auto dedup_shards_val = source.get("AUDIT_INGESTION_DEDUP_CACHE_SHARDS");
+    if (dedup_shards_val.has_value()) {
+        auto parsed =
+            parse_uint32_bounded("AUDIT_INGESTION_DEDUP_CACHE_SHARDS", dedup_shards_val.value(), out_errors, 1, 256);
+        if (parsed.has_value()) {
+            if (!is_power_of_two(parsed.value())) {
+                out_errors.add_error("AUDIT_INGESTION_DEDUP_CACHE_SHARDS", "must be a power of two in range [1, 256]");
+            } else {
+                config.ingestion.dedup_cache_shards = parsed.value();
+            }
+        }
+    }
+
+    // AUDIT_INGESTION_IN_FLIGHT_ACK_TIMEOUT_MS [500, 30000]
+    auto ack_timeout_val = source.get("AUDIT_INGESTION_IN_FLIGHT_ACK_TIMEOUT_MS");
+    if (ack_timeout_val.has_value()) {
+        auto parsed = common::configuration::ConfigParser::parse_duration_ms(
+            "AUDIT_INGESTION_IN_FLIGHT_ACK_TIMEOUT_MS", ack_timeout_val.value(), out_errors, 500, 30000);
+        if (parsed.has_value()) {
+            config.ingestion.in_flight_ack_timeout_ms = static_cast<uint32_t>(parsed->count());
+        }
+    }
+
     // --- Query Configuration ---
 
     // SECURECLOUD_AUDIT_QUERY_WORKERS [1, 32]
@@ -225,7 +275,47 @@ AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& 
         }
     }
 
+    // SECURECLOUD_AUDIT_DEFAULT_QUERY_WINDOW_HOURS [1, max_time_window_hours]
+    auto def_win_val = source.get("SECURECLOUD_AUDIT_DEFAULT_QUERY_WINDOW_HOURS");
+    if (def_win_val.has_value()) {
+        auto parsed = parse_uint32_bounded("SECURECLOUD_AUDIT_DEFAULT_QUERY_WINDOW_HOURS", def_win_val.value(),
+                                           out_errors, 1, 2160);
+        if (parsed.has_value()) {
+            config.query.default_time_window_hours = parsed.value();
+        }
+    }
+
+    // SECURECLOUD_AUDIT_MAX_QUERY_WINDOW_HOURS [1, 2160]
+    auto max_win_val = source.get("SECURECLOUD_AUDIT_MAX_QUERY_WINDOW_HOURS");
+    if (max_win_val.has_value()) {
+        auto parsed =
+            parse_uint32_bounded("SECURECLOUD_AUDIT_MAX_QUERY_WINDOW_HOURS", max_win_val.value(), out_errors, 1, 2160);
+        if (parsed.has_value()) {
+            config.query.max_time_window_hours = parsed.value();
+        }
+    }
+
+    // SECURECLOUD_AUDIT_QUERY_MAX_RESULT_BYTES [1048576, 67108864]
+    auto max_bytes_val = source.get("SECURECLOUD_AUDIT_QUERY_MAX_RESULT_BYTES");
+    if (max_bytes_val.has_value()) {
+        auto parsed = parse_uint32_bounded("SECURECLOUD_AUDIT_QUERY_MAX_RESULT_BYTES", max_bytes_val.value(),
+                                           out_errors, 1048576, 67108864);
+        if (parsed.has_value()) {
+            config.query.max_result_bytes = parsed.value();
+        }
+    }
+
     // --- Retention Configuration ---
+
+    // SECURECLOUD_AUDIT_RETENTION_MONTHS [1, 120]
+    auto ret_months_val = source.get("SECURECLOUD_AUDIT_RETENTION_MONTHS");
+    if (ret_months_val.has_value()) {
+        auto parsed = common::configuration::ConfigParser::parse_uint16("SECURECLOUD_AUDIT_RETENTION_MONTHS",
+                                                                        ret_months_val.value(), out_errors, 1, 120);
+        if (parsed.has_value()) {
+            config.retention.retention_months = static_cast<uint32_t>(parsed.value());
+        }
+    }
 
     // SECURECLOUD_AUDIT_RETENTION_DAYS [1, 3650]
     auto ret_days_val = source.get("SECURECLOUD_AUDIT_RETENTION_DAYS");
@@ -256,11 +346,25 @@ AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& 
                                  std::to_string(config.query.max_page_limit) + ")");
     }
 
+    if (config.query.default_time_window_hours > config.query.max_time_window_hours) {
+        out_errors.add_error("SECURECLOUD_AUDIT_DEFAULT_QUERY_WINDOW_HOURS",
+                             "default_time_window_hours cannot exceed max_time_window_hours (" +
+                                 std::to_string(config.query.default_time_window_hours) + " > " +
+                                 std::to_string(config.query.max_time_window_hours) + ")");
+    }
+
     if (config.ingestion.batch_size > config.ingestion.max_queued_events) {
         out_errors.add_error("SECURECLOUD_AUDIT_BATCH_SIZE", "batch_size cannot exceed max_queued_events (" +
                                                                  std::to_string(config.ingestion.batch_size) + " > " +
                                                                  std::to_string(config.ingestion.max_queued_events) +
                                                                  ")");
+    }
+
+    if (config.ingestion.dedup_cache_capacity < config.ingestion.max_queued_events) {
+        out_errors.add_error("AUDIT_INGESTION_DEDUP_CACHE_CAPACITY",
+                             "dedup_cache_capacity cannot be less than max_queued_events (" +
+                                 std::to_string(config.ingestion.dedup_cache_capacity) + " < " +
+                                 std::to_string(config.ingestion.max_queued_events) + ")");
     }
 
     return config;
