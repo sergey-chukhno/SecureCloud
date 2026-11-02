@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audit_config.hpp"
+#include "ingestion/audit_ingestion_pipeline.hpp"
 #include "repository/clickhouse_audit_event_repository.hpp"
 #include "repository/clickhouse_client.hpp"
 #include "securecloud/health/health_service_impl.hpp"
@@ -46,6 +47,7 @@ class AuditServer {
     [[nodiscard]] ServiceState state() const noexcept;
     [[nodiscard]] const AuditConfig& config() const noexcept;
     [[nodiscard]] bool is_healthy() const noexcept;
+    [[nodiscard]] std::shared_ptr<ingestion::AuditIngestionPipeline> pipeline() const noexcept { return pipeline_; }
 
   private:
     AuditConfig config_;
@@ -53,6 +55,7 @@ class AuditServer {
 
     std::shared_ptr<repository::ClickHouseClient> clickhouse_client_;
     std::shared_ptr<repository::ClickHouseAuditEventRepository> repository_;
+    std::shared_ptr<ingestion::AuditIngestionPipeline> pipeline_;
     std::shared_ptr<service::AuditIngestionService> ingestion_service_;
     std::unique_ptr<service::AuditServiceImpl> audit_service_;
 

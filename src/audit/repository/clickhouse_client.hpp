@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audit_config.hpp"
+#include "repository/audit_repository_exceptions.hpp"
 
 #include <chrono>
 #include <memory>

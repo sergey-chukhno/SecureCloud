@@ -3280,3 +3280,75 @@ target_link_libraries(securecloud_audit_service_impl_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_service_impl_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Bounded Ingestion Queue Unit Test Suite (AUDIT-005-T01)
+add_executable(securecloud_audit_bounded_ingestion_queue_test
+        audit/bounded_ingestion_queue_test.cpp
+)
+
+target_link_libraries(securecloud_audit_bounded_ingestion_queue_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_bounded_ingestion_queue_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Validation Worker Pool Unit Test Suite (AUDIT-005-T02)
+add_executable(securecloud_audit_validation_worker_pool_test
+        audit/validation_worker_pool_test.cpp
+)
+
+target_link_libraries(securecloud_audit_validation_worker_pool_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_validation_worker_pool_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Batch Aggregator Unit Test Suite (AUDIT-005-T03)
+add_executable(securecloud_audit_batch_aggregator_test
+        audit/batch_aggregator_test.cpp
+)
+
+target_link_libraries(securecloud_audit_batch_aggregator_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_batch_aggregator_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Insert Worker Pool Unit Test Suite (AUDIT-005-T04)
+add_executable(securecloud_audit_insert_worker_pool_test
+        audit/insert_worker_pool_test.cpp
+)
+
+target_link_libraries(securecloud_audit_insert_worker_pool_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_insert_worker_pool_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Service Ingestion Pipeline Unit Test (AUDIT-005-T05)
+add_executable(securecloud_audit_ingestion_pipeline_test
+        audit/ingestion_pipeline_test.cpp
+)
+
+target_link_libraries(securecloud_audit_ingestion_pipeline_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_ingestion_pipeline_test ${SECURECLOUD_TEST_PROPERTIES})

@@ -57,6 +57,12 @@ target_link_libraries(securecloud_audit_repository PUBLIC
 )
 
 add_library(securecloud_audit_service STATIC
+        ingestion/bounded_ingestion_queue.cpp
+        ingestion/validation_worker_pool.cpp
+        ingestion/batch_aggregator.cpp
+        ingestion/acknowledgement_manager.cpp
+        ingestion/insert_worker_pool.cpp
+        ingestion/audit_ingestion_pipeline.cpp
         service/audit_proto_mapper.cpp
         service/audit_ingestion_service.cpp
         service/audit_service_impl.cpp
@@ -71,6 +77,7 @@ target_include_directories(securecloud_audit_service PUBLIC
 
 target_link_libraries(securecloud_audit_service PUBLIC
         securecloud_audit_domain
+        securecloud_audit_repository
         securecloud_proto
         securecloud::common
         securecloud::compiler_flags
