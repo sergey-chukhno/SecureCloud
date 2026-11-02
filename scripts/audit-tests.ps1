@@ -48,6 +48,7 @@ $targets = @(
     "securecloud_audit_grpc_producer_identity_validator_test",
     "securecloud_audit_ingestion_pipeline_test",
     "securecloud_audit_insert_worker_pool_test",
+    "securecloud_audit_internal_security_event_types_test",
     "securecloud_audit_producer_identity_validator_test",
     "securecloud_audit_sensitive_data_guard_test",
     "securecloud_audit_validation_worker_pool_test",

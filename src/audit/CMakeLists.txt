@@ -96,6 +96,7 @@ add_library(securecloud_audit_service STATIC
         service/audit_query_service_impl.cpp
         service/audit_service_impl.cpp
         security/grpc_producer_identity_validator.cpp
+        security/internal_security_event_types.cpp
 )
 
 add_library(securecloud::audit_service ALIAS securecloud_audit_service)

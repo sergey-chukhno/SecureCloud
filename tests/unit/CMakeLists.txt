@@ -3515,3 +3515,19 @@ target_link_libraries(securecloud_audit_retention_and_append_only_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_retention_and_append_only_test)
+
+# Audit Service Internal Security Event Types Unit Test Suite (AUDIT-009-T01)
+add_executable(securecloud_audit_internal_security_event_types_test
+        audit/internal_security_event_types_test.cpp
+)
+
+target_link_libraries(securecloud_audit_internal_security_event_types_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_internal_security_event_types_test)
+
