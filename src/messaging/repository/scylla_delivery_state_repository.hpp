@@ -46,6 +46,9 @@ class ScyllaDeliveryStateRepository : public IDeliveryStateRepository {
     [[nodiscard]] std::optional<domain::MessageDeliverySummary>
     get_message_delivery_summary(const domain::MessageId& message_id) override;
 
+    [[nodiscard]] std::optional<domain::DeviceDeliveryRecord>
+    get_delivery_record_for_device(const domain::DeviceId& device_id, const domain::MessageId& message_id) override;
+
   private:
     void init_prepared_statements();
 
@@ -61,6 +64,7 @@ class ScyllaDeliveryStateRepository : public IDeliveryStateRepository {
     db::PreparedStatementId prep_get_message_states_;
     db::PreparedStatementId prep_update_delivery_state_;
     db::PreparedStatementId prep_get_single_device_state_;
+    db::PreparedStatementId prep_get_device_record_;
 };
 
 } // namespace securecloud::messaging::repository

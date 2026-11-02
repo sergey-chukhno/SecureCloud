@@ -32,6 +32,58 @@ std::optional<uint16_t> ConfigParser::parse_uint16(std::string_view key, std::st
     return static_cast<uint16_t>(parsed_val);
 }
 
+std::optional<uint32_t> ConfigParser::parse_uint32(std::string_view key, std::string_view value,
+                                                   ValidationResult& errors, uint32_t min, uint32_t max) {
+    if (value.empty()) {
+        errors.add_error(std::string(key), "value cannot be empty");
+        return std::nullopt;
+    }
+
+    uint32_t parsed_val = 0;
+    const char* start = value.data();
+    const char* end = value.data() + value.size();
+    auto [ptr, ec] = std::from_chars(start, end, parsed_val);
+
+    if (ec != std::errc() || ptr != end) {
+        errors.add_error(std::string(key), "invalid integer value '" + std::string(value) + "'");
+        return std::nullopt;
+    }
+
+    if (parsed_val < min || parsed_val > max) {
+        errors.add_error(std::string(key), "value " + std::to_string(parsed_val) + " out of valid range [" +
+                                               std::to_string(min) + ".." + std::to_string(max) + "]");
+        return std::nullopt;
+    }
+
+    return parsed_val;
+}
+
+std::optional<uint64_t> ConfigParser::parse_uint64(std::string_view key, std::string_view value,
+                                                   ValidationResult& errors, uint64_t min, uint64_t max) {
+    if (value.empty()) {
+        errors.add_error(std::string(key), "value cannot be empty");
+        return std::nullopt;
+    }
+
+    uint64_t parsed_val = 0;
+    const char* start = value.data();
+    const char* end = value.data() + value.size();
+    auto [ptr, ec] = std::from_chars(start, end, parsed_val);
+
+    if (ec != std::errc() || ptr != end) {
+        errors.add_error(std::string(key), "invalid integer value '" + std::string(value) + "'");
+        return std::nullopt;
+    }
+
+    if (parsed_val < min || parsed_val > max) {
+        errors.add_error(std::string(key), "value " + std::to_string(parsed_val) + " out of valid range [" +
+                                               std::to_string(min) + ".." + std::to_string(max) + "]");
+        return std::nullopt;
+    }
+
+    return parsed_val;
+}
+
 std::optional<bool> ConfigParser::parse_bool(std::string_view key, std::string_view value, ValidationResult& errors) {
     if (value.empty()) {
         errors.add_error(std::string(key), "value cannot be empty");

@@ -157,7 +157,9 @@ std::vector<MigrationScript> ScyllaMigrationRunner::get_standard_migrations() {
             {3, "create_schema_version_tracking", std::string(k_v003_version_tracking_cql),
              calculate_checksum(k_v003_version_tracking_cql)},
             {4, "add_per_device_envelope_columns", std::string(k_v004_per_device_envelope_cql),
-             calculate_checksum(k_v004_per_device_envelope_cql)}};
+             calculate_checksum(k_v004_per_device_envelope_cql)},
+            {5, "add_message_id_secondary_indexes", std::string(k_v005_message_id_indexes_cql),
+             calculate_checksum(k_v005_message_id_indexes_cql)}};
 }
 
 MigrationResult ScyllaMigrationRunner::run_migrations() {

@@ -86,14 +86,12 @@ query::SortOrder from_proto_sort_order(securecloud::audit::v1::SortOrderProto pr
 
 } // namespace
 
-AuditQueryServiceImpl::AuditQueryServiceImpl(
-    std::shared_ptr<query::AuditQueryApplicationService> app_service)
+AuditQueryServiceImpl::AuditQueryServiceImpl(std::shared_ptr<query::AuditQueryApplicationService> app_service)
     : app_service_(std::move(app_service)) {}
 
-grpc::Status AuditQueryServiceImpl::QueryAuditEvents(
-    grpc::ServerContext* context,
-    const securecloud::audit::v1::QueryAuditEventsRequest* request,
-    securecloud::audit::v1::QueryAuditEventsResponse* response) {
+grpc::Status AuditQueryServiceImpl::QueryAuditEvents(grpc::ServerContext* context,
+                                                     const securecloud::audit::v1::QueryAuditEventsRequest* request,
+                                                     securecloud::audit::v1::QueryAuditEventsResponse* response) {
 
     if (!context || !request || !response) {
         return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Context, request, or response pointer is null");
@@ -109,12 +107,12 @@ grpc::Status AuditQueryServiceImpl::QueryAuditEvents(
     query::AuditQueryFilter filter;
 
     if (request->has_start_occurred_at_ms()) {
-        filter.start_occurred_at = std::chrono::system_clock::time_point(
-            std::chrono::milliseconds(request->start_occurred_at_ms()));
+        filter.start_occurred_at =
+            std::chrono::system_clock::time_point(std::chrono::milliseconds(request->start_occurred_at_ms()));
     }
     if (request->has_end_occurred_at_ms()) {
-        filter.end_occurred_at = std::chrono::system_clock::time_point(
-            std::chrono::milliseconds(request->end_occurred_at_ms()));
+        filter.end_occurred_at =
+            std::chrono::system_clock::time_point(std::chrono::milliseconds(request->end_occurred_at_ms()));
     }
 
     for (int i = 0; i < request->producer_services_size(); ++i) {
@@ -182,10 +180,9 @@ grpc::Status AuditQueryServiceImpl::QueryAuditEvents(
     return grpc::Status::OK;
 }
 
-grpc::Status AuditQueryServiceImpl::GetAuditEventById(
-    grpc::ServerContext* context,
-    const securecloud::audit::v1::GetAuditEventByIdRequest* request,
-    securecloud::audit::v1::GetAuditEventByIdResponse* response) {
+grpc::Status AuditQueryServiceImpl::GetAuditEventById(grpc::ServerContext* context,
+                                                      const securecloud::audit::v1::GetAuditEventByIdRequest* request,
+                                                      securecloud::audit::v1::GetAuditEventByIdResponse* response) {
 
     if (!context || !request || !response) {
         return grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Context, request, or response pointer is null");

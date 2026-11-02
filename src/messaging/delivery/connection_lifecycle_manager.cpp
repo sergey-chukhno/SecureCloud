@@ -75,35 +75,42 @@ ConnectionLifecycleManager::establish_connection(std::shared_ptr<IDeviceDelivery
     const auto uid = channel->user_id();
     const auto now = std::chrono::steady_clock::now();
 
-    // 1. Register channel in underlying registry (enforces capacity limits & atomic superseding)
-    if (registry_) {
-        registry_->register_channel(channel);
-        telemetry::PresenceMetrics::instance().set_active_connections(
-            static_cast<int64_t>(registry_->connected_device_count()));
-    }
-    telemetry::PresenceMetrics::instance().record_connection_churn(telemetry::ConnectionChurnEvent::Connected);
-
-    // 2. Track / update rich connection session
-    domain::ConnectionSession session{
-        .connection_id = generate_random_connection_id(),
-        .device_id = dev_id,
-        .user_id = uid,
-        .client_ip = std::move(client_ip),
-        .user_agent = std::move(user_agent),
-        .protocol_version = protocol_version,
-        .state = domain::ConnectionState::Active,
-        .connected_at = now,
-        .last_heartbeat_at = now,
-    };
-
+    domain::ConnectionSession session;
     {
-        std::lock_guard<std::mutex> lock(session_mutex_);
-        sessions_[dev_id] = session;
-    }
+        // Lock-striped per-device serialization across registry, sessions, and presence (MSG-012-T02)
+        const size_t stripe_idx = std::hash<std::string>{}(dev_id.str()) % kNumStripes;
+        std::lock_guard<std::mutex> stripe_lock(lifecycle_stripes_[stripe_idx]);
 
-    // 3. Notify presence coordinator of active connection
-    if (presence_coordinator_) {
-        presence_coordinator_->on_device_connected(uid, dev_id);
+        // 1. Register channel in underlying registry (enforces capacity limits & atomic superseding)
+        if (registry_) {
+            registry_->register_channel(channel);
+            telemetry::PresenceMetrics::instance().set_active_connections(
+                static_cast<int64_t>(registry_->connected_device_count()));
+        }
+        telemetry::PresenceMetrics::instance().record_connection_churn(telemetry::ConnectionChurnEvent::Connected);
+
+        // 2. Track / update rich connection session
+        session = domain::ConnectionSession{
+            .connection_id = generate_random_connection_id(),
+            .device_id = dev_id,
+            .user_id = uid,
+            .client_ip = std::move(client_ip),
+            .user_agent = std::move(user_agent),
+            .protocol_version = protocol_version,
+            .state = domain::ConnectionState::Active,
+            .connected_at = now,
+            .last_heartbeat_at = now,
+        };
+
+        {
+            std::lock_guard<std::mutex> lock(session_mutex_);
+            sessions_[dev_id] = session;
+        }
+
+        // 3. Notify presence coordinator of active connection
+        if (presence_coordinator_) {
+            presence_coordinator_->on_device_connected(uid, dev_id);
+        }
     }
 
     // 4. Notify registered connected callbacks (e.g. RealtimeDeliveryAccelerator)
@@ -124,6 +131,9 @@ ConnectionLifecycleManager::establish_connection(std::shared_ptr<IDeviceDelivery
 }
 
 void ConnectionLifecycleManager::terminate_connection(const domain::DeviceId& device_id) {
+    const size_t stripe_idx = std::hash<std::string>{}(device_id.str()) % kNumStripes;
+    std::lock_guard<std::mutex> stripe_lock(lifecycle_stripes_[stripe_idx]);
+
     if (registry_) {
         registry_->unregister_channel(device_id);
     }

@@ -9,16 +9,11 @@
 namespace securecloud::audit::query {
 
 AuditQueryApplicationService::AuditQueryApplicationService(
-    std::shared_ptr<repository::IAuditEventRepository> repository,
-    QueryConfig config)
-    : repository_(std::move(repository)),
-      config_(config),
-      bulkhead_(config.workers) {}
+    std::shared_ptr<repository::IAuditEventRepository> repository, QueryConfig config)
+    : repository_(std::move(repository)), config_(config), bulkhead_(config.workers) {}
 
-grpc::Status AuditQueryApplicationService::execute_query(
-    const domain::PeerIdentity& caller,
-    AuditQueryFilter filter,
-    AuditQueryPageResult& out_result) {
+grpc::Status AuditQueryApplicationService::execute_query(const domain::PeerIdentity& caller, AuditQueryFilter filter,
+                                                         AuditQueryPageResult& out_result) {
 
     // 1. Authorization Policy Check
     auto auth_status = AuditQueryAuthorizer::authorize_query(caller, filter);
@@ -56,7 +51,8 @@ grpc::Status AuditQueryApplicationService::execute_query(
 
     // 4. Repository Query Execution
     uint32_t timeout_sec = config_.query_timeout_ms / 1000;
-    if (timeout_sec == 0) timeout_sec = 1;
+    if (timeout_sec == 0)
+        timeout_sec = 1;
 
     std::vector<domain::AuditEvent> raw_events;
     try {
@@ -78,8 +74,8 @@ grpc::Status AuditQueryApplicationService::execute_query(
 
         const auto& last_event = raw_events.back();
         AuditPageCursor next_cursor;
-        next_cursor.last_occurred_at_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            last_event.occurred_at.time_since_epoch()).count();
+        next_cursor.last_occurred_at_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(last_event.occurred_at.time_since_epoch()).count();
         next_cursor.last_producer_service = domain::to_string(last_event.producer_service);
         next_cursor.last_event_type = last_event.event_type;
         next_cursor.last_event_id = last_event.event_id;
@@ -99,10 +95,9 @@ grpc::Status AuditQueryApplicationService::execute_query(
     return grpc::Status::OK;
 }
 
-grpc::Status AuditQueryApplicationService::get_event_by_id(
-    const domain::PeerIdentity& caller,
-    std::string_view event_id_str,
-    std::optional<domain::AuditEvent>& out_event) {
+grpc::Status AuditQueryApplicationService::get_event_by_id(const domain::PeerIdentity& caller,
+                                                           std::string_view event_id_str,
+                                                           std::optional<domain::AuditEvent>& out_event) {
 
     if (!caller.is_authenticated) {
         metrics_.queries_denied_total.fetch_add(1, std::memory_order_relaxed);

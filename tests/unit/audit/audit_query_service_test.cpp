@@ -1,8 +1,8 @@
 #include "query/audit_query_application_service.hpp"
 #include "repository/audit_repository_exceptions.hpp"
 
-#include <gtest/gtest.h>
 #include <algorithm>
+#include <gtest/gtest.h>
 #include <set>
 
 namespace securecloud::audit::query::testing {
@@ -15,45 +15,61 @@ class MemoryAuditRepository : public repository::IAuditEventRepository {
     }
 
     std::vector<domain::AuditEvent> query_by_time_range(std::chrono::system_clock::time_point,
-                                                        std::chrono::system_clock::time_point, uint32_t) override { return {}; }
+                                                        std::chrono::system_clock::time_point, uint32_t) override {
+        return {};
+    }
     std::vector<domain::AuditEvent> query_by_producer(const std::string&, std::chrono::system_clock::time_point,
-                                                      std::chrono::system_clock::time_point, uint32_t) override { return {}; }
+                                                      std::chrono::system_clock::time_point, uint32_t) override {
+        return {};
+    }
     std::vector<domain::AuditEvent> query_by_correlation_id(const std::string&, uint32_t) override { return {}; }
 
-    std::vector<domain::AuditEvent> execute_paged_query(
-        const AuditQueryFilter& filter,
-        const std::optional<AuditPageCursor>& cursor,
-        uint32_t, size_t) override {
+    std::vector<domain::AuditEvent> execute_paged_query(const AuditQueryFilter& filter,
+                                                        const std::optional<AuditPageCursor>& cursor, uint32_t,
+                                                        size_t) override {
 
-        if (should_timeout) throw repository::ClickHouseTimeoutException("Query timeout");
-        if (should_fail) throw repository::ClickHouseConnectionException("Connection refused");
+        if (should_timeout)
+            throw repository::ClickHouseTimeoutException("Query timeout");
+        if (should_fail)
+            throw repository::ClickHouseConnectionException("Connection refused");
 
         std::vector<domain::AuditEvent> filtered;
         for (const auto& ev : storage_) {
-            if (filter.start_occurred_at && ev.occurred_at < *filter.start_occurred_at) continue;
-            if (filter.end_occurred_at && ev.occurred_at >= *filter.end_occurred_at) continue;
+            if (filter.start_occurred_at && ev.occurred_at < *filter.start_occurred_at)
+                continue;
+            if (filter.end_occurred_at && ev.occurred_at >= *filter.end_occurred_at)
+                continue;
 
             if (!filter.producer_services.empty() &&
-                std::find(filter.producer_services.begin(), filter.producer_services.end(), ev.producer_service) == filter.producer_services.end()) {
+                std::find(filter.producer_services.begin(), filter.producer_services.end(), ev.producer_service) ==
+                    filter.producer_services.end()) {
                 continue;
             }
 
-            if (!filter.event_types.empty() &&
-                std::find(filter.event_types.begin(), filter.event_types.end(), ev.event_type) == filter.event_types.end()) {
+            if (!filter.event_types.empty() && std::find(filter.event_types.begin(), filter.event_types.end(),
+                                                         ev.event_type) == filter.event_types.end()) {
                 continue;
             }
 
-            if (filter.correlation_id && ev.correlation_id != *filter.correlation_id) continue;
+            if (filter.correlation_id && ev.correlation_id != *filter.correlation_id)
+                continue;
 
             // Keyset cursor predicate evaluation
             if (cursor.has_value()) {
-                int64_t ev_ts = std::chrono::duration_cast<std::chrono::milliseconds>(ev.occurred_at.time_since_epoch()).count();
+                int64_t ev_ts =
+                    std::chrono::duration_cast<std::chrono::milliseconds>(ev.occurred_at.time_since_epoch()).count();
                 if (filter.sort_order == SortOrder::Descending) {
-                    if (ev_ts > cursor->last_occurred_at_ms) continue;
-                    if (ev_ts == cursor->last_occurred_at_ms && ev.event_id.to_string() >= cursor->last_event_id.to_string()) continue;
+                    if (ev_ts > cursor->last_occurred_at_ms)
+                        continue;
+                    if (ev_ts == cursor->last_occurred_at_ms &&
+                        ev.event_id.to_string() >= cursor->last_event_id.to_string())
+                        continue;
                 } else {
-                    if (ev_ts < cursor->last_occurred_at_ms) continue;
-                    if (ev_ts == cursor->last_occurred_at_ms && ev.event_id.to_string() <= cursor->last_event_id.to_string()) continue;
+                    if (ev_ts < cursor->last_occurred_at_ms)
+                        continue;
+                    if (ev_ts == cursor->last_occurred_at_ms &&
+                        ev.event_id.to_string() <= cursor->last_event_id.to_string())
+                        continue;
                 }
             }
 
@@ -61,12 +77,15 @@ class MemoryAuditRepository : public repository::IAuditEventRepository {
         }
 
         // Sorting
-        std::sort(filtered.begin(), filtered.end(), [order = filter.sort_order](const domain::AuditEvent& a, const domain::AuditEvent& b) {
-            if (a.occurred_at != b.occurred_at) {
-                return order == SortOrder::Descending ? a.occurred_at > b.occurred_at : a.occurred_at < b.occurred_at;
-            }
-            return order == SortOrder::Descending ? a.event_id.to_string() > b.event_id.to_string() : a.event_id.to_string() < b.event_id.to_string();
-        });
+        std::sort(filtered.begin(), filtered.end(),
+                  [order = filter.sort_order](const domain::AuditEvent& a, const domain::AuditEvent& b) {
+                      if (a.occurred_at != b.occurred_at) {
+                          return order == SortOrder::Descending ? a.occurred_at > b.occurred_at
+                                                                : a.occurred_at < b.occurred_at;
+                      }
+                      return order == SortOrder::Descending ? a.event_id.to_string() > b.event_id.to_string()
+                                                            : a.event_id.to_string() < b.event_id.to_string();
+                  });
 
         // Limit L + 1 for lookahead
         uint32_t limit = filter.page_size + 1;
@@ -78,11 +97,14 @@ class MemoryAuditRepository : public repository::IAuditEventRepository {
     }
 
     std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId& id) override {
-        if (should_timeout) throw repository::ClickHouseTimeoutException("Lookup timeout");
-        if (should_fail) throw repository::ClickHouseConnectionException("Connection refused");
+        if (should_timeout)
+            throw repository::ClickHouseTimeoutException("Lookup timeout");
+        if (should_fail)
+            throw repository::ClickHouseConnectionException("Connection refused");
 
         for (const auto& ev : storage_) {
-            if (ev.event_id == id) return ev;
+            if (ev.event_id == id)
+                return ev;
         }
         return std::nullopt;
     }

@@ -41,6 +41,7 @@ class MockScyllaSession : public IScyllaSession {
                              std::string message = "Injected mock error");
     void set_ping_healthy(bool healthy) noexcept;
 
+    [[nodiscard]] std::unordered_map<std::string, std::string> get_prepared_statements() const;
     [[nodiscard]] std::vector<std::string> get_executed_queries();
     [[nodiscard]] std::vector<std::pair<PreparedStatementId, ScyllaParams>> get_executed_prepared();
     [[nodiscard]] std::vector<std::vector<BoundStatement>> get_executed_batches();

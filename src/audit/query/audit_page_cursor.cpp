@@ -58,13 +58,21 @@ std::optional<std::vector<uint8_t>> base64url_decode(std::string_view input) {
 }
 
 void hash_uint64(EVP_MD_CTX* ctx, uint64_t val) {
-    uint64_t net_val = val; // Big-endian normalization
-    EVP_DigestUpdate(ctx, &net_val, sizeof(net_val));
+    uint8_t buf[8];
+    for (int i = 7; i >= 0; --i) {
+        buf[7 - i] = static_cast<uint8_t>((val >> (i * 8)) & 0xFF);
+    }
+    EVP_DigestUpdate(ctx, buf, sizeof(buf));
 }
 
 void hash_string(EVP_MD_CTX* ctx, std::string_view str) {
-    uint32_t len = static_cast<uint32_t>(str.size());
-    EVP_DigestUpdate(ctx, &len, sizeof(len));
+    auto len = static_cast<uint32_t>(str.size());
+    uint8_t buf[4];
+    buf[0] = static_cast<uint8_t>((len >> 24) & 0xFF);
+    buf[1] = static_cast<uint8_t>((len >> 16) & 0xFF);
+    buf[2] = static_cast<uint8_t>((len >> 8) & 0xFF);
+    buf[3] = static_cast<uint8_t>(len & 0xFF);
+    EVP_DigestUpdate(ctx, buf, sizeof(buf));
     if (!str.empty()) {
         EVP_DigestUpdate(ctx, str.data(), str.size());
     }

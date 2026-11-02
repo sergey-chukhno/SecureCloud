@@ -67,11 +67,10 @@ class IAuditEventRepository {
                                                                                   uint32_t limit) = 0;
 
     /// Executes a parameterized read-only audit query with keyset cursor pagination.
-    [[nodiscard]] virtual std::vector<domain::AuditEvent> execute_paged_query(
-        const query::AuditQueryFilter& /*filter*/,
-        const std::optional<query::AuditPageCursor>& /*cursor*/ = std::nullopt,
-        uint32_t /*timeout_sec*/ = 10,
-        size_t /*max_bytes*/ = 16777216) {
+    [[nodiscard]] virtual std::vector<domain::AuditEvent>
+    execute_paged_query(const query::AuditQueryFilter& /*filter*/,
+                        const std::optional<query::AuditPageCursor>& /*cursor*/ = std::nullopt,
+                        uint32_t /*timeout_sec*/ = 10, size_t /*max_bytes*/ = 16777216) {
         return {};
     }
 

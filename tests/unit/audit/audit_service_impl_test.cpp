@@ -31,9 +31,14 @@ class MockAuditEventRepository : public repository::IAuditEventRepository {
 class AuditServiceImplTest : public ::testing::Test {
   protected:
     void SetUp() override {
+        security::GrpcProducerIdentityValidator::set_bypass_peer_verification_for_testing(true);
         mock_repo_ = std::make_shared<MockAuditEventRepository>();
         ingestion_service_ = std::make_shared<AuditIngestionService>(mock_repo_);
         service_ = std::make_unique<AuditServiceImpl>(ingestion_service_);
+    }
+
+    void TearDown() override {
+        security::GrpcProducerIdentityValidator::set_bypass_peer_verification_for_testing(false);
     }
 
     v1::AuditEventProto create_valid_proto_event() {
@@ -161,6 +166,17 @@ TEST_F(AuditServiceImplTest, SensitiveDataViolationRejection) {
     auto status = service_->SubmitAuditEvent(&context, &request, &response);
 
     EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+}
+
+TEST_F(AuditServiceImplTest, PeerAuthenticationEnforcedWhenNotBypassed) {
+    security::GrpcProducerIdentityValidator::set_bypass_peer_verification_for_testing(false);
+    grpc::ServerContext context;
+    v1::SubmitAuditEventRequest request;
+    *request.mutable_event() = create_valid_proto_event();
+    v1::SubmitAuditEventResponse response;
+
+    auto status = service_->SubmitAuditEvent(&context, &request, &response);
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
 }
 
 } // namespace securecloud::audit::service::testing

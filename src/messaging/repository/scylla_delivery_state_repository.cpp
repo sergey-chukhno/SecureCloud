@@ -168,6 +168,14 @@ void ScyllaDeliveryStateRepository::init_prepared_statements() {
         "SELECT message_id, recipient_device_id, recipient_user_id, delivery_state, delivered_at, read_at "
         "FROM securecloud_messaging.delivery_state_by_message "
         "WHERE message_id = ? AND recipient_device_id = ?;");
+
+    prep_get_device_record_ = session_->prepare(
+        "deliv_repo_get_device_record",
+        "SELECT device_id, delivery_bucket, accepted_at, message_id, conversation_id, message_sequence, "
+        "message_priority, delivery_state, attempt_count, next_retry_at, "
+        "ciphertext_blob, ephemeral_public_key, iv, auth_tag, algorithm, protocol_version, one_time_prekey_id "
+        "FROM securecloud_messaging.pending_deliveries_by_device "
+        "WHERE device_id = ? AND message_id = ?;");
 }
 
 void ScyllaDeliveryStateRepository::save_pending_deliveries(const std::vector<domain::DeviceDeliveryRecord>& records) {
@@ -453,6 +461,22 @@ ScyllaDeliveryStateRepository::get_message_delivery_summary(const domain::Messag
     }
 
     return summary;
+}
+
+std::optional<domain::DeviceDeliveryRecord>
+ScyllaDeliveryStateRepository::get_delivery_record_for_device(const domain::DeviceId& device_id,
+                                                              const domain::MessageId& message_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    db::ScyllaParams params;
+    params.add_string(device_id.str());
+    params.add_string(message_id.to_string());
+
+    auto result = session_->execute_prepared(prep_get_device_record_, params);
+    if (result.empty()) {
+        return std::nullopt;
+    }
+    return row_to_delivery_record(result.front());
 }
 
 } // namespace securecloud::messaging::repository

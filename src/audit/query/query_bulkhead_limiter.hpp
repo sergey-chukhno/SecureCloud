@@ -14,9 +14,7 @@ class QueryBulkheadLease {
     QueryBulkheadLease() noexcept = default;
     explicit QueryBulkheadLease(QueryBulkheadLimiter* limiter) noexcept : limiter_(limiter) {}
 
-    ~QueryBulkheadLease() {
-        release();
-    }
+    ~QueryBulkheadLease() { release(); }
 
     QueryBulkheadLease(const QueryBulkheadLease&) = delete;
     QueryBulkheadLease& operator=(const QueryBulkheadLease&) = delete;
@@ -47,8 +45,7 @@ class QueryBulkheadLimiter {
     [[nodiscard]] QueryBulkheadLease try_acquire() noexcept {
         uint32_t current = active_queries_.load(std::memory_order_relaxed);
         while (current < max_concurrent_queries_) {
-            if (active_queries_.compare_exchange_weak(current, current + 1,
-                                                      std::memory_order_acquire,
+            if (active_queries_.compare_exchange_weak(current, current + 1, std::memory_order_acquire,
                                                       std::memory_order_relaxed)) {
                 return QueryBulkheadLease(this);
             }
@@ -57,21 +54,15 @@ class QueryBulkheadLimiter {
         return QueryBulkheadLease();
     }
 
-    void release_lease() noexcept {
-        active_queries_.fetch_sub(1, std::memory_order_release);
-    }
+    void release_lease() noexcept { active_queries_.fetch_sub(1, std::memory_order_release); }
 
-    [[nodiscard]] uint32_t active_queries() const noexcept {
-        return active_queries_.load(std::memory_order_relaxed);
-    }
+    [[nodiscard]] uint32_t active_queries() const noexcept { return active_queries_.load(std::memory_order_relaxed); }
 
     [[nodiscard]] uint64_t rejections_total() const noexcept {
         return rejections_total_.load(std::memory_order_relaxed);
     }
 
-    [[nodiscard]] uint32_t max_concurrent_queries() const noexcept {
-        return max_concurrent_queries_;
-    }
+    [[nodiscard]] uint32_t max_concurrent_queries() const noexcept { return max_concurrent_queries_; }
 
   private:
     uint32_t max_concurrent_queries_{4};

@@ -8,15 +8,18 @@ class MockAuditEventRepository : public repository::IAuditEventRepository {
   public:
     bool insert_batch(const std::vector<domain::AuditEvent>&) override { return true; }
     std::vector<domain::AuditEvent> query_by_time_range(std::chrono::system_clock::time_point,
-                                                        std::chrono::system_clock::time_point, uint32_t) override { return {}; }
+                                                        std::chrono::system_clock::time_point, uint32_t) override {
+        return {};
+    }
     std::vector<domain::AuditEvent> query_by_producer(const std::string&, std::chrono::system_clock::time_point,
-                                                      std::chrono::system_clock::time_point, uint32_t) override { return {}; }
+                                                      std::chrono::system_clock::time_point, uint32_t) override {
+        return {};
+    }
     std::vector<domain::AuditEvent> query_by_correlation_id(const std::string&, uint32_t) override { return {}; }
 
-    std::vector<domain::AuditEvent> execute_paged_query(
-        const AuditQueryFilter& filter,
-        const std::optional<AuditPageCursor>&,
-        uint32_t, size_t) override {
+    std::vector<domain::AuditEvent> execute_paged_query(const AuditQueryFilter& filter,
+                                                        const std::optional<AuditPageCursor>&, uint32_t,
+                                                        size_t) override {
 
         query_count++;
 
@@ -26,7 +29,8 @@ class MockAuditEventRepository : public repository::IAuditEventRepository {
         for (size_t i = 0; i < return_count; ++i) {
             domain::AuditEvent ev;
             ev.event_id = domain::EventId::generate_v7();
-            ev.occurred_at = std::chrono::system_clock::time_point(std::chrono::milliseconds(1710000000000LL + i * 1000));
+            ev.occurred_at =
+                std::chrono::system_clock::time_point(std::chrono::milliseconds(1710000000000LL + i * 1000));
             ev.producer_service = domain::ProducerService::Auth;
             ev.event_type = "user.login";
             results.push_back(ev);
