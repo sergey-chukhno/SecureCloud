@@ -1,6 +1,7 @@
 #include "clickhouse_client.hpp"
 
 #include "audit_repository_exceptions.hpp"
+#include "repository/append_only_sql_guard.hpp"
 
 #include <httplib.h>
 #include <queue>
@@ -25,14 +26,11 @@ struct ClickHouseClient::Impl {
 
         auto cli = std::make_unique<httplib::Client>(config.host, config.port);
 
-        // Timeout configuration
         auto sec = std::chrono::duration_cast<std::chrono::seconds>(timeout);
         auto usec = std::chrono::duration_cast<std::chrono::microseconds>(timeout - sec);
         cli->set_connection_timeout(sec.count(), usec.count());
         cli->set_read_timeout(sec.count(), usec.count());
         cli->set_write_timeout(sec.count(), usec.count());
-
-        // Keep-alive settings
         cli->set_keep_alive(true);
 
         return cli;
@@ -60,6 +58,9 @@ ClickHouseClient::~ClickHouseClient() = default;
 
 bool ClickHouseClient::execute_query(const std::string& query, std::string* out_response,
                                      std::chrono::milliseconds timeout) {
+    // Application-layer append-only safeguard
+    AppendOnlySqlGuard::validate_query_sql(query);
+
     auto cli = impl_->acquire_connection(timeout);
     if (!cli) {
         throw ClickHouseConnectionException("Connection pool exhausted or timeout");
@@ -72,7 +73,6 @@ bool ClickHouseClient::execute_query(const std::string& query, std::string* out_
     std::string path = "/?" + httplib::detail::params_to_query_str(params);
     auto res = cli->Get(path.c_str(), impl_->build_headers());
 
-    // Release the connection back to the pool before potentially throwing
     impl_->release_connection(std::move(cli));
 
     if (!res) {
@@ -84,7 +84,6 @@ bool ClickHouseClient::execute_query(const std::string& query, std::string* out_
     }
 
     if (res->status != 200) {
-        // Strict Error Logging Taxonomy: Do NOT append raw query/payload to avoid leaking PII/secrets.
         throw ClickHouseQueryException("ClickHouse rejected the query", res->status);
     }
 
@@ -97,6 +96,8 @@ bool ClickHouseClient::execute_query(const std::string& query, std::string* out_
 
 bool ClickHouseClient::execute_parameterized_query(const ParameterizedClickHouseQuery& query, std::string* out_response,
                                                    std::chrono::milliseconds timeout, size_t max_bytes) {
+    // Application-layer append-only safeguard
+    AppendOnlySqlGuard::validate_query_sql(query.sql_template);
 
     auto cli = impl_->acquire_connection(timeout);
     if (!cli) {
@@ -106,7 +107,7 @@ bool ClickHouseClient::execute_parameterized_query(const ParameterizedClickHouse
     httplib::Params params;
     params.emplace("query", query.sql_template);
     params.emplace("database", impl_->config.db_name);
-    params.emplace("readonly", "1");
+    // readonly enforced via ClickHouse user RBAC
     params.emplace("max_execution_time",
                    std::to_string(std::chrono::duration_cast<std::chrono::seconds>(timeout).count()));
     params.emplace("max_result_bytes", std::to_string(max_bytes));
@@ -129,7 +130,7 @@ bool ClickHouseClient::execute_parameterized_query(const ParameterizedClickHouse
     }
 
     if (res->status != 200) {
-        throw ClickHouseQueryException("ClickHouse rejected the parameterized query", res->status);
+        throw ClickHouseQueryException("ClickHouse rejected the parameterized query: " + res->body, res->status);
     }
 
     if (res->body.size() > max_bytes) {
@@ -145,6 +146,9 @@ bool ClickHouseClient::execute_parameterized_query(const ParameterizedClickHouse
 
 bool ClickHouseClient::execute_insert(const std::string& query, const std::string& body_data,
                                       std::chrono::milliseconds timeout) {
+    // Application-layer append-only safeguard
+    AppendOnlySqlGuard::validate_insert_sql(query);
+
     auto cli = impl_->acquire_connection(timeout);
     if (!cli) {
         throw ClickHouseConnectionException("Connection pool exhausted or timeout");
@@ -157,7 +161,6 @@ bool ClickHouseClient::execute_insert(const std::string& query, const std::strin
     std::string path = "/?" + httplib::detail::params_to_query_str(params);
     auto res = cli->Post(path.c_str(), impl_->build_headers(), body_data, "application/json");
 
-    // Release the connection back to the pool before potentially throwing
     impl_->release_connection(std::move(cli));
 
     if (!res) {
@@ -169,7 +172,6 @@ bool ClickHouseClient::execute_insert(const std::string& query, const std::strin
     }
 
     if (res->status != 200) {
-        // Strict Error Logging Taxonomy: Do NOT append raw body_data to avoid leaking PII/secrets.
         throw ClickHouseQueryException("ClickHouse rejected the insertion", res->status);
     }
 

@@ -3500,3 +3500,18 @@ target_link_libraries(securecloud_audit_query_service_test PRIVATE
         GTest::gtest_main
 )
 gtest_discover_tests(securecloud_audit_query_service_test)
+
+# Audit Retention And Append Only Test Suite (AUDIT-008-T06)
+add_executable(securecloud_audit_retention_and_append_only_test
+        audit/audit_retention_and_append_only_test.cpp
+)
+
+target_link_libraries(securecloud_audit_retention_and_append_only_test PRIVATE
+        securecloud_audit_domain
+        securecloud_audit_repository
+        securecloud_audit_config
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_retention_and_append_only_test)

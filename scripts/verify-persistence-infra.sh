@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# SecureCloud Automated Persistence Infrastructure Verification Suite (SC11-T05)
+# SecureCloud Automated Persistence Infrastructure Verification Suite (SC11-T05 / AUDIT-008-T02)
 # Validates PostgreSQL 17, ScyllaDB 6.0, ClickHouse 24.8, and MinIO S3 Object Storage.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -164,14 +164,40 @@ else
 fi
 
 # ==============================================================================
-# Check 7: ClickHouse Health & securecloud_audit Database Presence
+# Check 7: ClickHouse Health, Least-Privilege RBAC & Append-Only Enforcement (AUDIT-008-T02)
 # ==============================================================================
-log_info "Check 7: Verifying ClickHouse audit database and user..."
+log_info "Check 7: Verifying ClickHouse audit database, users, and append-only RBAC isolation..."
+
+# 7a. Verify audit_user connectivity & SELECT/INSERT capabilities
 CLICKHOUSE_QUERY=$($COMPOSE_CMD exec -T clickhouse clickhouse-client --user audit_user --password audit_dev_db_secret --database securecloud_audit --query "SELECT currentDatabase(), currentUser();")
 if echo "$CLICKHOUSE_QUERY" | grep -q "securecloud_audit" && echo "$CLICKHOUSE_QUERY" | grep -q "audit_user"; then
     log_pass "ClickHouse securecloud_audit database and audit_user verified."
 else
-    log_fail "ClickHouse audit verification failed."
+    log_fail "ClickHouse audit database/user verification failed."
+fi
+
+# 7b. Verify audit_migrator connectivity
+MIGRATOR_QUERY=$($COMPOSE_CMD exec -T clickhouse clickhouse-client --user audit_migrator --password audit_migrator_dev_secret --database securecloud_audit --query "SELECT currentDatabase(), currentUser();")
+if echo "$MIGRATOR_QUERY" | grep -q "securecloud_audit" && echo "$MIGRATOR_QUERY" | grep -q "audit_migrator"; then
+    log_pass "ClickHouse audit_migrator admin identity verified."
+else
+    log_fail "ClickHouse audit_migrator verification failed."
+fi
+
+# 7c. Verify audit_user permission denial on TRUNCATE TABLE securecloud_audit.audit_events
+TRUNCATE_ERR=$($COMPOSE_CMD exec -T clickhouse clickhouse-client --user audit_user --password audit_dev_db_secret --database securecloud_audit --query "TRUNCATE TABLE securecloud_audit.audit_events;" 2>&1 || true)
+if echo "$TRUNCATE_ERR" | grep -qi -E "(ACCESS_DENIED|Not enough privileges|permission)"; then
+    log_pass "audit_user TRUNCATE TABLE on audit_events rejected with permission denial."
+else
+    log_fail "audit_user TRUNCATE TABLE unexpectedly succeeded or gave wrong error: '$TRUNCATE_ERR'"
+fi
+
+# 7d. Verify audit_user permission denial on ALTER TABLE securecloud_audit.audit_events DELETE
+ALTER_DEL_ERR=$($COMPOSE_CMD exec -T clickhouse clickhouse-client --user audit_user --password audit_dev_db_secret --database securecloud_audit --query "ALTER TABLE securecloud_audit.audit_events DELETE WHERE 1=1;" 2>&1 || true)
+if echo "$ALTER_DEL_ERR" | grep -qi -E "(ACCESS_DENIED|Not enough privileges|permission)"; then
+    log_pass "audit_user ALTER DELETE on audit_events rejected with permission denial."
+else
+    log_fail "audit_user ALTER DELETE unexpectedly succeeded or gave wrong error: '$ALTER_DEL_ERR'"
 fi
 
 # ==============================================================================

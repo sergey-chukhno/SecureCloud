@@ -307,6 +307,16 @@ AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& 
 
     // --- Retention Configuration ---
 
+    // SECURECLOUD_AUDIT_RETENTION_MONTHS [1, 120]
+    auto ret_months_val = source.get("SECURECLOUD_AUDIT_RETENTION_MONTHS");
+    if (ret_months_val.has_value()) {
+        auto parsed = common::configuration::ConfigParser::parse_uint16("SECURECLOUD_AUDIT_RETENTION_MONTHS",
+                                                                        ret_months_val.value(), out_errors, 1, 120);
+        if (parsed.has_value()) {
+            config.retention.retention_months = static_cast<uint32_t>(parsed.value());
+        }
+    }
+
     // SECURECLOUD_AUDIT_RETENTION_DAYS [1, 3650]
     auto ret_days_val = source.get("SECURECLOUD_AUDIT_RETENTION_DAYS");
     if (ret_days_val.has_value()) {

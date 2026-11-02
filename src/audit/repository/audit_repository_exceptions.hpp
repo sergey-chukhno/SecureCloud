@@ -10,6 +10,11 @@ class ClickHouseException : public std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
+/// Thrown when an SQL query violates append-only safeguards (e.g., contains ALTER, DELETE, TRUNCATE)
+class AppendOnlyViolationException : public ClickHouseException {
+    using ClickHouseException::ClickHouseException;
+};
+
 /// Thrown on socket errors, connection refused, or DNS resolution failures
 class ClickHouseConnectionException : public ClickHouseException {
     using ClickHouseException::ClickHouseException;

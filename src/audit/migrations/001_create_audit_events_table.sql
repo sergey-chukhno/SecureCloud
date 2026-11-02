@@ -1,6 +1,6 @@
 -- SecureCloud Audit Service - ClickHouse Migration 001
 -- Table: securecloud_audit.audit_events
--- Authoritative Schema Definition (ADR-006, Audit Data Model 5.28)
+-- Authoritative Schema Definition (ADR-006, Audit Data Model 5.28, AUDIT-008)
 
 CREATE DATABASE IF NOT EXISTS securecloud_audit;
 
@@ -37,4 +37,4 @@ CREATE TABLE IF NOT EXISTS securecloud_audit.audit_events
     event_type,
     event_id
 )
-    TTL toDateTime(occurred_at) + INTERVAL 36 MONTH;
+    TTL toDateTime(occurred_at) + INTERVAL 36 MONTH DELETE;

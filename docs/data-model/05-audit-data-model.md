@@ -1043,44 +1043,46 @@ The historical registration event remains unchanged.
 
 ---
 
-# 5.27 Retention and TTL
+# 5.27 Retention, Least-Privilege Access & TTL Semantics
 
-The Audit Service uses time-based retention.
+The Audit Service enforces a strict **36-month retention policy** combined with database-level least-privilege RBAC controls and asynchronous storage lifecycle management.
 
-The initial data model defines:
+---
 
-> **36 months of audit event retention**
+### 5.27.1 Least-Privilege Database Access Matrix
 
-The concrete ClickHouse policy is:
+ClickHouse database credentials are segregated between runtime operations and schema migrations to prevent application-layer data tampering:
 
-```sql
-TTL occurred_at + INTERVAL 36 MONTH
-```
+| Identity / Role | Purpose & Context | Permitted SQL Commands | Target Scope | Forbidden Operations |
+| :--- | :--- | :--- | :--- | :--- |
+| `audit_user` | Runtime Audit Service ingestion & query worker | `SELECT`, `INSERT` | `securecloud_audit.audit_events` | `UPDATE`, `DELETE`, `ALTER`, `TRUNCATE`, `DROP`, DDL/DML mutations |
+| `audit_migrator` | Schema migration & initialization (one-shot / admin) | `CREATE DATABASE`, `CREATE TABLE`, `ALTER TABLE ... MODIFY TTL`, `OPTIMIZE` | `securecloud_audit.*` | Operational application ingestion paths |
 
-Therefore:
+---
 
-```text
-Event occurs
-      │
-      ▼
-Stored in ClickHouse
-      │
-      ▼
-Retained for 36 months
-      │
-      ▼
-Eligible for automatic removal
-```
+### 5.27.2 Asynchronous ClickHouse TTL Execution Semantics
 
-The 36-month period is the concrete MVP default.
-
-It can later be changed for specific deployments where legal or customer requirements differ.
-
-The full table definition therefore includes:
+Retention is enforced programmatically in ClickHouse using the `occurred_at` timestamp:
 
 ```sql
-TTL occurred_at + INTERVAL 36 MONTH
+TTL toDateTime(occurred_at) + INTERVAL 36 MONTH DELETE
 ```
+
+* **Asynchronous Background Merges**: Row physical purge in ClickHouse `MergeTree` engines occurs asynchronously during background data part merges (governed by `merge_with_ttl_timeout`, default 12 hours). TTL expiration does **not** provide instantaneous, exact-to-the-second physical deletion upon timestamp arrival.
+* **Query Filtering vs. Physical Purge**: Events past 36 months may temporarily remain on disk until background merges process the affected parts, but application queries enforce filtering past the retention floor (`now - 36 months`).
+* **Active DB Retention vs. Backup Isolation**: Deletion of expired parts from the active ClickHouse table is isolated from cold storage/encrypted backup retention schedules, which are managed independently by storage lifecycle policies.
+
+---
+
+### 5.27.3 Out-of-Order & Delayed Event Lifecycle Semantics
+
+Network partitions or producer outbox backlog replays may cause events to arrive out of chronological order:
+
+* **Dual Timestamp Preservation**:
+    * `occurred_at`: Producer event creation timestamp. Primary key component for ClickHouse `toYYYYMM(occurred_at)` monthly partitioning, sorting, and TTL calculation.
+    * `received_at`: Authoritative server ingestion timestamp assigned by the Audit Service.
+* **Retention Horizon Ingress Boundary**: Replayed events with `occurred_at` within `[now - 36 months, now + 5 minutes]` are ingested into their respective historical monthly ClickHouse partitions without modifying existing records or altering table state.
+* **Expired Timestamp Rejection**: Events with `occurred_at < now - 36 months` (exceeding `max_past_age = 1095 days`) are rejected deterministically during validation (`AuditValidationErrorCode::ClockSkewTooOld`) to prevent creating obsolete or instantly purged historical parts.
 
 ---
 
@@ -1120,7 +1122,7 @@ ORDER BY
     event_type,
     event_id
 )
-TTL occurred_at + INTERVAL 36 MONTH;
+TTL toDateTime(occurred_at) + INTERVAL 36 MONTH DELETE;
 ```
 
 ---

@@ -81,13 +81,13 @@ AuditValidationResult AuditEventValidator::validate(const AuditEvent& event, con
                               std::to_string(limits.max_event_type_length) + " chars"});
     }
 
-    // Rule 3: Occurred At timestamp drift
+    // Rule 3: Occurred At timestamp drift & retention horizon enforcement
     if (event.occurred_at > now + limits.max_future_skew) {
         result.add_error({AuditValidationErrorCode::ClockSkewFuture, "occurred_at",
                           "Event timestamp is too far in the future (exceeds clock drift limit)"});
     } else if (event.occurred_at < now - limits.max_past_age) {
         result.add_error({AuditValidationErrorCode::ClockSkewTooOld, "occurred_at",
-                          "Event timestamp is older than the allowed retention floor"});
+                          "Event timestamp is older than the allowed 36-month retention horizon"});
     }
 
     // Rule 4: Received At logic

@@ -61,6 +61,7 @@ target_link_libraries(securecloud_audit_config PUBLIC
 )
 
 add_library(securecloud_audit_repository STATIC
+        repository/append_only_sql_guard.cpp
         repository/schema_initializer.cpp
         repository/clickhouse_client.cpp
         repository/clickhouse_event_serializer.cpp

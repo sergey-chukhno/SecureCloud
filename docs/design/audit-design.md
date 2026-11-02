@@ -592,31 +592,32 @@ Administrative access itself is auditable.
 
 ---
 
-## 7.20 Retention
+## 7.20 Retention, Least-Privilege Security & Verification Methodology
 
-Audit retention is explicitly bounded.
+Audit retention is explicitly bounded, enforced at both the application and database layers, and verified programmatically.
 
-Retention policies determine how long audit events remain queryable.
+---
 
-Expired data is removed according to a controlled lifecycle process.
+### 7.20.1 Least-Privilege Security Matrix
 
-Retention must be implemented in a way compatible with ClickHouse's partitioning/TTL capabilities.
+To enforce the append-only security invariant, ClickHouse access is strictly isolated:
 
-Exact retention duration is deployment configuration rather than an architectural decision.
+| Account | Application Usage | Granted Privileges | Revoked / Forbidden Privileges |
+| :--- | :--- | :--- | :--- |
+| `audit_user` | Runtime ingestion & query services | `SELECT`, `INSERT` on `securecloud_audit.audit_events` | `UPDATE`, `DELETE`, `ALTER`, `TRUNCATE`, `DROP`, `GRANT`, `REVOKE` |
+| `audit_migrator` | Service startup & schema migrator | `CREATE`, `ALTER TABLE ... MODIFY TTL`, `OPTIMIZE` | Direct application runtime connection |
 
-The system must distinguish:
+Application-layer SQL parsing (`AppendOnlySqlGuard`) intercepts every query before network transmission, raising `AppendOnlyViolationException` if multi-statement semicolons or mutation keywords are detected.
 
-```text id="3l9n1e"
-retention policy
+---
+
+### 7.20.2 Asynchronous TTL Retention Semantics
+
+The table uses ClickHouse `MergeTree` TTL based on event occurrence time:
+
+```sql
+TTL toDateTime(occurred_at) + INTERVAL 36 MONTH DELETE
 ```
-
-from:
-
-```text id="8k6b2r"
-backup/recovery policy
-```
-
-Deleting an expired event from the active analytical store does not automatically imply that all backup copies have been deleted.
 
 ---
 
