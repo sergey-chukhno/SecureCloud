@@ -90,7 +90,8 @@ class MessageSubmissionIdempotencyGuard {
      * @brief Marks a submission as COMMITTED with allocated message_id, sequence number, and fingerprint.
      */
     void mark_committed(const domain::MessageSubmissionCommand& cmd, const std::string& request_fingerprint,
-                        const domain::MessageId& message_id, uint64_t message_sequence);
+                        const domain::MessageId& message_id, uint64_t message_sequence,
+                        std::optional<std::chrono::system_clock::time_point> accepted_at = std::nullopt);
 
     /**
      * @brief Marks a submission as FAILED so that clients can potentially retry.

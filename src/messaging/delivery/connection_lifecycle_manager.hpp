@@ -4,6 +4,7 @@
 #include "domain/connection_session.hpp"
 #include "service/presence_coordinator_interface.hpp"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -103,6 +104,9 @@ class ConnectionLifecycleManager {
 
     mutable std::mutex callback_mutex_;
     std::vector<DeviceConnectedCallback> connected_callbacks_;
+
+    static constexpr size_t kNumStripes = 64;
+    mutable std::array<std::mutex, kNumStripes> lifecycle_stripes_;
 };
 
 } // namespace securecloud::messaging::delivery

@@ -229,7 +229,7 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
         outbox_repo_->enqueue_event(outbox_evt);
 
         // 11. Durably mark Idempotency Record as COMMITTED
-        idempotency_guard_->mark_committed(cmd, fingerprint, message_id, sequence);
+        idempotency_guard_->mark_committed(cmd, fingerprint, message_id, sequence, accepted_at);
 
         // 12. Return success response (Initial acceptance boundary committed)
         MessageSubmissionResponse response;

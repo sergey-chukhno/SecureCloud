@@ -10,9 +10,11 @@
 #include "service/conversation_service.hpp" // for ServiceResult
 #include "service/read_receipt_commands.hpp"
 
+#include <array>
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -48,8 +50,8 @@ class ReadReceiptService {
 
     ReadReceiptService(const ReadReceiptService&) = delete;
     ReadReceiptService& operator=(const ReadReceiptService&) = delete;
-    ReadReceiptService(ReadReceiptService&&) = default;
-    ReadReceiptService& operator=(ReadReceiptService&&) = default;
+    ReadReceiptService(ReadReceiptService&&) = delete;
+    ReadReceiptService& operator=(ReadReceiptService&&) = delete;
 
     /**
      * @brief Authoritatively records a recipient device's read receipt.
@@ -88,6 +90,9 @@ class ReadReceiptService {
     std::shared_ptr<repository::IMembershipRepository> membership_repo_;
     std::shared_ptr<repository::IOutboxRepository> outbox_repo_;
     DeviceStatusChecker device_status_checker_;
+
+    static constexpr size_t kNumStripes = 64;
+    mutable std::array<std::mutex, kNumStripes> receipt_stripes_;
 };
 
 } // namespace securecloud::messaging::service

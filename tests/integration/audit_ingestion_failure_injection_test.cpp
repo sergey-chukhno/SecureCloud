@@ -5,12 +5,8 @@
 namespace securecloud::audit::ingestion::testing {
 
 class FaultyRepository : public repository::IAuditEventRepository {
-public:
-    enum class FaultType {
-        None,
-        Unreachable,
-        Timeout
-    };
+  public:
+    enum class FaultType { None, Unreachable, Timeout };
 
     void set_fault(FaultType fault) { fault_ = fault; }
 
@@ -25,16 +21,20 @@ public:
         return true;
     }
 
-    std::vector<domain::AuditEvent> query_by_time_range(
-        std::chrono::system_clock::time_point, std::chrono::system_clock::time_point, uint32_t) override { return {}; }
-    std::vector<domain::AuditEvent> query_by_producer(
-        const std::string&, std::chrono::system_clock::time_point, std::chrono::system_clock::time_point, uint32_t) override { return {}; }
+    std::vector<domain::AuditEvent> query_by_time_range(std::chrono::system_clock::time_point,
+                                                        std::chrono::system_clock::time_point, uint32_t) override {
+        return {};
+    }
+    std::vector<domain::AuditEvent> query_by_producer(const std::string&, std::chrono::system_clock::time_point,
+                                                      std::chrono::system_clock::time_point, uint32_t) override {
+        return {};
+    }
     std::vector<domain::AuditEvent> query_by_correlation_id(const std::string&, uint32_t) override { return {}; }
     std::optional<domain::AuditEvent> find_by_event_id(const domain::EventId&) override { return std::nullopt; }
 
     [[nodiscard]] size_t inserted_count() const { return inserted_count_.load(); }
 
-private:
+  private:
     FaultType fault_{FaultType::None};
     std::atomic<size_t> inserted_count_{0};
 };
@@ -59,13 +59,11 @@ TEST(AuditIngestionFailureInjectionTest, FailureReturnsNegativeAcknowledgement) 
     auto repo = std::make_shared<FaultyRepository>();
     repo->set_fault(FaultyRepository::FaultType::Unreachable);
 
-    IngestionConfig config{
-        .workers = 1,
-        .max_queued_events = 10,
-        .batch_size = 10,
-        .batch_flush_interval_ms = 20,
-        .max_event_size_bytes = 65536
-    };
+    IngestionConfig config{.workers = 1,
+                           .max_queued_events = 10,
+                           .batch_size = 10,
+                           .batch_flush_interval_ms = 20,
+                           .max_event_size_bytes = 65536};
 
     AuditIngestionPipeline pipeline(config, repo);
     pipeline.start();

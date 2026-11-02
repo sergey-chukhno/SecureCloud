@@ -53,7 +53,7 @@ void DeviceConnectionRegistry::register_channel(std::shared_ptr<IDeviceDeliveryC
 
         channels_[id] = ChannelEntry{channel, std::chrono::steady_clock::now()};
 
-        // Maintain user_to_devices_
+        // Maintain user_to_devices_ in-place
         auto& user_devs = user_to_devices_[uid];
         if (std::find(user_devs.begin(), user_devs.end(), id) == user_devs.end()) {
             user_devs.push_back(id);
