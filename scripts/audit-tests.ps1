@@ -62,6 +62,7 @@ $targets = @(
 
     # Integration tests
     "securecloud_audit_clickhouse_integration_test",
+    "securecloud_audit_graceful_shutdown_integration_test",
     "securecloud_audit_ingestion_concurrency_test",
     "securecloud_audit_ingestion_failure_injection_test",
     "securecloud_audit_ingestion_integration_test",
