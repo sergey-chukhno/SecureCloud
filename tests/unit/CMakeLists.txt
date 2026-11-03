@@ -3578,3 +3578,18 @@ target_link_libraries(securecloud_audit_internal_security_event_recorder_test PR
 
 gtest_discover_tests(securecloud_audit_internal_security_event_recorder_test)
 
+# Audit Service Health Evaluator Unit Test Suite (AUDIT-010-T01)
+add_executable(securecloud_audit_health_evaluator_test
+        audit/audit_health_evaluator_test.cpp
+)
+
+target_link_libraries(securecloud_audit_health_evaluator_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_health_evaluator_test)
+
