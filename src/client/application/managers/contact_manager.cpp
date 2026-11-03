@@ -31,4 +31,3 @@ ClientResult<void> ContactManager::set_blocked(const domain::UserId& user_id, bo
 }
 
 } // namespace securecloud::client::application::managers
-

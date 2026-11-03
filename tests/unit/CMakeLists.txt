@@ -3516,7 +3516,7 @@ target_link_libraries(securecloud_audit_retention_and_append_only_test PRIVATE
 
 gtest_discover_tests(securecloud_audit_retention_and_append_only_test)
 
-# Desktop Client Foundation Test Suite (CLIENT-001-T01, CLIENT-001-T02, CLIENT-001-T03, CLIENT-001-T04)
+# Desktop Client Foundation Test Suite (CLIENT-001-T01 through CLIENT-001-T05)
 if(Qt6_FOUND)
     add_executable(securecloud_client_foundation_test
         client/client_foundation_test.cpp
@@ -3524,6 +3524,7 @@ if(Qt6_FOUND)
         client/client_error_test.cpp
         client/client_domain_test.cpp
         client/client_lifecycle_test.cpp
+        client/navigation_controller_test.cpp
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES
         AUTOMOC ON
@@ -3540,6 +3541,8 @@ if(Qt6_FOUND)
         securecloud::compiler_flags
         Qt6::Core
         Qt6::Gui
+        Qt6::Qml
+        Qt6::Quick
         Qt6::Test
         GTest::gtest_main
     )
@@ -3549,6 +3552,9 @@ if(Qt6_FOUND)
     add_test(
         NAME client_startup_smoke_test
         COMMAND securecloud-client --smoke-test
+    )
+    set_tests_properties(client_startup_smoke_test PROPERTIES
+        ENVIRONMENT "QT_QPA_PLATFORM=offscreen"
     )
     if(WIN32 AND DEFINED _TEST_ENV_MODS)
         set_tests_properties(client_startup_smoke_test PROPERTIES ENVIRONMENT_MODIFICATION "${_TEST_ENV_MODS}")

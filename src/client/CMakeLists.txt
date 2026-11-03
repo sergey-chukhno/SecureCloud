@@ -76,10 +76,14 @@ if(Qt6_FOUND)
     # 4. UI Layer (ViewModels, Presentation, QML Bindings)
     add_library(securecloud_client_ui STATIC
         ui/ui_controller.cpp
+        ui/navigation_controller.cpp
+        ui/app_view_model.cpp
+        ui/qml.qrc
     )
     add_library(securecloud::client_ui ALIAS securecloud_client_ui)
     set_target_properties(securecloud_client_ui PROPERTIES
         AUTOMOC ON
+        AUTORCC ON
     )
     target_include_directories(securecloud_client_ui PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -97,9 +101,11 @@ if(Qt6_FOUND)
     # 5. Desktop Client Executable Target
     add_executable(securecloud-client
         main.cpp
+        ui/qml.qrc
     )
     set_target_properties(securecloud-client PROPERTIES
         AUTOMOC ON
+        AUTORCC ON
     )
     target_include_directories(securecloud-client PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}
@@ -113,7 +119,9 @@ if(Qt6_FOUND)
         securecloud::compiler_flags
         Qt6::Core
         Qt6::Gui
+        Qt6::Qml
         Qt6::Quick
+        Qt6::QuickControls2
     )
 else()
     message(WARNING "[SecureCloud Client] Qt 6 is not available; desktop client targets are omitted.")

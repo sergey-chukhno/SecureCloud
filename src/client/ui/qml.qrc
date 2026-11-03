@@ -1,0 +1,11 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qml/Main.qml</file>
+        <file>qml/NavigationShell.qml</file>
+        <file>qml/LoginPlaceholder.qml</file>
+        <file>qml/WorkspacePlaceholder.qml</file>
+        <file>qml/SettingsPlaceholder.qml</file>
+        <file>qml/EmergencyPlaceholder.qml</file>
+    </qresource>
+</RCC>
+

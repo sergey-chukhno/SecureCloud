@@ -24,4 +24,3 @@ ClientResult<void> FileManager::cancel_transfer(std::string_view transfer_id) {
 }
 
 } // namespace securecloud::client::application::managers
-

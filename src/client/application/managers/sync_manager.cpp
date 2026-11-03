@@ -27,4 +27,3 @@ ClientResult<std::size_t> SyncManager::poll_sync() {
 }
 
 } // namespace securecloud::client::application::managers
-
