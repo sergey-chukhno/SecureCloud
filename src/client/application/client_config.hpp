@@ -31,4 +31,3 @@ struct ClientConfig {
 };
 
 } // namespace securecloud::client::application
-

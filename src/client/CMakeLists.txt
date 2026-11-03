@@ -2,6 +2,17 @@ if(Qt6_FOUND)
     # 1. Domain Layer (Pure C++20, zero Qt GUI/Network dependencies)
     add_library(securecloud_client_domain STATIC
         domain/session_state.cpp
+        domain/user_id.cpp
+        domain/device_id.cpp
+        domain/conversation_id.cpp
+        domain/message_id.cpp
+        domain/delivery_state.cpp
+        domain/crypto_identity.cpp
+        domain/device.cpp
+        domain/user.cpp
+        domain/contact.cpp
+        domain/conversation.cpp
+        domain/message.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)
     target_include_directories(securecloud_client_domain PUBLIC
