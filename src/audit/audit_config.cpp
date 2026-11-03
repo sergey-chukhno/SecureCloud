@@ -337,6 +337,48 @@ AuditConfig AuditConfig::load(const common::configuration::ConfigurationSource& 
         }
     }
 
+    // --- Health Configuration ---
+
+    // SECURECLOUD_AUDIT_HEALTH_PROBE_INTERVAL_MS [100, 10000]
+    auto probe_interval_val = source.get("SECURECLOUD_AUDIT_HEALTH_PROBE_INTERVAL_MS");
+    if (probe_interval_val.has_value()) {
+        auto parsed = common::configuration::ConfigParser::parse_duration_ms(
+            "SECURECLOUD_AUDIT_HEALTH_PROBE_INTERVAL_MS", probe_interval_val.value(), out_errors, 100, 10000);
+        if (parsed.has_value()) {
+            config.health.probe_interval_ms = static_cast<uint32_t>(parsed->count());
+        }
+    }
+
+    // SECURECLOUD_AUDIT_HEALTH_PROBE_TIMEOUT_MS [50, 5000]
+    auto probe_timeout_val = source.get("SECURECLOUD_AUDIT_HEALTH_PROBE_TIMEOUT_MS");
+    if (probe_timeout_val.has_value()) {
+        auto parsed = common::configuration::ConfigParser::parse_duration_ms(
+            "SECURECLOUD_AUDIT_HEALTH_PROBE_TIMEOUT_MS", probe_timeout_val.value(), out_errors, 50, 5000);
+        if (parsed.has_value()) {
+            config.health.probe_timeout_ms = static_cast<uint32_t>(parsed->count());
+        }
+    }
+
+    // SECURECLOUD_AUDIT_HEALTH_CONSECUTIVE_FAILURES [1, 10]
+    auto fail_thresh_val = source.get("SECURECLOUD_AUDIT_HEALTH_CONSECUTIVE_FAILURES");
+    if (fail_thresh_val.has_value()) {
+        auto parsed = parse_uint32_bounded("SECURECLOUD_AUDIT_HEALTH_CONSECUTIVE_FAILURES", fail_thresh_val.value(),
+                                           out_errors, 1, 10);
+        if (parsed.has_value()) {
+            config.health.consecutive_failures_threshold = parsed.value();
+        }
+    }
+
+    // SECURECLOUD_AUDIT_HEALTH_QUEUE_HIGH_WATER_PCT [50, 95]
+    auto high_water_val = source.get("SECURECLOUD_AUDIT_HEALTH_QUEUE_HIGH_WATER_PCT");
+    if (high_water_val.has_value()) {
+        auto parsed = parse_uint32_bounded("SECURECLOUD_AUDIT_HEALTH_QUEUE_HIGH_WATER_PCT", high_water_val.value(),
+                                           out_errors, 50, 95);
+        if (parsed.has_value()) {
+            config.health.queue_high_water_pct = parsed.value();
+        }
+    }
+
     // --- Cross-Field Validations ---
 
     if (config.query.default_page_limit > config.query.max_page_limit) {

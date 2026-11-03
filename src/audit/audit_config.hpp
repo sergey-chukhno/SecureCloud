@@ -28,7 +28,7 @@ struct IngestionConfig {
     uint32_t batch_flush_interval_ms{200}; // [10, 5000]
     uint32_t max_event_size_bytes{65536};  // [1024, 1048576] (64KB default, 1MB max)
 
-    uint32_t dedup_cache_capacity{100000};   // [1000, 1000000] (100k baseline per 05-audit-data-model.md §5.24)
+    uint32_t dedup_cache_capacity{100000};   // [1000, 1000000]
     uint32_t dedup_cache_ttl_ms{600000};     // [10000, 86400000] (10 minutes default)
     uint32_t dedup_cache_shards{64};         // Power of 2 in [1, 256]
     uint32_t in_flight_ack_timeout_ms{5000}; // [500, 30000]
@@ -40,14 +40,21 @@ struct QueryConfig {
     uint32_t default_page_limit{100};       // [1, max_page_limit]
     uint32_t query_timeout_ms{10000};       // [500, 60000]
     uint32_t default_time_window_hours{24}; // [1, max_time_window_hours]
-    uint32_t max_time_window_hours{744};    // [1, 2160] (31 days default, 90 days max)
+    uint32_t max_time_window_hours{744};    // [1, 2160] (31 days default)
     uint32_t max_result_bytes{16777216};    // [1048576, 67108864] (16MB default)
 };
 
 struct RetentionConfig {
-    uint32_t retention_months{36};           // [1, 120] (36 months default per 05-audit-data-model.md §5.27)
-    uint32_t retention_days{1095};           // [1, 3650] (36 months = 1095 days)
+    uint32_t retention_months{36};           // [1, 120]
+    uint32_t retention_days{1095};           // [1, 3650]
     uint32_t shutdown_grace_period_ms{5000}; // [500, 30000]
+};
+
+struct HealthConfig {
+    uint32_t probe_interval_ms{1000};           // [100, 10000]
+    uint32_t probe_timeout_ms{500};             // [50, 5000]
+    uint32_t consecutive_failures_threshold{3}; // [1, 10]
+    uint32_t queue_high_water_pct{90};          // [50, 95]
 };
 
 /// Typed configuration model for Audit service.
@@ -57,6 +64,7 @@ struct AuditConfig {
     IngestionConfig ingestion;
     QueryConfig query;
     RetentionConfig retention;
+    HealthConfig health;
 
     /// Loads and validates Audit configuration. Fails closed if required parameters are invalid or missing.
     static AuditConfig load(const common::configuration::ConfigurationSource& source,
