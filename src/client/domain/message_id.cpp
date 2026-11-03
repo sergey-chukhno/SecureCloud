@@ -17,4 +17,3 @@ std::ostream& operator<<(std::ostream& os, const MessageId& id) {
 }
 
 } // namespace securecloud::client::domain
-

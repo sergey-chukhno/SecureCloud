@@ -26,6 +26,10 @@ if(Qt6_FOUND)
     add_library(securecloud_client_infra STATIC
         infrastructure/gateway_adapter_stub.cpp
         infrastructure/client_logger.cpp
+        infrastructure/adapters/default_gateway_client.cpp
+        infrastructure/adapters/memory_local_store.cpp
+        infrastructure/adapters/memory_secure_storage.cpp
+        infrastructure/adapters/stub_crypto_provider.cpp
     )
     add_library(securecloud::client_infra ALIAS securecloud_client_infra)
     target_include_directories(securecloud_client_infra PUBLIC
@@ -44,6 +48,15 @@ if(Qt6_FOUND)
         application/client_app_service.cpp
         application/client_config.cpp
         application/client_error.cpp
+        application/client_bootstrap.cpp
+        application/client_application.cpp
+        application/managers/auth_manager.cpp
+        application/managers/messaging_manager.cpp
+        application/managers/contact_manager.cpp
+        application/managers/device_manager.cpp
+        application/managers/file_manager.cpp
+        application/managers/emergency_manager.cpp
+        application/managers/sync_manager.cpp
     )
     add_library(securecloud::client_app ALIAS securecloud_client_app)
     set_target_properties(securecloud_client_app PROPERTIES
