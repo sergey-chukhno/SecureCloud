@@ -14,6 +14,7 @@ if(Qt6_FOUND)
     # 2. Infrastructure Layer (Adapters, Networking via Gateway, Persistence)
     add_library(securecloud_client_infra STATIC
         infrastructure/gateway_adapter_stub.cpp
+        infrastructure/client_logger.cpp
     )
     add_library(securecloud::client_infra ALIAS securecloud_client_infra)
     target_include_directories(securecloud_client_infra PUBLIC
@@ -30,6 +31,8 @@ if(Qt6_FOUND)
     # 3. Application Layer (Use Cases, Lifecycle, Context)
     add_library(securecloud_client_app STATIC
         application/client_app_service.cpp
+        application/client_config.cpp
+        application/client_error.cpp
     )
     add_library(securecloud::client_app ALIAS securecloud_client_app)
     set_target_properties(securecloud_client_app PROPERTIES
@@ -41,6 +44,7 @@ if(Qt6_FOUND)
     target_link_libraries(securecloud_client_app PUBLIC
         securecloud_client_domain
         securecloud_client_infra
+        securecloud::common
         securecloud::compiler_flags
         Qt6::Core
     )

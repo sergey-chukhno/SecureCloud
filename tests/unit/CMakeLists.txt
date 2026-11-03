@@ -3516,10 +3516,12 @@ target_link_libraries(securecloud_audit_retention_and_append_only_test PRIVATE
 
 gtest_discover_tests(securecloud_audit_retention_and_append_only_test)
 
-# Desktop Client Foundation Test Suite (CLIENT-001-T01)
+# Desktop Client Foundation Test Suite (CLIENT-001-T01, CLIENT-001-T02)
 if(Qt6_FOUND)
     add_executable(securecloud_client_foundation_test
         client/client_foundation_test.cpp
+        client/client_config_test.cpp
+        client/client_error_test.cpp
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES
         AUTOMOC ON
