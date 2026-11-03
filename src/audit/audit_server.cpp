@@ -15,9 +15,7 @@ AuditServer::AuditServer(AuditConfig config) : config_(std::move(config)) {
 }
 
 AuditServer::~AuditServer() {
-    if (state_.load(std::memory_order_acquire) == ServiceState::Running) {
-        stop();
-    }
+    stop();
 }
 
 bool AuditServer::start() {
@@ -107,6 +105,7 @@ bool AuditServer::start() {
 void AuditServer::stop() {
     auto expected = ServiceState::Running;
     if (!state_.compare_exchange_strong(expected, ServiceState::Draining, std::memory_order_acq_rel)) {
+        // Already draining, stopped, or failed; return safely without redundant work
         return;
     }
 

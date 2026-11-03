@@ -3426,16 +3426,16 @@ target_link_libraries(securecloud_audit_page_cursor_test PRIVATE
 gtest_discover_tests(securecloud_audit_page_cursor_test)
 
 # ClickHouse Query Builder Test (AUDIT-007-T03)
-add_executable(securecloud_clickhouse_query_builder_test
+add_executable(securecloud_audit_clickhouse_query_builder_test
         audit/clickhouse_query_builder_test.cpp
 )
-target_link_libraries(securecloud_clickhouse_query_builder_test PRIVATE
+target_link_libraries(securecloud_audit_clickhouse_query_builder_test PRIVATE
         securecloud::audit_repository
         securecloud::common
         securecloud::compiler_flags
         GTest::gtest_main
 )
-gtest_discover_tests(securecloud_clickhouse_query_builder_test)
+gtest_discover_tests(securecloud_audit_clickhouse_query_builder_test)
 
 # Audit Query Application Service Test (AUDIT-007-T04)
 add_executable(securecloud_audit_query_application_service_test
@@ -3623,3 +3623,16 @@ target_link_libraries(securecloud_audit_service_drain_test PRIVATE
 
 gtest_discover_tests(securecloud_audit_service_drain_test)
 
+# Audit Server Stop Idempotency Unit Test Suite (AUDIT-010-T04)
+add_executable(securecloud_audit_server_stop_test
+        audit/audit_server_stop_test.cpp
+)
+
+target_link_libraries(securecloud_audit_server_stop_test PRIVATE
+        securecloud::audit_server
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_server_stop_test)

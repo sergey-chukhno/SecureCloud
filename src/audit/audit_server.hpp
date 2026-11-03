@@ -38,12 +38,13 @@ class AuditServer {
     /// 5. Transitions to Running and sets health probes to active.
     bool start();
 
-    /// Multi-phase graceful drain sequence (AUDIT-010-T03):
-    /// Phase 1: Withdraw Readiness (health_manager_->set_shutting_down(true) & set_ready(false))
+    /// Multi-phase graceful drain sequence (AUDIT-010-T03/T04):
+    /// Thread-safe, non-reentrant, and idempotent teardown orchestration.
+    /// Phase 1: Withdraw Readiness (health check becomes NOT_SERVING)
     /// Phase 2: Reject New Ingress (audit_service_->set_draining(true) & record ServiceDraining event)
     /// Phase 3: Flush existing ingestion queue into ClickHouse within shutdown_grace_period_ms
     /// Phase 4: Await completion of in-flight ClickHouse batches
-    /// Phase 5: Complete durability promises (handled via pipeline_ shutdown / AcknowledgementManager)
+    /// Phase 5: Complete durability promises
     /// Phase 6: Shutdown gRPC server (server_->Shutdown(deadline))
     /// Phase 7: Join worker threadpools & transition to Stopped state
     void stop();

@@ -1,5 +1,5 @@
-#include "service/audit_service_impl.hpp"
 #include "repository/audit_event_repository_interface.hpp"
+#include "service/audit_service_impl.hpp"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
