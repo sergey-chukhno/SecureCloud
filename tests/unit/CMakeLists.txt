@@ -3515,3 +3515,38 @@ target_link_libraries(securecloud_audit_retention_and_append_only_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_retention_and_append_only_test)
+
+# Desktop Client Foundation Test Suite (CLIENT-001-T01)
+if(Qt6_FOUND)
+    add_executable(securecloud_client_foundation_test
+        client/client_foundation_test.cpp
+    )
+    set_target_properties(securecloud_client_foundation_test PROPERTIES
+        AUTOMOC ON
+    )
+    target_include_directories(securecloud_client_foundation_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/client
+    )
+    target_link_libraries(securecloud_client_foundation_test PRIVATE
+        securecloud_client_ui
+        securecloud_client_app
+        securecloud_client_infra
+        securecloud_client_domain
+        securecloud::common
+        securecloud::compiler_flags
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Test
+        GTest::gtest_main
+    )
+    gtest_discover_tests(securecloud_client_foundation_test ${SECURECLOUD_TEST_PROPERTIES})
+
+    # Desktop Client Startup/Shutdown Smoke Test
+    add_test(
+        NAME client_startup_smoke_test
+        COMMAND securecloud-client --smoke-test
+    )
+    if(WIN32 AND DEFINED _TEST_ENV_MODS)
+        set_tests_properties(client_startup_smoke_test PROPERTIES ENVIRONMENT_MODIFICATION "${_TEST_ENV_MODS}")
+    endif()
+endif()
