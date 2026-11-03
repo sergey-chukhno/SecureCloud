@@ -1,9 +1,9 @@
 #include "health/audit_health_evaluator.hpp"
 #include "securecloud/health/health_status_manager.hpp"
 
-#include <gtest/gtest.h>
 #include <atomic>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <thread>
 
 namespace securecloud::audit::health::testing {
@@ -23,8 +23,7 @@ TEST_F(AuditHealthEvaluatorTest, EvaluatesHealthyWhenClickHouseAndQueueNormal) {
     config.auto_start = false;
 
     AuditHealthEvaluator evaluator(
-        *health_manager_,
-        [](std::chrono::milliseconds) { return true; },
+        *health_manager_, [](std::chrono::milliseconds) { return true; },
         [](uint32_t& out_pct) {
             out_pct = 10;
             return true;
@@ -46,8 +45,7 @@ TEST_F(AuditHealthEvaluatorTest, TransitionsToNotReadyOnConsecutiveClickHouseFai
     config.consecutive_failures_threshold = 3;
 
     AuditHealthEvaluator evaluator(
-        *health_manager_,
-        [](std::chrono::milliseconds) { return false; },
+        *health_manager_, [](std::chrono::milliseconds) { return false; },
         [](uint32_t& out_pct) {
             out_pct = 10;
             return true;
@@ -76,8 +74,7 @@ TEST_F(AuditHealthEvaluatorTest, TransitionsToNotReadyOnQueueHighWaterExceeded) 
     config.queue_high_water_pct = 90;
 
     AuditHealthEvaluator evaluator(
-        *health_manager_,
-        [](std::chrono::milliseconds) { return true; },
+        *health_manager_, [](std::chrono::milliseconds) { return true; },
         [](uint32_t& out_pct) {
             out_pct = 95; // Exceeds 90% threshold
             return true;
@@ -102,8 +99,7 @@ TEST_F(AuditHealthEvaluatorTest, RecoversReadinessWhenClickHouseAndQueueRestored
     std::atomic<uint32_t> queue_occupancy{95};
 
     AuditHealthEvaluator evaluator(
-        *health_manager_,
-        [&ch_probe_result](std::chrono::milliseconds) { return ch_probe_result.load(); },
+        *health_manager_, [&ch_probe_result](std::chrono::milliseconds) { return ch_probe_result.load(); },
         [&queue_occupancy](uint32_t& out_pct) {
             out_pct = queue_occupancy.load();
             return true;
@@ -131,8 +127,7 @@ TEST_F(AuditHealthEvaluatorTest, BackgroundThreadStartsAndStopsCleanly) {
     config.auto_start = true;
 
     AuditHealthEvaluator evaluator(
-        *health_manager_,
-        [](std::chrono::milliseconds) { return true; },
+        *health_manager_, [](std::chrono::milliseconds) { return true; },
         [](uint32_t& out_pct) {
             out_pct = 5;
             return true;
