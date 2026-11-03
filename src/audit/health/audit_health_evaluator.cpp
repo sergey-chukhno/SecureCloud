@@ -7,9 +7,8 @@
 namespace securecloud::audit::health {
 
 AuditHealthEvaluator::AuditHealthEvaluator(common::health::HealthStatusManager& health_manager,
-                                             std::shared_ptr<repository::ClickHouseClient> clickhouse_client,
-                                             QueueHealthFn queue_health_fn,
-                                             AuditHealthEvaluatorConfig config)
+                                           std::shared_ptr<repository::ClickHouseClient> clickhouse_client,
+                                           QueueHealthFn queue_health_fn, AuditHealthEvaluatorConfig config)
     : AuditHealthEvaluator(
           health_manager,
           [client = std::move(clickhouse_client)](std::chrono::milliseconds timeout) {
@@ -21,13 +20,10 @@ AuditHealthEvaluator::AuditHealthEvaluator(common::health::HealthStatusManager& 
           std::move(queue_health_fn), config) {}
 
 AuditHealthEvaluator::AuditHealthEvaluator(common::health::HealthStatusManager& health_manager,
-                                             ClickHouseProbeFn clickhouse_probe,
-                                             QueueHealthFn queue_health_fn,
-                                             AuditHealthEvaluatorConfig config)
-    : health_manager_(health_manager),
-      clickhouse_probe_(std::move(clickhouse_probe)),
-      queue_health_fn_(std::move(queue_health_fn)),
-      config_(config) {
+                                           ClickHouseProbeFn clickhouse_probe, QueueHealthFn queue_health_fn,
+                                           AuditHealthEvaluatorConfig config)
+    : health_manager_(health_manager), clickhouse_probe_(std::move(clickhouse_probe)),
+      queue_health_fn_(std::move(queue_health_fn)), config_(config) {
     if (config_.auto_start) {
         start();
     }
@@ -38,7 +34,7 @@ AuditHealthEvaluator::~AuditHealthEvaluator() {
 }
 
 void AuditHealthEvaluator::update_state(lifecycle::DetailedServiceState new_state,
-                                         lifecycle::StateTransitionReason reason) noexcept {
+                                        lifecycle::StateTransitionReason reason) noexcept {
     auto current = detailed_state_.load(std::memory_order_acquire);
     if (current != new_state) {
         detailed_state_.store(new_state, std::memory_order_release);
@@ -147,9 +143,8 @@ void AuditHealthEvaluator::start() {
             evaluate_once();
 
             std::unique_lock<std::mutex> lock(cv_mutex_);
-            cv_.wait_for(lock, config_.check_interval, [this]() {
-                return !is_running_.load(std::memory_order_acquire);
-            });
+            cv_.wait_for(lock, config_.check_interval,
+                         [this]() { return !is_running_.load(std::memory_order_acquire); });
         }
     });
 }

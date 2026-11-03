@@ -6,6 +6,7 @@
 #include "service/audit_ingestion_service.hpp"
 #include "service/audit_proto_mapper.hpp"
 
+#include <atomic>
 #include <grpcpp/grpcpp.h>
 #include <memory>
 
@@ -16,6 +17,11 @@ class AuditServiceImpl final : public v1::AuditIngestionService::Service {
     explicit AuditServiceImpl(std::shared_ptr<AuditIngestionService> ingestion_service,
                               std::shared_ptr<security::InternalSecurityEventRecorder> security_recorder = nullptr);
 
+    /// Controls whether the service is in a graceful draining state rejecting new ingress.
+    void set_draining(bool draining) noexcept;
+
+    [[nodiscard]] bool is_draining() const noexcept;
+
     grpc::Status SubmitAuditEvent(grpc::ServerContext* context, const v1::SubmitAuditEventRequest* request,
                                   v1::SubmitAuditEventResponse* response) override;
 
@@ -25,6 +31,7 @@ class AuditServiceImpl final : public v1::AuditIngestionService::Service {
   private:
     std::shared_ptr<AuditIngestionService> ingestion_service_;
     std::shared_ptr<security::InternalSecurityEventRecorder> security_recorder_;
+    std::atomic<bool> draining_{false};
 
     static grpc::Status map_error_to_grpc_status(const IngestionResult& result);
 };

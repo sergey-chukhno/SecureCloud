@@ -27,9 +27,21 @@ AuditServiceImpl::AuditServiceImpl(std::shared_ptr<AuditIngestionService> ingest
                                    std::shared_ptr<security::InternalSecurityEventRecorder> security_recorder)
     : ingestion_service_(std::move(ingestion_service)), security_recorder_(std::move(security_recorder)) {}
 
+void AuditServiceImpl::set_draining(bool draining) noexcept {
+    draining_.store(draining, std::memory_order_release);
+}
+
+bool AuditServiceImpl::is_draining() const noexcept {
+    return draining_.load(std::memory_order_acquire);
+}
+
 grpc::Status AuditServiceImpl::SubmitAuditEvent(grpc::ServerContext* context,
                                                 const v1::SubmitAuditEventRequest* request,
                                                 v1::SubmitAuditEventResponse* response) {
+
+    if (draining_.load(std::memory_order_acquire)) {
+        return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Audit service is draining; retry via outbox buffer");
+    }
 
     if (context->IsCancelled()) {
         return grpc::Status(grpc::StatusCode::CANCELLED, "Client cancelled request");
@@ -96,6 +108,10 @@ grpc::Status AuditServiceImpl::SubmitAuditEvent(grpc::ServerContext* context,
 grpc::Status AuditServiceImpl::BatchSubmitAuditEvents(grpc::ServerContext* context,
                                                       const v1::BatchSubmitAuditEventsRequest* request,
                                                       v1::BatchSubmitAuditEventsResponse* response) {
+
+    if (draining_.load(std::memory_order_acquire)) {
+        return grpc::Status(grpc::StatusCode::UNAVAILABLE, "Audit service is draining; retry via outbox buffer");
+    }
 
     if (context->IsCancelled()) {
         return grpc::Status(grpc::StatusCode::CANCELLED, "Client cancelled request");

@@ -3608,3 +3608,18 @@ target_link_libraries(securecloud_audit_service_state_test PRIVATE
 
 gtest_discover_tests(securecloud_audit_service_state_test)
 
+# Audit Service Graceful Drain Unit Test Suite (AUDIT-010-T03)
+add_executable(securecloud_audit_service_drain_test
+        audit/audit_service_drain_test.cpp
+)
+
+target_link_libraries(securecloud_audit_service_drain_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_service_drain_test)
+
