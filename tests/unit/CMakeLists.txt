@@ -3527,6 +3527,7 @@ if(Qt6_FOUND)
         client/navigation_controller_test.cpp
         client/ui_theme_test.cpp
         client/ui_components_test.cpp
+        client/window_state_manager_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

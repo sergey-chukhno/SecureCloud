@@ -5,6 +5,7 @@
 #include "ui/app_view_model.hpp"
 #include "ui/navigation_controller.hpp"
 #include "ui/ui_theme.hpp"
+#include "ui/window_state_manager.hpp"
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -54,6 +55,7 @@ int main(int argc, char* argv[]) {
     securecloud::client::ui::NavigationController navController;
     securecloud::client::ui::AppViewModel appViewModel(clientApp, navController);
     securecloud::client::ui::UiTheme uiTheme;
+    securecloud::client::ui::WindowStateManager windowStateManager;
 
     // QML Application Engine
     QQmlApplicationEngine engine;
@@ -61,6 +63,7 @@ int main(int argc, char* argv[]) {
     engine.rootContext()->setContextProperty(QStringLiteral("navigationController"), &navController);
     engine.rootContext()->setContextProperty(QStringLiteral("appViewModel"), &appViewModel);
     engine.rootContext()->setContextProperty(QStringLiteral("Theme"), &uiTheme);
+    engine.rootContext()->setContextProperty(QStringLiteral("windowStateManager"), &windowStateManager);
 
     const QUrl url(QStringLiteral("qrc:/qml/Main.qml"));
     QObject::connect(

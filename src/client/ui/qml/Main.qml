@@ -6,12 +6,59 @@ import "controls"
 ApplicationWindow {
     id: rootWindow
     visible: true
-    width: 1200
-    height: 800
-    minimumWidth: 960
-    minimumHeight: 640
+    x: typeof windowStateManager !== "undefined" ? windowStateManager.x : 100
+    y: typeof windowStateManager !== "undefined" ? windowStateManager.y : 100
+    width: typeof windowStateManager !== "undefined" ? windowStateManager.width : 1200
+    height: typeof windowStateManager !== "undefined" ? windowStateManager.height : 800
+    minimumWidth: typeof windowStateManager !== "undefined" ? windowStateManager.minWidth : 960
+    minimumHeight: typeof windowStateManager !== "undefined" ? windowStateManager.minHeight : 640
+    visibility: (typeof windowStateManager !== "undefined" && windowStateManager.isMaximized) ? Window.Maximized : Window.Windowed
     title: qsTr("SecureCloud Desktop")
     color: Theme.backgroundPrimary
+
+    Timer {
+        id: saveGeometryTimer
+        interval: 500
+        repeat: false
+        onTriggered: {
+            if (typeof windowStateManager !== "undefined" && windowStateManager !== null) {
+                windowStateManager.saveGeometry(
+                    rootWindow.width,
+                    rootWindow.height,
+                    rootWindow.x,
+                    rootWindow.y,
+                    rootWindow.visibility === Window.Maximized
+                )
+            }
+        }
+    }
+
+    onWidthChanged: if (rootWindow.visible && rootWindow.visibility !== Window.Maximized) saveGeometryTimer.restart()
+    onHeightChanged: if (rootWindow.visible && rootWindow.visibility !== Window.Maximized) saveGeometryTimer.restart()
+    onXChanged: if (rootWindow.visible && rootWindow.visibility !== Window.Maximized) saveGeometryTimer.restart()
+    onYChanged: if (rootWindow.visible && rootWindow.visibility !== Window.Maximized) saveGeometryTimer.restart()
+    onVisibilityChanged: {
+        if (rootWindow.visible && typeof windowStateManager !== "undefined" && windowStateManager !== null) {
+            windowStateManager.saveGeometry(
+                rootWindow.width,
+                rootWindow.height,
+                rootWindow.x,
+                rootWindow.y,
+                rootWindow.visibility === Window.Maximized
+            )
+        }
+    }
+    onClosing: {
+        if (typeof windowStateManager !== "undefined" && windowStateManager !== null) {
+            windowStateManager.saveGeometry(
+                rootWindow.width,
+                rootWindow.height,
+                rootWindow.x,
+                rootWindow.y,
+                rootWindow.visibility === Window.Maximized
+            )
+        }
+    }
 
     header: ToolBar {
         background: Rectangle {
