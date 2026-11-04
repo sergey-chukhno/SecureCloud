@@ -4,27 +4,45 @@ import QtQuick.Layouts
 
 Rectangle {
     id: emergencyRoot
-    color: "#2a1010"
+    color: Theme.backgroundPrimary
 
     ColumnLayout {
         anchors.centerIn: parent
-        spacing: 16
-        width: 440
+        spacing: Theme.space16
+        width: 480
 
-        Label {
-            text: qsTr("⚠ Emergency Wipe Mode")
-            font.pixelSize: 22
-            font.bold: true
-            color: "#ff5555"
-            Layout.alignment: Qt.AlignHCenter
-        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 180
+            radius: Theme.radiusMedium
+            color: Theme.backgroundSecondary
+            border.color: Theme.statusDanger
+            border.width: 2
 
-        Label {
-            text: qsTr("Local cryptographic keys and session tokens have been securely wiped.\nTo regain access, restart the application and log in again.")
-            font.pixelSize: 13
-            color: "#ffaaaa"
-            horizontalAlignment: Text.AlignHCenter
-            Layout.alignment: Qt.AlignHCenter
+            ColumnLayout {
+                anchors.centerIn: parent
+                spacing: Theme.space12
+                width: parent.width - Theme.space32
+
+                Label {
+                    text: qsTr("⚠ Emergency Wipe Mode Activated")
+                    font.pixelSize: Theme.fontTitle
+                    font.bold: true
+                    font.family: Theme.fontFamilyPrimary
+                    color: Theme.statusDanger
+                    Layout.alignment: Qt.AlignHCenter
+                }
+
+                Label {
+                    text: qsTr("All in-memory cryptographic ratchets, session credentials, and decrypted caches have been wiped from memory.")
+                    font.pixelSize: Theme.fontBody
+                    font.family: Theme.fontFamilyPrimary
+                    color: Theme.textSecondary
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+            }
         }
 
         Button {
@@ -34,4 +52,3 @@ Rectangle {
         }
     }
 }
-

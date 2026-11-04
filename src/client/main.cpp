@@ -4,6 +4,7 @@
 #include "securecloud/common/version.hpp"
 #include "ui/app_view_model.hpp"
 #include "ui/navigation_controller.hpp"
+#include "ui/ui_theme.hpp"
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -52,11 +53,14 @@ int main(int argc, char* argv[]) {
     // UI Controllers and Presentation Wiring
     securecloud::client::ui::NavigationController navController;
     securecloud::client::ui::AppViewModel appViewModel(clientApp, navController);
+    securecloud::client::ui::UiTheme uiTheme;
 
     // QML Application Engine
     QQmlApplicationEngine engine;
+    qmlRegisterSingletonInstance<securecloud::client::ui::UiTheme>("SecureCloud.Theme", 1, 0, "Theme", &uiTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("navigationController"), &navController);
     engine.rootContext()->setContextProperty(QStringLiteral("appViewModel"), &appViewModel);
+    engine.rootContext()->setContextProperty(QStringLiteral("Theme"), &uiTheme);
 
     const QUrl url(QStringLiteral("qrc:/qml/Main.qml"));
     QObject::connect(

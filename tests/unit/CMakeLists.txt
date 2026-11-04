@@ -3525,6 +3525,7 @@ if(Qt6_FOUND)
         client/client_domain_test.cpp
         client/client_lifecycle_test.cpp
         client/navigation_controller_test.cpp
+        client/ui_theme_test.cpp
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES
         AUTOMOC ON

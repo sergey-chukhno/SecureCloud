@@ -4,24 +4,54 @@ import QtQuick.Layouts
 
 Rectangle {
     id: settingsRoot
-    color: "#1e1e24"
+    color: Theme.backgroundPrimary
 
     ColumnLayout {
         anchors.centerIn: parent
-        spacing: 16
-        width: 400
+        spacing: Theme.space16
+        width: 440
 
         Label {
             text: qsTr("Application Settings")
-            font.pixelSize: 20
+            font.pixelSize: Theme.fontHeadline
             font.bold: true
-            color: "#ffffff"
+            font.family: Theme.fontFamilyPrimary
+            color: Theme.textPrimary
         }
 
         Label {
-            text: qsTr("Connection & Cryptography Preferences")
-            font.pixelSize: 13
-            color: "#808090"
+            text: qsTr("Appearance & Theme Mode")
+            font.pixelSize: Theme.fontSubtitle
+            font.bold: true
+            font.family: Theme.fontFamilyPrimary
+            color: Theme.textSecondary
+        }
+
+        RowLayout {
+            spacing: Theme.space12
+
+            Button {
+                text: qsTr("🌙 Dark Mode")
+                highlighted: Theme.isDark
+                onClicked: Theme.setThemeMode(1) // Dark
+            }
+
+            Button {
+                text: qsTr("☀️ Light Mode")
+                highlighted: !Theme.isDark
+                onClicked: Theme.setThemeMode(2) // Light
+            }
+
+            Button {
+                text: qsTr("💻 System Sync")
+                onClicked: Theme.setThemeMode(0) // System
+            }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            color: Theme.borderSubtle
         }
 
         Button {
@@ -30,4 +60,3 @@ Rectangle {
         }
     }
 }
-

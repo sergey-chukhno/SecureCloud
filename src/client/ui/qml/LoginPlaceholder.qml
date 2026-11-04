@@ -4,26 +4,34 @@ import QtQuick.Layouts
 
 Rectangle {
     id: loginRoot
-    color: "#1e1e24"
+    color: Theme.backgroundPrimary
 
     ColumnLayout {
         anchors.centerIn: parent
-        spacing: 16
-        width: 340
+        spacing: Theme.space16
+        width: 360
 
         Label {
             text: qsTr("Sign in to SecureCloud")
-            font.pixelSize: 22
+            font.pixelSize: Theme.fontHeadline
             font.bold: true
-            color: "#ffffff"
+            font.family: Theme.fontFamilyPrimary
+            color: Theme.textPrimary
             Layout.alignment: Qt.AlignHCenter
         }
 
         Label {
-            text: qsTr("CLIENT-002 Authentication Extension Point")
-            font.pixelSize: 12
-            color: "#808090"
+            text: qsTr("Zero-Knowledge Encrypted Client")
+            font.pixelSize: Theme.fontBody
+            font.family: Theme.fontFamilyPrimary
+            color: Theme.textSecondary
             Layout.alignment: Qt.AlignHCenter
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            color: Theme.borderSubtle
         }
 
         TextField {
@@ -51,4 +59,3 @@ Rectangle {
         }
     }
 }
-

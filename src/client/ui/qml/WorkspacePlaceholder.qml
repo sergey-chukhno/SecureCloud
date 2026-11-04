@@ -4,36 +4,44 @@ import QtQuick.Layouts
 
 Rectangle {
     id: workspaceRoot
-    color: "#1e1e24"
+    color: Theme.backgroundPrimary
 
     RowLayout {
         anchors.fill: parent
         spacing: 0
 
-        // Sidebar Placeholder
+        // Sidebar Panel
         Rectangle {
             Layout.fillHeight: true
-            Layout.preferredWidth: 260
-            color: "#141418"
-            border.color: "#2a2a32"
+            Layout.preferredWidth: 280
+            color: Theme.backgroundSecondary
+            border.color: Theme.borderSubtle
             border.width: 1
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.margins: 16
-                spacing: 12
+                anchors.margins: Theme.space16
+                spacing: Theme.space12
 
                 Label {
                     text: qsTr("Conversations")
                     font.bold: true
-                    font.pixelSize: 14
-                    color: "#f0f0f5"
+                    font.pixelSize: Theme.fontSubtitle
+                    font.family: Theme.fontFamilyPrimary
+                    color: Theme.textPrimary
                 }
 
                 Label {
-                    text: qsTr("CLIENT-003 Workspace Shell\nExtension Point")
-                    font.pixelSize: 12
-                    color: "#707080"
+                    text: qsTr("Encrypted Direct & Group Channels")
+                    font.pixelSize: Theme.fontCaption
+                    font.family: Theme.fontFamilyPrimary
+                    color: Theme.textMuted
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    color: Theme.borderSubtle
                 }
 
                 Item { Layout.fillHeight: true }
@@ -46,32 +54,33 @@ Rectangle {
             }
         }
 
-        // Main Chat Area Placeholder
+        // Main Workspace Area
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: "#1e1e24"
+            color: Theme.backgroundPrimary
 
             ColumnLayout {
                 anchors.centerIn: parent
-                spacing: 12
+                spacing: Theme.space12
 
                 Label {
                     text: qsTr("Welcome, %1!").arg(appViewModel.currentUser)
-                    font.pixelSize: 20
+                    font.pixelSize: Theme.fontHeadline
                     font.bold: true
-                    color: "#ffffff"
+                    font.family: Theme.fontFamilyPrimary
+                    color: Theme.textPrimary
                     Layout.alignment: Qt.AlignHCenter
                 }
 
                 Label {
-                    text: qsTr("Select a conversation from the sidebar to begin messaging.")
-                    font.pixelSize: 14
-                    color: "#a0a0b0"
+                    text: qsTr("Select a conversation from the sidebar to begin encrypted messaging.")
+                    font.pixelSize: Theme.fontBody
+                    font.family: Theme.fontFamilyPrimary
+                    color: Theme.textSecondary
                     Layout.alignment: Qt.AlignHCenter
                 }
             }
         }
     }
 }
-

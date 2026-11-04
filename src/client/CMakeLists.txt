@@ -78,6 +78,7 @@ if(Qt6_FOUND)
         ui/ui_controller.cpp
         ui/navigation_controller.cpp
         ui/app_view_model.cpp
+        ui/ui_theme.cpp
         ui/qml.qrc
     )
     add_library(securecloud::client_ui ALIAS securecloud_client_ui)
