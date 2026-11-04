@@ -109,4 +109,94 @@ TEST_F(UiComponentsTest, SCIconButtonInstantiationAndProperties) {
     delete obj;
 }
 
+TEST_F(UiComponentsTest, SCCardInstantiationAndProperties) {
+    QQmlComponent component(&engine_, QUrl("qrc:/qml/controls/SCCard.qml"));
+    ASSERT_TRUE(component.isReady()) << component.errorString().toStdString();
+
+    auto* obj = component.create();
+    ASSERT_NE(obj, nullptr);
+
+    EXPECT_EQ(obj->property("elevation").toString(), "Base");
+    EXPECT_TRUE(obj->property("hasBorder").toBool());
+
+    obj->setProperty("headerText", "Security Credentials");
+    EXPECT_EQ(obj->property("headerText").toString(), "Security Credentials");
+
+    obj->setProperty("elevation", "Elevated");
+    EXPECT_EQ(obj->property("elevation").toString(), "Elevated");
+
+    delete obj;
+}
+
+TEST_F(UiComponentsTest, SCBadgeInstantiationAndTypes) {
+    QQmlComponent component(&engine_, QUrl("qrc:/qml/controls/SCBadge.qml"));
+    ASSERT_TRUE(component.isReady()) << component.errorString().toStdString();
+
+    auto* obj = component.create();
+    ASSERT_NE(obj, nullptr);
+
+    EXPECT_EQ(obj->property("type").toString(), "Info");
+    EXPECT_TRUE(obj->property("hasDot").toBool());
+
+    obj->setProperty("type", "Verified");
+    EXPECT_EQ(obj->property("type").toString(), "Verified");
+
+    obj->setProperty("text", "E2EE Verified");
+    EXPECT_EQ(obj->property("text").toString(), "E2EE Verified");
+
+    delete obj;
+}
+
+TEST_F(UiComponentsTest, SCAvatarInitialsAndHashGeneration) {
+    QQmlComponent component(&engine_, QUrl("qrc:/qml/controls/SCAvatar.qml"));
+    ASSERT_TRUE(component.isReady()) << component.errorString().toStdString();
+
+    auto* obj = component.create();
+    ASSERT_NE(obj, nullptr);
+
+    EXPECT_EQ(obj->property("size").toInt(), 40);
+    EXPECT_EQ(obj->property("presence").toString(), "None");
+
+    obj->setProperty("displayName", "Alice Smith");
+    obj->setProperty("userId", "alice@securecloud.org");
+    obj->setProperty("presence", "Online");
+
+    EXPECT_EQ(obj->property("displayName").toString(), "Alice Smith");
+    EXPECT_EQ(obj->property("presence").toString(), "Online");
+
+    // Test getInitials function invokable from QML
+    QVariant returnedInitials;
+    QMetaObject::invokeMethod(obj, "getInitials", Q_RETURN_ARG(QVariant, returnedInitials),
+                              Q_ARG(QVariant, "Alice Smith"), Q_ARG(QVariant, "alice@securecloud.org"));
+    EXPECT_EQ(returnedInitials.toString(), "AS");
+
+    QVariant singleWordInitials;
+    QMetaObject::invokeMethod(obj, "getInitials", Q_RETURN_ARG(QVariant, singleWordInitials), Q_ARG(QVariant, "Bob"),
+                              Q_ARG(QVariant, "bob@securecloud.org"));
+    EXPECT_EQ(singleWordInitials.toString(), "BO");
+
+    delete obj;
+}
+
+TEST_F(UiComponentsTest, SCDialogConfirmedAndCancelledSignals) {
+    QQmlComponent component(&engine_, QUrl("qrc:/qml/controls/SCDialog.qml"));
+    ASSERT_TRUE(component.isReady()) << component.errorString().toStdString();
+
+    auto* obj = component.create();
+    ASSERT_NE(obj, nullptr);
+
+    EXPECT_FALSE(obj->property("isOpen").toBool());
+    EXPECT_FALSE(obj->property("isDanger").toBool());
+
+    obj->setProperty("title", "Confirm Action");
+    obj->setProperty("message", "Proceed with operation?");
+    obj->setProperty("isDanger", true);
+    obj->setProperty("isOpen", true);
+
+    EXPECT_TRUE(obj->property("isOpen").toBool());
+    EXPECT_TRUE(obj->property("isDanger").toBool());
+
+    delete obj;
+}
+
 } // namespace

@@ -41,11 +41,38 @@ ApplicationWindow {
                 color: Theme.textPrimary
             }
 
+            SCBadge {
+                visible: navigationController.isAuthenticated
+                text: qsTr("Verified Identity")
+                type: "Verified"
+            }
+
             Item { Layout.fillWidth: true }
 
+            RowLayout {
+                visible: navigationController.isAuthenticated
+                spacing: Theme.space8
+
+                SCAvatar {
+                    userId: appViewModel.currentUser
+                    displayName: appViewModel.currentUser
+                    size: 30
+                    presence: "Online"
+                }
+
+                Label {
+                    text: appViewModel.currentUser
+                    color: Theme.textPrimary
+                    font.pixelSize: Theme.fontBody
+                    font.bold: true
+                    font.family: Theme.fontFamilyPrimary
+                }
+            }
+
             Label {
-                text: appViewModel.currentUser !== "" ? qsTr("Logged in as: %1").arg(appViewModel.currentUser) : qsTr("Not Authenticated")
-                color: Theme.textSecondary
+                visible: !navigationController.isAuthenticated
+                text: qsTr("Not Authenticated")
+                color: Theme.textMuted
                 font.pixelSize: Theme.fontBody
                 font.family: Theme.fontFamilyPrimary
             }
@@ -65,11 +92,11 @@ ApplicationWindow {
             }
 
             SCButton {
-                text: qsTr("Emergency")
+                text: qsTr("Emergency Wipe")
                 variant: "Danger"
                 buttonHeight: 32
                 visible: navigationController.isAuthenticated
-                onClicked: appViewModel.triggerEmergencyWipe()
+                onClicked: emergencyConfirmDialog.isOpen = true
             }
         }
     }
@@ -99,21 +126,22 @@ ApplicationWindow {
 
             Item { Layout.fillWidth: true }
 
-            Rectangle {
-                width: 8
-                height: 8
-                radius: 4
-                color: Theme.statusSuccess
-                Layout.alignment: Qt.AlignVCenter
-            }
-
-            Label {
+            SCBadge {
                 text: qsTr("End-to-End Encrypted")
-                color: Theme.statusSuccess
-                font.pixelSize: Theme.fontCaption
-                font.family: Theme.fontFamilyPrimary
-                font.bold: true
+                type: "Verified"
+                hasDot: true
             }
         }
+    }
+
+    // Modal Confirmation Dialog for High-Risk Emergency Action
+    SCDialog {
+        id: emergencyConfirmDialog
+        title: qsTr("Initiate Emergency Wipe?")
+        message: qsTr("Warning: This action will permanently zeroize all cryptographic ratchets, purge session tokens, and scrub local database caches from memory and disk. You will be logged out immediately.")
+        confirmText: qsTr("Execute Emergency Wipe")
+        cancelText: qsTr("Cancel")
+        isDanger: true
+        onConfirmed: appViewModel.triggerEmergencyWipe()
     }
 }
