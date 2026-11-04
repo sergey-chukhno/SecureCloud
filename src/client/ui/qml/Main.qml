@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "controls"
 
 ApplicationWindow {
     id: rootWindow
@@ -25,8 +26,9 @@ ApplicationWindow {
             anchors.rightMargin: Theme.space16
             spacing: Theme.space12
 
-            Button {
-                text: qsTr("← Back")
+            SCIconButton {
+                iconText: "←"
+                tooltipText: qsTr("Go Back")
                 visible: navigationController.canNavigateBack
                 onClicked: navigationController.navigateBack()
             }
@@ -48,19 +50,24 @@ ApplicationWindow {
                 font.family: Theme.fontFamilyPrimary
             }
 
-            Button {
-                text: Theme.isDark ? qsTr("☀️ Light Mode") : qsTr("🌙 Dark Mode")
+            SCIconButton {
+                iconText: Theme.isDark ? "☀️" : "🌙"
+                tooltipText: Theme.isDark ? qsTr("Switch to Light Mode") : qsTr("Switch to Dark Mode")
                 onClicked: Theme.toggleTheme()
             }
 
-            Button {
+            SCButton {
                 text: qsTr("Settings")
+                variant: "Secondary"
+                buttonHeight: 32
                 visible: navigationController.isAuthenticated
                 onClicked: navigationController.navigateTo(3) // Settings
             }
 
-            Button {
+            SCButton {
                 text: qsTr("Emergency")
+                variant: "Danger"
+                buttonHeight: 32
                 visible: navigationController.isAuthenticated
                 onClicked: appViewModel.triggerEmergencyWipe()
             }

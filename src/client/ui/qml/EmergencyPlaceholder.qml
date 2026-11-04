@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "controls"
 
 Rectangle {
     id: emergencyRoot
@@ -45,8 +46,9 @@ Rectangle {
             }
         }
 
-        Button {
+        SCButton {
             text: qsTr("Return to Login")
+            variant: "Danger"
             Layout.alignment: Qt.AlignHCenter
             onClicked: navigationController.reset(0) // Unauthenticated
         }

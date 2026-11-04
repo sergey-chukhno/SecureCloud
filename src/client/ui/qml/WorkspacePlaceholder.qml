@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "controls"
 
 Rectangle {
     id: workspaceRoot
@@ -46,9 +47,10 @@ Rectangle {
 
                 Item { Layout.fillHeight: true }
 
-                Button {
+                SCButton {
                     text: qsTr("Log Out")
-                    Layout.fillWidth: true
+                    variant: "Secondary"
+                    fullWidth: true
                     onClicked: appViewModel.requestLogout()
                 }
             }

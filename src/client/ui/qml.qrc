@@ -6,6 +6,8 @@
         <file>qml/WorkspacePlaceholder.qml</file>
         <file>qml/SettingsPlaceholder.qml</file>
         <file>qml/EmergencyPlaceholder.qml</file>
+        <file>qml/controls/SCButton.qml</file>
+        <file>qml/controls/SCTextField.qml</file>
+        <file>qml/controls/SCIconButton.qml</file>
     </qresource>
 </RCC>
-

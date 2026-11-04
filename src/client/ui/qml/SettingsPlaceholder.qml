@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "controls"
 
 Rectangle {
     id: settingsRoot
@@ -30,20 +31,21 @@ Rectangle {
         RowLayout {
             spacing: Theme.space12
 
-            Button {
-                text: qsTr("🌙 Dark Mode")
-                highlighted: Theme.isDark
+            SCButton {
+                text: qsTr("🌙 Dark")
+                variant: Theme.isDark ? "Primary" : "Secondary"
                 onClicked: Theme.setThemeMode(1) // Dark
             }
 
-            Button {
-                text: qsTr("☀️ Light Mode")
-                highlighted: !Theme.isDark
+            SCButton {
+                text: qsTr("☀️ Light")
+                variant: !Theme.isDark ? "Primary" : "Secondary"
                 onClicked: Theme.setThemeMode(2) // Light
             }
 
-            Button {
-                text: qsTr("💻 System Sync")
+            SCButton {
+                text: qsTr("💻 System")
+                variant: "Secondary"
                 onClicked: Theme.setThemeMode(0) // System
             }
         }
@@ -54,8 +56,10 @@ Rectangle {
             color: Theme.borderSubtle
         }
 
-        Button {
+        SCButton {
             text: qsTr("Back to Workspace")
+            variant: "Ghost"
+            iconText: "←"
             onClicked: navigationController.navigateBack()
         }
     }

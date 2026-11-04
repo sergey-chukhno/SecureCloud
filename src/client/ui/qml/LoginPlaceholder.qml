@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "controls"
 
 Rectangle {
     id: loginRoot
@@ -34,25 +35,29 @@ Rectangle {
             color: Theme.borderSubtle
         }
 
-        TextField {
+        SCTextField {
             id: usernameField
-            placeholderText: qsTr("Username or Email")
+            label: qsTr("Username or Email")
+            placeholderText: qsTr("Enter your username")
             Layout.fillWidth: true
             text: "alice"
         }
 
-        TextField {
+        SCTextField {
             id: passwordField
-            placeholderText: qsTr("Password")
-            echoMode: TextInput.Password
+            label: qsTr("Password")
+            placeholderText: qsTr("Enter your password")
+            isPassword: true
             Layout.fillWidth: true
             text: "secret"
+            onAccepted: loginButton.clicked()
         }
 
-        Button {
+        SCButton {
+            id: loginButton
             text: qsTr("Log In")
-            Layout.fillWidth: true
-            highlighted: true
+            variant: "Primary"
+            fullWidth: true
             onClicked: {
                 appViewModel.requestLogin(usernameField.text, passwordField.text)
             }
