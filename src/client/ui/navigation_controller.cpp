@@ -20,6 +20,8 @@ QString NavigationController::to_view_name(NavigationState state) {
         return QStringLiteral("Settings");
     case NavigationState::EmergencyMode:
         return QStringLiteral("Emergency");
+    case NavigationState::StyleGuide:
+        return QStringLiteral("StyleGuide");
     }
     return QStringLiteral("Unknown");
 }

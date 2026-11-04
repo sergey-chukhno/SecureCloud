@@ -6,6 +6,7 @@ Rectangle {
     id: card
 
     property string headerText: ""
+    property alias headerTitle: card.headerText
     property string headerIcon: ""
     property string elevation: "Base" // Base, Elevated
     property bool hasBorder: true
@@ -13,6 +14,9 @@ Rectangle {
     property int cardRadius: Theme.radiusMedium
 
     default property alias content: contentLayout.data
+
+    implicitWidth: 300
+    implicitHeight: (card.headerText !== "" ? 44 : 0) + Math.max(40, contentLayout.childrenRect.height + (card.cardPadding * 2))
 
     radius: cardRadius
     color: elevation === "Elevated" ? Theme.backgroundElevated : Theme.backgroundSecondary

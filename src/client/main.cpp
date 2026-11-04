@@ -26,12 +26,15 @@ int main(int argc, char* argv[]) {
         QString::fromUtf8(securecloud::common::get_version_string().data(),
                           static_cast<qsizetype>(securecloud::common::get_version_string().size())));
 
-    // Check for non-interactive smoke test flag
+    // Check for CLI runtime flags
     bool isSmokeTest = false;
+    bool isGalleryMode = false;
     for (int i = 1; i < argc; ++i) {
-        if (std::string_view(argv[i]) == "--smoke-test") {
+        const std::string_view arg(argv[i]);
+        if (arg == "--smoke-test") {
             isSmokeTest = true;
-            break;
+        } else if (arg == "--gallery" || arg == "--style-guide") {
+            isGalleryMode = true;
         }
     }
 
@@ -56,6 +59,10 @@ int main(int argc, char* argv[]) {
     securecloud::client::ui::AppViewModel appViewModel(clientApp, navController);
     securecloud::client::ui::UiTheme uiTheme;
     securecloud::client::ui::WindowStateManager windowStateManager;
+
+    if (isGalleryMode) {
+        navController.navigateTo(securecloud::client::ui::NavigationController::NavigationState::StyleGuide);
+    }
 
     // QML Application Engine
     QQmlApplicationEngine engine;

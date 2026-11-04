@@ -179,4 +179,3 @@ void WindowStateManager::saveGeometry(int w, int h, int posX, int posY, bool max
 }
 
 } // namespace securecloud::client::ui
-

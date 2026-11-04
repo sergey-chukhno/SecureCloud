@@ -50,6 +50,26 @@ TEST(NavigationControllerTest, AllowedUnauthenticatedRoutes) {
     EXPECT_TRUE(controller.navigateTo(NavigationController::NavigationState::EmergencyMode));
     EXPECT_EQ(controller.currentViewName(), QStringLiteral("Emergency"));
     EXPECT_EQ(stateSpy.count(), 2);
+
+    EXPECT_TRUE(controller.navigateTo(NavigationController::NavigationState::StyleGuide));
+    EXPECT_EQ(controller.currentViewName(), QStringLiteral("StyleGuide"));
+    EXPECT_EQ(stateSpy.count(), 3);
+}
+
+TEST(NavigationControllerTest, StyleGuideRouteAccessibleAndUnrestricted) {
+    NavigationController controller;
+    QSignalSpy stateSpy(&controller, &NavigationController::stateChanged);
+
+    EXPECT_FALSE(controller.isAuthenticated());
+    // StyleGuide must be accessible even when unauthenticated
+    EXPECT_TRUE(controller.navigateTo(NavigationController::NavigationState::StyleGuide));
+    EXPECT_EQ(controller.currentState(), NavigationController::NavigationState::StyleGuide);
+    EXPECT_EQ(controller.currentViewName(), QStringLiteral("StyleGuide"));
+    EXPECT_EQ(stateSpy.count(), 1);
+    EXPECT_TRUE(controller.canNavigateBack());
+
+    EXPECT_TRUE(controller.navigateBack());
+    EXPECT_EQ(controller.currentState(), NavigationController::NavigationState::Unauthenticated);
 }
 
 TEST(NavigationControllerTest, AuthenticatedNavigationAndHistory) {

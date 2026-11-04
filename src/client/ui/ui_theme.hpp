@@ -30,6 +30,7 @@ class UiTheme : public QObject {
     // Border Colors
     Q_PROPERTY(QString borderSubtle READ borderSubtle NOTIFY themeChanged)
     Q_PROPERTY(QString borderFocused READ borderFocused NOTIFY themeChanged)
+    Q_PROPERTY(QString borderFocus READ borderFocused NOTIFY themeChanged)
 
     // Typography Colors
     Q_PROPERTY(QString textPrimary READ textPrimary NOTIFY themeChanged)
@@ -39,6 +40,7 @@ class UiTheme : public QObject {
 
     // Accent & Action Colors
     Q_PROPERTY(QString accentPrimary READ accentPrimary NOTIFY themeChanged)
+    Q_PROPERTY(QString accentSecondary READ accentSecondary NOTIFY themeChanged)
     Q_PROPERTY(QString accentHover READ accentHover NOTIFY themeChanged)
     Q_PROPERTY(QString accentActive READ accentActive NOTIFY themeChanged)
 
@@ -58,11 +60,14 @@ class UiTheme : public QObject {
     Q_PROPERTY(QString shadowColor READ shadowColor NOTIFY themeChanged)
 
     // Typography Scales (Point Sizes)
+    Q_PROPERTY(int fontMicro READ fontMicro CONSTANT)
     Q_PROPERTY(int fontCaption READ fontCaption CONSTANT)
     Q_PROPERTY(int fontBody READ fontBody CONSTANT)
     Q_PROPERTY(int fontSubtitle READ fontSubtitle CONSTANT)
+    Q_PROPERTY(int fontHeader READ fontSubtitle CONSTANT)
     Q_PROPERTY(int fontTitle READ fontTitle CONSTANT)
     Q_PROPERTY(int fontHeadline READ fontHeadline CONSTANT)
+    Q_PROPERTY(int fontDisplay READ fontDisplay CONSTANT)
 
     // Font Families
     Q_PROPERTY(QString fontFamilyPrimary READ fontFamilyPrimary CONSTANT)
@@ -114,6 +119,7 @@ class UiTheme : public QObject {
     [[nodiscard]] QString textInverse() const;
 
     [[nodiscard]] QString accentPrimary() const;
+    [[nodiscard]] QString accentSecondary() const { return accentHover(); }
     [[nodiscard]] QString accentHover() const;
     [[nodiscard]] QString accentActive() const;
 
@@ -130,11 +136,13 @@ class UiTheme : public QObject {
     [[nodiscard]] QString shadowColor() const;
 
     // Typography Metrics Accessors
+    [[nodiscard]] int fontMicro() const noexcept { return 10; }
     [[nodiscard]] int fontCaption() const noexcept { return 11; }
     [[nodiscard]] int fontBody() const noexcept { return 13; }
     [[nodiscard]] int fontSubtitle() const noexcept { return 15; }
     [[nodiscard]] int fontTitle() const noexcept { return 18; }
     [[nodiscard]] int fontHeadline() const noexcept { return 24; }
+    [[nodiscard]] int fontDisplay() const noexcept { return 28; }
 
     [[nodiscard]] QString fontFamilyPrimary() const;
     [[nodiscard]] QString fontFamilyMonospace() const;

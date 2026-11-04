@@ -146,4 +146,3 @@ TEST_F(WindowStateManagerTest, CorruptJsonFileHandling) {
 }
 
 } // namespace
-

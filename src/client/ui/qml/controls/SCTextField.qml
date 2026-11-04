@@ -11,6 +11,7 @@ FocusScope {
     property bool isPassword: false
     property bool isMonospace: false
     property string errorMessage: ""
+    property bool isError: errorMessage !== ""
     property bool readOnly: false
     property int inputHeight: 40
 

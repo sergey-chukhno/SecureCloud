@@ -1,3 +1,4 @@
+#include "ui/navigation_controller.hpp"
 #include "ui/ui_theme.hpp"
 
 #include <QGuiApplication>
@@ -23,10 +24,14 @@ class UiComponentsTest : public ::testing::Test {
         }
     }
 
-    void SetUp() override { engine_.rootContext()->setContextProperty("Theme", &theme_); }
+    void SetUp() override {
+        engine_.rootContext()->setContextProperty("Theme", &theme_);
+        engine_.rootContext()->setContextProperty("navigationController", &navController_);
+    }
 
     QQmlApplicationEngine engine_;
     UiTheme theme_;
+    NavigationController navController_;
 };
 
 TEST_F(UiComponentsTest, SCButtonInstantiationAndProperties) {
@@ -196,6 +201,25 @@ TEST_F(UiComponentsTest, SCDialogConfirmedAndCancelledSignals) {
     EXPECT_TRUE(obj->property("isOpen").toBool());
     EXPECT_TRUE(obj->property("isDanger").toBool());
 
+    delete obj;
+}
+
+TEST_F(UiComponentsTest, StyleGuideViewInstantiation) {
+    QQmlComponent component(&engine_, QUrl("qrc:/qml/StyleGuideView.qml"));
+    ASSERT_TRUE(component.isReady()) << component.errorString().toStdString();
+
+    auto* obj = component.create();
+    ASSERT_NE(obj, nullptr);
+    delete obj;
+}
+
+TEST_F(UiComponentsTest, NavigationShellInstantiationAndRouting) {
+    QQmlComponent component(&engine_, QUrl("qrc:/qml/NavigationShell.qml"));
+    ASSERT_TRUE(component.isReady()) << component.errorString().toStdString();
+
+    auto* obj = component.create();
+    ASSERT_NE(obj, nullptr);
+    EXPECT_FALSE(obj->property("showAlert").toBool());
     delete obj;
 }
 

@@ -7,6 +7,7 @@ FocusScope {
     property string iconText: ""
     property string tooltipText: ""
     property int size: 34
+    property alias buttonSize: control.size
     property string variant: "Ghost" // Ghost, Secondary, Danger
     property bool active: false
     property int badgeCount: 0
