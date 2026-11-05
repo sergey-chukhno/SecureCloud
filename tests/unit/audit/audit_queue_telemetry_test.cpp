@@ -2,17 +2,15 @@
 #include "ingestion/bounded_ingestion_queue.hpp"
 #include "telemetry/audit_metrics.hpp"
 
-#include <gtest/gtest.h>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <thread>
 
 namespace securecloud::audit::ingestion::testing {
 
 class AuditQueueTelemetryTest : public ::testing::Test {
   protected:
-    void SetUp() override {
-        telemetry::AuditMetrics::instance().reset();
-    }
+    void SetUp() override { telemetry::AuditMetrics::instance().reset(); }
 
     static IngestionEnvelope make_test_envelope(domain::ProducerService producer = domain::ProducerService::Auth) {
         IngestionEnvelope env;

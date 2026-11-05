@@ -1,4 +1,5 @@
 #include "ingestion/bounded_ingestion_queue.hpp"
+
 #include "telemetry/audit_metrics.hpp"
 
 #include <algorithm>
@@ -9,12 +10,18 @@ namespace {
 
 telemetry::ProducerLabel map_producer_label(domain::ProducerService producer) noexcept {
     switch (producer) {
-        case domain::ProducerService::Gateway: return telemetry::ProducerLabel::Gateway;
-        case domain::ProducerService::Auth: return telemetry::ProducerLabel::Auth;
-        case domain::ProducerService::Messaging: return telemetry::ProducerLabel::Messaging;
-        case domain::ProducerService::Files: return telemetry::ProducerLabel::Files;
-        case domain::ProducerService::Audit: return telemetry::ProducerLabel::Audit;
-        default: return telemetry::ProducerLabel::Unknown;
+    case domain::ProducerService::Gateway:
+        return telemetry::ProducerLabel::Gateway;
+    case domain::ProducerService::Auth:
+        return telemetry::ProducerLabel::Auth;
+    case domain::ProducerService::Messaging:
+        return telemetry::ProducerLabel::Messaging;
+    case domain::ProducerService::Files:
+        return telemetry::ProducerLabel::Files;
+    case domain::ProducerService::Audit:
+        return telemetry::ProducerLabel::Audit;
+    default:
+        return telemetry::ProducerLabel::Unknown;
     }
 }
 
