@@ -28,7 +28,8 @@ TEST_F(AuditDiagnosticsTest, LogsIngestionRejectionWithCorrelationId) {
     std::ostringstream buffer;
     std::streambuf* old_cout = std::cout.rdbuf(buffer.rdbuf());
 
-    log_ingestion_rejection("clock_skew", "auth", "SubmitAuditEvent", std::make_optional("corr-12345"), "skew_ms=450000");
+    log_ingestion_rejection("clock_skew", "auth", "SubmitAuditEvent", std::make_optional("corr-12345"),
+                            "skew_ms=450000");
 
     std::cout.rdbuf(old_cout);
     std::string output = buffer.str();

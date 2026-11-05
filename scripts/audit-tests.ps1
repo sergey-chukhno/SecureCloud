@@ -71,6 +71,7 @@ $targets = @(
     "securecloud_audit_ingestion_failure_injection_test",
     "securecloud_audit_ingestion_integration_test",
     "securecloud_audit_internal_security_integration_test",
+    "securecloud_audit_metrics_concurrency_test",
     "securecloud_audit_query_integration_test",
     "securecloud_audit_retention_integration_test",
     "securecloud_audit_service_lifecycle_integration_test"

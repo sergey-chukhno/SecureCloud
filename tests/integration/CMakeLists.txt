@@ -1249,3 +1249,17 @@ target_link_libraries(securecloud_audit_graceful_shutdown_integration_test PRIVA
 )
 
 gtest_discover_tests(securecloud_audit_graceful_shutdown_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Metrics & Telemetry High-Concurrency & Cardinality Test Suite (AUDIT-011-T06)
+add_executable(securecloud_audit_metrics_concurrency_test
+        audit_metrics_concurrency_test.cpp
+)
+
+target_link_libraries(securecloud_audit_metrics_concurrency_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_metrics_concurrency_test ${SECURECLOUD_TEST_PROPERTIES})

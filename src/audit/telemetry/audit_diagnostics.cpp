@@ -1,4 +1,5 @@
 #include "telemetry/audit_diagnostics.hpp"
+
 #include "domain/sensitive_data_guard.hpp"
 
 #include <algorithm>
@@ -79,8 +80,7 @@ std::string AuditDiagnostics::sanitize_detail(std::string_view detail) noexcept 
     std::string lower = to_lower_copy(detail);
 
     static const std::initializer_list<const char*> sensitive_keywords = {
-        "password", "passwd", "secret", "token", "auth", "bearer", "key", "api_key", "credential", "private_key"
-    };
+        "password", "passwd", "secret", "token", "auth", "bearer", "key", "api_key", "credential", "private_key"};
 
     for (const char* kw : sensitive_keywords) {
         if (lower.find(kw) != std::string::npos) {
@@ -100,11 +100,10 @@ std::string AuditDiagnostics::sanitize_detail(std::string_view detail) noexcept 
     return text;
 }
 
-void AuditDiagnostics::log_ingestion_rejection(std::string_view reason,
-                                                std::string_view producer,
-                                                std::string_view rpc_method,
-                                                const std::optional<std::string>& correlation_id,
-                                                std::string_view detail) noexcept {
+void AuditDiagnostics::log_ingestion_rejection(std::string_view reason, std::string_view producer,
+                                               std::string_view rpc_method,
+                                               const std::optional<std::string>& correlation_id,
+                                               std::string_view detail) noexcept {
     std::string category = "rejection:" + std::string(reason) + ":" + std::string(producer);
     if (!should_log(category)) {
         return;
@@ -120,8 +119,7 @@ void AuditDiagnostics::log_ingestion_rejection(std::string_view reason,
     }
 
     std::cout << timestamp << " [SecureCloud] [audit] [WARN] [state=" << lifecycle::to_string(state_copy)
-              << "] Ingestion rejection: reason=" << reason << ", producer=" << producer
-              << ", rpc=" << rpc_method;
+              << "] Ingestion rejection: reason=" << reason << ", producer=" << producer << ", rpc=" << rpc_method;
 
     if (correlation_id.has_value() && !correlation_id->empty()) {
         std::cout << ", correlation_id=" << *correlation_id;
@@ -134,10 +132,8 @@ void AuditDiagnostics::log_ingestion_rejection(std::string_view reason,
     std::cout << "\n";
 }
 
-void AuditDiagnostics::log_persistence_failure(std::string_view error_code,
-                                                size_t batch_size,
-                                                std::string_view sanitized_error,
-                                                uint32_t retry_attempt) noexcept {
+void AuditDiagnostics::log_persistence_failure(std::string_view error_code, size_t batch_size,
+                                               std::string_view sanitized_error, uint32_t retry_attempt) noexcept {
     std::string category = "persistence_failure:" + std::string(error_code);
     if (!should_log(category)) {
         return;
@@ -153,8 +149,8 @@ void AuditDiagnostics::log_persistence_failure(std::string_view error_code,
     }
 
     std::cout << timestamp << " [SecureCloud] [audit] [ERROR] [state=" << lifecycle::to_string(state_copy)
-              << "] ClickHouse persistence failure: error_code=" << error_code
-              << ", batch_size=" << batch_size << ", retry_attempt=" << retry_attempt;
+              << "] ClickHouse persistence failure: error_code=" << error_code << ", batch_size=" << batch_size
+              << ", retry_attempt=" << retry_attempt;
 
     if (!safe_error.empty()) {
         std::cout << ", error_message=" << safe_error;
@@ -163,9 +159,7 @@ void AuditDiagnostics::log_persistence_failure(std::string_view error_code,
     std::cout << "\n";
 }
 
-void AuditDiagnostics::log_queue_saturation(size_t current_depth,
-                                             size_t capacity,
-                                             std::string_view producer) noexcept {
+void AuditDiagnostics::log_queue_saturation(size_t current_depth, size_t capacity, std::string_view producer) noexcept {
     std::string category = "queue_saturation:" + std::string(producer);
     if (!should_log(category)) {
         return;
@@ -180,28 +174,23 @@ void AuditDiagnostics::log_queue_saturation(size_t current_depth,
     }
 
     std::cout << timestamp << " [SecureCloud] [audit] [WARN] [state=" << lifecycle::to_string(state_copy)
-              << "] Ingestion queue saturation backpressure: depth=" << current_depth
-              << ", capacity=" << capacity << ", producer=" << producer << "\n";
+              << "] Ingestion queue saturation backpressure: depth=" << current_depth << ", capacity=" << capacity
+              << ", producer=" << producer << "\n";
 }
 
-void log_ingestion_rejection(std::string_view reason,
-                             std::string_view producer,
-                             std::string_view rpc_method,
+void log_ingestion_rejection(std::string_view reason, std::string_view producer, std::string_view rpc_method,
                              const std::optional<std::string>& correlation_id,
                              std::string_view sanitized_detail) noexcept {
-    AuditDiagnostics::instance().log_ingestion_rejection(reason, producer, rpc_method, correlation_id, sanitized_detail);
+    AuditDiagnostics::instance().log_ingestion_rejection(reason, producer, rpc_method, correlation_id,
+                                                         sanitized_detail);
 }
 
-void log_persistence_failure(std::string_view error_code,
-                             size_t batch_size,
-                             std::string_view sanitized_error,
+void log_persistence_failure(std::string_view error_code, size_t batch_size, std::string_view sanitized_error,
                              uint32_t retry_attempt) noexcept {
     AuditDiagnostics::instance().log_persistence_failure(error_code, batch_size, sanitized_error, retry_attempt);
 }
 
-void log_queue_saturation(size_t current_depth,
-                          size_t capacity,
-                          std::string_view producer) noexcept {
+void log_queue_saturation(size_t current_depth, size_t capacity, std::string_view producer) noexcept {
     AuditDiagnostics::instance().log_queue_saturation(current_depth, capacity, producer);
 }
 

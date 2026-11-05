@@ -26,22 +26,15 @@ class AuditDiagnostics {
     void set_service_state(lifecycle::DetailedServiceState state) noexcept;
 
     /// Logs an ingestion rejection event with zero PII and rate-limiting.
-    void log_ingestion_rejection(std::string_view reason,
-                                 std::string_view producer,
-                                 std::string_view rpc_method,
-                                 const std::optional<std::string>& correlation_id,
-                                 std::string_view detail) noexcept;
+    void log_ingestion_rejection(std::string_view reason, std::string_view producer, std::string_view rpc_method,
+                                 const std::optional<std::string>& correlation_id, std::string_view detail) noexcept;
 
     /// Logs a persistence failure event with zero PII and rate-limiting.
-    void log_persistence_failure(std::string_view error_code,
-                                 size_t batch_size,
-                                 std::string_view sanitized_error,
+    void log_persistence_failure(std::string_view error_code, size_t batch_size, std::string_view sanitized_error,
                                  uint32_t retry_attempt) noexcept;
 
     /// Logs a queue saturation backpressure event with rate-limiting.
-    void log_queue_saturation(size_t current_depth,
-                              size_t capacity,
-                              std::string_view producer) noexcept;
+    void log_queue_saturation(size_t current_depth, size_t capacity, std::string_view producer) noexcept;
 
     /// Sanitizes arbitrary text by redacting credential keywords and sensitive details.
     [[nodiscard]] static std::string sanitize_detail(std::string_view detail) noexcept;
@@ -59,19 +52,13 @@ class AuditDiagnostics {
 
 // Convenience API wrappers matching technical spec:
 
-void log_ingestion_rejection(std::string_view reason,
-                             std::string_view producer,
-                             std::string_view rpc_method,
+void log_ingestion_rejection(std::string_view reason, std::string_view producer, std::string_view rpc_method,
                              const std::optional<std::string>& correlation_id,
                              std::string_view sanitized_detail) noexcept;
 
-void log_persistence_failure(std::string_view error_code,
-                             size_t batch_size,
-                             std::string_view sanitized_error,
+void log_persistence_failure(std::string_view error_code, size_t batch_size, std::string_view sanitized_error,
                              uint32_t retry_attempt) noexcept;
 
-void log_queue_saturation(size_t current_depth,
-                          size_t capacity,
-                          std::string_view producer) noexcept;
+void log_queue_saturation(size_t current_depth, size_t capacity, std::string_view producer) noexcept;
 
 } // namespace securecloud::audit::telemetry
