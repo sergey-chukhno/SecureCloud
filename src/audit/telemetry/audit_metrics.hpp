@@ -8,36 +8,13 @@
 
 namespace securecloud::audit::telemetry {
 
-enum class RpcType : uint8_t {
-    SubmitAuditEvent = 0,
-    BatchSubmitAuditEvents,
-    Count
-};
+enum class RpcType : uint8_t { SubmitAuditEvent = 0, BatchSubmitAuditEvents, Count };
 
-enum class RequestStatus : uint8_t {
-    Success = 0,
-    Error,
-    Rejected,
-    Count
-};
+enum class RequestStatus : uint8_t { Success = 0, Error, Rejected, Count };
 
-enum class ProducerLabel : uint8_t {
-    Gateway = 0,
-    Auth,
-    Messaging,
-    Files,
-    Audit,
-    Unknown,
-    Count
-};
+enum class ProducerLabel : uint8_t { Gateway = 0, Auth, Messaging, Files, Audit, Unknown, Count };
 
-enum class SeverityLabel : uint8_t {
-    Info = 0,
-    Warning,
-    Security,
-    Critical,
-    Count
-};
+enum class SeverityLabel : uint8_t { Info = 0, Warning, Security, Critical, Count };
 
 enum class RejectionReason : uint8_t {
     Unauthenticated = 0,
@@ -51,106 +28,131 @@ enum class RejectionReason : uint8_t {
     Count
 };
 
-enum class FlushTrigger : uint8_t {
-    Count = 0,
-    Timer,
-    Shutdown,
-    CountTriggers
-};
+enum class FlushTrigger : uint8_t { Count = 0, Timer, Shutdown, CountTriggers };
 
-enum class OperationOutcome : uint8_t {
-    Success = 0,
-    Failure,
-    Timeout,
-    Count
-};
+enum class OperationOutcome : uint8_t { Success = 0, Failure, Timeout, Count };
 
-enum class WorkerPoolLabel : uint8_t {
-    Validation = 0,
-    Insertion,
-    Count
-};
+enum class WorkerPoolLabel : uint8_t { Validation = 0, Insertion, Count };
 
 [[nodiscard]] constexpr std::string_view to_string(RpcType rpc) noexcept {
     switch (rpc) {
-        case RpcType::SubmitAuditEvent: return "SubmitAuditEvent";
-        case RpcType::BatchSubmitAuditEvents: return "BatchSubmitAuditEvents";
-        default: return "unknown";
+    case RpcType::SubmitAuditEvent:
+        return "SubmitAuditEvent";
+    case RpcType::BatchSubmitAuditEvents:
+        return "BatchSubmitAuditEvents";
+    default:
+        return "unknown";
     }
 }
 
 [[nodiscard]] constexpr std::string_view to_string(RequestStatus status) noexcept {
     switch (status) {
-        case RequestStatus::Success: return "success";
-        case RequestStatus::Error: return "error";
-        case RequestStatus::Rejected: return "rejected";
-        default: return "unknown";
+    case RequestStatus::Success:
+        return "success";
+    case RequestStatus::Error:
+        return "error";
+    case RequestStatus::Rejected:
+        return "rejected";
+    default:
+        return "unknown";
     }
 }
 
 [[nodiscard]] constexpr std::string_view to_string(ProducerLabel producer) noexcept {
     switch (producer) {
-        case ProducerLabel::Gateway: return "gateway";
-        case ProducerLabel::Auth: return "auth";
-        case ProducerLabel::Messaging: return "messaging";
-        case ProducerLabel::Files: return "files";
-        case ProducerLabel::Audit: return "audit";
-        default: return "unknown";
+    case ProducerLabel::Gateway:
+        return "gateway";
+    case ProducerLabel::Auth:
+        return "auth";
+    case ProducerLabel::Messaging:
+        return "messaging";
+    case ProducerLabel::Files:
+        return "files";
+    case ProducerLabel::Audit:
+        return "audit";
+    default:
+        return "unknown";
     }
 }
 
 [[nodiscard]] constexpr std::string_view to_string(SeverityLabel severity) noexcept {
     switch (severity) {
-        case SeverityLabel::Info: return "info";
-        case SeverityLabel::Warning: return "warning";
-        case SeverityLabel::Security: return "security";
-        case SeverityLabel::Critical: return "critical";
-        default: return "unknown";
+    case SeverityLabel::Info:
+        return "info";
+    case SeverityLabel::Warning:
+        return "warning";
+    case SeverityLabel::Security:
+        return "security";
+    case SeverityLabel::Critical:
+        return "critical";
+    default:
+        return "unknown";
     }
 }
 
 [[nodiscard]] constexpr std::string_view to_string(RejectionReason reason) noexcept {
     switch (reason) {
-        case RejectionReason::Unauthenticated: return "unauthenticated";
-        case RejectionReason::ProducerMismatch: return "producer_mismatch";
-        case RejectionReason::SensitiveData: return "sensitive_data";
-        case RejectionReason::ClockSkew: return "clock_skew";
-        case RejectionReason::MalformedUuid: return "malformed_uuid";
-        case RejectionReason::OversizedPayload: return "oversized_payload";
-        case RejectionReason::OversizedBatch: return "oversized_batch";
-        case RejectionReason::QueueSaturated: return "queue_saturated";
-        default: return "unknown";
+    case RejectionReason::Unauthenticated:
+        return "unauthenticated";
+    case RejectionReason::ProducerMismatch:
+        return "producer_mismatch";
+    case RejectionReason::SensitiveData:
+        return "sensitive_data";
+    case RejectionReason::ClockSkew:
+        return "clock_skew";
+    case RejectionReason::MalformedUuid:
+        return "malformed_uuid";
+    case RejectionReason::OversizedPayload:
+        return "oversized_payload";
+    case RejectionReason::OversizedBatch:
+        return "oversized_batch";
+    case RejectionReason::QueueSaturated:
+        return "queue_saturated";
+    default:
+        return "unknown";
     }
 }
 
 [[nodiscard]] constexpr std::string_view to_string(FlushTrigger trigger) noexcept {
     switch (trigger) {
-        case FlushTrigger::Count: return "count";
-        case FlushTrigger::Timer: return "timer";
-        case FlushTrigger::Shutdown: return "shutdown";
-        default: return "unknown";
+    case FlushTrigger::Count:
+        return "count";
+    case FlushTrigger::Timer:
+        return "timer";
+    case FlushTrigger::Shutdown:
+        return "shutdown";
+    default:
+        return "unknown";
     }
 }
 
 [[nodiscard]] constexpr std::string_view to_string(OperationOutcome outcome) noexcept {
     switch (outcome) {
-        case OperationOutcome::Success: return "success";
-        case OperationOutcome::Failure: return "failure";
-        case OperationOutcome::Timeout: return "timeout";
-        default: return "unknown";
+    case OperationOutcome::Success:
+        return "success";
+    case OperationOutcome::Failure:
+        return "failure";
+    case OperationOutcome::Timeout:
+        return "timeout";
+    default:
+        return "unknown";
     }
 }
 
 [[nodiscard]] constexpr std::string_view to_string(WorkerPoolLabel pool) noexcept {
     switch (pool) {
-        case WorkerPoolLabel::Validation: return "validation";
-        case WorkerPoolLabel::Insertion: return "insertion";
-        default: return "unknown";
+    case WorkerPoolLabel::Validation:
+        return "validation";
+    case WorkerPoolLabel::Insertion:
+        return "insertion";
+    default:
+        return "unknown";
     }
 }
 
 struct LatencyHistogram {
-    static constexpr std::array<double, 11> k_buckets{0.001, 0.005, 0.010, 0.025, 0.050, 0.100, 0.250, 0.500, 1.0, 2.5, 5.0};
+    static constexpr std::array<double, 11> k_buckets{0.001, 0.005, 0.010, 0.025, 0.050, 0.100,
+                                                      0.250, 0.500, 1.0,   2.5,   5.0};
     std::array<std::atomic<uint64_t>, 12> bucket_counts{};
     std::atomic<uint64_t> count{0};
     std::atomic<double> sum{0.0};
@@ -159,7 +161,8 @@ struct LatencyHistogram {
         count.fetch_add(1, std::memory_order_relaxed);
 
         double current_sum = sum.load(std::memory_order_relaxed);
-        while (!sum.compare_exchange_weak(current_sum, current_sum + value_seconds, std::memory_order_relaxed)) {}
+        while (!sum.compare_exchange_weak(current_sum, current_sum + value_seconds, std::memory_order_relaxed)) {
+        }
 
         size_t idx = k_buckets.size();
         for (size_t i = 0; i < k_buckets.size(); ++i) {
@@ -255,10 +258,12 @@ class AuditMetrics {
   private:
     // Counters
     std::array<std::array<std::atomic<uint64_t>, static_cast<size_t>(RequestStatus::Count)>,
-               static_cast<size_t>(RpcType::Count)> ingestion_requests_total_{};
+               static_cast<size_t>(RpcType::Count)>
+        ingestion_requests_total_{};
 
     std::array<std::array<std::atomic<uint64_t>, static_cast<size_t>(SeverityLabel::Count)>,
-               static_cast<size_t>(ProducerLabel::Count)> ingested_events_total_{};
+               static_cast<size_t>(ProducerLabel::Count)>
+        ingested_events_total_{};
 
     std::array<std::atomic<uint64_t>, static_cast<size_t>(RejectionReason::Count)> rejected_events_total_{};
 
@@ -272,7 +277,8 @@ class AuditMetrics {
 
     std::array<std::atomic<uint64_t>, static_cast<size_t>(FlushTrigger::CountTriggers)> batch_flush_total_{};
 
-    std::array<std::atomic<uint64_t>, static_cast<size_t>(OperationOutcome::Count)> clickhouse_insert_operations_total_{};
+    std::array<std::atomic<uint64_t>, static_cast<size_t>(OperationOutcome::Count)>
+        clickhouse_insert_operations_total_{};
 
     std::atomic<uint64_t> clickhouse_retries_total_{0};
     std::atomic<uint64_t> clickhouse_bulkhead_rejections_total_{0};

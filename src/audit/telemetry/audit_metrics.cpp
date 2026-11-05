@@ -119,25 +119,35 @@ void AuditMetrics::set_clickhouse_available(bool available) noexcept {
 
 void AuditMetrics::reset() noexcept {
     for (auto& row : ingestion_requests_total_) {
-        for (auto& cell : row) cell.store(0, std::memory_order_relaxed);
+        for (auto& cell : row)
+            cell.store(0, std::memory_order_relaxed);
     }
     for (auto& row : ingested_events_total_) {
-        for (auto& cell : row) cell.store(0, std::memory_order_relaxed);
+        for (auto& cell : row)
+            cell.store(0, std::memory_order_relaxed);
     }
-    for (auto& item : rejected_events_total_) item.store(0, std::memory_order_relaxed);
-    for (auto& item : duplicate_events_total_) item.store(0, std::memory_order_relaxed);
-    for (auto& item : persisted_events_total_) item.store(0, std::memory_order_relaxed);
-    for (auto& item : persisted_batches_total_) item.store(0, std::memory_order_relaxed);
-    for (auto& item : queue_saturated_drops_total_) item.store(0, std::memory_order_relaxed);
-    for (auto& item : batch_flush_total_) item.store(0, std::memory_order_relaxed);
-    for (auto& item : clickhouse_insert_operations_total_) item.store(0, std::memory_order_relaxed);
+    for (auto& item : rejected_events_total_)
+        item.store(0, std::memory_order_relaxed);
+    for (auto& item : duplicate_events_total_)
+        item.store(0, std::memory_order_relaxed);
+    for (auto& item : persisted_events_total_)
+        item.store(0, std::memory_order_relaxed);
+    for (auto& item : persisted_batches_total_)
+        item.store(0, std::memory_order_relaxed);
+    for (auto& item : queue_saturated_drops_total_)
+        item.store(0, std::memory_order_relaxed);
+    for (auto& item : batch_flush_total_)
+        item.store(0, std::memory_order_relaxed);
+    for (auto& item : clickhouse_insert_operations_total_)
+        item.store(0, std::memory_order_relaxed);
 
     clickhouse_retries_total_.store(0, std::memory_order_relaxed);
     clickhouse_bulkhead_rejections_total_.store(0, std::memory_order_relaxed);
 
     queue_depth_.store(0, std::memory_order_relaxed);
     queue_capacity_.store(0, std::memory_order_relaxed);
-    for (auto& item : workers_active_) item.store(0, std::memory_order_relaxed);
+    for (auto& item : workers_active_)
+        item.store(0, std::memory_order_relaxed);
     service_draining_.store(0, std::memory_order_relaxed);
     clickhouse_available_.store(1, std::memory_order_relaxed);
 
@@ -155,8 +165,8 @@ std::string AuditMetrics::to_prometheus_text() const {
     for (size_t r = 0; r < static_cast<size_t>(RpcType::Count); ++r) {
         for (size_t s = 0; s < static_cast<size_t>(RequestStatus::Count); ++s) {
             uint64_t val = ingestion_requests_total_[r][s].load(std::memory_order_relaxed);
-            ss << "audit_ingestion_requests_total{rpc=\"" << to_string(static_cast<RpcType>(r))
-               << "\",status=\"" << to_string(static_cast<RequestStatus>(s)) << "\"} " << val << "\n";
+            ss << "audit_ingestion_requests_total{rpc=\"" << to_string(static_cast<RpcType>(r)) << "\",status=\""
+               << to_string(static_cast<RequestStatus>(s)) << "\"} " << val << "\n";
         }
     }
 
@@ -176,8 +186,8 @@ std::string AuditMetrics::to_prometheus_text() const {
     ss << "# TYPE audit_rejected_events_total counter\n";
     for (size_t r = 0; r < static_cast<size_t>(RejectionReason::Count); ++r) {
         uint64_t val = rejected_events_total_[r].load(std::memory_order_relaxed);
-        ss << "audit_rejected_events_total{reason=\"" << to_string(static_cast<RejectionReason>(r))
-           << "\"} " << val << "\n";
+        ss << "audit_rejected_events_total{reason=\"" << to_string(static_cast<RejectionReason>(r)) << "\"} " << val
+           << "\n";
     }
 
     // 4. audit_duplicate_events_total
@@ -185,8 +195,8 @@ std::string AuditMetrics::to_prometheus_text() const {
     ss << "# TYPE audit_duplicate_events_total counter\n";
     for (size_t p = 0; p < static_cast<size_t>(ProducerLabel::Count); ++p) {
         uint64_t val = duplicate_events_total_[p].load(std::memory_order_relaxed);
-        ss << "audit_duplicate_events_total{producer=\"" << to_string(static_cast<ProducerLabel>(p))
-           << "\"} " << val << "\n";
+        ss << "audit_duplicate_events_total{producer=\"" << to_string(static_cast<ProducerLabel>(p)) << "\"} " << val
+           << "\n";
     }
 
     // 5. audit_persisted_events_total
@@ -194,8 +204,8 @@ std::string AuditMetrics::to_prometheus_text() const {
     ss << "# TYPE audit_persisted_events_total counter\n";
     for (size_t p = 0; p < static_cast<size_t>(ProducerLabel::Count); ++p) {
         uint64_t val = persisted_events_total_[p].load(std::memory_order_relaxed);
-        ss << "audit_persisted_events_total{producer=\"" << to_string(static_cast<ProducerLabel>(p))
-           << "\"} " << val << "\n";
+        ss << "audit_persisted_events_total{producer=\"" << to_string(static_cast<ProducerLabel>(p)) << "\"} " << val
+           << "\n";
     }
 
     // 6. audit_persisted_batches_total
@@ -203,8 +213,8 @@ std::string AuditMetrics::to_prometheus_text() const {
     ss << "# TYPE audit_persisted_batches_total counter\n";
     for (size_t o = 0; o < static_cast<size_t>(OperationOutcome::Count); ++o) {
         uint64_t val = persisted_batches_total_[o].load(std::memory_order_relaxed);
-        ss << "audit_persisted_batches_total{outcome=\"" << to_string(static_cast<OperationOutcome>(o))
-           << "\"} " << val << "\n";
+        ss << "audit_persisted_batches_total{outcome=\"" << to_string(static_cast<OperationOutcome>(o)) << "\"} " << val
+           << "\n";
     }
 
     // 7. Gauges: queue depth & capacity
@@ -221,8 +231,8 @@ std::string AuditMetrics::to_prometheus_text() const {
     ss << "# TYPE audit_queue_saturated_drops_total counter\n";
     for (size_t p = 0; p < static_cast<size_t>(ProducerLabel::Count); ++p) {
         uint64_t val = queue_saturated_drops_total_[p].load(std::memory_order_relaxed);
-        ss << "audit_queue_saturated_drops_total{producer=\"" << to_string(static_cast<ProducerLabel>(p))
-           << "\"} " << val << "\n";
+        ss << "audit_queue_saturated_drops_total{producer=\"" << to_string(static_cast<ProducerLabel>(p)) << "\"} "
+           << val << "\n";
     }
 
     // 9. Latency Histogram: queue_wait_duration_seconds
@@ -231,21 +241,23 @@ std::string AuditMetrics::to_prometheus_text() const {
     uint64_t cumulative_queue = 0;
     for (size_t i = 0; i < LatencyHistogram::k_buckets.size(); ++i) {
         cumulative_queue += queue_wait_duration_seconds_.bucket_counts[i].load(std::memory_order_relaxed);
-        ss << "audit_queue_wait_duration_seconds_bucket{le=\"" << LatencyHistogram::k_buckets[i]
-           << "\"} " << cumulative_queue << "\n";
+        ss << "audit_queue_wait_duration_seconds_bucket{le=\"" << LatencyHistogram::k_buckets[i] << "\"} "
+           << cumulative_queue << "\n";
     }
-    cumulative_queue += queue_wait_duration_seconds_.bucket_counts[LatencyHistogram::k_buckets.size()].load(std::memory_order_relaxed);
+    cumulative_queue +=
+        queue_wait_duration_seconds_.bucket_counts[LatencyHistogram::k_buckets.size()].load(std::memory_order_relaxed);
     ss << "audit_queue_wait_duration_seconds_bucket{le=\"+Inf\"} " << cumulative_queue << "\n";
-    ss << "audit_queue_wait_duration_seconds_sum " << queue_wait_duration_seconds_.sum.load(std::memory_order_relaxed) << "\n";
-    ss << "audit_queue_wait_duration_seconds_count " << queue_wait_duration_seconds_.count.load(std::memory_order_relaxed) << "\n";
+    ss << "audit_queue_wait_duration_seconds_sum " << queue_wait_duration_seconds_.sum.load(std::memory_order_relaxed)
+       << "\n";
+    ss << "audit_queue_wait_duration_seconds_count "
+       << queue_wait_duration_seconds_.count.load(std::memory_order_relaxed) << "\n";
 
     // 10. audit_batch_flush_total
     ss << "# HELP audit_batch_flush_total Total batch flushes by trigger type\n";
     ss << "# TYPE audit_batch_flush_total counter\n";
     for (size_t t = 0; t < static_cast<size_t>(FlushTrigger::CountTriggers); ++t) {
         uint64_t val = batch_flush_total_[t].load(std::memory_order_relaxed);
-        ss << "audit_batch_flush_total{trigger=\"" << to_string(static_cast<FlushTrigger>(t))
-           << "\"} " << val << "\n";
+        ss << "audit_batch_flush_total{trigger=\"" << to_string(static_cast<FlushTrigger>(t)) << "\"} " << val << "\n";
     }
 
     // 11. Batch Size Histogram: batch_size_events
@@ -254,10 +266,11 @@ std::string AuditMetrics::to_prometheus_text() const {
     uint64_t cumulative_batch = 0;
     for (size_t i = 0; i < BatchSizeHistogram::k_buckets.size(); ++i) {
         cumulative_batch += batch_size_events_.bucket_counts[i].load(std::memory_order_relaxed);
-        ss << "audit_batch_size_events_bucket{le=\"" << BatchSizeHistogram::k_buckets[i]
-           << "\"} " << cumulative_batch << "\n";
+        ss << "audit_batch_size_events_bucket{le=\"" << BatchSizeHistogram::k_buckets[i] << "\"} " << cumulative_batch
+           << "\n";
     }
-    cumulative_batch += batch_size_events_.bucket_counts[BatchSizeHistogram::k_buckets.size()].load(std::memory_order_relaxed);
+    cumulative_batch +=
+        batch_size_events_.bucket_counts[BatchSizeHistogram::k_buckets.size()].load(std::memory_order_relaxed);
     ss << "audit_batch_size_events_bucket{le=\"+Inf\"} " << cumulative_batch << "\n";
     ss << "audit_batch_size_events_sum " << batch_size_events_.sum.load(std::memory_order_relaxed) << "\n";
     ss << "audit_batch_size_events_count " << batch_size_events_.count.load(std::memory_order_relaxed) << "\n";
@@ -267,8 +280,7 @@ std::string AuditMetrics::to_prometheus_text() const {
     ss << "# TYPE audit_workers_active gauge\n";
     for (size_t p = 0; p < static_cast<size_t>(WorkerPoolLabel::Count); ++p) {
         int64_t val = workers_active_[p].load(std::memory_order_relaxed);
-        ss << "audit_workers_active{pool=\"" << to_string(static_cast<WorkerPoolLabel>(p))
-           << "\"} " << val << "\n";
+        ss << "audit_workers_active{pool=\"" << to_string(static_cast<WorkerPoolLabel>(p)) << "\"} " << val << "\n";
     }
 
     // 13. audit_service_draining
@@ -282,13 +294,16 @@ std::string AuditMetrics::to_prometheus_text() const {
     uint64_t cumulative_ch = 0;
     for (size_t i = 0; i < LatencyHistogram::k_buckets.size(); ++i) {
         cumulative_ch += clickhouse_insert_duration_seconds_.bucket_counts[i].load(std::memory_order_relaxed);
-        ss << "audit_clickhouse_insert_duration_seconds_bucket{le=\"" << LatencyHistogram::k_buckets[i]
-           << "\"} " << cumulative_ch << "\n";
+        ss << "audit_clickhouse_insert_duration_seconds_bucket{le=\"" << LatencyHistogram::k_buckets[i] << "\"} "
+           << cumulative_ch << "\n";
     }
-    cumulative_ch += clickhouse_insert_duration_seconds_.bucket_counts[LatencyHistogram::k_buckets.size()].load(std::memory_order_relaxed);
+    cumulative_ch += clickhouse_insert_duration_seconds_.bucket_counts[LatencyHistogram::k_buckets.size()].load(
+        std::memory_order_relaxed);
     ss << "audit_clickhouse_insert_duration_seconds_bucket{le=\"+Inf\"} " << cumulative_ch << "\n";
-    ss << "audit_clickhouse_insert_duration_seconds_sum " << clickhouse_insert_duration_seconds_.sum.load(std::memory_order_relaxed) << "\n";
-    ss << "audit_clickhouse_insert_duration_seconds_count " << clickhouse_insert_duration_seconds_.count.load(std::memory_order_relaxed) << "\n";
+    ss << "audit_clickhouse_insert_duration_seconds_sum "
+       << clickhouse_insert_duration_seconds_.sum.load(std::memory_order_relaxed) << "\n";
+    ss << "audit_clickhouse_insert_duration_seconds_count "
+       << clickhouse_insert_duration_seconds_.count.load(std::memory_order_relaxed) << "\n";
 
     // 15. audit_clickhouse_insert_operations_total
     ss << "# HELP audit_clickhouse_insert_operations_total Bulk operations count by outcome\n";
@@ -307,7 +322,8 @@ std::string AuditMetrics::to_prometheus_text() const {
     // 17. audit_clickhouse_bulkhead_rejections_total
     ss << "# HELP audit_clickhouse_bulkhead_rejections_total Total operations rejected by bulkhead\n";
     ss << "# TYPE audit_clickhouse_bulkhead_rejections_total counter\n";
-    ss << "audit_clickhouse_bulkhead_rejections_total " << clickhouse_bulkhead_rejections_total_.load(std::memory_order_relaxed) << "\n";
+    ss << "audit_clickhouse_bulkhead_rejections_total "
+       << clickhouse_bulkhead_rejections_total_.load(std::memory_order_relaxed) << "\n";
 
     // 18. audit_clickhouse_available
     ss << "# HELP audit_clickhouse_available Reachability status of ClickHouse cluster\n";
