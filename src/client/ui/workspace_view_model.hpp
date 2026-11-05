@@ -53,6 +53,14 @@ class WorkspaceViewModel : public QObject {
     Q_PROPERTY(int composerPriority READ composerPriority WRITE setComposerPriority NOTIFY composerPriorityChanged)
     Q_PROPERTY(QString composerPriorityLabel READ composerPriorityLabel NOTIFY composerPriorityChanged)
 
+    // Device Trust, Crypto Identity & MFA Policy State (Settings View)
+    Q_PROPERTY(QVariantList devices READ devices NOTIFY devicesChanged)
+    Q_PROPERTY(int pendingDeviceCount READ pendingDeviceCount NOTIFY devicesChanged)
+    Q_PROPERTY(QVariantMap localDeviceIdentity READ localDeviceIdentity NOTIFY localDeviceIdentityChanged)
+    Q_PROPERTY(bool mfaRequiredOnLogin READ mfaRequiredOnLogin WRITE setMfaRequiredOnLogin NOTIFY mfaPolicyChanged)
+    Q_PROPERTY(bool hardwareKeyEnforced READ hardwareKeyEnforced WRITE setHardwareKeyEnforced NOTIFY mfaPolicyChanged)
+    Q_PROPERTY(QString totpEnrollmentSecret READ totpEnrollmentSecret NOTIFY mfaPolicyChanged)
+
   public:
     WorkspaceViewModel(application::ClientApplication& app, NavigationController& nav_controller,
                        QObject* parent = nullptr);
@@ -89,12 +97,21 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] QVariantMap selectedTransferDetails() const;
 
     [[nodiscard]] bool isInspectorOpen() const noexcept { return is_inspector_open_; }
-    void setInspectorOpen(bool open);
+    Q_INVOKABLE void setInspectorOpen(bool open);
 
     [[nodiscard]] int composerPriority() const noexcept { return composer_priority_; }
     void setComposerPriority(int priority);
     [[nodiscard]] QString composerPriorityLabel() const;
     Q_INVOKABLE void cycleComposerPriority();
+
+    [[nodiscard]] QVariantList devices() const;
+    [[nodiscard]] int pendingDeviceCount() const noexcept;
+    [[nodiscard]] QVariantMap localDeviceIdentity() const;
+    [[nodiscard]] bool mfaRequiredOnLogin() const noexcept { return mfa_required_on_login_; }
+    void setMfaRequiredOnLogin(bool required);
+    [[nodiscard]] bool hardwareKeyEnforced() const noexcept { return hardware_key_enforced_; }
+    void setHardwareKeyEnforced(bool enforced);
+    [[nodiscard]] QString totpEnrollmentSecret() const { return totp_enrollment_secret_; }
 
     Q_INVOKABLE void selectConversation(const QString& conversationId);
     Q_INVOKABLE void selectContact(const QString& peerUserId);
@@ -105,6 +122,11 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE bool cancelFileTransfer(const QString& transferId);
     Q_INVOKABLE void togglePeerVerified(const QString& peerUserId);
     Q_INVOKABLE void togglePeerBlocked(const QString& peerUserId);
+    Q_INVOKABLE bool approveDevice(const QString& deviceId);
+    Q_INVOKABLE bool revokeDevice(const QString& deviceId);
+    Q_INVOKABLE QString pairNewDevice(const QString& displayName);
+    Q_INVOKABLE void rotateSignedPrekey();
+    Q_INVOKABLE void regenerateTotpSecret();
     Q_INVOKABLE void resetForEmergencyWipe();
 
   signals:
@@ -118,6 +140,9 @@ class WorkspaceViewModel : public QObject {
     void selectedTransferChanged();
     void inspectorOpenChanged();
     void composerPriorityChanged();
+    void devicesChanged();
+    void localDeviceIdentityChanged();
+    void mfaPolicyChanged();
     void workspaceError(const QString& message);
 
   private:
@@ -170,6 +195,20 @@ class WorkspaceViewModel : public QObject {
         QString timestampText;
     };
 
+    struct DeviceEntry {
+        QString deviceId;
+        QString displayName;
+        QString platformInfo;
+        QString identityKeyHex;
+        QString fingerprint;
+        QString signedPrekeyId;
+        QString prekeySignatureHex;
+        QString status; // "Authorized", "Pending", "Revoked"
+        QString lastSeenText;
+        bool isCurrentDevice{false};
+        bool isVerified{false};
+    };
+
     void seedDefaultWorkspaceData();
     [[nodiscard]] const ConversationEntry* findConversation(const QString& conversationId) const;
     [[nodiscard]] ConversationEntry* findConversationMutable(const QString& conversationId);
@@ -186,10 +225,16 @@ class WorkspaceViewModel : public QObject {
     int composer_priority_{1};
     int next_msg_seq_{100};
     int next_file_seq_{10};
+    int next_device_seq_{4};
+    int prekey_epoch_{14};
+    bool mfa_required_on_login_{true};
+    bool hardware_key_enforced_{true};
+    QString totp_enrollment_secret_{QStringLiteral("JBSWY3DPEHPK3PXP · SHA-256 (6-digit / 30s)")};
 
     std::vector<ConversationEntry> conversations_;
     std::vector<MessageEntry> messages_;
     std::vector<FileTransferEntry> file_transfers_;
+    std::vector<DeviceEntry> devices_;
 };
 
 } // namespace securecloud::client::ui

@@ -32,6 +32,16 @@ void UiTheme::setThemeMode(ThemeMode mode) {
     emit themeChanged();
 }
 
+void UiTheme::setThemeMode(int mode) {
+    if (mode == 0) {
+        setThemeMode(ThemeMode::System);
+    } else if (mode == 2) {
+        setThemeMode(ThemeMode::Light);
+    } else {
+        setThemeMode(ThemeMode::Dark);
+    }
+}
+
 bool UiTheme::isDark() const noexcept {
     switch (theme_mode_) {
     case ThemeMode::Dark:

@@ -28,6 +28,9 @@ QString AppViewModel::securityStatusText() const {
     if (!isAuthenticated()) {
         return QStringLiteral("TLS 1.3 Gateway Ready · No Active Session");
     }
+    if (is_identity_verified_) {
+        return QStringLiteral("Authenticated Session · Identity Verified");
+    }
     return QStringLiteral("Authenticated Session · Identity Unverified");
 }
 
@@ -38,7 +41,18 @@ QString AppViewModel::securityBadgeType() const {
     if (!isAuthenticated()) {
         return QStringLiteral("Offline");
     }
+    if (is_identity_verified_) {
+        return QStringLiteral("Verified");
+    }
     return QStringLiteral("Info");
+}
+
+void AppViewModel::setIdentityVerified(bool verified) {
+    if (is_identity_verified_ == verified) {
+        return;
+    }
+    is_identity_verified_ = verified;
+    emit connectionStatusChanged();
 }
 
 QString AppViewModel::currentUser() const {
@@ -155,6 +169,7 @@ void AppViewModel::triggerEmergencyWipe() {
     clearError();
     pending_username_.clear();
     pending_password_.clear();
+    is_identity_verified_ = false;
     (void)app_.bootstrap().auth_manager().logout();
     (void)app_.bootstrap().emergency_manager().trigger_emergency_wipe();
     connectionStatus_ = QStringLiteral("Offline (Wiped)");

@@ -20,6 +20,7 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
     conversations_.clear();
     messages_.clear();
     file_transfers_.clear();
+    devices_.clear();
 
     // Seed realistic security workstation contacts & conversations
     conversations_.push_back(ConversationEntry{
@@ -144,6 +145,29 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
         QStringLiteral("Frances Swann"), QStringLiteral("enclave-attestation-bundle.tar.enc"), 1468006,
         QStringLiteral("1.4 MB"), QStringLiteral("AES-256-GCM"), QStringLiteral("7c211433...f89a1c44"),
         QStringLiteral("Outbound"), QStringLiteral("Encrypted & Verified"), QStringLiteral("Today · 09:15 AM")});
+
+    // Seed operator devices & cryptographic identities
+    devices_.push_back(DeviceEntry{QStringLiteral("dev-local-01"), QStringLiteral("SecOps Workstation · macOS"),
+                                   QStringLiteral("Apple M-Series Secure Enclave · TLS 1.3 mTLS"),
+                                   QStringLiteral("ED25519-PUB-9F86D081884C7D659A2FEAA0C55AD015"),
+                                   QStringLiteral("7F8A 9B2C 1E4D 6610 9981 3042 5519 A8C1"),
+                                   QStringLiteral("SPK-X25519-0014"), QStringLiteral("SIG-ED25519-4419A8B2...C901E24F"),
+                                   QStringLiteral("Authorized"), QStringLiteral("Active now (Current Device)"), true,
+                                   false});
+
+    devices_.push_back(DeviceEntry{QStringLiteral("dev-mobile-02"), QStringLiteral("Field Enclave Handset · iOS 18"),
+                                   QStringLiteral("Hardware Key Attested · X3DH Prekey v2"),
+                                   QStringLiteral("ED25519-PUB-4A7D1ED414474E4033AC29CCB8653D9B"),
+                                   QStringLiteral("3C11 89A0 4421 7B1E 0092 8411 6E20 F112"),
+                                   QStringLiteral("SPK-X25519-0009"), QStringLiteral("SIG-ED25519-8812F004...11B9A231"),
+                                   QStringLiteral("Authorized"), QStringLiteral("Today · 10:14 AM"), false, true});
+
+    devices_.push_back(DeviceEntry{QStringLiteral("dev-audit-03"), QStringLiteral("Air-Gapped Audit Terminal · Linux"),
+                                   QStringLiteral("Awaiting Out-of-Band Safety Number Approval"),
+                                   QStringLiteral("ED25519-PUB-7C211433F02071597741E6FF5A8EA347"),
+                                   QStringLiteral("9012 44A1 77C3 109B 55D2 88E1 0491 C77A"),
+                                   QStringLiteral("SPK-X25519-0001"), QStringLiteral("SIG-ED25519-1904C221...77E8A012"),
+                                   QStringLiteral("Pending"), QStringLiteral("Requested 4 mins ago"), false, false});
 
     selected_conversation_id_ = QStringLiteral("conv-frances");
     selected_transfer_id_ = QStringLiteral("tx-001");
@@ -437,6 +461,71 @@ void WorkspaceViewModel::cycleComposerPriority() {
     setComposerPriority(next);
 }
 
+QVariantList WorkspaceViewModel::devices() const {
+    QVariantList result;
+    for (const auto& dev : devices_) {
+        QVariantMap item;
+        item.insert(QStringLiteral("deviceId"), dev.deviceId);
+        item.insert(QStringLiteral("displayName"), dev.displayName);
+        item.insert(QStringLiteral("platformInfo"), dev.platformInfo);
+        item.insert(QStringLiteral("identityKeyHex"), dev.identityKeyHex);
+        item.insert(QStringLiteral("fingerprint"), dev.fingerprint);
+        item.insert(QStringLiteral("signedPrekeyId"), dev.signedPrekeyId);
+        item.insert(QStringLiteral("prekeySignatureHex"), dev.prekeySignatureHex);
+        item.insert(QStringLiteral("status"), dev.status);
+        item.insert(QStringLiteral("lastSeenText"), dev.lastSeenText);
+        item.insert(QStringLiteral("isCurrentDevice"), dev.isCurrentDevice);
+        item.insert(QStringLiteral("isVerified"), dev.isVerified);
+        result.append(item);
+    }
+    return result;
+}
+
+int WorkspaceViewModel::pendingDeviceCount() const noexcept {
+    int count = 0;
+    for (const auto& dev : devices_) {
+        if (dev.status == QStringLiteral("Pending")) {
+            ++count;
+        }
+    }
+    return count;
+}
+
+QVariantMap WorkspaceViewModel::localDeviceIdentity() const {
+    QVariantMap item;
+    for (const auto& dev : devices_) {
+        if (dev.isCurrentDevice) {
+            item.insert(QStringLiteral("deviceId"), dev.deviceId);
+            item.insert(QStringLiteral("displayName"), dev.displayName);
+            item.insert(QStringLiteral("platformInfo"), dev.platformInfo);
+            item.insert(QStringLiteral("identityKeyHex"), dev.identityKeyHex);
+            item.insert(QStringLiteral("fingerprint"), dev.fingerprint);
+            item.insert(QStringLiteral("signedPrekeyId"), dev.signedPrekeyId);
+            item.insert(QStringLiteral("prekeySignatureHex"), dev.prekeySignatureHex);
+            item.insert(QStringLiteral("status"), dev.status);
+            item.insert(QStringLiteral("isVerified"), dev.isVerified);
+            return item;
+        }
+    }
+    return item;
+}
+
+void WorkspaceViewModel::setMfaRequiredOnLogin(bool required) {
+    if (mfa_required_on_login_ == required) {
+        return;
+    }
+    mfa_required_on_login_ = required;
+    emit mfaPolicyChanged();
+}
+
+void WorkspaceViewModel::setHardwareKeyEnforced(bool enforced) {
+    if (hardware_key_enforced_ == enforced) {
+        return;
+    }
+    hardware_key_enforced_ = enforced;
+    emit mfaPolicyChanged();
+}
+
 void WorkspaceViewModel::selectConversation(const QString& conversationId) {
     auto* conv = findConversationMutable(conversationId);
     if (!conv) {
@@ -639,17 +728,101 @@ void WorkspaceViewModel::togglePeerBlocked(const QString& peerUserId) {
     }
 }
 
+bool WorkspaceViewModel::approveDevice(const QString& deviceId) {
+    if (deviceId.trimmed().isEmpty()) {
+        return false;
+    }
+    for (auto& dev : devices_) {
+        if (dev.deviceId == deviceId) {
+            dev.status = QStringLiteral("Authorized");
+            dev.isVerified = true;
+            dev.lastSeenText = QStringLiteral("Approved just now");
+            emit devicesChanged();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool WorkspaceViewModel::revokeDevice(const QString& deviceId) {
+    const QString cleaned = deviceId.trimmed();
+    if (cleaned.isEmpty()) {
+        return false;
+    }
+    for (auto& dev : devices_) {
+        if (dev.deviceId == cleaned) {
+            if (dev.isCurrentDevice) {
+                emit workspaceError(QStringLiteral("Cannot revoke the active workstation device from itself."));
+                return false;
+            }
+            const auto revRes =
+                app_.bootstrap().device_manager().revoke_device(domain::DeviceId(cleaned.toStdString()));
+            if (revRes.is_error()) {
+                emit workspaceError(QString::fromStdString(revRes.error().user_message()));
+                return false;
+            }
+            dev.status = QStringLiteral("Revoked");
+            dev.isVerified = false;
+            dev.lastSeenText = QStringLiteral("Revoked · Keys Zeroized");
+            emit devicesChanged();
+            return true;
+        }
+    }
+    return false;
+}
+
+QString WorkspaceViewModel::pairNewDevice(const QString& displayName) {
+    const QString cleaned = displayName.trimmed();
+    if (cleaned.isEmpty()) {
+        return QString();
+    }
+    const QString newId = QStringLiteral("dev-node-0%1").arg(next_device_seq_++);
+    devices_.push_back(DeviceEntry{
+        newId, cleaned, QStringLiteral("Pending X3DH Key Bundle Handshake"),
+        QStringLiteral("ED25519-PUB-A910F442...8812C09E"), QStringLiteral("6612 90B4 3319 88A1 4402 19C4 7721 E009"),
+        QStringLiteral("SPK-X25519-0001"), QStringLiteral("SIG-ED25519-5501E88A...9920B11C"), QStringLiteral("Pending"),
+        QStringLiteral("Pairing requested just now"), false, false});
+    emit devicesChanged();
+    return newId;
+}
+
+void WorkspaceViewModel::rotateSignedPrekey() {
+    ++prekey_epoch_;
+    for (auto& dev : devices_) {
+        if (dev.isCurrentDevice) {
+            dev.signedPrekeyId = QStringLiteral("SPK-X25519-00%1").arg(prekey_epoch_);
+            dev.prekeySignatureHex =
+                QStringLiteral("SIG-ED25519-%1F8...A20%2").arg(prekey_epoch_ * 73).arg(prekey_epoch_);
+            dev.isVerified = true;
+            dev.lastSeenText = QStringLiteral("Prekey rotated & attested just now");
+            break;
+        }
+    }
+    emit localDeviceIdentityChanged();
+    emit devicesChanged();
+}
+
+void WorkspaceViewModel::regenerateTotpSecret() {
+    ++prekey_epoch_;
+    totp_enrollment_secret_ =
+        QStringLiteral("SC2FA-%1K9-X3DH-%2P · SHA-256 (6-digit / 30s)").arg(prekey_epoch_ * 17).arg(prekey_epoch_ + 40);
+    emit mfaPolicyChanged();
+}
+
 void WorkspaceViewModel::resetForEmergencyWipe() {
     search_query_.clear();
     conversations_.clear();
     messages_.clear();
     file_transfers_.clear();
+    devices_.clear();
     selected_conversation_id_.clear();
     selected_transfer_id_.clear();
     emit searchQueryChanged();
     emit conversationsChanged();
     emit contactsChanged();
     emit fileTransfersChanged();
+    emit devicesChanged();
+    emit localDeviceIdentityChanged();
     emit selectedConversationChanged();
     emit activeMessagesChanged();
     emit selectedTransferChanged();

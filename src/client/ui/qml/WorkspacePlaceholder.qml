@@ -461,11 +461,18 @@ Rectangle {
 
         // Zone 3 — Central Conversation / File Stream Area
         Rectangle {
+            id: zone3Pane
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.minimumWidth: 320
             color: Theme.backgroundPrimary
+            clip: true
 
+            readonly property var selectedTx: workspaceRoot.wvm ? workspaceRoot.wvm.selectedTransferDetails : ({})
+
+            // 3A. Conversation Stream & Floating Composer (active when section is Messages or Contacts)
             ColumnLayout {
+                visible: workspaceRoot.activeSection !== "Files"
                 anchors.fill: parent
                 spacing: 0
 
@@ -1132,14 +1139,417 @@ Rectangle {
                     }
                 }
             }
+
+            // 3B. Dedicated Encrypted Files Vault View (active when section === "Files")
+            ColumnLayout {
+                visible: workspaceRoot.activeSection === "Files"
+                anchors.fill: parent
+                spacing: 0
+
+                // Top Vault Header Bar
+                Rectangle {
+                    Layout.fillWidth: true
+                    height: 64
+                    color: Theme.backgroundPrimary
+
+                    Rectangle {
+                        anchors.bottom: parent.bottom
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        height: 1
+                        color: Theme.borderSubtle
+                    }
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: Theme.space16
+                        anchors.rightMargin: Theme.space16
+                        spacing: Theme.space12
+
+                        Rectangle {
+                            width: 38
+                            height: 38
+                            radius: 10
+                            color: Theme.isDark ? "#13233D" : "#DBEAFE"
+                            border.color: Theme.accentPrimary
+                            border.width: 1
+
+                            SCIcon {
+                                anchors.centerIn: parent
+                                name: "file-lock"
+                                size: 20
+                                color: Theme.accentPrimary
+                            }
+                        }
+
+                        ColumnLayout {
+                            spacing: 2
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.preferredWidth: 1
+
+                            Label {
+                                text: zone3Pane.selectedTx.fileName || qsTr("Encrypted File Vault")
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontSubtitle
+                                font.bold: true
+                                color: Theme.textPrimary
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                Layout.preferredWidth: 1
+                            }
+
+                            Label {
+                                text: {
+                                    var tx = zone3Pane.selectedTx
+                                    if (!tx || !tx.fileName) return qsTr("Zero-Knowledge Chunked AEAD File Storage")
+                                    return qsTr("%1 · %2 · Peer: %3 · %4")
+                                           .arg(tx.direction || "Inbound")
+                                           .arg(tx.fileSizeText || "")
+                                           .arg(tx.peerDisplayName || "")
+                                           .arg(tx.timestampText || "")
+                                }
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontCaption
+                                color: Theme.textMuted
+                                elide: Text.ElideRight
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                Layout.preferredWidth: 1
+                            }
+                        }
+
+                        SCButton {
+                            text: qsTr("Stage File")
+                            iconName: "paperclip"
+                            variant: "Primary"
+                            buttonHeight: 34
+                            horizontalPadding: 10
+                            onClicked: workspaceRoot.triggerSampleFileAttachment()
+                        }
+
+                        SCIconButton {
+                            iconName: "info"
+                            variant: "Secondary"
+                            active: workspaceRoot.wvm ? workspaceRoot.wvm.isInspectorOpen : true
+                            tooltipText: (workspaceRoot.wvm && workspaceRoot.wvm.isInspectorOpen)
+                                         ? qsTr("Hide Peer Security Inspector")
+                                         : qsTr("Show Peer Security Inspector")
+                            onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.toggleInspector()
+                        }
+                    }
+                }
+
+                // Selected File Cryptographic Manifest & Vault Ledger
+                ScrollView {
+                    id: vaultScrollView
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    contentWidth: availableWidth
+                    ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                    ColumnLayout {
+                        width: vaultScrollView.availableWidth
+                        spacing: Theme.space16
+
+                        Item { width: 1; height: Theme.space4 }
+
+                        // Cryptographic Manifest Card for Selected Transfer
+                        Rectangle {
+                            id: manifestCard
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.leftMargin: Theme.space16
+                            Layout.rightMargin: Theme.space16
+                            implicitHeight: manifestCol.implicitHeight + (Theme.space16 * 2)
+                            radius: 16
+                            color: Theme.backgroundSecondary
+                            border.color: Theme.borderSubtle
+                            border.width: 1
+                            clip: true
+
+                            readonly property var tx: workspaceRoot.wvm ? workspaceRoot.wvm.selectedTransferDetails : ({})
+
+                            ColumnLayout {
+                                id: manifestCol
+                                anchors.left: parent.left
+                                anchors.right: parent.right
+                                anchors.top: parent.top
+                                anchors.margins: Theme.space16
+                                spacing: Theme.space12
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: Theme.space8
+
+                                    SCIcon {
+                                        name: "shield-check"
+                                        size: 18
+                                        color: Theme.accentPrimary
+                                    }
+
+                                    Label {
+                                        text: qsTr("Cryptographic File Manifest")
+                                        font.family: Theme.fontFamilyPrimary
+                                        font.pixelSize: Theme.fontBody
+                                        font.bold: true
+                                        color: Theme.textPrimary
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        Layout.preferredWidth: 1
+                                    }
+
+                                    SCBadge {
+                                        text: manifestCard.tx.statusText || qsTr("Encrypted & Verified")
+                                        type: (manifestCard.tx.statusText === "Cancelled")
+                                              ? "Danger"
+                                              : "Verified"
+                                    }
+                                }
+
+                                Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 1
+                                    color: Theme.borderSubtle
+                                }
+
+                                GridLayout {
+                                    Layout.fillWidth: true
+                                    columns: 2
+                                    rowSpacing: 8
+                                    columnSpacing: Theme.space12
+
+                                    Label {
+                                        text: qsTr("Artifact Name:")
+                                        font.family: Theme.fontFamilyPrimary
+                                        font.pixelSize: Theme.fontCaption
+                                        color: Theme.textMuted
+                                    }
+                                    Label {
+                                        text: manifestCard.tx.fileName || "—"
+                                        font.family: Theme.fontFamilyPrimary
+                                        font.pixelSize: Theme.fontCaption
+                                        font.bold: true
+                                        color: Theme.textPrimary
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        Layout.preferredWidth: 1
+                                    }
+
+                                    Label {
+                                        text: qsTr("AEAD Cipher:")
+                                        font.family: Theme.fontFamilyPrimary
+                                        font.pixelSize: Theme.fontCaption
+                                        color: Theme.textMuted
+                                    }
+                                    Label {
+                                        text: (manifestCard.tx.cipherSuite || "AES-256-GCM") + " · 256-bit HKDF"
+                                        font.family: Theme.fontFamilyMonospace
+                                        font.pixelSize: Theme.fontMicro
+                                        color: Theme.accentPrimary
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        Layout.preferredWidth: 1
+                                    }
+
+                                    Label {
+                                        text: qsTr("SHA-256 Digest:")
+                                        font.family: Theme.fontFamilyPrimary
+                                        font.pixelSize: Theme.fontCaption
+                                        color: Theme.textMuted
+                                    }
+                                    Label {
+                                        text: manifestCard.tx.sha256Short || "—"
+                                        font.family: Theme.fontFamilyMonospace
+                                        font.pixelSize: Theme.fontMicro
+                                        color: Theme.textPrimary
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        Layout.preferredWidth: 1
+                                    }
+
+                                    Label {
+                                        text: qsTr("Peer & Size:")
+                                        font.family: Theme.fontFamilyPrimary
+                                        font.pixelSize: Theme.fontCaption
+                                        color: Theme.textMuted
+                                    }
+                                    Label {
+                                        text: (manifestCard.tx.peerDisplayName || "—") + " · " + (manifestCard.tx.direction || "Inbound") + " (" + (manifestCard.tx.fileSizeText || "") + ")"
+                                        font.family: Theme.fontFamilyPrimary
+                                        font.pixelSize: Theme.fontCaption
+                                        color: Theme.textSecondary
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                        Layout.minimumWidth: 0
+                                        Layout.preferredWidth: 1
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    spacing: Theme.space8
+
+                                    SCButton {
+                                        text: qsTr("Open Thread")
+                                        iconName: "workspace"
+                                        variant: "Secondary"
+                                        buttonHeight: 32
+                                        horizontalPadding: 10
+                                        onClicked: {
+                                            if (workspaceRoot.wvm && manifestCard.tx.conversationId) {
+                                                workspaceRoot.wvm.selectConversation(manifestCard.tx.conversationId)
+                                                workspaceRoot.wvm.activeSection = "Messages"
+                                            }
+                                        }
+                                    }
+
+                                    Item { Layout.fillWidth: true }
+
+                                    SCButton {
+                                        text: (manifestCard.tx.statusText === "Cancelled")
+                                              ? qsTr("Revoked")
+                                              : qsTr("Revoke Transfer")
+                                        iconName: "shield-alert"
+                                        variant: "Danger"
+                                        buttonHeight: 32
+                                        horizontalPadding: 10
+                                        enabled: manifestCard.tx.statusText !== "Cancelled"
+                                        onClicked: {
+                                            if (workspaceRoot.wvm && manifestCard.tx.transferId) {
+                                                workspaceRoot.wvm.cancelFileTransfer(manifestCard.tx.transferId)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Vault Transfer Ledger Header
+                        Label {
+                            text: qsTr("All Encrypted Vault Transfers")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontBody
+                            font.bold: true
+                            color: Theme.textPrimary
+                            Layout.leftMargin: Theme.space16
+                        }
+
+                        // All Vault Items Repeater
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            Layout.leftMargin: Theme.space16
+                            Layout.rightMargin: Theme.space16
+                            spacing: Theme.space8
+
+                            Repeater {
+                                model: workspaceRoot.wvm ? workspaceRoot.wvm.fileTransfers : []
+
+                                delegate: Rectangle {
+                                    Layout.fillWidth: true
+                                    Layout.minimumWidth: 0
+                                    height: 60
+                                    radius: 12
+                                    clip: true
+                                    color: modelData.isSelected
+                                           ? Theme.backgroundElevated
+                                           : (vaultRowMouse.containsMouse ? Theme.backgroundSecondary : "transparent")
+                                    border.color: modelData.isSelected ? Theme.accentPrimary : Theme.borderSubtle
+                                    border.width: 1
+
+                                    Behavior on color {
+                                        ColorAnimation { duration: Theme.durationFast }
+                                    }
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: Theme.space12
+                                        anchors.rightMargin: Theme.space12
+                                        spacing: Theme.space12
+
+                                        SCIcon {
+                                            name: "file-lock"
+                                            size: 18
+                                            color: Theme.accentPrimary
+                                        }
+
+                                        ColumnLayout {
+                                            Layout.fillWidth: true
+                                            Layout.minimumWidth: 0
+                                            Layout.preferredWidth: 1
+                                            spacing: 2
+
+                                            Label {
+                                                text: modelData.fileName || ""
+                                                font.family: Theme.fontFamilyPrimary
+                                                font.pixelSize: Theme.fontBody
+                                                font.bold: true
+                                                color: Theme.textPrimary
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                                Layout.minimumWidth: 0
+                                                Layout.preferredWidth: 1
+                                            }
+
+                                            Label {
+                                                text: (modelData.fileSizeText || "") + " · " + (modelData.cipherSuite || "") + " · " + (modelData.peerDisplayName || "")
+                                                font.family: Theme.fontFamilyPrimary
+                                                font.pixelSize: Theme.fontMicro
+                                                color: Theme.textMuted
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                                Layout.minimumWidth: 0
+                                                Layout.preferredWidth: 1
+                                            }
+                                        }
+
+                                        SCBadge {
+                                            text: modelData.statusText || "Encrypted"
+                                            type: modelData.statusText === "Cancelled" ? "Danger" : "Verified"
+                                        }
+                                    }
+
+                                    MouseArea {
+                                        id: vaultRowMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            if (workspaceRoot.wvm) {
+                                                workspaceRoot.wvm.selectTransfer(modelData.transferId)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Item { width: 1; height: Theme.space16 }
+                    }
+                }
+            }
         }
 
         // Zone 4 — Collapsible Right-Hand Peer Security & Shared Files Inspector
         Rectangle {
-            visible: workspaceRoot.wvm ? workspaceRoot.wvm.isInspectorOpen : true
+            id: inspectorDrawer
+            readonly property bool isExpanded: workspaceRoot.wvm ? workspaceRoot.wvm.isInspectorOpen : true
+            visible: Layout.preferredWidth > 0
             Layout.fillHeight: true
-            Layout.preferredWidth: 280
+            Layout.preferredWidth: isExpanded ? 292 : 0
             color: Theme.backgroundPrimary
+            clip: true
+
+            Behavior on Layout.preferredWidth {
+                NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+            }
 
             Rectangle {
                 anchors.top: parent.top
@@ -1150,31 +1560,56 @@ Rectangle {
             }
 
             ColumnLayout {
-                anchors.fill: parent
-                anchors.margins: Theme.space24
-                spacing: Theme.space16
+                width: 292 - (Theme.space20 !== undefined ? Theme.space20 * 2 : 40)
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.topMargin: Theme.space16
+                anchors.bottomMargin: Theme.space16
+                spacing: Theme.space12
+                opacity: inspectorDrawer.isExpanded ? 1.0 : 0.0
+
+                Behavior on opacity {
+                    NumberAnimation { duration: 160; easing.type: Easing.OutQuad }
+                }
 
                 RowLayout {
                     Layout.fillWidth: true
+
+                    Label {
+                        text: qsTr("PEER SECURITY INSPECTOR")
+                        font.family: Theme.fontFamilyPrimary
+                        font.pixelSize: 10
+                        font.bold: true
+                        font.letterSpacing: 0.7
+                        color: Theme.textMuted
+                    }
+
                     Item { Layout.fillWidth: true }
+
                     SCIconButton {
                         iconName: "close"
+                        buttonSize: 28
                         tooltipText: qsTr("Close Inspector")
-                        onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.setInspectorOpen(false)
+                        onClicked: {
+                            if (workspaceRoot.wvm) {
+                                workspaceRoot.wvm.isInspectorOpen = false
+                            }
+                        }
                     }
                 }
 
                 SCAvatar {
                     userId: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerUserId : "peer"
                     displayName: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "Peer"
-                    size: 76
+                    size: 72
                     presence: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerPresence : "Online"
                     Layout.alignment: Qt.AlignHCenter
                 }
 
                 RowLayout {
                     Layout.alignment: Qt.AlignHCenter
-                    spacing: Theme.space8
+                    spacing: 6
 
                     Label {
                         text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerHandle : ""
@@ -1185,51 +1620,200 @@ Rectangle {
                     }
 
                     SCIcon {
-                        name: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? "shield-check" : "alert-triangle"
+                        name: {
+                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return "shield-alert"
+                            return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? "shield-check" : "alert-triangle"
+                        }
                         size: 16
-                        color: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? Theme.accentPrimary : Theme.statusWarning
+                        color: {
+                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return Theme.statusDanger
+                            return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? Theme.accentPrimary : Theme.statusWarning
+                        }
                     }
                 }
 
-                Label {
-                    text: qsTr("Safety Number:")
-                    font.family: Theme.fontFamilyPrimary
-                    font.pixelSize: Theme.fontCaption
-                    font.bold: true
-                    color: Theme.textPrimary
+                // Quick Cryptographic Action Pills (Verify Safety Number + Send Encrypted File)
+                RowLayout {
+                    Layout.alignment: Qt.AlignHCenter
+                    spacing: Theme.space8
+
+                    SCButton {
+                        text: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
+                              ? qsTr("Verified Key")
+                              : qsTr("Verify Key")
+                        iconName: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
+                                  ? "shield-check"
+                                  : "alert-triangle"
+                        variant: "Secondary"
+                        buttonHeight: 30
+                        horizontalPadding: 10
+                        onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.togglePeerVerified("")
+                    }
+
+                    SCButton {
+                        text: qsTr("Send File")
+                        iconName: "paperclip"
+                        variant: "Secondary"
+                        buttonHeight: 30
+                        horizontalPadding: 10
+                        onClicked: workspaceRoot.triggerSampleFileAttachment()
+                    }
                 }
 
-                Label {
-                    text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerSafetyNumber : ""
-                    font.family: Theme.fontFamilyMonospace
-                    font.pixelSize: Theme.fontMicro
-                    color: Theme.accentPrimary
-                    wrapMode: Text.WordWrap
+                // Safety Number Monospace Box
+                ColumnLayout {
                     Layout.fillWidth: true
+                    spacing: 4
+
+                    Label {
+                        text: qsTr("Safety Number (X3DH):")
+                        font.family: Theme.fontFamilyPrimary
+                        font.pixelSize: Theme.fontCaption
+                        font.bold: true
+                        color: Theme.textPrimary
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: safetyNumLabel.implicitHeight + 14
+                        radius: 8
+                        color: Theme.backgroundSecondary
+                        border.color: Theme.borderSubtle
+                        border.width: 1
+
+                        Label {
+                            id: safetyNumLabel
+                            anchors.fill: parent
+                            anchors.margins: 7
+                            text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerSafetyNumber : ""
+                            font.family: Theme.fontFamilyMonospace
+                            font.pixelSize: 11
+                            color: Theme.accentPrimary
+                            wrapMode: Text.WordWrap
+                        }
+                    }
                 }
 
-                Label {
-                    text: qsTr("Notes:")
-                    font.family: Theme.fontFamilyPrimary
-                    font.pixelSize: Theme.fontCaption
-                    font.bold: true
-                    color: Theme.textPrimary
-                }
-
-                Label {
-                    text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerRoleNote : ""
-                    font.family: Theme.fontFamilyPrimary
-                    font.pixelSize: Theme.fontCaption
-                    color: Theme.textSecondary
-                    wrapMode: Text.WordWrap
+                // Shared Encrypted Files Section
+                ColumnLayout {
                     Layout.fillWidth: true
+                    spacing: 6
+
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        Label {
+                            text: qsTr("Shared Encrypted Files")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontCaption
+                            font.bold: true
+                            color: Theme.textPrimary
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        Label {
+                            text: workspaceRoot.wvm ? workspaceRoot.wvm.sharedFilesForSelectedPeer.length.toString() : "0"
+                            font.family: Theme.fontFamilyMonospace
+                            font.pixelSize: Theme.fontMicro
+                            font.bold: true
+                            color: Theme.accentPrimary
+                        }
+                    }
+
+                    Repeater {
+                        model: workspaceRoot.wvm ? workspaceRoot.wvm.sharedFilesForSelectedPeer : []
+
+                        delegate: Rectangle {
+                            Layout.fillWidth: true
+                            height: 36
+                            radius: 8
+                            color: sharedFileMouse.containsMouse ? Theme.backgroundElevated : Theme.backgroundSecondary
+                            border.color: Theme.borderSubtle
+                            border.width: 1
+
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: 8
+                                anchors.rightMargin: 8
+                                spacing: 6
+
+                                SCIcon {
+                                    name: "file-lock"
+                                    size: 14
+                                    color: Theme.accentPrimary
+                                }
+
+                                Label {
+                                    text: modelData.fileName || ""
+                                    font.family: Theme.fontFamilyPrimary
+                                    font.pixelSize: Theme.fontMicro
+                                    font.bold: true
+                                    color: Theme.textPrimary
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+
+                                Label {
+                                    text: modelData.fileSizeText || ""
+                                    font.family: Theme.fontFamilyMonospace
+                                    font.pixelSize: 10
+                                    color: Theme.textMuted
+                                }
+                            }
+
+                            MouseArea {
+                                id: sharedFileMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (workspaceRoot.wvm) {
+                                        workspaceRoot.wvm.selectTransfer(modelData.transferId)
+                                        workspaceRoot.wvm.activeSection = "Files"
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    Label {
+                        visible: !workspaceRoot.wvm || workspaceRoot.wvm.sharedFilesForSelectedPeer.length === 0
+                        text: qsTr("No encrypted files shared in this session yet.")
+                        font.family: Theme.fontFamilyPrimary
+                        font.pixelSize: Theme.fontMicro
+                        color: Theme.textMuted
+                    }
+                }
+
+                // Role & Cryptographic Policy Notes
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Label {
+                        text: qsTr("Notes:")
+                        font.family: Theme.fontFamilyPrimary
+                        font.pixelSize: Theme.fontCaption
+                        font.bold: true
+                        color: Theme.textPrimary
+                    }
+
+                    Label {
+                        text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerRoleNote : ""
+                        font.family: Theme.fontFamilyPrimary
+                        font.pixelSize: Theme.fontMicro
+                        color: Theme.textSecondary
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
                 }
 
                 Item { Layout.fillHeight: true }
 
                 SCButton {
                     text: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked)
-                          ? qsTr("Unblock Peer")
+                          ? qsTr("Unblock & Restore Keys")
                           : qsTr("Block %1").arg(workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "")
                     iconName: "shield-alert"
                     variant: "Danger"
