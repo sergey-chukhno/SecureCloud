@@ -3650,3 +3650,17 @@ target_link_libraries(securecloud_audit_metrics_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_metrics_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Queue & Aggregator Telemetry Unit Test Suite (AUDIT-011-T03)
+add_executable(securecloud_audit_queue_telemetry_test
+        audit/audit_queue_telemetry_test.cpp
+)
+
+target_link_libraries(securecloud_audit_queue_telemetry_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_queue_telemetry_test ${SECURECLOUD_TEST_PROPERTIES})

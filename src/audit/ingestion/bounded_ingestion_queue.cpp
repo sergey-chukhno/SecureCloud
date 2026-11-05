@@ -1,25 +1,64 @@
 #include "ingestion/bounded_ingestion_queue.hpp"
+#include "telemetry/audit_metrics.hpp"
 
 #include <algorithm>
 
 namespace securecloud::audit::ingestion {
 
-BoundedIngestionQueue::BoundedIngestionQueue(size_t capacity) : capacity_(capacity == 0 ? 1 : capacity) {}
+namespace {
+
+telemetry::ProducerLabel map_producer_label(domain::ProducerService producer) noexcept {
+    switch (producer) {
+        case domain::ProducerService::Gateway: return telemetry::ProducerLabel::Gateway;
+        case domain::ProducerService::Auth: return telemetry::ProducerLabel::Auth;
+        case domain::ProducerService::Messaging: return telemetry::ProducerLabel::Messaging;
+        case domain::ProducerService::Files: return telemetry::ProducerLabel::Files;
+        case domain::ProducerService::Audit: return telemetry::ProducerLabel::Audit;
+        default: return telemetry::ProducerLabel::Unknown;
+    }
+}
+
+} // namespace
+
+BoundedIngestionQueue::BoundedIngestionQueue(size_t capacity) : capacity_(capacity == 0 ? 1 : capacity) {
+    telemetry::AuditMetrics::instance().set_queue_capacity(static_cast<int64_t>(capacity_));
+    telemetry::AuditMetrics::instance().set_queue_depth(0);
+}
 
 BoundedIngestionQueue::~BoundedIngestionQueue() {
     shutdown();
+}
+
+void BoundedIngestionQueue::record_enqueue_metrics_locked(const IngestionEnvelope& item) {
+    (void)item;
+    const size_t current_size = queue_.size();
+    telemetry::AuditMetrics::instance().set_queue_depth(static_cast<int64_t>(current_size));
+}
+
+void BoundedIngestionQueue::record_pop_metrics_locked(const IngestionEnvelope& item) {
+    const size_t current_size = queue_.size();
+    telemetry::AuditMetrics::instance().set_queue_depth(static_cast<int64_t>(current_size));
+
+    auto now = std::chrono::system_clock::now();
+    auto wait_duration = std::chrono::duration<double>(now - item.enqueued_at).count();
+    if (wait_duration >= 0.0) {
+        telemetry::AuditMetrics::instance().observe_queue_wait_duration(wait_duration);
+    }
 }
 
 bool BoundedIngestionQueue::try_push(IngestionEnvelope item) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (shutdown_ || queue_.size() >= capacity_) {
         total_rejected_.fetch_add(1, std::memory_order_relaxed);
+        auto producer_lbl = map_producer_label(item.event.producer_service);
+        telemetry::AuditMetrics::instance().record_queue_saturated_drop(producer_lbl);
         return false;
     }
 
     queue_.push_back(std::move(item));
-    const size_t current_size = queue_.size();
+    record_enqueue_metrics_locked(queue_.back());
 
+    const size_t current_size = queue_.size();
     size_t prev_peak = peak_watermark_.load(std::memory_order_relaxed);
     while (current_size > prev_peak &&
            !peak_watermark_.compare_exchange_weak(prev_peak, current_size, std::memory_order_relaxed)) {
@@ -37,12 +76,15 @@ bool BoundedIngestionQueue::push_with_timeout(IngestionEnvelope item, std::chron
 
     if (shutdown_ || !capacity_available || queue_.size() >= capacity_) {
         total_rejected_.fetch_add(1, std::memory_order_relaxed);
+        auto producer_lbl = map_producer_label(item.event.producer_service);
+        telemetry::AuditMetrics::instance().record_queue_saturated_drop(producer_lbl);
         return false;
     }
 
     queue_.push_back(std::move(item));
-    const size_t current_size = queue_.size();
+    record_enqueue_metrics_locked(queue_.back());
 
+    const size_t current_size = queue_.size();
     size_t prev_peak = peak_watermark_.load(std::memory_order_relaxed);
     while (current_size > prev_peak &&
            !peak_watermark_.compare_exchange_weak(prev_peak, current_size, std::memory_order_relaxed)) {
@@ -63,6 +105,8 @@ std::optional<IngestionEnvelope> BoundedIngestionQueue::pop(std::chrono::millise
 
     IngestionEnvelope item = std::move(queue_.front());
     queue_.pop_front();
+    record_pop_metrics_locked(item);
+
     cv_not_full_.notify_one();
     return item;
 }
@@ -82,6 +126,7 @@ std::vector<IngestionEnvelope> BoundedIngestionQueue::pop_batch(size_t max_items
     for (size_t i = 0; i < batch_size; ++i) {
         batch.push_back(std::move(queue_.front()));
         queue_.pop_front();
+        record_pop_metrics_locked(batch.back());
     }
 
     cv_not_full_.notify_all();
