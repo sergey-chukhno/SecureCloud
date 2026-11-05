@@ -24,6 +24,7 @@ $targets = @(
     "securecloud_audit_anti_recursion_guard_test",
     "securecloud_audit_config_test",
     "securecloud_audit_deduplication_pipeline_test",
+    "securecloud_audit_diagnostics_test",
     "securecloud_audit_event_mapper_test",
     "securecloud_audit_event_model_test",
     "securecloud_audit_event_validator_test",

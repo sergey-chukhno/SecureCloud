@@ -102,6 +102,7 @@ add_library(securecloud_audit_service STATIC
         security/internal_security_event_recorder.cpp
         health/audit_health_evaluator.cpp
         telemetry/audit_metrics.cpp
+        telemetry/audit_diagnostics.cpp
 )
 
 add_library(securecloud::audit_service ALIAS securecloud_audit_service)
