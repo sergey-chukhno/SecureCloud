@@ -1,5 +1,9 @@
+#include "application/client_application.hpp"
+#include "application/client_config.hpp"
+#include "ui/app_view_model.hpp"
 #include "ui/navigation_controller.hpp"
 #include "ui/ui_theme.hpp"
+#include "ui/workspace_view_model.hpp"
 
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
@@ -221,6 +225,41 @@ TEST_F(UiComponentsTest, NavigationShellInstantiationAndRouting) {
     ASSERT_NE(obj, nullptr);
     EXPECT_FALSE(obj->property("showAlert").toBool());
     delete obj;
+}
+
+TEST_F(UiComponentsTest, WorkspaceAndSettingsViewsInstantiation) {
+    const auto config = securecloud::client::application::ClientConfig::create_default();
+    securecloud::client::application::ClientApplication clientApp(config);
+    ASSERT_TRUE(clientApp.initialize().is_ok());
+
+    navController_.setAuthenticated(true);
+    AppViewModel appViewModel(clientApp, navController_);
+    WorkspaceViewModel workspaceViewModel(clientApp, navController_);
+
+    engine_.rootContext()->setContextProperty("appViewModel", &appViewModel);
+    engine_.rootContext()->setContextProperty("workspaceViewModel", &workspaceViewModel);
+
+    // 1. Instantiate WorkspacePlaceholder.qml and verify section switching
+    QQmlComponent workspaceComp(&engine_, QUrl("qrc:/qml/WorkspacePlaceholder.qml"));
+    ASSERT_TRUE(workspaceComp.isReady()) << workspaceComp.errorString().toStdString();
+    auto* workspaceObj = workspaceComp.create();
+    ASSERT_NE(workspaceObj, nullptr);
+    EXPECT_EQ(workspaceObj->property("activeSection").toString(), "Messages");
+
+    workspaceViewModel.setActiveSection("Files");
+    EXPECT_EQ(workspaceObj->property("activeSection").toString(), "Files");
+
+    workspaceViewModel.setActiveSection("Contacts");
+    EXPECT_EQ(workspaceObj->property("activeSection").toString(), "Contacts");
+
+    delete workspaceObj;
+
+    // 2. Instantiate SettingsPlaceholder.qml (Device Trust, Identity & MFA Center)
+    QQmlComponent settingsComp(&engine_, QUrl("qrc:/qml/SettingsPlaceholder.qml"));
+    ASSERT_TRUE(settingsComp.isReady()) << settingsComp.errorString().toStdString();
+    auto* settingsObj = settingsComp.create();
+    ASSERT_NE(settingsObj, nullptr);
+    delete settingsObj;
 }
 
 } // namespace

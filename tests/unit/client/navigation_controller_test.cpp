@@ -292,4 +292,116 @@ TEST(WorkspaceViewModelTest, SearchSelectionMessagingFileTransferAndWipe) {
     EXPECT_TRUE(workspace.fileTransfers().isEmpty());
 }
 
+TEST(WorkspaceViewModelTest, MessagePriorityAndComposerPriorityCycling) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    NavigationController navController;
+    navController.setAuthenticated(true);
+    WorkspaceViewModel workspace(app, navController);
+
+    // Default composer priority is Normal (1)
+    EXPECT_EQ(workspace.composerPriority(), 1);
+    EXPECT_EQ(workspace.composerPriorityLabel(), QStringLiteral("Normal"));
+
+    // Cycle to Urgent (2)
+    workspace.cycleComposerPriority();
+    EXPECT_EQ(workspace.composerPriority(), 2);
+    EXPECT_EQ(workspace.composerPriorityLabel(), QStringLiteral("Urgent"));
+
+    // Cycle to Emergency (3)
+    workspace.cycleComposerPriority();
+    EXPECT_EQ(workspace.composerPriority(), 3);
+    EXPECT_EQ(workspace.composerPriorityLabel(), QStringLiteral("Emergency"));
+
+    // Cycle wraps back to Normal (1)
+    workspace.cycleComposerPriority();
+    EXPECT_EQ(workspace.composerPriority(), 1);
+    EXPECT_EQ(workspace.composerPriorityLabel(), QStringLiteral("Normal"));
+
+    // Select a Normal conversation (Ricky Smith) and send an Emergency message (3)
+    workspace.selectConversation(QStringLiteral("conv-ricky"));
+    EXPECT_EQ(workspace.selectedPeerName(), QStringLiteral("Ricky Smith"));
+    EXPECT_TRUE(workspace.sendMessage(QStringLiteral("Zero-day key rotation required immediately."), 3));
+
+    const QVariantList msgs = workspace.activeMessages();
+    ASSERT_FALSE(msgs.isEmpty());
+    const QVariantMap lastMsg = msgs.last().toMap();
+    EXPECT_EQ(lastMsg.value(QStringLiteral("priority")).toInt(), 3);
+    EXPECT_EQ(lastMsg.value(QStringLiteral("priorityLabel")).toString(), QStringLiteral("Emergency"));
+
+    // Sending resets composer priority to Normal (1)
+    EXPECT_EQ(workspace.composerPriority(), 1);
+}
+
+TEST(WorkspaceViewModelTest, DevicePairingApprovalRevocationAndPrekeyRotation) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    NavigationController navController;
+    navController.setAuthenticated(true);
+    WorkspaceViewModel workspace(app, navController);
+
+    // 1. Initial seeded device state: 3 devices (2 Authorized, 1 Pending)
+    EXPECT_EQ(workspace.devices().size(), 3);
+    EXPECT_EQ(workspace.pendingDeviceCount(), 1);
+    EXPECT_EQ(workspace.localDeviceIdentity().value(QStringLiteral("signedPrekeyId")).toString(),
+              QStringLiteral("SPK-X25519-0014"));
+
+    // 2. Approve pending device (dev-audit-03)
+    EXPECT_TRUE(workspace.approveDevice(QStringLiteral("dev-audit-03")));
+    EXPECT_EQ(workspace.pendingDeviceCount(), 0);
+
+    // 3. Cannot revoke the active current workstation (dev-local-01)
+    EXPECT_FALSE(workspace.revokeDevice(QStringLiteral("dev-local-01")));
+
+    // 4. Revoke companion device (dev-mobile-02)
+    EXPECT_TRUE(workspace.revokeDevice(QStringLiteral("dev-mobile-02")));
+
+    // 5. Pair a new device -> increments device count and pendingDeviceCount
+    const QString pairedId = workspace.pairNewDevice(QStringLiteral("Hardware Security Module · YubiHSM2"));
+    EXPECT_FALSE(pairedId.isEmpty());
+    EXPECT_EQ(workspace.devices().size(), 4);
+    EXPECT_EQ(workspace.pendingDeviceCount(), 1);
+
+    // 6. Rotate local X3DH Signed Prekey (SPK-X25519-0014 -> SPK-X25519-0015)
+    const QString oldSpkSig = workspace.localDeviceIdentity().value(QStringLiteral("prekeySignatureHex")).toString();
+    EXPECT_FALSE(oldSpkSig.isEmpty());
+    workspace.rotateSignedPrekey();
+    EXPECT_EQ(workspace.localDeviceIdentity().value(QStringLiteral("signedPrekeyId")).toString(),
+              QStringLiteral("SPK-X25519-0015"));
+    EXPECT_NE(workspace.localDeviceIdentity().value(QStringLiteral("prekeySignatureHex")).toString(), oldSpkSig);
+
+    // 7. Peer safety number verification toggle (Corina starts unverified)
+    workspace.selectConversation(QStringLiteral("conv-corina"));
+    EXPECT_FALSE(workspace.selectedPeerVerified());
+    workspace.togglePeerVerified(QStringLiteral(""));
+    EXPECT_TRUE(workspace.selectedPeerVerified());
+}
+
+TEST(AppViewModelTest, IdentityVerificationUpdatesSecurityBadge) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    NavigationController navController;
+    AppViewModel viewModel(app, navController);
+
+    viewModel.requestLogin(QStringLiteral("alice"), QStringLiteral("password123"));
+    ASSERT_TRUE(viewModel.isAuthenticated());
+    EXPECT_FALSE(viewModel.isIdentityVerified());
+    EXPECT_EQ(viewModel.securityBadgeType(), QStringLiteral("Info"));
+
+    viewModel.setIdentityVerified(true);
+    EXPECT_TRUE(viewModel.isIdentityVerified());
+    EXPECT_EQ(viewModel.securityBadgeType(), QStringLiteral("Verified"));
+    EXPECT_TRUE(viewModel.securityStatusText().contains(QStringLiteral("Identity Verified")));
+
+    viewModel.setIdentityVerified(false);
+    EXPECT_FALSE(viewModel.isIdentityVerified());
+    EXPECT_EQ(viewModel.securityBadgeType(), QStringLiteral("Info"));
+}
+
 } // namespace
