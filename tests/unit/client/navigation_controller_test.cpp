@@ -2,6 +2,7 @@
 #include "application/client_config.hpp"
 #include "ui/app_view_model.hpp"
 #include "ui/navigation_controller.hpp"
+#include "ui/workspace_view_model.hpp"
 
 #include <QSignalSpy>
 #include <gtest/gtest.h>
@@ -210,6 +211,85 @@ TEST(AppViewModelTest, MfaChallengeFlow) {
     EXPECT_TRUE(viewModel.isAuthenticated());
     EXPECT_EQ(viewModel.currentUser(), QStringLiteral("bob"));
     EXPECT_EQ(navController.currentState(), NavigationController::NavigationState::MainWorkspace);
+}
+
+TEST(NavigationControllerTest, WorkspaceSectionsRequireAuthAndSwitchCleanly) {
+    NavigationController controller;
+    QSignalSpy deniedSpy(&controller, &NavigationController::navigationDenied);
+    QSignalSpy sectionSpy(&controller, &NavigationController::workspaceSectionChanged);
+
+    // Unauthenticated section switch must fail
+    EXPECT_FALSE(controller.navigateToSection(QStringLiteral("Files")));
+    EXPECT_EQ(deniedSpy.count(), 1);
+    EXPECT_EQ(controller.activeWorkspaceSection(), QStringLiteral("Messages"));
+
+    // Authenticated section switch transitions to MainWorkspace and updates section
+    controller.setAuthenticated(true);
+    EXPECT_TRUE(controller.navigateToSection(QStringLiteral("Files")));
+    EXPECT_EQ(controller.currentState(), NavigationController::NavigationState::MainWorkspace);
+    EXPECT_EQ(controller.activeWorkspaceSection(), QStringLiteral("Files"));
+    EXPECT_EQ(sectionSpy.count(), 1);
+
+    EXPECT_TRUE(controller.navigateToSection(QStringLiteral("Contacts")));
+    EXPECT_EQ(controller.activeWorkspaceSection(), QStringLiteral("Contacts"));
+    EXPECT_EQ(sectionSpy.count(), 2);
+
+    // Reset restores Messages section
+    controller.reset(NavigationController::NavigationState::Unauthenticated);
+    EXPECT_EQ(controller.activeWorkspaceSection(), QStringLiteral("Messages"));
+}
+
+TEST(WorkspaceViewModelTest, SearchSelectionMessagingFileTransferAndWipe) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    NavigationController navController;
+    navController.setAuthenticated(true);
+    WorkspaceViewModel workspace(app, navController);
+
+    // 1. Default seeded state
+    EXPECT_EQ(workspace.activeSection(), QStringLiteral("Messages"));
+    EXPECT_EQ(workspace.conversations().size(), 5);
+    EXPECT_EQ(workspace.contacts().size(), 5);
+    EXPECT_EQ(workspace.fileTransfers().size(), 3);
+    EXPECT_EQ(workspace.selectedPeerName(), QStringLiteral("Frances Swann"));
+    EXPECT_TRUE(workspace.isInspectorOpen());
+
+    // 2. Real-time search filter across conversations and files
+    workspace.setSearchQuery(QStringLiteral("Angelina"));
+    EXPECT_EQ(workspace.conversations().size(), 1);
+    EXPECT_EQ(workspace.fileTransfers().size(), 1);
+    workspace.setSearchQuery(QStringLiteral(""));
+    EXPECT_EQ(workspace.conversations().size(), 5);
+
+    // 3. Select conversation & clear unread count
+    workspace.selectConversation(QStringLiteral("conv-angelina"));
+    EXPECT_EQ(workspace.selectedPeerName(), QStringLiteral("Angelina Froster"));
+
+    // 4. Send message via MessagingManager
+    const qsizetype initialMsgCount = workspace.activeMessages().size();
+    EXPECT_TRUE(workspace.sendMessage(QStringLiteral("Verified threat model hash.")));
+    EXPECT_EQ(workspace.activeMessages().size(), initialMsgCount + 1);
+
+    // 5. Stage encrypted file transfer via FileManager
+    const qsizetype initialFileCount = workspace.fileTransfers().size();
+    const QString txId = workspace.stageEncryptedFileTransfer(QStringLiteral("incident-keys.enc"), 2097152);
+    EXPECT_FALSE(txId.isEmpty());
+    EXPECT_EQ(workspace.fileTransfers().size(), initialFileCount + 1);
+    EXPECT_TRUE(workspace.cancelFileTransfer(txId));
+
+    // 6. Toggle inspector & block peer
+    workspace.toggleInspector();
+    EXPECT_FALSE(workspace.isInspectorOpen());
+    workspace.togglePeerBlocked(QStringLiteral(""));
+    EXPECT_TRUE(workspace.selectedPeerBlocked());
+    EXPECT_FALSE(workspace.sendMessage(QStringLiteral("Should be blocked")));
+
+    // 7. Emergency wipe resets workspace state
+    workspace.resetForEmergencyWipe();
+    EXPECT_TRUE(workspace.conversations().isEmpty());
+    EXPECT_TRUE(workspace.fileTransfers().isEmpty());
 }
 
 } // namespace

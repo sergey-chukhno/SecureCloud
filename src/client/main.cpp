@@ -6,6 +6,7 @@
 #include "ui/navigation_controller.hpp"
 #include "ui/ui_theme.hpp"
 #include "ui/window_state_manager.hpp"
+#include "ui/workspace_view_model.hpp"
 
 #include <QDir>
 #include <QGuiApplication>
@@ -70,8 +71,16 @@ int main(int argc, char* argv[]) {
     // UI Controllers and Presentation Wiring
     securecloud::client::ui::NavigationController navController;
     securecloud::client::ui::AppViewModel appViewModel(clientApp, navController);
+    securecloud::client::ui::WorkspaceViewModel workspaceViewModel(clientApp, navController);
     securecloud::client::ui::UiTheme uiTheme;
     securecloud::client::ui::WindowStateManager windowStateManager;
+
+    QObject::connect(&appViewModel, &securecloud::client::ui::AppViewModel::emergencyWipedChanged, &workspaceViewModel,
+                     [&appViewModel, &workspaceViewModel]() {
+                         if (appViewModel.isEmergencyWiped()) {
+                             workspaceViewModel.resetForEmergencyWipe();
+                         }
+                     });
 
     if (isGalleryMode) {
         navController.navigateTo(securecloud::client::ui::NavigationController::NavigationState::StyleGuide);
@@ -82,6 +91,7 @@ int main(int argc, char* argv[]) {
     qmlRegisterSingletonInstance<securecloud::client::ui::UiTheme>("SecureCloud.Theme", 1, 0, "Theme", &uiTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("navigationController"), &navController);
     engine.rootContext()->setContextProperty(QStringLiteral("appViewModel"), &appViewModel);
+    engine.rootContext()->setContextProperty(QStringLiteral("workspaceViewModel"), &workspaceViewModel);
     engine.rootContext()->setContextProperty(QStringLiteral("Theme"), &uiTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("windowStateManager"), &windowStateManager);
 
