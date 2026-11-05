@@ -334,10 +334,14 @@ QString WorkspaceViewModel::selectedPeerRoleNote() const {
 
 QVariantList WorkspaceViewModel::activeMessages() const {
     QVariantList result;
+    QString lastDateGroup;
     for (const auto& msg : messages_) {
         if (msg.conversationId != selected_conversation_id_) {
             continue;
         }
+        const bool showDateSep = !msg.dateGroup.isEmpty() && (msg.dateGroup != lastDateGroup);
+        lastDateGroup = msg.dateGroup;
+
         QVariantMap item;
         item.insert(QStringLiteral("messageId"), msg.messageId);
         item.insert(QStringLiteral("conversationId"), msg.conversationId);
@@ -346,6 +350,7 @@ QVariantList WorkspaceViewModel::activeMessages() const {
         item.insert(QStringLiteral("text"), msg.text);
         item.insert(QStringLiteral("timestampText"), msg.timestampText);
         item.insert(QStringLiteral("dateGroup"), msg.dateGroup);
+        item.insert(QStringLiteral("showDateSeparator"), showDateSep);
         item.insert(QStringLiteral("deliveryState"), msg.deliveryState);
         item.insert(QStringLiteral("isFileTransfer"), msg.isFileTransfer);
         item.insert(QStringLiteral("transferId"), msg.transferId);
@@ -562,11 +567,18 @@ QString WorkspaceViewModel::stageEncryptedFileTransfer(const QString& fileName, 
     messages_.push_back(MessageEntry{QStringLiteral("msg-%1").arg(++next_msg_seq_), conv->conversationId,
                                      QStringLiteral("You"), true, QStringLiteral("Encrypted File Attachment"),
                                      QStringLiteral("Just now"), QStringLiteral("TODAY"), QStringLiteral("Verified"),
-                                     true, transferId, cleanedName, sizeStr, QStringLiteral("AES-256-GCM"), hashShort});
+                                     true, transferId, cleanedName, sizeStr, QStringLiteral("AES-256-GCM"), hashShort,
+                                     composer_priority_});
 
     conv->lastMessagePreview = QStringLiteral("YOU: Uploaded %1 (AES-256-GCM)").arg(cleanedName);
     conv->timestampText = QStringLiteral("Just now");
+    conv->lastMessagePriority = composer_priority_;
     selected_transfer_id_ = transferId;
+
+    if (composer_priority_ != 1) {
+        composer_priority_ = 1;
+        emit composerPriorityChanged();
+    }
 
     emit fileTransfersChanged();
     emit selectedTransferChanged();

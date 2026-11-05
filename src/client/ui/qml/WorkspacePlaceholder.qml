@@ -8,7 +8,39 @@ Rectangle {
     color: Theme.backgroundPrimary
 
     readonly property var wvm: typeof workspaceViewModel !== "undefined" ? workspaceViewModel : null
+    readonly property var avm: typeof appViewModel !== "undefined" ? appViewModel : null
     readonly property string activeSection: wvm ? wvm.activeSection : "Messages"
+    readonly property int currentPriority: wvm ? wvm.composerPriority : 1
+    property bool animateNewMessages: false
+    property int stagedFileCounter: 0
+
+    readonly property var sampleAttachmentNames: [
+        "audit-key-bundle.enc",
+        "incident-forensics-dump.tar.enc",
+        "x3dh-prekey-attestation.json.enc",
+        "zero-trust-network-policy-v3.pdf"
+    ]
+
+    function triggerSampleFileAttachment() {
+        if (!workspaceRoot.wvm) return
+        workspaceRoot.animateNewMessages = true
+        var idx = workspaceRoot.stagedFileCounter % workspaceRoot.sampleAttachmentNames.length
+        var fileName = workspaceRoot.sampleAttachmentNames[idx]
+        var fileSize = 1572864 + (idx * 943718)
+        workspaceRoot.stagedFileCounter += 1
+        workspaceRoot.wvm.stageEncryptedFileTransfer(fileName, fileSize)
+    }
+
+    Connections {
+        target: workspaceRoot.wvm
+        function onActiveMessagesChanged() {
+            Qt.callLater(function() {
+                if (messageListView.count > 0) {
+                    messageListView.positionViewAtEnd()
+                }
+            })
+        }
+    }
 
     RowLayout {
         anchors.fill: parent
@@ -439,8 +471,9 @@ Rectangle {
 
                 // Contextual Peer Header Bar
                 Rectangle {
+                    id: peerHeaderBar
                     Layout.fillWidth: true
-                    height: 60
+                    height: 64
                     color: Theme.backgroundPrimary
 
                     Rectangle {
@@ -460,7 +493,7 @@ Rectangle {
                         SCAvatar {
                             userId: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerUserId : "peer"
                             displayName: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "Peer"
-                            size: 36
+                            size: 38
                             presence: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerPresence : "Online"
                         }
 
@@ -479,22 +512,61 @@ Rectangle {
                                     font.bold: true
                                     color: Theme.textPrimary
                                     elide: Text.ElideRight
+                                    Layout.maximumWidth: Math.max(100, peerHeaderBar.width - 230)
                                 }
 
                                 SCBadge {
-                                    text: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
-                                          ? qsTr("Verified")
-                                          : qsTr("Unverified")
-                                    type: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
-                                          ? "Verified"
-                                          : "Unverified"
+                                    text: {
+                                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return qsTr("Blocked")
+                                        return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
+                                               ? qsTr("Verified")
+                                               : qsTr("Unverified")
+                                    }
+                                    type: {
+                                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return "Danger"
+                                        return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
+                                               ? "Verified"
+                                               : "Unverified"
+                                    }
+                                }
+
+                                Rectangle {
+                                    visible: peerHeaderBar.width > 540
+                                    height: 20
+                                    width: cipherHeaderRow.implicitWidth + 12
+                                    radius: 10
+                                    color: Theme.backgroundSecondary
+                                    border.color: Theme.borderSubtle
+                                    border.width: 1
+
+                                    RowLayout {
+                                        id: cipherHeaderRow
+                                        anchors.centerIn: parent
+                                        spacing: 4
+
+                                        SCIcon {
+                                            name: "lock"
+                                            size: 11
+                                            color: Theme.accentPrimary
+                                        }
+
+                                        Label {
+                                            text: qsTr("Double Ratchet · AES-256-GCM")
+                                            font.family: Theme.fontFamilyMonospace
+                                            font.pixelSize: 10
+                                            color: Theme.textSecondary
+                                        }
+                                    }
                                 }
 
                                 Item { Layout.fillWidth: true }
                             }
 
                             Label {
-                                text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerHandle : ""
+                                text: {
+                                    var handle = workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerHandle : ""
+                                    return handle + "  ·  " + qsTr("Double Ratchet E2EE")
+                                }
                                 font.family: Theme.fontFamilyPrimary
                                 font.pixelSize: Theme.fontCaption
                                 color: Theme.textMuted
@@ -504,24 +576,19 @@ Rectangle {
                         }
 
                         SCIconButton {
-                            iconName: "lock"
+                            iconName: "paperclip"
                             variant: "Secondary"
-                            tooltipText: qsTr("Stage Encrypted File Transfer (audit-key-bundle.enc)")
-                            onClicked: {
-                                if (workspaceRoot.wvm) {
-                                    workspaceRoot.wvm.stageEncryptedFileTransfer("audit-key-bundle.enc", 3145728)
-                                }
-                            }
+                            tooltipText: qsTr("Stage Encrypted File Transfer (AES-256-GCM)")
+                            onClicked: workspaceRoot.triggerSampleFileAttachment()
                         }
 
                         SCIconButton {
-                            iconName: (workspaceRoot.wvm && workspaceRoot.wvm.isInspectorOpen)
-                                      ? "sidebar-expand"
-                                      : "sidebar-collapse"
+                            iconName: "info"
+                            variant: "Secondary"
                             active: workspaceRoot.wvm ? workspaceRoot.wvm.isInspectorOpen : true
                             tooltipText: (workspaceRoot.wvm && workspaceRoot.wvm.isInspectorOpen)
-                                         ? qsTr("Hide Peer Inspector")
-                                         : qsTr("Show Peer Inspector")
+                                         ? qsTr("Hide Peer Security Inspector")
+                                         : qsTr("Show Peer Security Inspector")
                             onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.toggleInspector()
                         }
                     }
@@ -536,120 +603,530 @@ Rectangle {
                     clip: true
                     model: workspaceRoot.wvm ? workspaceRoot.wvm.activeMessages : []
 
-                    header: Item { width: 1; height: Theme.space16 }
-                    footer: Item { width: 1; height: Theme.space16 }
+                    header: Item { width: 1; height: Theme.space12 }
+                    footer: Item { width: 1; height: Theme.space12 }
 
                     delegate: Item {
                         id: msgDelegate
                         width: messageListView.width
-                        height: delegateCol.implicitHeight
+                        height: delegateOuterCol.implicitHeight
 
-                        readonly property int maxBubbleWidth: Math.max(220, Math.min(360, messageListView.width - 48))
+                        readonly property int msgPriority: modelData.priority || 1
+                        readonly property bool isEmergency: msgPriority === 3
+                        readonly property bool isUrgent: msgPriority === 2
+                        readonly property int maxBubbleWidth: Math.max(240, Math.min(410, messageListView.width - 96))
+
+                        transform: Translate {
+                            id: entryTranslate
+                            y: 0
+                        }
+
+                        ParallelAnimation {
+                            id: entryAnim
+                            NumberAnimation {
+                                target: msgDelegate
+                                property: "opacity"
+                                from: 0.0
+                                to: 1.0
+                                duration: 180
+                                easing.type: Easing.OutCubic
+                            }
+                            NumberAnimation {
+                                target: entryTranslate
+                                property: "y"
+                                from: 10
+                                to: 0
+                                duration: 180
+                                easing.type: Easing.OutCubic
+                            }
+                        }
+
+                        Component.onCompleted: {
+                            if (workspaceRoot.animateNewMessages && index === messageListView.count - 1) {
+                                entryAnim.restart()
+                            }
+                        }
 
                         ColumnLayout {
-                            id: delegateCol
+                            id: delegateOuterCol
                             anchors.left: parent.left
                             anchors.right: parent.right
                             anchors.leftMargin: Theme.space24
                             anchors.rightMargin: Theme.space24
-                            spacing: Theme.space4
+                            spacing: Theme.space12
 
-                            Label {
-                                text: (modelData.senderName || "") + "  " + (modelData.timestampText || "")
-                                font.family: Theme.fontFamilyPrimary
-                                font.pixelSize: Theme.fontMicro
-                                color: Theme.textMuted
-                                Layout.alignment: modelData.isSelf ? Qt.AlignRight : Qt.AlignLeft
+                            // Centered Date Group Pill Separator (matching visual reference)
+                            Rectangle {
+                                visible: modelData.showDateSeparator ? true : false
+                                Layout.alignment: Qt.AlignHCenter
+                                Layout.topMargin: Theme.space4
+                                Layout.bottomMargin: Theme.space4
+                                height: 22
+                                width: dateGroupLabel.implicitWidth + 20
+                                radius: 11
+                                color: Theme.backgroundSecondary
+                                border.color: Theme.borderSubtle
+                                border.width: 1
+
+                                Label {
+                                    id: dateGroupLabel
+                                    anchors.centerIn: parent
+                                    text: modelData.dateGroup || ""
+                                    font.family: Theme.fontFamilyPrimary
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    font.letterSpacing: 0.6
+                                    color: Theme.textMuted
+                                }
                             }
 
-                            Rectangle {
-                                id: bubbleRect
-                                Layout.alignment: modelData.isSelf ? Qt.AlignRight : Qt.AlignLeft
-                                Layout.preferredWidth: msgDelegate.maxBubbleWidth
-                                implicitHeight: msgColumn.implicitHeight + (Theme.space12 * 2)
-                                radius: Theme.radiusLarge
-                                color: modelData.isSelf ? Theme.bubbleSelf : Theme.bubblePeer
-                                border.color: modelData.isFileTransfer ? Theme.accentPrimary : "transparent"
-                                border.width: modelData.isFileTransfer ? 1 : 0
+                            // Message Row with Peer/Self Avatar + Bubble Column
+                            RowLayout {
+                                Layout.fillWidth: true
+                                spacing: Theme.space12
 
+                                // Left Filler for Self Messages
+                                Item {
+                                    visible: modelData.isSelf ? true : false
+                                    Layout.fillWidth: true
+                                }
+
+                                // Peer Avatar (Left-aligned for incoming messages)
+                                SCAvatar {
+                                    visible: !modelData.isSelf
+                                    userId: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerUserId : "peer"
+                                    displayName: modelData.senderName || "Peer"
+                                    size: 28
+                                    presence: ""
+                                    Layout.alignment: Qt.AlignTop
+                                    Layout.topMargin: 18
+                                }
+
+                                // Bubble + Metadata Column
                                 ColumnLayout {
-                                    id: msgColumn
-                                    anchors.fill: parent
-                                    anchors.margins: Theme.space12
-                                    spacing: Theme.space4
+                                    spacing: 4
+                                    Layout.maximumWidth: msgDelegate.maxBubbleWidth
 
+                                    // Sender + Timestamp + Priority Header Row
                                     RowLayout {
-                                        visible: modelData.isFileTransfer ? true : false
-                                        Layout.fillWidth: true
-                                        spacing: Theme.space8
+                                        Layout.alignment: modelData.isSelf ? Qt.AlignRight : Qt.AlignLeft
+                                        spacing: 6
+
+                                        Label {
+                                            text: (modelData.senderName || "") + "  " + (modelData.timestampText || "")
+                                            font.family: Theme.fontFamilyPrimary
+                                            font.pixelSize: Theme.fontMicro
+                                            color: Theme.textMuted
+                                        }
+
+                                        Rectangle {
+                                            visible: msgDelegate.msgPriority > 1
+                                            height: 16
+                                            width: msgPriorityRow.implicitWidth + 8
+                                            radius: 8
+                                            color: msgDelegate.isEmergency
+                                                   ? (Theme.isDark ? "rgba(239, 68, 68, 0.22)" : "#FEE2E2")
+                                                   : (Theme.isDark ? "rgba(245, 158, 11, 0.22)" : "#FEF3C7")
+                                            border.color: msgDelegate.isEmergency ? Theme.statusDanger : Theme.statusWarning
+                                            border.width: 1
+
+                                            RowLayout {
+                                                id: msgPriorityRow
+                                                anchors.centerIn: parent
+                                                spacing: 3
+
+                                                SCIcon {
+                                                    name: msgDelegate.isEmergency ? "shield-alert" : "zap"
+                                                    size: 10
+                                                    color: msgDelegate.isEmergency ? Theme.statusDanger : Theme.statusWarning
+                                                }
+
+                                                Label {
+                                                    text: msgDelegate.isEmergency ? qsTr("EMERGENCY") : qsTr("URGENT")
+                                                    font.family: Theme.fontFamilyPrimary
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                    color: msgDelegate.isEmergency ? Theme.statusDanger : Theme.statusWarning
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Message or Encrypted File Bubble
+                                    Rectangle {
+                                        id: bubbleRect
+                                        Layout.alignment: modelData.isSelf ? Qt.AlignRight : Qt.AlignLeft
+                                        Layout.preferredWidth: msgDelegate.maxBubbleWidth
+                                        implicitHeight: msgColumn.implicitHeight + (Theme.space12 * 2)
+                                        radius: 16
+                                        color: {
+                                            if (msgDelegate.isEmergency && !modelData.isSelf) {
+                                                return Theme.isDark ? "#2A161D" : "#FEF2F2"
+                                            }
+                                            return modelData.isSelf ? Theme.bubbleSelf : Theme.bubblePeer
+                                        }
+                                        border.color: {
+                                            if (msgDelegate.isEmergency) return Theme.statusDanger
+                                            if (msgDelegate.isUrgent) return Theme.statusWarning
+                                            if (modelData.isFileTransfer) return Theme.accentPrimary
+                                            return "transparent"
+                                        }
+                                        border.width: (msgDelegate.msgPriority > 1) ? 1.5 : (modelData.isFileTransfer ? 1 : 0)
+
+                                        ColumnLayout {
+                                            id: msgColumn
+                                            anchors.fill: parent
+                                            anchors.margins: Theme.space12
+                                            spacing: 6
+
+                                            // Inline Encrypted File Attachment Card Header
+                                            RowLayout {
+                                                visible: modelData.isFileTransfer ? true : false
+                                                Layout.fillWidth: true
+                                                spacing: Theme.space8
+
+                                                Rectangle {
+                                                    width: 34
+                                                    height: 34
+                                                    radius: 8
+                                                    color: modelData.isSelf
+                                                           ? "rgba(255, 255, 255, 0.16)"
+                                                           : (Theme.isDark ? "#13233D" : "#DBEAFE")
+                                                    border.color: modelData.isSelf ? "rgba(255, 255, 255, 0.35)" : Theme.accentPrimary
+                                                    border.width: 1
+
+                                                    SCIcon {
+                                                        anchors.centerIn: parent
+                                                        name: "file-lock"
+                                                        size: 18
+                                                        color: modelData.isSelf ? "#FFFFFF" : Theme.accentPrimary
+                                                    }
+                                                }
+
+                                                ColumnLayout {
+                                                    Layout.fillWidth: true
+                                                    spacing: 2
+
+                                                    Label {
+                                                        text: modelData.fileName || ""
+                                                        font.family: Theme.fontFamilyPrimary
+                                                        font.pixelSize: Theme.fontBody
+                                                        font.bold: true
+                                                        color: modelData.isSelf ? Theme.bubbleSelfText : Theme.bubblePeerText
+                                                        elide: Text.ElideRight
+                                                        Layout.fillWidth: true
+                                                    }
+
+                                                    Label {
+                                                        text: qsTr("%1 · %2 · SHA-256: %3")
+                                                              .arg(modelData.fileSizeText || "")
+                                                              .arg(modelData.cipherSuite || "AES-256-GCM")
+                                                              .arg(modelData.sha256Short || "")
+                                                        font.family: Theme.fontFamilyMonospace
+                                                        font.pixelSize: 10
+                                                        color: modelData.isSelf
+                                                               ? "rgba(255, 255, 255, 0.82)"
+                                                               : Theme.textSecondary
+                                                        elide: Text.ElideRight
+                                                        Layout.fillWidth: true
+                                                    }
+                                                }
+
+                                                SCIconButton {
+                                                    iconName: "download"
+                                                    buttonSize: 28
+                                                    variant: modelData.isSelf ? "Ghost" : "Secondary"
+                                                    tooltipText: qsTr("Inspect Encrypted File in Vault")
+                                                    onClicked: {
+                                                        if (workspaceRoot.wvm) {
+                                                            workspaceRoot.wvm.selectTransfer(modelData.transferId)
+                                                            workspaceRoot.wvm.activeSection = "Files"
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            // Standard Text Message Content
+                                            Label {
+                                                visible: !modelData.isFileTransfer
+                                                text: modelData.text || ""
+                                                font.family: Theme.fontFamilyPrimary
+                                                font.pixelSize: Theme.fontBody
+                                                color: modelData.isSelf ? Theme.bubbleSelfText : Theme.bubblePeerText
+                                                wrapMode: Text.WordWrap
+                                                Layout.fillWidth: true
+                                            }
+                                        }
+                                    }
+
+                                    // Bottom-Right Cryptographic Delivery Status (Self Messages)
+                                    RowLayout {
+                                        visible: modelData.isSelf ? true : false
+                                        Layout.alignment: Qt.AlignRight
+                                        spacing: 4
 
                                         SCIcon {
                                             name: "lock"
-                                            size: 16
-                                            color: modelData.isSelf ? "#FFFFFF" : Theme.accentPrimary
+                                            size: 10
+                                            color: Theme.textMuted
                                         }
 
                                         Label {
-                                            text: (modelData.fileName || "") + " (" + (modelData.fileSizeText || "") + ")"
+                                            text: qsTr("E2EE · %1 · %2")
+                                                  .arg(modelData.deliveryState || "Encrypted")
+                                                  .arg(modelData.timestampText || "")
                                             font.family: Theme.fontFamilyPrimary
-                                            font.pixelSize: Theme.fontBody
-                                            font.bold: true
-                                            color: modelData.isSelf ? Theme.bubbleSelfText : Theme.bubblePeerText
-                                            elide: Text.ElideRight
-                                            Layout.fillWidth: true
+                                            font.pixelSize: 10
+                                            color: Theme.textMuted
                                         }
                                     }
+                                }
 
-                                    Label {
-                                        text: modelData.isFileTransfer
-                                              ? qsTr("%1 · SHA-256: %2").arg(modelData.cipherSuite || "AES-256-GCM").arg(modelData.sha256Short || "")
-                                              : (modelData.text || "")
-                                        font.family: modelData.isFileTransfer ? Theme.fontFamilyMonospace : Theme.fontFamilyPrimary
-                                        font.pixelSize: modelData.isFileTransfer ? Theme.fontMicro : Theme.fontBody
-                                        color: modelData.isSelf ? Theme.bubbleSelfText : Theme.bubblePeerText
-                                        wrapMode: Text.WordWrap
-                                        Layout.fillWidth: true
-                                    }
+                                // Self Avatar (Right-aligned for outgoing messages, matching visual reference)
+                                SCAvatar {
+                                    visible: modelData.isSelf ? true : false
+                                    userId: (workspaceRoot.avm && workspaceRoot.avm.currentUser !== "")
+                                            ? workspaceRoot.avm.currentUser
+                                            : "operator"
+                                    displayName: (workspaceRoot.avm && workspaceRoot.avm.currentUser !== "")
+                                                 ? workspaceRoot.avm.currentUser
+                                                 : "You"
+                                    size: 28
+                                    presence: ""
+                                    Layout.alignment: Qt.AlignTop
+                                    Layout.topMargin: 18
+                                }
+
+                                // Right Filler for Peer Messages
+                                Item {
+                                    visible: !modelData.isSelf
+                                    Layout.fillWidth: true
                                 }
                             }
                         }
                     }
                 }
 
-                // Floating Pill Composer Bar
+                // Floating Pill Composer Bar (Element 4 of Visual Reference Blueprint)
                 Rectangle {
+                    id: composerPill
                     Layout.fillWidth: true
-                    Layout.margins: Theme.space16
-                    height: 52
-                    radius: Theme.radiusLarge
+                    Layout.leftMargin: Theme.space16
+                    Layout.rightMargin: Theme.space16
+                    Layout.bottomMargin: Theme.space16
+                    Layout.topMargin: Theme.space4
+                    height: 54
+                    radius: 20
                     color: Theme.backgroundSecondary
-                    border.color: Theme.borderSubtle
-                    border.width: 1
+                    border.color: {
+                        if (workspaceRoot.currentPriority === 3) return Theme.statusDanger
+                        if (workspaceRoot.currentPriority === 2) return Theme.statusWarning
+                        if (composerInput.activeFocus) return Theme.borderFocused
+                        return Theme.borderSubtle
+                    }
+                    border.width: (workspaceRoot.currentPriority > 1 || composerInput.activeFocus) ? 1.5 : 1
+
+                    Behavior on border.color {
+                        ColorAnimation { duration: Theme.durationFast }
+                    }
 
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: Theme.space12
-                        anchors.rightMargin: Theme.space12
+                        anchors.rightMargin: Theme.space8
                         spacing: Theme.space8
 
-                        SCTextField {
-                            id: composerInput
-                            Layout.fillWidth: true
-                            inputHeight: 36
-                            placeholderText: qsTr("Type an encrypted message...")
-                            onAccepted: sendBtn.clicked()
+                        // Attach Encrypted File Button (Paperclip)
+                        SCIconButton {
+                            iconName: "paperclip"
+                            buttonSize: 34
+                            tooltipText: qsTr("Attach & Encrypt File (AES-256-GCM)")
+                            onClicked: workspaceRoot.triggerSampleFileAttachment()
                         }
 
-                        SCButton {
-                            id: sendBtn
-                            text: qsTr("Send")
-                            iconName: "check"
-                            variant: "Primary"
-                            buttonHeight: 36
-                            onClicked: {
-                                if (workspaceRoot.wvm && workspaceRoot.wvm.sendMessage(composerInput.text)) {
+                        // ADR-007 Interactive Priority Selector Pill (Normal / Urgent / Emergency)
+                        Rectangle {
+                            id: composerPriorityBtn
+                            height: 30
+                            width: priorityBtnRow.implicitWidth + 16
+                            radius: 15
+                            color: {
+                                if (workspaceRoot.currentPriority === 3) {
+                                    return Theme.isDark ? "rgba(239, 68, 68, 0.20)" : "#FEE2E2"
+                                }
+                                if (workspaceRoot.currentPriority === 2) {
+                                    return Theme.isDark ? "rgba(245, 158, 11, 0.20)" : "#FEF3C7"
+                                }
+                                return priorityMouse.containsMouse ? Theme.backgroundElevated : Theme.backgroundPrimary
+                            }
+                            border.color: {
+                                if (workspaceRoot.currentPriority === 3) return Theme.statusDanger
+                                if (workspaceRoot.currentPriority === 2) return Theme.statusWarning
+                                return Theme.borderSubtle
+                            }
+                            border.width: 1
+                            scale: priorityMouse.pressed ? 0.95 : 1.0
+
+                            Behavior on color {
+                                ColorAnimation { duration: Theme.durationFast }
+                            }
+                            Behavior on border.color {
+                                ColorAnimation { duration: Theme.durationFast }
+                            }
+                            Behavior on scale {
+                                NumberAnimation { duration: 110; easing.type: Easing.OutQuad }
+                            }
+
+                            RowLayout {
+                                id: priorityBtnRow
+                                anchors.centerIn: parent
+                                spacing: 4
+
+                                SCIcon {
+                                    name: {
+                                        if (workspaceRoot.currentPriority === 3) return "shield-alert"
+                                        if (workspaceRoot.currentPriority === 2) return "zap"
+                                        return "lock"
+                                    }
+                                    size: 12
+                                    color: {
+                                        if (workspaceRoot.currentPriority === 3) return Theme.statusDanger
+                                        if (workspaceRoot.currentPriority === 2) return Theme.statusWarning
+                                        return Theme.accentPrimary
+                                    }
+                                }
+
+                                Label {
+                                    text: workspaceRoot.wvm ? workspaceRoot.wvm.composerPriorityLabel : qsTr("Normal")
+                                    font.family: Theme.fontFamilyPrimary
+                                    font.pixelSize: Theme.fontMicro
+                                    font.bold: true
+                                    color: {
+                                        if (workspaceRoot.currentPriority === 3) return Theme.statusDanger
+                                        if (workspaceRoot.currentPriority === 2) return Theme.statusWarning
+                                        return Theme.textSecondary
+                                    }
+                                }
+                            }
+
+                            ToolTip {
+                                visible: priorityMouse.containsMouse
+                                text: qsTr("Message Priority: %1 (Click to cycle Normal → Urgent → Emergency)")
+                                      .arg(workspaceRoot.wvm ? workspaceRoot.wvm.composerPriorityLabel : "Normal")
+                                delay: 250
+                                timeout: 2500
+                            }
+
+                            MouseArea {
+                                id: priorityMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (workspaceRoot.wvm) {
+                                        workspaceRoot.wvm.cycleComposerPriority()
+                                    }
+                                }
+                            }
+                        }
+
+                        // Seamless Integrated Text Input inside the Floating Pill
+                        Item {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+
+                            TextInput {
+                                id: composerInput
+                                anchors.fill: parent
+                                anchors.leftMargin: 4
+                                anchors.rightMargin: 4
+                                verticalAlignment: TextInput.AlignVCenter
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontBody
+                                color: Theme.textPrimary
+                                selectByMouse: true
+                                selectionColor: Theme.accentPrimary
+                                selectedTextColor: "#FFFFFF"
+                                clip: true
+                                onAccepted: sendCircleBtn.triggerSend()
+
+                                Text {
+                                    anchors.fill: parent
+                                    verticalAlignment: Text.AlignVCenter
+                                    visible: !composerInput.text
+                                    font: composerInput.font
+                                    color: Theme.textMuted
+                                    elide: Text.ElideRight
+                                    text: {
+                                        if (workspaceRoot.currentPriority === 3) {
+                                            return qsTr("Type an EMERGENCY priority broadcast...")
+                                        }
+                                        if (workspaceRoot.currentPriority === 2) {
+                                            return qsTr("Type an URGENT encrypted message...")
+                                        }
+                                        return qsTr("Type an encrypted message...")
+                                    }
+                                }
+                            }
+                        }
+
+                        // Circular Encrypted Send Button (matching visual reference)
+                        Rectangle {
+                            id: sendCircleBtn
+                            width: 38
+                            height: 38
+                            radius: 19
+                            readonly property bool canSend: composerInput.text.trim().length > 0
+
+                            function triggerSend() {
+                                if (!workspaceRoot.wvm) return
+                                var txt = composerInput.text
+                                if (txt.trim().length === 0) return
+                                workspaceRoot.animateNewMessages = true
+                                if (workspaceRoot.wvm.sendMessage(txt)) {
                                     composerInput.text = ""
                                 }
+                            }
+
+                            color: {
+                                if (workspaceRoot.currentPriority === 3) {
+                                    return sendMouse.pressed ? "#991B1B" : (sendMouse.containsMouse ? "#B91C1C" : Theme.statusDanger)
+                                }
+                                if (workspaceRoot.currentPriority === 2) {
+                                    return sendMouse.pressed ? "#B45309" : (sendMouse.containsMouse ? "#D97706" : Theme.statusWarning)
+                                }
+                                return sendMouse.pressed ? "#1E40AF" : (sendMouse.containsMouse ? "#1D4ED8" : Theme.accentPrimary)
+                            }
+                            opacity: sendCircleBtn.canSend ? 1.0 : 0.78
+                            scale: sendMouse.pressed ? 0.92 : (sendMouse.containsMouse ? 1.05 : 1.0)
+
+                            Behavior on color {
+                                ColorAnimation { duration: Theme.durationFast }
+                            }
+                            Behavior on scale {
+                                NumberAnimation { duration: 110; easing.type: Easing.OutQuad }
+                            }
+
+                            SCIcon {
+                                anchors.centerIn: parent
+                                name: "send"
+                                size: 17
+                                color: "#FFFFFF"
+                            }
+
+                            ToolTip {
+                                visible: sendMouse.containsMouse
+                                text: qsTr("Send Encrypted Message (Enter)")
+                                delay: 250
+                                timeout: 2000
+                            }
+
+                            MouseArea {
+                                id: sendMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: sendCircleBtn.triggerSend()
                             }
                         }
                     }
