@@ -1,0 +1,19 @@
+<RCC>
+    <qresource prefix="/">
+        <file>qml/Main.qml</file>
+        <file>qml/NavigationShell.qml</file>
+        <file>qml/LoginPlaceholder.qml</file>
+        <file>qml/WorkspacePlaceholder.qml</file>
+        <file>qml/SettingsPlaceholder.qml</file>
+        <file>qml/EmergencyPlaceholder.qml</file>
+        <file>qml/StyleGuideView.qml</file>
+        <file>qml/controls/SCButton.qml</file>
+        <file>qml/controls/SCTextField.qml</file>
+        <file>qml/controls/SCIcon.qml</file>
+        <file>qml/controls/SCIconButton.qml</file>
+        <file>qml/controls/SCCard.qml</file>
+        <file>qml/controls/SCBadge.qml</file>
+        <file>qml/controls/SCAvatar.qml</file>
+        <file>qml/controls/SCDialog.qml</file>
+    </qresource>
+</RCC>

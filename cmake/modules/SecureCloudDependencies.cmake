@@ -67,6 +67,14 @@ if(APPLE)
         list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew")
         message(STATUS "[SecureCloud] Added Homebrew prefix to CMAKE_PREFIX_PATH: /opt/homebrew")
     endif()
+    if(EXISTS "/opt/homebrew/opt/qt" AND NOT "/opt/homebrew/opt/qt" IN_LIST CMAKE_PREFIX_PATH)
+        list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew/opt/qt")
+        message(STATUS "[SecureCloud] Added Qt prefix to CMAKE_PREFIX_PATH: /opt/homebrew/opt/qt")
+    endif()
+    if(EXISTS "/opt/homebrew/opt/qt@6" AND NOT "/opt/homebrew/opt/qt@6" IN_LIST CMAKE_PREFIX_PATH)
+        list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew/opt/qt@6")
+        message(STATUS "[SecureCloud] Added Qt@6 prefix to CMAKE_PREFIX_PATH: /opt/homebrew/opt/qt@6")
+    endif()
     if(EXISTS "/opt/homebrew/opt/libpq")
         list(APPEND CMAKE_PREFIX_PATH "/opt/homebrew/opt/libpq")
         set(PostgreSQL_ROOT "/opt/homebrew/opt/libpq")
@@ -322,6 +330,24 @@ else()
         "  Remediation:\n"
         "    - On macOS: Run 'brew install cpp-httplib'\n"
         "    - On MSVC / vcpkg: Ensure vcpkg.json contains \"cpp-httplib\""
+    )
+endif()
+
+# 7. Discover Qt 6 framework for SecureCloud Desktop Client
+message(STATUS "[SecureCloud] Discovering Qt 6 framework...")
+find_package(Qt6 COMPONENTS Core Gui Qml Quick QuickControls2 Network Test QUIET)
+if(Qt6_FOUND)
+    message(STATUS "[SecureCloud] Discovered Qt 6 (version ${Qt6_VERSION}): Core Gui Qml Quick QuickControls2 Network Test")
+else()
+    message(WARNING
+        "[SecureCloud] Qt 6 framework components were not found.\n"
+        "  Active CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}\n"
+        "  Client targets will be disabled or limited until Qt 6 is installed.\n"
+        "  Remediation:\n"
+        "    - On macOS: Run 'brew install qt@6' or 'brew install qt'\n"
+        "    - On Ubuntu/Debian: Run 'apt-get install qt6-base-dev qt6-declarative-dev'\n"
+        "    - On MSYS2 MinGW64/UCRT64: Run 'pacman -S mingw-w64-x86_64-qt6-base mingw-w64-x86_64-qt6-declarative'\n"
+        "    - On Windows (vcpkg): Run 'vcpkg install qtbase qtdeclarative'"
     )
 endif()
 
