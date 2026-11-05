@@ -14,7 +14,14 @@ class NavigationController : public QObject {
     Q_PROPERTY(bool isAuthenticated READ isAuthenticated WRITE setAuthenticated NOTIFY authenticationChanged)
 
   public:
-    enum class NavigationState { Unauthenticated = 0, MfaVerification, MainWorkspace, Settings, EmergencyMode };
+    enum class NavigationState {
+        Unauthenticated = 0,
+        MfaVerification,
+        MainWorkspace,
+        Settings,
+        EmergencyMode,
+        StyleGuide
+    };
     Q_ENUM(NavigationState)
 
     explicit NavigationController(QObject* parent = nullptr);

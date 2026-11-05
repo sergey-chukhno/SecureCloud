@@ -1,33 +1,113 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import "controls"
 
 Rectangle {
     id: settingsRoot
-    color: "#1e1e24"
+    color: Theme.backgroundPrimary
 
     ColumnLayout {
         anchors.centerIn: parent
-        spacing: 16
-        width: 400
+        spacing: Theme.space16
+        width: 520
 
         Label {
             text: qsTr("Application Settings")
-            font.pixelSize: 20
+            font.pixelSize: Theme.fontHeadline
             font.bold: true
-            color: "#ffffff"
+            font.family: Theme.fontFamilyPrimary
+            color: Theme.textPrimary
         }
 
-        Label {
-            text: qsTr("Connection & Cryptography Preferences")
-            font.pixelSize: 13
-            color: "#808090"
+        SCCard {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 130
+            headerText: qsTr("Appearance & Theme")
+            headerIconName: "style-guide"
+            elevation: "Elevated"
+
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: Theme.space12
+
+                Label {
+                    text: qsTr("Choose your preferred visual presentation:")
+                    font.pixelSize: Theme.fontCaption
+                    font.family: Theme.fontFamilyPrimary
+                    color: Theme.textSecondary
+                }
+
+                RowLayout {
+                    spacing: Theme.space12
+
+                    SCButton {
+                        text: qsTr("Dark")
+                        iconName: "moon"
+                        variant: Theme.isDark ? "Primary" : "Secondary"
+                        onClicked: Theme.setThemeMode(1) // Dark
+                    }
+
+                    SCButton {
+                        text: qsTr("Light")
+                        iconName: "sun"
+                        variant: !Theme.isDark ? "Primary" : "Secondary"
+                        onClicked: Theme.setThemeMode(2) // Light
+                    }
+
+                    SCButton {
+                        text: qsTr("System Sync")
+                        iconName: "monitor"
+                        variant: "Secondary"
+                        onClicked: Theme.setThemeMode(0) // System
+                    }
+                }
+            }
         }
 
-        Button {
+        SCCard {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 110
+            headerText: qsTr("Security & Trust Boundaries")
+            headerIconName: "lock"
+            elevation: "Base"
+
+            RowLayout {
+                anchors.fill: parent
+                spacing: Theme.space12
+
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+
+                    Label {
+                        text: qsTr("Transport Encryption")
+                        font.bold: true
+                        font.family: Theme.fontFamilyPrimary
+                        font.pixelSize: Theme.fontBody
+                        color: Theme.textPrimary
+                    }
+
+                    Label {
+                        text: qsTr("TLS 1.3 mTLS with strict certificate validation")
+                        font.family: Theme.fontFamilyPrimary
+                        font.pixelSize: Theme.fontCaption
+                        color: Theme.textMuted
+                    }
+                }
+
+                SCBadge {
+                    type: "Verified"
+                    text: "Active"
+                }
+            }
+        }
+
+        SCButton {
             text: qsTr("Back to Workspace")
+            variant: "Ghost"
+            iconName: "arrow-left"
             onClicked: navigationController.navigateBack()
         }
     }
 }
-
