@@ -6,6 +6,7 @@
 #include "ui/navigation_controller.hpp"
 #include "ui/ui_theme.hpp"
 #include "ui/window_state_manager.hpp"
+#include "ui/workspace_view_model.hpp"
 
 #include <QDir>
 #include <QGuiApplication>
@@ -70,8 +71,16 @@ int main(int argc, char* argv[]) {
     // UI Controllers and Presentation Wiring
     securecloud::client::ui::NavigationController navController;
     securecloud::client::ui::AppViewModel appViewModel(clientApp, navController);
+    securecloud::client::ui::WorkspaceViewModel workspaceViewModel(clientApp, navController);
     securecloud::client::ui::UiTheme uiTheme;
     securecloud::client::ui::WindowStateManager windowStateManager;
+
+    QObject::connect(&appViewModel, &securecloud::client::ui::AppViewModel::emergencyWipedChanged, &workspaceViewModel,
+                     [&appViewModel, &workspaceViewModel]() {
+                         if (appViewModel.isEmergencyWiped()) {
+                             workspaceViewModel.resetForEmergencyWipe();
+                         }
+                     });
 
     if (isGalleryMode) {
         navController.navigateTo(securecloud::client::ui::NavigationController::NavigationState::StyleGuide);
@@ -82,6 +91,7 @@ int main(int argc, char* argv[]) {
     qmlRegisterSingletonInstance<securecloud::client::ui::UiTheme>("SecureCloud.Theme", 1, 0, "Theme", &uiTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("navigationController"), &navController);
     engine.rootContext()->setContextProperty(QStringLiteral("appViewModel"), &appViewModel);
+    engine.rootContext()->setContextProperty(QStringLiteral("workspaceViewModel"), &workspaceViewModel);
     engine.rootContext()->setContextProperty(QStringLiteral("Theme"), &uiTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("windowStateManager"), &windowStateManager);
 
@@ -166,13 +176,31 @@ int main(int argc, char* argv[]) {
         appViewModel.beginMfaChallenge(QStringLiteral("alice"), QStringLiteral("password123"));
         captureWindow(QStringLiteral("login-mfa-dark-1200x800.png"), 1200, 800);
 
-        // 5. Authenticated Workspace state (Dark & Light 1200x800)
+        // 5. Authenticated Workspace state — Messages 4-Zone Shell (Dark & Light 1200x800)
         appViewModel.submitMfaCode(QStringLiteral("482910"));
+        workspaceViewModel.setActiveSection(QStringLiteral("Messages"));
+        workspaceViewModel.setInspectorOpen(true);
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
         captureWindow(QStringLiteral("workspace-dark-1200x800.png"), 1200, 800);
 
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
         captureWindow(QStringLiteral("workspace-light-1200x800.png"), 1200, 800);
+
+        // 6. Authenticated Workspace state — Encrypted Files Vault View (Dark & Light 1200x800)
+        workspaceViewModel.setActiveSection(QStringLiteral("Files"));
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("workspace-files-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("workspace-files-light-1200x800.png"), 1200, 800);
+
+        // 7. Authenticated Settings — Security, Device Trust & Identity Center (Dark & Light 1200x800)
+        (void)navController.navigateTo(securecloud::client::ui::NavigationController::NavigationState::Settings);
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("workspace-settings-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("workspace-settings-light-1200x800.png"), 1200, 800);
 
         (void)clientApp.shutdown();
         return 0;

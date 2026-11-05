@@ -217,4 +217,33 @@ TEST(UiThemeTest, TypographyAndLayoutMetricsAreMonotonic) {
     EXPECT_LT(theme.durationNormal(), theme.durationSlow());
 }
 
+TEST(UiThemeTest, InvokableThemeModeIntSwitching) {
+    UiTheme theme;
+    QSignalSpy modeSpy(&theme, &UiTheme::themeModeChanged);
+
+    // Default is Dark (1)
+    EXPECT_EQ(theme.themeModeInt(), 1);
+    EXPECT_TRUE(theme.isDark());
+
+    // Switch to Light (2) via Q_INVOKABLE int overload
+    theme.setThemeMode(2);
+    EXPECT_EQ(theme.themeModeInt(), 2);
+    EXPECT_EQ(theme.themeMode(), ThemeMode::Light);
+    EXPECT_FALSE(theme.isDark());
+    EXPECT_EQ(modeSpy.count(), 1);
+
+    // Switch to System (0) via Q_INVOKABLE int overload
+    theme.setThemeMode(0);
+    EXPECT_EQ(theme.themeModeInt(), 0);
+    EXPECT_EQ(theme.themeMode(), ThemeMode::System);
+    EXPECT_EQ(modeSpy.count(), 2);
+
+    // Out-of-range int falls back to Dark (1)
+    theme.setThemeMode(99);
+    EXPECT_EQ(theme.themeModeInt(), 1);
+    EXPECT_EQ(theme.themeMode(), ThemeMode::Dark);
+    EXPECT_TRUE(theme.isDark());
+    EXPECT_EQ(modeSpy.count(), 3);
+}
+
 } // namespace

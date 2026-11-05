@@ -309,6 +309,101 @@ Item {
                 ctx.moveTo(21, 12);
                 ctx.lineTo(9, 12);
                 ctx.stroke();
+            } else if (n === "users" || n === "contacts") {
+                // Primary contact head & shoulders
+                ctx.beginPath();
+                ctx.arc(9, 8.5, 3.5, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(2.5, 19.5);
+                ctx.quadraticCurveTo(2.5, 14.5, 9, 14.5);
+                ctx.quadraticCurveTo(15.5, 14.5, 15.5, 19.5);
+                ctx.stroke();
+                // Secondary peer head & shoulder arc
+                ctx.beginPath();
+                ctx.arc(16.5, 9, 2.8, -0.4 * Math.PI, 0.6 * Math.PI);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(17, 14.8);
+                ctx.quadraticCurveTo(21.5, 15.2, 21.5, 19.5);
+                ctx.stroke();
+            } else if (n === "file-lock" || n === "folder" || n === "files") {
+                // Folder / document outline with encrypted lock
+                ctx.beginPath();
+                ctx.moveTo(3, 6);
+                ctx.arcTo(3, 4, 5, 4, 2);
+                ctx.lineTo(9.5, 4);
+                ctx.lineTo(11.5, 6.5);
+                ctx.lineTo(19, 6.5);
+                ctx.arcTo(21, 6.5, 21, 8.5, 2);
+                ctx.lineTo(21, 18);
+                ctx.arcTo(21, 20, 19, 20, 2);
+                ctx.lineTo(5, 20);
+                ctx.arcTo(3, 20, 3, 18, 2);
+                ctx.closePath();
+                ctx.stroke();
+                // Mini inner lock shackle & body
+                ctx.beginPath();
+                ctx.roundedRect(9.2, 12.5, 5.6, 4.5, 1, 1);
+                ctx.moveTo(10.5, 12.5);
+                ctx.lineTo(10.5, 11);
+                ctx.arc(12, 11, 1.5, Math.PI, 0, false);
+                ctx.lineTo(13.5, 12.5);
+                ctx.stroke();
+            } else if (n === "paperclip") {
+                ctx.beginPath();
+                ctx.moveTo(21.4, 11.1);
+                ctx.lineTo(12.2, 20.3);
+                ctx.arc(8.7, 16.8, 4.9, 0.25 * Math.PI, 1.25 * Math.PI, false);
+                ctx.lineTo(14.4, 5.6);
+                ctx.arc(16.8, 8.0, 3.2, 1.25 * Math.PI, 0.25 * Math.PI, false);
+                ctx.lineTo(9.8, 17.4);
+                ctx.arc(8.6, 16.2, 1.6, 0.25 * Math.PI, 1.25 * Math.PI, false);
+                ctx.lineTo(15.2, 9.6);
+                ctx.stroke();
+            } else if (n === "send") {
+                ctx.beginPath();
+                ctx.moveTo(21, 3);
+                ctx.lineTo(10, 14);
+                ctx.moveTo(21, 3);
+                ctx.lineTo(14.5, 21);
+                ctx.lineTo(10, 14);
+                ctx.lineTo(3, 9.5);
+                ctx.closePath();
+                ctx.stroke();
+            } else if (n === "download") {
+                ctx.beginPath();
+                ctx.moveTo(12, 3.5);
+                ctx.lineTo(12, 15.5);
+                ctx.moveTo(7.5, 11.5);
+                ctx.lineTo(12, 16);
+                ctx.lineTo(16.5, 11.5);
+                ctx.moveTo(4, 17.5);
+                ctx.lineTo(4, 19.5);
+                ctx.arcTo(4, 20.5, 5, 20.5, 1);
+                ctx.lineTo(19, 20.5);
+                ctx.arcTo(20, 20.5, 20, 19.5, 1);
+                ctx.lineTo(20, 17.5);
+                ctx.stroke();
+            } else if (n === "info") {
+                ctx.beginPath();
+                ctx.arc(12, 12, 9, 0, Math.PI * 2);
+                ctx.moveTo(12, 11.5);
+                ctx.lineTo(12, 16.5);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(12, 8, 1.0, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (n === "zap" || n === "bolt" || n === "urgent") {
+                ctx.beginPath();
+                ctx.moveTo(13, 2.5);
+                ctx.lineTo(4.5, 13.5);
+                ctx.lineTo(11.5, 13.5);
+                ctx.lineTo(10.5, 21.5);
+                ctx.lineTo(19.5, 10.5);
+                ctx.lineTo(12.5, 10.5);
+                ctx.closePath();
+                ctx.stroke();
             }
         }
     }

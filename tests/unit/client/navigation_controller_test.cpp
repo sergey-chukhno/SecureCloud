@@ -2,6 +2,7 @@
 #include "application/client_config.hpp"
 #include "ui/app_view_model.hpp"
 #include "ui/navigation_controller.hpp"
+#include "ui/workspace_view_model.hpp"
 
 #include <QSignalSpy>
 #include <gtest/gtest.h>
@@ -210,6 +211,197 @@ TEST(AppViewModelTest, MfaChallengeFlow) {
     EXPECT_TRUE(viewModel.isAuthenticated());
     EXPECT_EQ(viewModel.currentUser(), QStringLiteral("bob"));
     EXPECT_EQ(navController.currentState(), NavigationController::NavigationState::MainWorkspace);
+}
+
+TEST(NavigationControllerTest, WorkspaceSectionsRequireAuthAndSwitchCleanly) {
+    NavigationController controller;
+    QSignalSpy deniedSpy(&controller, &NavigationController::navigationDenied);
+    QSignalSpy sectionSpy(&controller, &NavigationController::workspaceSectionChanged);
+
+    // Unauthenticated section switch must fail
+    EXPECT_FALSE(controller.navigateToSection(QStringLiteral("Files")));
+    EXPECT_EQ(deniedSpy.count(), 1);
+    EXPECT_EQ(controller.activeWorkspaceSection(), QStringLiteral("Messages"));
+
+    // Authenticated section switch transitions to MainWorkspace and updates section
+    controller.setAuthenticated(true);
+    EXPECT_TRUE(controller.navigateToSection(QStringLiteral("Files")));
+    EXPECT_EQ(controller.currentState(), NavigationController::NavigationState::MainWorkspace);
+    EXPECT_EQ(controller.activeWorkspaceSection(), QStringLiteral("Files"));
+    EXPECT_EQ(sectionSpy.count(), 1);
+
+    EXPECT_TRUE(controller.navigateToSection(QStringLiteral("Contacts")));
+    EXPECT_EQ(controller.activeWorkspaceSection(), QStringLiteral("Contacts"));
+    EXPECT_EQ(sectionSpy.count(), 2);
+
+    // Reset restores Messages section
+    controller.reset(NavigationController::NavigationState::Unauthenticated);
+    EXPECT_EQ(controller.activeWorkspaceSection(), QStringLiteral("Messages"));
+}
+
+TEST(WorkspaceViewModelTest, SearchSelectionMessagingFileTransferAndWipe) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    NavigationController navController;
+    navController.setAuthenticated(true);
+    WorkspaceViewModel workspace(app, navController);
+
+    // 1. Default seeded state
+    EXPECT_EQ(workspace.activeSection(), QStringLiteral("Messages"));
+    EXPECT_EQ(workspace.conversations().size(), 5);
+    EXPECT_EQ(workspace.contacts().size(), 5);
+    EXPECT_EQ(workspace.fileTransfers().size(), 3);
+    EXPECT_EQ(workspace.selectedPeerName(), QStringLiteral("Frances Swann"));
+    EXPECT_TRUE(workspace.isInspectorOpen());
+
+    // 2. Real-time search filter across conversations and files
+    workspace.setSearchQuery(QStringLiteral("Angelina"));
+    EXPECT_EQ(workspace.conversations().size(), 1);
+    EXPECT_EQ(workspace.fileTransfers().size(), 1);
+    workspace.setSearchQuery(QStringLiteral(""));
+    EXPECT_EQ(workspace.conversations().size(), 5);
+
+    // 3. Select conversation & clear unread count
+    workspace.selectConversation(QStringLiteral("conv-angelina"));
+    EXPECT_EQ(workspace.selectedPeerName(), QStringLiteral("Angelina Froster"));
+
+    // 4. Send message via MessagingManager
+    const qsizetype initialMsgCount = workspace.activeMessages().size();
+    EXPECT_TRUE(workspace.sendMessage(QStringLiteral("Verified threat model hash.")));
+    EXPECT_EQ(workspace.activeMessages().size(), initialMsgCount + 1);
+
+    // 5. Stage encrypted file transfer via FileManager
+    const qsizetype initialFileCount = workspace.fileTransfers().size();
+    const QString txId = workspace.stageEncryptedFileTransfer(QStringLiteral("incident-keys.enc"), 2097152);
+    EXPECT_FALSE(txId.isEmpty());
+    EXPECT_EQ(workspace.fileTransfers().size(), initialFileCount + 1);
+    EXPECT_TRUE(workspace.cancelFileTransfer(txId));
+
+    // 6. Toggle inspector & block peer
+    workspace.toggleInspector();
+    EXPECT_FALSE(workspace.isInspectorOpen());
+    workspace.togglePeerBlocked(QStringLiteral(""));
+    EXPECT_TRUE(workspace.selectedPeerBlocked());
+    EXPECT_FALSE(workspace.sendMessage(QStringLiteral("Should be blocked")));
+
+    // 7. Emergency wipe resets workspace state
+    workspace.resetForEmergencyWipe();
+    EXPECT_TRUE(workspace.conversations().isEmpty());
+    EXPECT_TRUE(workspace.fileTransfers().isEmpty());
+}
+
+TEST(WorkspaceViewModelTest, MessagePriorityAndComposerPriorityCycling) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    NavigationController navController;
+    navController.setAuthenticated(true);
+    WorkspaceViewModel workspace(app, navController);
+
+    // Default composer priority is Normal (1)
+    EXPECT_EQ(workspace.composerPriority(), 1);
+    EXPECT_EQ(workspace.composerPriorityLabel(), QStringLiteral("Normal"));
+
+    // Cycle to Urgent (2)
+    workspace.cycleComposerPriority();
+    EXPECT_EQ(workspace.composerPriority(), 2);
+    EXPECT_EQ(workspace.composerPriorityLabel(), QStringLiteral("Urgent"));
+
+    // Cycle to Emergency (3)
+    workspace.cycleComposerPriority();
+    EXPECT_EQ(workspace.composerPriority(), 3);
+    EXPECT_EQ(workspace.composerPriorityLabel(), QStringLiteral("Emergency"));
+
+    // Cycle wraps back to Normal (1)
+    workspace.cycleComposerPriority();
+    EXPECT_EQ(workspace.composerPriority(), 1);
+    EXPECT_EQ(workspace.composerPriorityLabel(), QStringLiteral("Normal"));
+
+    // Select a Normal conversation (Ricky Smith) and send an Emergency message (3)
+    workspace.selectConversation(QStringLiteral("conv-ricky"));
+    EXPECT_EQ(workspace.selectedPeerName(), QStringLiteral("Ricky Smith"));
+    EXPECT_TRUE(workspace.sendMessage(QStringLiteral("Zero-day key rotation required immediately."), 3));
+
+    const QVariantList msgs = workspace.activeMessages();
+    ASSERT_FALSE(msgs.isEmpty());
+    const QVariantMap lastMsg = msgs.last().toMap();
+    EXPECT_EQ(lastMsg.value(QStringLiteral("priority")).toInt(), 3);
+    EXPECT_EQ(lastMsg.value(QStringLiteral("priorityLabel")).toString(), QStringLiteral("Emergency"));
+
+    // Sending resets composer priority to Normal (1)
+    EXPECT_EQ(workspace.composerPriority(), 1);
+}
+
+TEST(WorkspaceViewModelTest, DevicePairingApprovalRevocationAndPrekeyRotation) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    NavigationController navController;
+    navController.setAuthenticated(true);
+    WorkspaceViewModel workspace(app, navController);
+
+    // 1. Initial seeded device state: 3 devices (2 Authorized, 1 Pending)
+    EXPECT_EQ(workspace.devices().size(), 3);
+    EXPECT_EQ(workspace.pendingDeviceCount(), 1);
+    EXPECT_EQ(workspace.localDeviceIdentity().value(QStringLiteral("signedPrekeyId")).toString(),
+              QStringLiteral("SPK-X25519-0014"));
+
+    // 2. Approve pending device (dev-audit-03)
+    EXPECT_TRUE(workspace.approveDevice(QStringLiteral("dev-audit-03")));
+    EXPECT_EQ(workspace.pendingDeviceCount(), 0);
+
+    // 3. Cannot revoke the active current workstation (dev-local-01)
+    EXPECT_FALSE(workspace.revokeDevice(QStringLiteral("dev-local-01")));
+
+    // 4. Revoke companion device (dev-mobile-02)
+    EXPECT_TRUE(workspace.revokeDevice(QStringLiteral("dev-mobile-02")));
+
+    // 5. Pair a new device -> increments device count and pendingDeviceCount
+    const QString pairedId = workspace.pairNewDevice(QStringLiteral("Hardware Security Module · YubiHSM2"));
+    EXPECT_FALSE(pairedId.isEmpty());
+    EXPECT_EQ(workspace.devices().size(), 4);
+    EXPECT_EQ(workspace.pendingDeviceCount(), 1);
+
+    // 6. Rotate local X3DH Signed Prekey (SPK-X25519-0014 -> SPK-X25519-0015)
+    const QString oldSpkSig = workspace.localDeviceIdentity().value(QStringLiteral("prekeySignatureHex")).toString();
+    EXPECT_FALSE(oldSpkSig.isEmpty());
+    workspace.rotateSignedPrekey();
+    EXPECT_EQ(workspace.localDeviceIdentity().value(QStringLiteral("signedPrekeyId")).toString(),
+              QStringLiteral("SPK-X25519-0015"));
+    EXPECT_NE(workspace.localDeviceIdentity().value(QStringLiteral("prekeySignatureHex")).toString(), oldSpkSig);
+
+    // 7. Peer safety number verification toggle (Corina starts unverified)
+    workspace.selectConversation(QStringLiteral("conv-corina"));
+    EXPECT_FALSE(workspace.selectedPeerVerified());
+    workspace.togglePeerVerified(QStringLiteral(""));
+    EXPECT_TRUE(workspace.selectedPeerVerified());
+}
+
+TEST(AppViewModelTest, IdentityVerificationUpdatesSecurityBadge) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    NavigationController navController;
+    AppViewModel viewModel(app, navController);
+
+    viewModel.requestLogin(QStringLiteral("alice"), QStringLiteral("password123"));
+    ASSERT_TRUE(viewModel.isAuthenticated());
+    EXPECT_FALSE(viewModel.isIdentityVerified());
+    EXPECT_EQ(viewModel.securityBadgeType(), QStringLiteral("Info"));
+
+    viewModel.setIdentityVerified(true);
+    EXPECT_TRUE(viewModel.isIdentityVerified());
+    EXPECT_EQ(viewModel.securityBadgeType(), QStringLiteral("Verified"));
+    EXPECT_TRUE(viewModel.securityStatusText().contains(QStringLiteral("Identity Verified")));
+
+    viewModel.setIdentityVerified(false);
+    EXPECT_FALSE(viewModel.isIdentityVerified());
+    EXPECT_EQ(viewModel.securityBadgeType(), QStringLiteral("Info"));
 }
 
 } // namespace

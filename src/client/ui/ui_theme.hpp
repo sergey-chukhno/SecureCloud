@@ -20,6 +20,7 @@ class UiTheme : public QObject {
     Q_OBJECT
 
     Q_PROPERTY(ThemeMode themeMode READ themeMode WRITE setThemeMode NOTIFY themeModeChanged)
+    Q_PROPERTY(int themeModeInt READ themeModeInt NOTIFY themeModeChanged)
     Q_PROPERTY(bool isDark READ isDark NOTIFY themeChanged)
 
     // Surface & Background Colors
@@ -99,7 +100,9 @@ class UiTheme : public QObject {
 
     // Theme Mode Accessors
     [[nodiscard]] ThemeMode themeMode() const noexcept;
+    [[nodiscard]] int themeModeInt() const noexcept { return static_cast<int>(theme_mode_); }
     void setThemeMode(ThemeMode mode);
+    Q_INVOKABLE void setThemeMode(int mode);
     [[nodiscard]] bool isDark() const noexcept;
 
     // Q_INVOKABLE Actions

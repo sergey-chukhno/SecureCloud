@@ -19,6 +19,7 @@ class AppViewModel : public QObject {
     Q_PROPERTY(bool isRunning READ isRunning NOTIFY lifecycleStateChanged)
     Q_PROPERTY(bool isEmergencyWiped READ isEmergencyWiped NOTIFY emergencyWipedChanged)
     Q_PROPERTY(bool isAuthenticating READ isAuthenticating NOTIFY authenticatingChanged)
+    Q_PROPERTY(bool isIdentityVerified READ isIdentityVerified NOTIFY connectionStatusChanged)
     Q_PROPERTY(QString lastErrorMessage READ lastErrorMessage NOTIFY errorStateChanged)
     Q_PROPERTY(QString lastErrorCategory READ lastErrorCategory NOTIFY errorStateChanged)
 
@@ -38,9 +39,11 @@ class AppViewModel : public QObject {
     [[nodiscard]] bool isRunning() const;
     [[nodiscard]] bool isEmergencyWiped() const;
     [[nodiscard]] bool isAuthenticating() const noexcept { return is_authenticating_; }
+    [[nodiscard]] bool isIdentityVerified() const noexcept { return is_identity_verified_; }
     [[nodiscard]] QString lastErrorMessage() const { return last_error_message_; }
     [[nodiscard]] QString lastErrorCategory() const { return last_error_category_; }
 
+    Q_INVOKABLE void setIdentityVerified(bool verified);
     Q_INVOKABLE void requestLogin(const QString& username, const QString& password);
     Q_INVOKABLE void beginMfaChallenge(const QString& username, const QString& password);
     Q_INVOKABLE void submitMfaCode(const QString& code);
@@ -69,6 +72,7 @@ class AppViewModel : public QObject {
     QString pending_username_{};
     QString pending_password_{};
     bool is_authenticating_{false};
+    bool is_identity_verified_{false};
 };
 
 } // namespace securecloud::client::ui

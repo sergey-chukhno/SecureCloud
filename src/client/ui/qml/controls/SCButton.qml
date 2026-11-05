@@ -69,9 +69,13 @@ FocusScope {
             return "transparent"
         }
         border.width: control.activeFocus ? 2 : (control.variant === "Secondary" ? 1 : 0)
+        scale: (mouseArea.pressed && control.enabled && !control.busy) ? 0.97 : 1.0
 
         Behavior on color {
             ColorAnimation { duration: Theme.durationFast }
+        }
+        Behavior on scale {
+            NumberAnimation { duration: 110; easing.type: Easing.OutQuad }
         }
 
         RowLayout {
