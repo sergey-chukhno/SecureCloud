@@ -11,6 +11,8 @@ Item {
     property bool isSidebarCollapsed: width < 1000
     property string alertMessage: ""
     property bool showAlert: false
+    readonly property var wvm: typeof workspaceViewModel !== "undefined" ? workspaceViewModel : null
+    readonly property var avm: typeof appViewModel !== "undefined" ? appViewModel : null
     readonly property bool showShellNavigation:
         navigationController.isAuthenticated || navigationController.currentViewName === "StyleGuide"
 
@@ -37,15 +39,25 @@ Item {
     Shortcut {
         sequence: "Ctrl+1"
         enabled: navigationController.isAuthenticated
-        onActivated: navigationController.navigateTo(2) // MainWorkspace
+        onActivated: navigationController.navigateToSection("Messages")
     }
     Shortcut {
         sequence: "Ctrl+2"
         enabled: navigationController.isAuthenticated
-        onActivated: navigationController.navigateTo(3) // Settings
+        onActivated: navigationController.navigateToSection("Contacts")
     }
     Shortcut {
         sequence: "Ctrl+3"
+        enabled: navigationController.isAuthenticated
+        onActivated: navigationController.navigateToSection("Files")
+    }
+    Shortcut {
+        sequence: "Ctrl+4"
+        enabled: navigationController.isAuthenticated
+        onActivated: navigationController.navigateTo(3) // Settings
+    }
+    Shortcut {
+        sequence: "Ctrl+5"
         onActivated: navigationController.navigateTo(5) // StyleGuide
     }
     Shortcut {
@@ -71,6 +83,7 @@ Item {
         property string iconName: ""
         property string shortcutHint: ""
         property string tooltipShortcut: shortcutHint
+        property int badgeCount: 0
         property bool isActive: false
         property bool isDanger: false
         signal activated()
@@ -136,16 +149,34 @@ Item {
                 anchors.rightMargin: Theme.space12
                 spacing: Theme.space8
 
-                SCIcon {
-                    name: navItem.iconName
-                    size: 18
-                    color: {
-                        if (navItem.isDanger) {
-                            return navItem.isActive ? "#FFFFFF" : Theme.statusDanger
-                        }
-                        return navItem.isActive ? Theme.accentPrimary : Theme.textSecondary
-                    }
+                Item {
+                    width: 18
+                    height: 18
                     Layout.alignment: Qt.AlignVCenter
+
+                    SCIcon {
+                        anchors.centerIn: parent
+                        name: navItem.iconName
+                        size: 18
+                        color: {
+                            if (navItem.isDanger) {
+                                return navItem.isActive ? "#FFFFFF" : Theme.statusDanger
+                            }
+                            return navItem.isActive ? Theme.accentPrimary : Theme.textSecondary
+                        }
+                    }
+
+                    Rectangle {
+                        visible: navShell.isSidebarCollapsed && navItem.badgeCount > 0
+                        anchors.top: parent.top
+                        anchors.right: parent.right
+                        anchors.topMargin: -2
+                        anchors.rightMargin: -3
+                        width: 7
+                        height: 7
+                        radius: 3.5
+                        color: Theme.accentPrimary
+                    }
                 }
 
                 Label {
@@ -165,8 +196,27 @@ Item {
                     Layout.alignment: Qt.AlignVCenter
                 }
 
+                Rectangle {
+                    visible: !navShell.isSidebarCollapsed && navItem.badgeCount > 0
+                    height: 18
+                    width: Math.max(18, badgeCountLabel.implicitWidth + 10)
+                    radius: 9
+                    color: Theme.accentPrimary
+                    Layout.alignment: Qt.AlignVCenter
+
+                    Label {
+                        id: badgeCountLabel
+                        anchors.centerIn: parent
+                        text: navItem.badgeCount.toString()
+                        font.family: Theme.fontFamilyPrimary
+                        font.pixelSize: Theme.fontMicro
+                        font.bold: true
+                        color: "#FFFFFF"
+                    }
+                }
+
                 Label {
-                    visible: !navShell.isSidebarCollapsed && navItem.shortcutHint !== ""
+                    visible: !navShell.isSidebarCollapsed && navItem.badgeCount === 0 && navItem.shortcutHint !== ""
                     text: navItem.shortcutHint
                     font.family: Theme.fontFamilyMonospace
                     font.pixelSize: Theme.fontMicro
@@ -176,7 +226,7 @@ Item {
             }
 
             ToolTip {
-                visible: navMouse.containsMouse && (navShell.isSidebarCollapsed || navItem.tooltipShortcut !== navItem.shortcutHint)
+                visible: navMouse.containsMouse && (navShell.isSidebarCollapsed || navItem.tooltipShortcut !== navItem.shortcutHint || navItem.badgeCount > 0)
                 text: navItem.labelText + (navItem.tooltipShortcut !== "" ? " (" + navItem.tooltipShortcut + ")" : "")
                 delay: 300
                 timeout: 2500
@@ -224,26 +274,56 @@ Item {
                 anchors.margins: Theme.space8
                 spacing: Theme.space8
 
-                // Sidebar Toggle / Collapse Button
+                // Top Brand Header + Collapse/Theme Controls
                 RowLayout {
                     Layout.fillWidth: true
+                    Layout.topMargin: Theme.space4
+                    Layout.bottomMargin: Theme.space4
+                    Layout.leftMargin: navShell.isSidebarCollapsed ? 0 : Theme.space4
                     spacing: Theme.space8
 
-                    SCIconButton {
-                        iconName: navShell.isSidebarCollapsed ? "sidebar-expand" : "sidebar-collapse"
-                        tooltipText: navShell.isSidebarCollapsed ? qsTr("Expand Sidebar") : qsTr("Collapse Sidebar")
-                        onClicked: navShell.isSidebarCollapsed = !navShell.isSidebarCollapsed
+                    Rectangle {
+                        visible: !navShell.isSidebarCollapsed
+                        width: 28
+                        height: 28
+                        radius: Theme.radiusSmall
+                        color: Theme.isDark ? "#13233D" : "#DBEAFE"
+                        border.color: Theme.accentPrimary
+                        border.width: 1
+
+                        SCIcon {
+                            anchors.centerIn: parent
+                            name: "shield-check"
+                            size: 16
+                            color: Theme.accentPrimary
+                        }
                     }
 
                     Label {
                         visible: !navShell.isSidebarCollapsed
-                        text: qsTr("NAVIGATION")
-                        font.pixelSize: Theme.fontMicro
+                        text: qsTr("SecureCloud")
+                        font.pixelSize: Theme.fontSubtitle
                         font.bold: true
-                        font.letterSpacing: 0.8
                         font.family: Theme.fontFamilyPrimary
-                        color: Theme.textMuted
+                        color: Theme.textPrimary
+                        elide: Text.ElideRight
                         Layout.fillWidth: true
+                    }
+
+                    SCIconButton {
+                        visible: !navShell.isSidebarCollapsed
+                        iconName: Theme.isDark ? "sun" : "moon"
+                        buttonSize: 30
+                        tooltipText: Theme.isDark ? qsTr("Switch to Light Theme") : qsTr("Switch to Dark Theme")
+                        onClicked: Theme.toggleTheme()
+                    }
+
+                    SCIconButton {
+                        iconName: navShell.isSidebarCollapsed ? "sidebar-expand" : "sidebar-collapse"
+                        buttonSize: 30
+                        Layout.alignment: navShell.isSidebarCollapsed ? Qt.AlignHCenter : Qt.AlignVCenter
+                        tooltipText: navShell.isSidebarCollapsed ? qsTr("Expand Sidebar") : qsTr("Collapse Sidebar")
+                        onClicked: navShell.isSidebarCollapsed = !navShell.isSidebarCollapsed
                     }
                 }
 
@@ -253,14 +333,39 @@ Item {
                     color: Theme.borderSubtle
                 }
 
-                // Workspace Tab
+                // Messages Section Tab
                 SidebarNavItem {
                     visible: navigationController.isAuthenticated
-                    labelText: qsTr("Workspace")
+                    labelText: qsTr("Messages")
                     iconName: "workspace"
                     shortcutHint: "Ctrl+1"
-                    isActive: navigationController.currentViewName === "Workspace"
-                    onActivated: navigationController.navigateTo(2)
+                    badgeCount: navShell.wvm ? navShell.wvm.totalUnreadCount : 0
+                    isActive: navigationController.currentViewName === "Workspace" &&
+                              navigationController.activeWorkspaceSection === "Messages"
+                    onActivated: navigationController.navigateToSection("Messages")
+                }
+
+                // Contacts Section Tab
+                SidebarNavItem {
+                    visible: navigationController.isAuthenticated
+                    labelText: qsTr("Contacts")
+                    iconName: "users"
+                    shortcutHint: "Ctrl+2"
+                    isActive: navigationController.currentViewName === "Workspace" &&
+                              navigationController.activeWorkspaceSection === "Contacts"
+                    onActivated: navigationController.navigateToSection("Contacts")
+                }
+
+                // Encrypted Files Section Tab
+                SidebarNavItem {
+                    visible: navigationController.isAuthenticated
+                    labelText: qsTr("Files")
+                    iconName: "file-lock"
+                    shortcutHint: "Ctrl+3"
+                    badgeCount: navShell.wvm ? navShell.wvm.activeFileTransferCount : 0
+                    isActive: navigationController.currentViewName === "Workspace" &&
+                              navigationController.activeWorkspaceSection === "Files"
+                    onActivated: navigationController.navigateToSection("Files")
                 }
 
                 // Settings Tab
@@ -268,7 +373,7 @@ Item {
                     visible: navigationController.isAuthenticated
                     labelText: qsTr("Settings")
                     iconName: "settings"
-                    shortcutHint: "Ctrl+2"
+                    shortcutHint: "Ctrl+4"
                     isActive: navigationController.currentViewName === "Settings"
                     onActivated: navigationController.navigateTo(3)
                 }
@@ -277,7 +382,7 @@ Item {
                 SidebarNavItem {
                     labelText: qsTr("Style Guide")
                     iconName: "style-guide"
-                    shortcutHint: "Ctrl+3"
+                    shortcutHint: "Ctrl+5"
                     isActive: navigationController.currentViewName === "StyleGuide"
                     onActivated: navigationController.navigateTo(5)
                 }
@@ -304,6 +409,70 @@ Item {
                     isActive: navigationController.currentViewName === "Emergency"
                     onActivated: navShell.emergencyWipeRequested()
                 }
+
+                Rectangle {
+                    visible: navigationController.isAuthenticated
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Theme.borderSubtle
+                }
+
+                // Integrated Authenticated User Profile Footer
+                RowLayout {
+                    visible: navigationController.isAuthenticated
+                    Layout.fillWidth: true
+                    Layout.topMargin: Theme.space4
+                    Layout.bottomMargin: Theme.space4
+                    Layout.leftMargin: navShell.isSidebarCollapsed ? 0 : Theme.space4
+                    spacing: Theme.space8
+
+                    SCAvatar {
+                        userId: (navShell.avm && navShell.avm.currentUser !== "")
+                                ? navShell.avm.currentUser
+                                : "operator"
+                        displayName: (navShell.avm && navShell.avm.currentUser !== "")
+                                     ? navShell.avm.currentUser
+                                     : "Operator"
+                        size: 32
+                        presence: "Online"
+                        Layout.alignment: navShell.isSidebarCollapsed ? Qt.AlignHCenter : Qt.AlignVCenter
+                    }
+
+                    ColumnLayout {
+                        visible: !navShell.isSidebarCollapsed
+                        spacing: 1
+                        Layout.fillWidth: true
+
+                        Label {
+                            text: (navShell.avm && navShell.avm.currentUser !== "")
+                                  ? navShell.avm.currentUser
+                                  : qsTr("Operator")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontBody
+                            font.bold: true
+                            color: Theme.textPrimary
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+
+                        Label {
+                            text: qsTr("Authenticated")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontMicro
+                            color: Theme.textMuted
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    SCIconButton {
+                        visible: !navShell.isSidebarCollapsed
+                        iconName: "logout"
+                        buttonSize: 30
+                        tooltipText: qsTr("Sign Out")
+                        onClicked: if (navShell.avm) navShell.avm.requestLogout()
+                    }
+                }
             }
         }
 
@@ -313,9 +482,9 @@ Item {
             Layout.fillHeight: true
             spacing: 0
 
-            // Breadcrumb & Context Header Bar (shown only when shell navigation is active)
+            // Breadcrumb & Context Header Bar (shown on non-Workspace views such as Settings & StyleGuide)
             Rectangle {
-                visible: navShell.showShellNavigation
+                visible: navShell.showShellNavigation && navigationController.currentViewName !== "Workspace"
                 Layout.fillWidth: true
                 height: 36
                 color: Theme.backgroundPrimary

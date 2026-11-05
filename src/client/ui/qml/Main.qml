@@ -74,6 +74,8 @@ ApplicationWindow {
     }
 
     header: ToolBar {
+        visible: !rootWindow.showAuthenticatedChrome
+        height: visible ? implicitHeight : 0
         implicitHeight: 52
         background: Rectangle {
             color: Theme.backgroundSecondary
@@ -186,7 +188,7 @@ ApplicationWindow {
                 active: navigationController.currentViewName === "StyleGuide"
                 tooltipText: navigationController.currentViewName === "StyleGuide"
                              ? qsTr("Exit Style Guide")
-                             : qsTr("Design System Style Guide (Ctrl+3)")
+                             : qsTr("Design System Style Guide (Ctrl+5)")
                 onClicked: {
                     if (navigationController.currentViewName === "StyleGuide" && navigationController.canNavigateBack) {
                         navigationController.navigateBack()

@@ -179,4 +179,3 @@ class WorkspaceViewModel : public QObject {
 };
 
 } // namespace securecloud::client::ui
-

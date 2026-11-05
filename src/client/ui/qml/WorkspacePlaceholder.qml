@@ -33,39 +33,6 @@ Rectangle {
                 anchors.margins: Theme.space16
                 spacing: Theme.space12
 
-                // Section Switcher Pills (Messages | Contacts | Files)
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.space8
-
-                    SCButton {
-                        text: qsTr("Messages")
-                        variant: workspaceRoot.activeSection === "Messages" ? "Primary" : "Secondary"
-                        buttonHeight: 30
-                        horizontalPadding: 10
-                        Layout.fillWidth: true
-                        onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.activeSection = "Messages"
-                    }
-
-                    SCButton {
-                        text: qsTr("Contacts")
-                        variant: workspaceRoot.activeSection === "Contacts" ? "Primary" : "Secondary"
-                        buttonHeight: 30
-                        horizontalPadding: 10
-                        Layout.fillWidth: true
-                        onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.activeSection = "Contacts"
-                    }
-
-                    SCButton {
-                        text: qsTr("Files")
-                        variant: workspaceRoot.activeSection === "Files" ? "Primary" : "Secondary"
-                        buttonHeight: 30
-                        horizontalPadding: 10
-                        Layout.fillWidth: true
-                        onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.activeSection = "Files"
-                    }
-                }
-
                 // Header + Counter Badge
                 RowLayout {
                     Layout.fillWidth: true
