@@ -145,8 +145,71 @@ TEST(AppViewModelTest, LoginLogoutAndEmergencyFlow) {
     // 3. Emergency Wipe
     viewModel.triggerEmergencyWipe();
     EXPECT_TRUE(viewModel.isEmergencyWiped());
+    EXPECT_FALSE(viewModel.isAuthenticated());
+    EXPECT_FALSE(navController.isAuthenticated());
     EXPECT_EQ(navController.currentState(), NavigationController::NavigationState::EmergencyMode);
     EXPECT_EQ(wipeSpy.count(), 1);
+}
+
+TEST(AppViewModelTest, SecurityStateConsistencyAndMfaAndWipeRevocation) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    NavigationController navController;
+    AppViewModel viewModel(app, navController);
+
+    // 1. Pre-auth state must never claim Verified Identity or E2EE session
+    EXPECT_FALSE(viewModel.isAuthenticated());
+    EXPECT_EQ(viewModel.securityBadgeType(), QStringLiteral("Offline"));
+    EXPECT_EQ(viewModel.sessionStatusText(), QStringLiteral("Unauthenticated — Awaiting Credentials"));
+    EXPECT_EQ(viewModel.securityStatusText(), QStringLiteral("TLS 1.3 Gateway Ready · No Active Session"));
+
+    // 2. Empty login produces Validation error and keeps user unauthenticated
+    viewModel.requestLogin(QStringLiteral(""), QStringLiteral(""));
+    EXPECT_FALSE(viewModel.isAuthenticated());
+    EXPECT_EQ(viewModel.lastErrorCategory(), QStringLiteral("Validation"));
+    EXPECT_FALSE(viewModel.lastErrorMessage().isEmpty());
+
+    // 3. Valid login transitions to MainWorkspace and clears pre-auth back history
+    viewModel.requestLogin(QStringLiteral("alice"), QStringLiteral("password123"));
+    EXPECT_TRUE(viewModel.isAuthenticated());
+    EXPECT_EQ(viewModel.lastErrorMessage(), QStringLiteral(""));
+    EXPECT_EQ(navController.currentState(), NavigationController::NavigationState::MainWorkspace);
+    EXPECT_FALSE(navController.canNavigateBack());
+    EXPECT_EQ(viewModel.securityBadgeType(), QStringLiteral("Info"));
+
+    // 4. Emergency Wipe while authenticated must revoke authentication and clear user
+    viewModel.triggerEmergencyWipe();
+    EXPECT_TRUE(viewModel.isEmergencyWiped());
+    EXPECT_FALSE(viewModel.isAuthenticated());
+    EXPECT_FALSE(navController.isAuthenticated());
+    EXPECT_EQ(viewModel.currentUser(), QStringLiteral(""));
+    EXPECT_EQ(viewModel.securityBadgeType(), QStringLiteral("Danger"));
+}
+
+TEST(AppViewModelTest, MfaChallengeFlow) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    NavigationController navController;
+    AppViewModel viewModel(app, navController);
+
+    viewModel.beginMfaChallenge(QStringLiteral("bob"), QStringLiteral("secret456"));
+    EXPECT_EQ(navController.currentState(), NavigationController::NavigationState::MfaVerification);
+    EXPECT_FALSE(viewModel.isAuthenticated());
+
+    // Invalid MFA code
+    viewModel.submitMfaCode(QStringLiteral("123"));
+    EXPECT_FALSE(viewModel.isAuthenticated());
+    EXPECT_EQ(viewModel.lastErrorCategory(), QStringLiteral("Authentication"));
+
+    // Valid 6-digit MFA code
+    viewModel.submitMfaCode(QStringLiteral("482910"));
+    EXPECT_TRUE(viewModel.isAuthenticated());
+    EXPECT_EQ(viewModel.currentUser(), QStringLiteral("bob"));
+    EXPECT_EQ(navController.currentState(), NavigationController::NavigationState::MainWorkspace);
 }
 
 } // namespace

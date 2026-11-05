@@ -4,6 +4,7 @@ import QtQuick.Controls
 FocusScope {
     id: control
 
+    property string iconName: ""
     property string iconText: ""
     property string tooltipText: ""
     property int size: 34
@@ -11,6 +12,9 @@ FocusScope {
     property string variant: "Ghost" // Ghost, Secondary, Danger
     property bool active: false
     property int badgeCount: 0
+
+    Accessible.role: Accessible.Button
+    Accessible.name: control.tooltipText !== "" ? control.tooltipText : (control.iconName !== "" ? control.iconName : control.iconText)
 
     signal clicked()
 
@@ -39,9 +43,9 @@ FocusScope {
                 return Theme.backgroundSecondary
             }
             if (control.variant === "Danger") {
-                if (mouseArea.pressed) return Theme.isDark ? "#991B1B" : "#B91C1C"
-                if (mouseArea.containsMouse) return Theme.isDark ? "#DC2626" : "#DC2626"
-                return Theme.statusDanger
+                if (mouseArea.pressed) return "#991B1B"
+                if (mouseArea.containsMouse) return "#B91C1C"
+                return "#DC2626"
             }
             // Ghost default
             if (mouseArea.pressed) return Theme.isDark ? "rgba(255, 255, 255, 0.12)" : "rgba(0, 0, 0, 0.08)"
@@ -56,8 +60,22 @@ FocusScope {
             ColorAnimation { duration: Theme.durationFast }
         }
 
+        SCIcon {
+            anchors.centerIn: parent
+            visible: control.iconName !== ""
+            name: control.iconName
+            size: Math.round(control.size * 0.5)
+            color: {
+                if (!control.enabled) return Theme.textMuted
+                if (control.variant === "Danger") return "#FFFFFF"
+                if (control.active) return Theme.accentPrimary
+                return Theme.textPrimary
+            }
+        }
+
         Text {
             anchors.centerIn: parent
+            visible: control.iconName === ""
             text: control.iconText
             font.family: Theme.fontFamilyPrimary
             font.pixelSize: Math.round(control.size * 0.45)

@@ -1,5 +1,7 @@
 #include "ui/ui_theme.hpp"
 
+#include <QFont>
+#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QStyleHints>
 
@@ -66,18 +68,18 @@ const UiTheme::Palette& UiTheme::darkPalette() {
         QStringLiteral("#151B26"),            // backgroundSecondary
         QStringLiteral("#1E2638"),            // backgroundElevated
         QStringLiteral("#263245"),            // borderSubtle
-        QStringLiteral("#3B82F6"),            // borderFocused
+        QStringLiteral("#60A5FA"),            // borderFocused
         QStringLiteral("#F8FAFC"),            // textPrimary
-        QStringLiteral("#94A3B8"),            // textSecondary
-        QStringLiteral("#64748B"),            // textMuted
+        QStringLiteral("#CBD5E1"),            // textSecondary
+        QStringLiteral("#94A3B8"),            // textMuted
         QStringLiteral("#0F172A"),            // textInverse
         QStringLiteral("#3B82F6"),            // accentPrimary
         QStringLiteral("#2563EB"),            // accentHover
         QStringLiteral("#1D4ED8"),            // accentActive
         QStringLiteral("#10B981"),            // statusSuccess
         QStringLiteral("#F59E0B"),            // statusWarning
-        QStringLiteral("#EF4444"),            // statusDanger
-        QStringLiteral("#3B82F6"),            // statusInfo
+        QStringLiteral("#F87171"),            // statusDanger
+        QStringLiteral("#60A5FA"),            // statusInfo
         QStringLiteral("#2563EB"),            // bubbleSelf
         QStringLiteral("#1E2638"),            // bubblePeer
         QStringLiteral("#FFFFFF"),            // bubbleSelfText
@@ -89,20 +91,20 @@ const UiTheme::Palette& UiTheme::darkPalette() {
 
 const UiTheme::Palette& UiTheme::lightPalette() {
     static const Palette palette{
-        QStringLiteral("#F8FAFC"),               // backgroundPrimary
-        QStringLiteral("#FFFFFF"),               // backgroundSecondary
+        QStringLiteral("#F1F5F9"),               // backgroundPrimary
+        QStringLiteral("#F8FAFC"),               // backgroundSecondary
         QStringLiteral("#FFFFFF"),               // backgroundElevated
-        QStringLiteral("#E2E8F0"),               // borderSubtle
+        QStringLiteral("#CBD5E1"),               // borderSubtle
         QStringLiteral("#2563EB"),               // borderFocused
         QStringLiteral("#0F172A"),               // textPrimary
-        QStringLiteral("#475569"),               // textSecondary
-        QStringLiteral("#94A3B8"),               // textMuted
+        QStringLiteral("#334155"),               // textSecondary
+        QStringLiteral("#475569"),               // textMuted
         QStringLiteral("#F8FAFC"),               // textInverse
         QStringLiteral("#2563EB"),               // accentPrimary
         QStringLiteral("#1D4ED8"),               // accentHover
         QStringLiteral("#1E40AF"),               // accentActive
-        QStringLiteral("#059669"),               // statusSuccess
-        QStringLiteral("#D97706"),               // statusWarning
+        QStringLiteral("#047857"),               // statusSuccess
+        QStringLiteral("#B45309"),               // statusWarning
         QStringLiteral("#DC2626"),               // statusDanger
         QStringLiteral("#2563EB"),               // statusInfo
         QStringLiteral("#2563EB"),               // bubbleSelf
@@ -203,11 +205,16 @@ QString UiTheme::shadowColor() const {
 }
 
 QString UiTheme::fontFamilyPrimary() const {
-    return QStringLiteral("system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif");
+    const QString family = QFontDatabase::systemFont(QFontDatabase::GeneralFont).family();
+    return family.isEmpty() ? QStringLiteral("Helvetica") : family;
 }
 
 QString UiTheme::fontFamilyMonospace() const {
-    return QStringLiteral("'SF Mono', 'Cascadia Code', Consolas, 'Courier New', monospace");
+    const QString family = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
+    if (!family.isEmpty() && family != fontFamilyPrimary()) {
+        return family;
+    }
+    return QStringLiteral("Courier New");
 }
 
 } // namespace securecloud::client::ui

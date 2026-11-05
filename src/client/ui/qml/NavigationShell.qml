@@ -6,9 +6,13 @@ import "controls"
 Item {
     id: navShell
 
+    signal emergencyWipeRequested()
+
     property bool isSidebarCollapsed: width < 1000
     property string alertMessage: ""
     property bool showAlert: false
+    readonly property bool showShellNavigation:
+        navigationController.isAuthenticated || navigationController.currentViewName === "StyleGuide"
 
     Connections {
         target: navigationController
@@ -32,10 +36,12 @@ Item {
     // Keyboard Navigation Shortcuts
     Shortcut {
         sequence: "Ctrl+1"
+        enabled: navigationController.isAuthenticated
         onActivated: navigationController.navigateTo(2) // MainWorkspace
     }
     Shortcut {
         sequence: "Ctrl+2"
+        enabled: navigationController.isAuthenticated
         onActivated: navigationController.navigateTo(3) // Settings
     }
     Shortcut {
@@ -44,7 +50,8 @@ Item {
     }
     Shortcut {
         sequence: "Ctrl+Shift+E"
-        onActivated: navigationController.navigateTo(4) // EmergencyMode
+        enabled: navigationController.isAuthenticated
+        onActivated: navShell.emergencyWipeRequested()
     }
     Shortcut {
         sequence: "Alt+Left"
@@ -53,22 +60,160 @@ Item {
     }
     Shortcut {
         sequence: "Esc"
-        enabled: navigationController.canNavigateBack
-        onActivated: navigationController.navigateBack()
+        enabled: navShell.showAlert
+        onActivated: navShell.showAlert = false
+    }
+
+    // Reusable Keyboard-Accessible Sidebar Item
+    component SidebarNavItem: FocusScope {
+        id: navItem
+        property string labelText: ""
+        property string iconName: ""
+        property string shortcutHint: ""
+        property string tooltipShortcut: shortcutHint
+        property bool isActive: false
+        property bool isDanger: false
+        signal activated()
+
+        Layout.fillWidth: true
+        implicitHeight: 40
+        height: 40
+        activeFocusOnTab: visible && enabled
+
+        Accessible.role: Accessible.Button
+        Accessible.name: navItem.labelText + (navItem.tooltipShortcut !== "" ? " (" + navItem.tooltipShortcut + ")" : "")
+
+        Keys.onReturnPressed: if (enabled) navItem.activated()
+        Keys.onEnterPressed: if (enabled) navItem.activated()
+        Keys.onSpacePressed: if (enabled) navItem.activated()
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.radiusSmall
+            color: {
+                if (navItem.isDanger) {
+                    if (navMouse.pressed) return "#991B1B"
+                    if (navItem.isActive) return "#DC2626"
+                    if (navMouse.containsMouse || navItem.activeFocus) {
+                        return Theme.isDark ? "rgba(248, 113, 113, 0.14)" : "rgba(220, 38, 38, 0.08)"
+                    }
+                    return "transparent"
+                }
+                if (navItem.isActive) {
+                    return Theme.backgroundElevated
+                }
+                if (navMouse.containsMouse || navItem.activeFocus) {
+                    return Theme.isDark ? "#1B2332" : "#E2E8F0"
+                }
+                return "transparent"
+            }
+            border.color: {
+                if (navItem.activeFocus) return Theme.borderFocused
+                if (navItem.isDanger) return Theme.statusDanger
+                if (navItem.isActive) return Theme.borderSubtle
+                return "transparent"
+            }
+            border.width: navItem.activeFocus ? 2 : (navItem.isDanger || navItem.isActive ? 1 : 0)
+
+            Behavior on color {
+                ColorAnimation { duration: Theme.durationFast }
+            }
+
+            // Active Left Accent Indicator Pill
+            Rectangle {
+                visible: navItem.isActive && !navItem.isDanger
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                width: 3
+                height: 20
+                radius: 1.5
+                color: Theme.accentPrimary
+            }
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space12
+                anchors.rightMargin: Theme.space12
+                spacing: Theme.space8
+
+                SCIcon {
+                    name: navItem.iconName
+                    size: 18
+                    color: {
+                        if (navItem.isDanger) {
+                            return navItem.isActive ? "#FFFFFF" : Theme.statusDanger
+                        }
+                        return navItem.isActive ? Theme.accentPrimary : Theme.textSecondary
+                    }
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                Label {
+                    visible: !navShell.isSidebarCollapsed
+                    text: navItem.labelText
+                    font.family: Theme.fontFamilyPrimary
+                    font.pixelSize: Theme.fontBody
+                    font.bold: navItem.isActive || navItem.isDanger
+                    elide: Text.ElideRight
+                    color: {
+                        if (navItem.isDanger) {
+                            return navItem.isActive ? "#FFFFFF" : Theme.statusDanger
+                        }
+                        return navItem.isActive ? Theme.textPrimary : Theme.textSecondary
+                    }
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
+                Label {
+                    visible: !navShell.isSidebarCollapsed && navItem.shortcutHint !== ""
+                    text: navItem.shortcutHint
+                    font.family: Theme.fontFamilyMonospace
+                    font.pixelSize: Theme.fontMicro
+                    color: navItem.isDanger ? Theme.statusDanger : Theme.textMuted
+                    Layout.alignment: Qt.AlignVCenter
+                }
+            }
+
+            ToolTip {
+                visible: navMouse.containsMouse && (navShell.isSidebarCollapsed || navItem.tooltipShortcut !== navItem.shortcutHint)
+                text: navItem.labelText + (navItem.tooltipShortcut !== "" ? " (" + navItem.tooltipShortcut + ")" : "")
+                delay: 300
+                timeout: 2500
+            }
+
+            MouseArea {
+                id: navMouse
+                anchors.fill: parent
+                hoverEnabled: true
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    navItem.forceActiveFocus()
+                    navItem.activated()
+                }
+            }
+        }
     }
 
     RowLayout {
         anchors.fill: parent
         spacing: 0
 
-        // Responsive Collapsible Navigation Rail
+        // Responsive Collapsible Navigation Rail (visible post-auth or in StyleGuide catalog)
         Rectangle {
             id: sideRail
+            visible: navShell.showShellNavigation
             Layout.fillHeight: true
-            Layout.preferredWidth: navShell.isSidebarCollapsed ? 64 : 200
+            Layout.preferredWidth: navShell.isSidebarCollapsed ? 64 : 236
             color: Theme.backgroundSecondary
-            border.color: Theme.borderSubtle
-            border.width: 1
+
+            Rectangle {
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                anchors.right: parent.right
+                width: 1
+                color: Theme.borderSubtle
+            }
 
             Behavior on Layout.preferredWidth {
                 NumberAnimation { duration: Theme.durationNormal; easing.type: Easing.OutQuad }
@@ -85,16 +230,17 @@ Item {
                     spacing: Theme.space8
 
                     SCIconButton {
-                        iconText: navShell.isSidebarCollapsed ? "☰" : "⮜"
+                        iconName: navShell.isSidebarCollapsed ? "sidebar-expand" : "sidebar-collapse"
                         tooltipText: navShell.isSidebarCollapsed ? qsTr("Expand Sidebar") : qsTr("Collapse Sidebar")
                         onClicked: navShell.isSidebarCollapsed = !navShell.isSidebarCollapsed
                     }
 
                     Label {
                         visible: !navShell.isSidebarCollapsed
-                        text: qsTr("Navigation")
-                        font.pixelSize: Theme.fontCaption
+                        text: qsTr("NAVIGATION")
+                        font.pixelSize: Theme.fontMicro
                         font.bold: true
+                        font.letterSpacing: 0.8
                         font.family: Theme.fontFamilyPrimary
                         color: Theme.textMuted
                         Layout.fillWidth: true
@@ -108,187 +254,55 @@ Item {
                 }
 
                 // Workspace Tab
-                Rectangle {
-                    Layout.fillWidth: true
-                    height: 40
-                    radius: Theme.radiusMedium
+                SidebarNavItem {
                     visible: navigationController.isAuthenticated
-                    color: navigationController.currentViewName === "Workspace" ? Theme.backgroundElevated : (wsMouse.containsMouse ? Theme.backgroundPrimary : "transparent")
-                    border.color: navigationController.currentViewName === "Workspace" ? Theme.accentPrimary : "transparent"
-                    border.width: 1
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: Theme.space12
-                        anchors.rightMargin: Theme.space8
-                        spacing: Theme.space12
-
-                        Label {
-                            text: "💬"
-                            font.pixelSize: 16
-                        }
-
-                        Label {
-                            visible: !navShell.isSidebarCollapsed
-                            text: qsTr("Workspace")
-                            font.pixelSize: Theme.fontBody
-                            font.bold: navigationController.currentViewName === "Workspace"
-                            color: navigationController.currentViewName === "Workspace" ? Theme.textPrimary : Theme.textSecondary
-                            Layout.fillWidth: true
-                        }
-
-                        Label {
-                            visible: !navShell.isSidebarCollapsed
-                            text: "Ctrl+1"
-                            font.pixelSize: Theme.fontMicro
-                            color: Theme.textMuted
-                        }
-                    }
-
-                    MouseArea {
-                        id: wsMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: navigationController.navigateTo(2) // MainWorkspace
-                    }
+                    labelText: qsTr("Workspace")
+                    iconName: "workspace"
+                    shortcutHint: "Ctrl+1"
+                    isActive: navigationController.currentViewName === "Workspace"
+                    onActivated: navigationController.navigateTo(2)
                 }
 
                 // Settings Tab
-                Rectangle {
-                    Layout.fillWidth: true
-                    height: 40
-                    radius: Theme.radiusMedium
+                SidebarNavItem {
                     visible: navigationController.isAuthenticated
-                    color: navigationController.currentViewName === "Settings" ? Theme.backgroundElevated : (setMouse.containsMouse ? Theme.backgroundPrimary : "transparent")
-                    border.color: navigationController.currentViewName === "Settings" ? Theme.accentPrimary : "transparent"
-                    border.width: 1
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: Theme.space12
-                        anchors.rightMargin: Theme.space8
-                        spacing: Theme.space12
-
-                        Label {
-                            text: "⚙️"
-                            font.pixelSize: 16
-                        }
-
-                        Label {
-                            visible: !navShell.isSidebarCollapsed
-                            text: qsTr("Settings")
-                            font.pixelSize: Theme.fontBody
-                            font.bold: navigationController.currentViewName === "Settings"
-                            color: navigationController.currentViewName === "Settings" ? Theme.textPrimary : Theme.textSecondary
-                            Layout.fillWidth: true
-                        }
-
-                        Label {
-                            visible: !navShell.isSidebarCollapsed
-                            text: "Ctrl+2"
-                            font.pixelSize: Theme.fontMicro
-                            color: Theme.textMuted
-                        }
-                    }
-
-                    MouseArea {
-                        id: setMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: navigationController.navigateTo(3) // Settings
-                    }
+                    labelText: qsTr("Settings")
+                    iconName: "settings"
+                    shortcutHint: "Ctrl+2"
+                    isActive: navigationController.currentViewName === "Settings"
+                    onActivated: navigationController.navigateTo(3)
                 }
 
                 // Style Guide / Design System Catalog Tab
-                Rectangle {
-                    Layout.fillWidth: true
-                    height: 40
-                    radius: Theme.radiusMedium
-                    color: navigationController.currentViewName === "StyleGuide" ? Theme.backgroundElevated : (sgMouse.containsMouse ? Theme.backgroundPrimary : "transparent")
-                    border.color: navigationController.currentViewName === "StyleGuide" ? Theme.accentPrimary : "transparent"
-                    border.width: 1
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: Theme.space12
-                        anchors.rightMargin: Theme.space8
-                        spacing: Theme.space12
-
-                        Label {
-                            text: "🎨"
-                            font.pixelSize: 16
-                        }
-
-                        Label {
-                            visible: !navShell.isSidebarCollapsed
-                            text: qsTr("Style Guide")
-                            font.pixelSize: Theme.fontBody
-                            font.bold: navigationController.currentViewName === "StyleGuide"
-                            color: navigationController.currentViewName === "StyleGuide" ? Theme.textPrimary : Theme.textSecondary
-                            Layout.fillWidth: true
-                        }
-
-                        Label {
-                            visible: !navShell.isSidebarCollapsed
-                            text: "Ctrl+3"
-                            font.pixelSize: Theme.fontMicro
-                            color: Theme.textMuted
-                        }
-                    }
-
-                    MouseArea {
-                        id: sgMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: navigationController.navigateTo(5) // StyleGuide
-                    }
+                SidebarNavItem {
+                    labelText: qsTr("Style Guide")
+                    iconName: "style-guide"
+                    shortcutHint: "Ctrl+3"
+                    isActive: navigationController.currentViewName === "StyleGuide"
+                    onActivated: navigationController.navigateTo(5)
                 }
 
                 Item {
                     Layout.fillHeight: true
                 }
 
-                // Emergency Wipe Tab
                 Rectangle {
-                    Layout.fillWidth: true
-                    height: 40
-                    radius: Theme.radiusMedium
                     visible: navigationController.isAuthenticated
-                    color: navigationController.currentViewName === "Emergency" ? Theme.statusDanger : (emMouse.containsMouse ? Theme.backgroundElevated : "transparent")
-                    border.color: Theme.statusDanger
-                    border.width: 1
+                    Layout.fillWidth: true
+                    height: 1
+                    color: Theme.borderSubtle
+                }
 
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: Theme.space12
-                        anchors.rightMargin: Theme.space8
-                        spacing: Theme.space12
-
-                        Label {
-                            text: "🚨"
-                            font.pixelSize: 16
-                        }
-
-                        Label {
-                            visible: !navShell.isSidebarCollapsed
-                            text: qsTr("Emergency")
-                            font.pixelSize: Theme.fontBody
-                            font.bold: true
-                            color: navigationController.currentViewName === "Emergency" ? "#FFFFFF" : Theme.statusDanger
-                            Layout.fillWidth: true
-                        }
-                    }
-
-                    MouseArea {
-                        id: emMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: navigationController.navigateTo(4) // EmergencyMode
-                    }
+                // Emergency Wipe Action (always routes through confirmation modal)
+                SidebarNavItem {
+                    visible: navigationController.isAuthenticated
+                    labelText: qsTr("Emergency Wipe")
+                    iconName: "shield-alert"
+                    shortcutHint: "⇧^E"
+                    tooltipShortcut: "Ctrl+Shift+E"
+                    isDanger: true
+                    isActive: navigationController.currentViewName === "Emergency"
+                    onActivated: navShell.emergencyWipeRequested()
                 }
             }
         }
@@ -299,13 +313,20 @@ Item {
             Layout.fillHeight: true
             spacing: 0
 
-            // Breadcrumb & Context Header Bar
+            // Breadcrumb & Context Header Bar (shown only when shell navigation is active)
             Rectangle {
+                visible: navShell.showShellNavigation
                 Layout.fillWidth: true
-                height: 38
+                height: 36
                 color: Theme.backgroundPrimary
-                border.color: Theme.borderSubtle
-                border.width: 1
+
+                Rectangle {
+                    anchors.bottom: parent.bottom
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    height: 1
+                    color: Theme.borderSubtle
+                }
 
                 RowLayout {
                     anchors.fill: parent
@@ -314,7 +335,7 @@ Item {
                     spacing: Theme.space8
 
                     Label {
-                        text: "SecureCloud"
+                        text: qsTr("SecureCloud")
                         font.pixelSize: Theme.fontCaption
                         font.family: Theme.fontFamilyPrimary
                         color: Theme.textMuted
@@ -338,8 +359,9 @@ Item {
 
                     SCBadge {
                         visible: navigationController.currentViewName === "StyleGuide"
-                        text: qsTr("Catalog Mode")
+                        text: qsTr("Design System Catalog")
                         type: "Info"
+                        hasDot: false
                     }
                 }
             }
@@ -349,7 +371,7 @@ Item {
                 Layout.fillWidth: true
                 height: navShell.showAlert ? 36 : 0
                 visible: navShell.showAlert
-                color: Theme.statusDanger
+                color: "#DC2626"
                 clip: true
 
                 Behavior on height {
@@ -362,9 +384,11 @@ Item {
                     anchors.rightMargin: Theme.space16
                     spacing: Theme.space8
 
-                    Label {
-                        text: "⚠️"
-                        font.pixelSize: 14
+                    SCIcon {
+                        name: "alert-triangle"
+                        size: 15
+                        color: "#FFFFFF"
+                        Layout.alignment: Qt.AlignVCenter
                     }
 
                     Label {
@@ -376,9 +400,10 @@ Item {
                     }
 
                     SCIconButton {
-                        iconText: "✕"
+                        iconName: "close"
+                        variant: "Danger"
                         buttonSize: 24
-                        tooltipText: qsTr("Dismiss")
+                        tooltipText: qsTr("Dismiss (Esc)")
                         onClicked: navShell.showAlert = false
                     }
                 }

@@ -10,12 +10,17 @@ FocusScope {
     property bool busy: false
     property int buttonHeight: 38
     property int horizontalPadding: 16
+    property string iconName: ""
     property string iconText: ""
     property bool fullWidth: false
 
+    Accessible.role: Accessible.Button
+    Accessible.name: control.text
+    Accessible.description: control.busy ? qsTr("Busy") : ""
+
     signal clicked()
 
-    implicitWidth: fullWidth ? parent.width : Math.max(88, contentRow.implicitWidth + (horizontalPadding * 2))
+    implicitWidth: fullWidth && parent ? parent.width : Math.max(88, contentRow.implicitWidth + (horizontalPadding * 2))
     implicitHeight: buttonHeight
     activeFocusOnTab: true
 
@@ -32,9 +37,9 @@ FocusScope {
                 return Theme.isDark ? "#1C2433" : "#E2E8F0"
             }
             if (control.variant === "Primary") {
-                if (mouseArea.pressed) return Theme.accentActive
-                if (mouseArea.containsMouse || control.activeFocus) return Theme.accentHover
-                return Theme.accentPrimary
+                if (mouseArea.pressed) return "#1E40AF"
+                if (mouseArea.containsMouse || control.activeFocus) return "#1D4ED8"
+                return "#2563EB"
             }
             if (control.variant === "Secondary") {
                 if (mouseArea.pressed) return Theme.isDark ? "#2A364A" : "#CBD5E1"
@@ -47,11 +52,11 @@ FocusScope {
                 return "transparent"
             }
             if (control.variant === "Danger") {
-                if (mouseArea.pressed) return Theme.isDark ? "#991B1B" : "#B91C1C"
-                if (mouseArea.containsMouse || control.activeFocus) return Theme.isDark ? "#DC2626" : "#DC2626"
-                return Theme.statusDanger
+                if (mouseArea.pressed) return "#991B1B"
+                if (mouseArea.containsMouse || control.activeFocus) return "#B91C1C"
+                return "#DC2626"
             }
-            return Theme.accentPrimary
+            return "#2563EB"
         }
 
         border.color: {
@@ -74,9 +79,18 @@ FocusScope {
             anchors.centerIn: parent
             spacing: Theme.space8
 
-            // Optional Icon Text (e.g. "←", "✓", "⚠")
+            // Vector Icon
+            SCIcon {
+                visible: control.iconName !== "" && !control.busy
+                name: control.iconName
+                size: 16
+                color: labelText.color
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            // Optional Icon Text fallback
             Label {
-                visible: control.iconText !== "" && !control.busy
+                visible: control.iconName === "" && control.iconText !== "" && !control.busy
                 text: control.iconText
                 font.pixelSize: Theme.fontSubtitle
                 color: labelText.color

@@ -8,6 +8,7 @@ Rectangle {
     property string headerText: ""
     property alias headerTitle: card.headerText
     property string headerIcon: ""
+    property string headerIconName: ""
     property string elevation: "Base" // Base, Elevated
     property bool hasBorder: true
     property int cardPadding: Theme.space16
@@ -44,8 +45,16 @@ Rectangle {
                 anchors.rightMargin: card.cardPadding
                 spacing: Theme.space8
 
+                SCIcon {
+                    visible: card.headerIconName !== ""
+                    name: card.headerIconName
+                    size: 16
+                    color: Theme.accentPrimary
+                    Layout.alignment: Qt.AlignVCenter
+                }
+
                 Label {
-                    visible: card.headerIcon !== ""
+                    visible: card.headerIconName === "" && card.headerIcon !== ""
                     text: card.headerIcon
                     font.pixelSize: Theme.fontSubtitle
                     color: Theme.textPrimary

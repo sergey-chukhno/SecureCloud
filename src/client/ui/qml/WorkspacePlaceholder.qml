@@ -146,7 +146,8 @@ Rectangle {
                 Item { Layout.fillHeight: true }
 
                 SCButton {
-                    text: qsTr("Log Out")
+                    text: qsTr("Sign Out")
+                    iconName: "logout"
                     variant: "Secondary"
                     fullWidth: true
                     onClicked: appViewModel.requestLogout()
@@ -183,7 +184,7 @@ Rectangle {
                 }
 
                 Label {
-                    text: qsTr("Your end-to-end encrypted session is active.\nSelect a contact from the sidebar to review verified safety numbers or start an encrypted direct conversation.")
+                    text: qsTr("Your authenticated workstation session is active.\nSelect a contact from the sidebar to verify safety numbers or establish an end-to-end encrypted conversation.")
                     font.pixelSize: Theme.fontBody
                     font.family: Theme.fontFamilyPrimary
                     color: Theme.textSecondary
@@ -197,8 +198,8 @@ Rectangle {
                     spacing: Theme.space8
 
                     SCBadge {
-                        type: "Verified"
-                        text: qsTr("Device Cryptographic Identity Verified")
+                        type: "Info"
+                        text: qsTr("Session Token Active")
                     }
 
                     SCBadge {

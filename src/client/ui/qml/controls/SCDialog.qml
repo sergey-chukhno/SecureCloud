@@ -19,6 +19,15 @@ Item {
     anchors.fill: parent
     z: 999
 
+    Shortcut {
+        sequence: "Esc"
+        enabled: dialogRoot.isOpen
+        onActivated: {
+            dialogRoot.isOpen = false
+            dialogRoot.cancelled()
+        }
+    }
+
     // Dimmed modal backdrop capturing all events
     Rectangle {
         id: backdrop
@@ -61,10 +70,10 @@ Item {
                 Layout.fillWidth: true
                 spacing: Theme.space8
 
-                Label {
+                SCIcon {
                     visible: dialogRoot.isDanger
-                    text: "⚠"
-                    font.pixelSize: Theme.fontTitle
+                    name: "shield-alert"
+                    size: 20
                     color: Theme.statusDanger
                     Layout.alignment: Qt.AlignVCenter
                 }

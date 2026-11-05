@@ -40,7 +40,8 @@ ScrollView {
             }
 
             SCButton {
-                text: Theme.isDark ? qsTr("Switch to Light Mode ☀️") : qsTr("Switch to Dark Mode 🌙")
+                text: Theme.isDark ? qsTr("Switch to Light Mode") : qsTr("Switch to Dark Mode")
+                iconName: Theme.isDark ? "sun" : "moon"
                 variant: "Secondary"
                 onClicked: Theme.toggleTheme()
             }
@@ -331,18 +332,18 @@ ScrollView {
                     }
 
                     SCIconButton {
-                        iconText: "🔔"
+                        iconName: "bell"
                         tooltipText: qsTr("Notifications")
                         badgeCount: 3
                     }
 
                     SCIconButton {
-                        iconText: "🔒"
+                        iconName: "lock"
                         tooltipText: qsTr("Security Settings")
                     }
 
                     SCIconButton {
-                        iconText: "🔍"
+                        iconName: "search"
                         tooltipText: qsTr("Search Contacts")
                     }
                 }

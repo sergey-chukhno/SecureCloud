@@ -16,6 +16,19 @@ ApplicationWindow {
     title: qsTr("SecureCloud Desktop")
     color: Theme.backgroundPrimary
 
+    readonly property bool showAuthenticatedChrome:
+        navigationController.isAuthenticated &&
+        appViewModel.isAuthenticated &&
+        navigationController.currentViewName !== "Login" &&
+        navigationController.currentViewName !== "MfaVerification" &&
+        navigationController.currentViewName !== "Emergency"
+
+    function openEmergencyDialog() {
+        if (navigationController.isAuthenticated) {
+            emergencyConfirmDialog.isOpen = true
+        }
+    }
+
     Timer {
         id: saveGeometryTimer
         interval: 500
@@ -61,10 +74,16 @@ ApplicationWindow {
     }
 
     header: ToolBar {
+        implicitHeight: 52
         background: Rectangle {
             color: Theme.backgroundSecondary
-            border.color: Theme.borderSubtle
-            border.width: 1
+            Rectangle {
+                anchors.bottom: parent.bottom
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: Theme.borderSubtle
+            }
         }
 
         RowLayout {
@@ -74,36 +93,59 @@ ApplicationWindow {
             spacing: Theme.space12
 
             SCIconButton {
-                iconText: "←"
-                tooltipText: qsTr("Go Back")
+                iconName: "arrow-left"
+                tooltipText: qsTr("Go Back (Alt+Left)")
                 visible: navigationController.canNavigateBack
                 onClicked: navigationController.navigateBack()
             }
 
-            Label {
-                text: qsTr("SecureCloud")
-                font.bold: true
-                font.pixelSize: Theme.fontTitle
-                font.family: Theme.fontFamilyPrimary
-                color: Theme.textPrimary
+            // Brand Mark + Wordmark
+            RowLayout {
+                spacing: Theme.space8
+
+                Rectangle {
+                    width: 28
+                    height: 28
+                    radius: Theme.radiusSmall
+                    color: Theme.isDark ? "#13233D" : "#DBEAFE"
+                    border.color: Theme.accentPrimary
+                    border.width: 1
+
+                    SCIcon {
+                        anchors.centerIn: parent
+                        name: "shield-check"
+                        size: 16
+                        color: Theme.accentPrimary
+                    }
+                }
+
+                Label {
+                    text: qsTr("SecureCloud")
+                    font.bold: true
+                    font.pixelSize: Theme.fontTitle
+                    font.family: Theme.fontFamilyPrimary
+                    color: Theme.textPrimary
+                }
             }
 
             SCBadge {
-                visible: navigationController.isAuthenticated
-                text: qsTr("Verified Identity")
-                type: "Verified"
+                visible: rootWindow.showAuthenticatedChrome
+                text: qsTr("Authenticated Session")
+                type: "Online"
+                hasDot: true
             }
 
             Item { Layout.fillWidth: true }
 
+            // Authenticated User Identity Chip
             RowLayout {
-                visible: navigationController.isAuthenticated
+                visible: rootWindow.showAuthenticatedChrome
                 spacing: Theme.space8
 
                 SCAvatar {
                     userId: appViewModel.currentUser
                     displayName: appViewModel.currentUser
-                    size: 30
+                    size: 28
                     presence: "Online"
                 }
 
@@ -114,68 +156,116 @@ ApplicationWindow {
                     font.bold: true
                     font.family: Theme.fontFamilyPrimary
                 }
+
+                SCButton {
+                    text: qsTr("Sign Out")
+                    iconName: "logout"
+                    variant: "Ghost"
+                    buttonHeight: 30
+                    horizontalPadding: 10
+                    onClicked: appViewModel.requestLogout()
+                }
             }
 
-            Label {
-                visible: !navigationController.isAuthenticated
-                text: qsTr("Not Authenticated")
-                color: Theme.textMuted
-                font.pixelSize: Theme.fontBody
-                font.family: Theme.fontFamilyPrimary
+            // Unauthenticated Status Badge
+            SCBadge {
+                visible: !rootWindow.showAuthenticatedChrome
+                text: appViewModel.isEmergencyWiped ? qsTr("Emergency Wipe Active") : qsTr("Unauthenticated")
+                type: appViewModel.isEmergencyWiped ? "Danger" : "Offline"
+                hasDot: true
+            }
+
+            Rectangle {
+                width: 1
+                height: 20
+                color: Theme.borderSubtle
             }
 
             SCIconButton {
-                iconText: Theme.isDark ? "☀️" : "🌙"
-                tooltipText: Theme.isDark ? qsTr("Switch to Light Mode") : qsTr("Switch to Dark Mode")
+                iconName: "style-guide"
+                active: navigationController.currentViewName === "StyleGuide"
+                tooltipText: navigationController.currentViewName === "StyleGuide"
+                             ? qsTr("Exit Style Guide")
+                             : qsTr("Design System Style Guide (Ctrl+3)")
+                onClicked: {
+                    if (navigationController.currentViewName === "StyleGuide" && navigationController.canNavigateBack) {
+                        navigationController.navigateBack()
+                    } else {
+                        navigationController.navigateTo(5)
+                    }
+                }
+            }
+
+            SCIconButton {
+                iconName: Theme.isDark ? "sun" : "moon"
+                tooltipText: Theme.isDark ? qsTr("Switch to Light Theme") : qsTr("Switch to Dark Theme")
                 onClicked: Theme.toggleTheme()
-            }
-
-            SCButton {
-                text: qsTr("Settings")
-                variant: "Secondary"
-                buttonHeight: 32
-                visible: navigationController.isAuthenticated
-                onClicked: navigationController.navigateTo(3) // Settings
-            }
-
-            SCButton {
-                text: qsTr("Emergency Wipe")
-                variant: "Danger"
-                buttonHeight: 32
-                visible: navigationController.isAuthenticated
-                onClicked: emergencyConfirmDialog.isOpen = true
             }
         }
     }
 
     NavigationShell {
         anchors.fill: parent
+        onEmergencyWipeRequested: rootWindow.openEmergencyDialog()
     }
 
     footer: ToolBar {
+        implicitHeight: 34
         background: Rectangle {
             color: Theme.backgroundSecondary
-            border.color: Theme.borderSubtle
-            border.width: 1
+            Rectangle {
+                anchors.top: parent.top
+                anchors.left: parent.left
+                anchors.right: parent.right
+                height: 1
+                color: Theme.borderSubtle
+            }
         }
 
         RowLayout {
             anchors.fill: parent
             anchors.leftMargin: Theme.space16
             anchors.rightMargin: Theme.space16
+            spacing: Theme.space8
+
+            Rectangle {
+                width: 7
+                height: 7
+                radius: 3.5
+                color: appViewModel.isEmergencyWiped
+                       ? Theme.statusDanger
+                       : (appViewModel.isAuthenticated ? Theme.statusSuccess : Theme.textMuted)
+                Layout.alignment: Qt.AlignVCenter
+            }
 
             Label {
-                text: qsTr("Status: %1 | View: %2").arg(appViewModel.connectionStatus).arg(navigationController.currentViewName)
+                text: appViewModel.sessionStatusText
+                color: Theme.textSecondary
+                font.pixelSize: Theme.fontCaption
+                font.family: Theme.fontFamilyPrimary
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            Label {
+                text: "·"
+                color: Theme.textMuted
+                font.pixelSize: Theme.fontCaption
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            Label {
+                text: qsTr("View: %1").arg(navigationController.currentViewName)
                 color: Theme.textMuted
                 font.pixelSize: Theme.fontCaption
                 font.family: Theme.fontFamilyPrimary
+                Layout.alignment: Qt.AlignVCenter
             }
 
             Item { Layout.fillWidth: true }
 
             SCBadge {
-                text: qsTr("End-to-End Encrypted")
-                type: "Verified"
+                text: appViewModel.securityStatusText
+                type: appViewModel.securityBadgeType
                 hasDot: true
             }
         }

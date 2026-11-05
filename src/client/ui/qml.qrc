@@ -9,6 +9,7 @@
         <file>qml/StyleGuideView.qml</file>
         <file>qml/controls/SCButton.qml</file>
         <file>qml/controls/SCTextField.qml</file>
+        <file>qml/controls/SCIcon.qml</file>
         <file>qml/controls/SCIconButton.qml</file>
         <file>qml/controls/SCCard.qml</file>
         <file>qml/controls/SCBadge.qml</file>

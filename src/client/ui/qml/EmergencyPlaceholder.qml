@@ -25,13 +25,25 @@ Rectangle {
                 spacing: Theme.space12
                 width: parent.width - Theme.space32
 
-                Label {
-                    text: qsTr("⚠ Emergency Wipe Mode Activated")
-                    font.pixelSize: Theme.fontTitle
-                    font.bold: true
-                    font.family: Theme.fontFamilyPrimary
-                    color: Theme.statusDanger
+                RowLayout {
+                    spacing: Theme.space8
                     Layout.alignment: Qt.AlignHCenter
+
+                    SCIcon {
+                        name: "shield-alert"
+                        size: 22
+                        color: Theme.statusDanger
+                        Layout.alignment: Qt.AlignVCenter
+                    }
+
+                    Label {
+                        text: qsTr("Emergency Wipe Mode Activated")
+                        font.pixelSize: Theme.fontTitle
+                        font.bold: true
+                        font.family: Theme.fontFamilyPrimary
+                        color: Theme.statusDanger
+                        Layout.alignment: Qt.AlignVCenter
+                    }
                 }
 
                 Label {

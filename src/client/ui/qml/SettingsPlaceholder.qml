@@ -24,7 +24,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 130
             headerText: qsTr("Appearance & Theme")
-            headerIcon: "🎨"
+            headerIconName: "style-guide"
             elevation: "Elevated"
 
             ColumnLayout {
@@ -42,19 +42,22 @@ Rectangle {
                     spacing: Theme.space12
 
                     SCButton {
-                        text: qsTr("🌙 Dark")
+                        text: qsTr("Dark")
+                        iconName: "moon"
                         variant: Theme.isDark ? "Primary" : "Secondary"
                         onClicked: Theme.setThemeMode(1) // Dark
                     }
 
                     SCButton {
-                        text: qsTr("☀️ Light")
+                        text: qsTr("Light")
+                        iconName: "sun"
                         variant: !Theme.isDark ? "Primary" : "Secondary"
                         onClicked: Theme.setThemeMode(2) // Light
                     }
 
                     SCButton {
-                        text: qsTr("💻 System Sync")
+                        text: qsTr("System Sync")
+                        iconName: "monitor"
                         variant: "Secondary"
                         onClicked: Theme.setThemeMode(0) // System
                     }
@@ -66,7 +69,7 @@ Rectangle {
             Layout.fillWidth: true
             Layout.preferredHeight: 110
             headerText: qsTr("Security & Trust Boundaries")
-            headerIcon: "🔒"
+            headerIconName: "lock"
             elevation: "Base"
 
             RowLayout {
@@ -103,7 +106,7 @@ Rectangle {
         SCButton {
             text: qsTr("Back to Workspace")
             variant: "Ghost"
-            iconText: "←"
+            iconName: "arrow-left"
             onClicked: navigationController.navigateBack()
         }
     }

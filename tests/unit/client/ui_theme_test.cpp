@@ -2,11 +2,32 @@
 
 #include <QColor>
 #include <QSignalSpy>
+#include <algorithm>
+#include <cmath>
 #include <gtest/gtest.h>
 
 namespace {
 
 using namespace securecloud::client::ui;
+
+double srgbChannelLuminance(double c) {
+    return (c <= 0.03928) ? (c / 12.92) : std::pow((c + 0.055) / 1.055, 2.4);
+}
+
+double relativeLuminance(const QColor& color) {
+    const double r = srgbChannelLuminance(color.redF());
+    const double g = srgbChannelLuminance(color.greenF());
+    const double b = srgbChannelLuminance(color.blueF());
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+double contrastRatio(const QString& hexA, const QString& hexB) {
+    const double l1 = relativeLuminance(QColor(hexA));
+    const double l2 = relativeLuminance(QColor(hexB));
+    const double lighter = std::max(l1, l2);
+    const double darker = std::min(l1, l2);
+    return (lighter + 0.05) / (darker + 0.05);
+}
 
 TEST(UiThemeTest, DefaultModeIsDarkAndConsistent) {
     UiTheme theme;
@@ -19,18 +40,18 @@ TEST(UiThemeTest, DefaultModeIsDarkAndConsistent) {
     EXPECT_EQ(theme.backgroundSecondary(), "#151B26");
     EXPECT_EQ(theme.backgroundElevated(), "#1E2638");
     EXPECT_EQ(theme.borderSubtle(), "#263245");
-    EXPECT_EQ(theme.borderFocused(), "#3B82F6");
+    EXPECT_EQ(theme.borderFocused(), "#60A5FA");
     EXPECT_EQ(theme.textPrimary(), "#F8FAFC");
-    EXPECT_EQ(theme.textSecondary(), "#94A3B8");
-    EXPECT_EQ(theme.textMuted(), "#64748B");
+    EXPECT_EQ(theme.textSecondary(), "#CBD5E1");
+    EXPECT_EQ(theme.textMuted(), "#94A3B8");
     EXPECT_EQ(theme.textInverse(), "#0F172A");
     EXPECT_EQ(theme.accentPrimary(), "#3B82F6");
 
     // Security indicator signals
     EXPECT_EQ(theme.statusSuccess(), "#10B981");
     EXPECT_EQ(theme.statusWarning(), "#F59E0B");
-    EXPECT_EQ(theme.statusDanger(), "#EF4444");
-    EXPECT_EQ(theme.statusInfo(), "#3B82F6");
+    EXPECT_EQ(theme.statusDanger(), "#F87171");
+    EXPECT_EQ(theme.statusInfo(), "#60A5FA");
 
     // Chat message bubble colors
     EXPECT_EQ(theme.bubbleSelf(), "#2563EB");
@@ -53,20 +74,20 @@ TEST(UiThemeTest, LightModePaletteAndSwitching) {
     EXPECT_FALSE(theme.isDark());
 
     // Light palette assertions
-    EXPECT_EQ(theme.backgroundPrimary(), "#F8FAFC");
-    EXPECT_EQ(theme.backgroundSecondary(), "#FFFFFF");
+    EXPECT_EQ(theme.backgroundPrimary(), "#F1F5F9");
+    EXPECT_EQ(theme.backgroundSecondary(), "#F8FAFC");
     EXPECT_EQ(theme.backgroundElevated(), "#FFFFFF");
-    EXPECT_EQ(theme.borderSubtle(), "#E2E8F0");
+    EXPECT_EQ(theme.borderSubtle(), "#CBD5E1");
     EXPECT_EQ(theme.borderFocused(), "#2563EB");
     EXPECT_EQ(theme.textPrimary(), "#0F172A");
-    EXPECT_EQ(theme.textSecondary(), "#475569");
-    EXPECT_EQ(theme.textMuted(), "#94A3B8");
+    EXPECT_EQ(theme.textSecondary(), "#334155");
+    EXPECT_EQ(theme.textMuted(), "#475569");
     EXPECT_EQ(theme.textInverse(), "#F8FAFC");
     EXPECT_EQ(theme.accentPrimary(), "#2563EB");
 
     // Light-adapted security status signals
-    EXPECT_EQ(theme.statusSuccess(), "#059669");
-    EXPECT_EQ(theme.statusWarning(), "#D97706");
+    EXPECT_EQ(theme.statusSuccess(), "#047857");
+    EXPECT_EQ(theme.statusWarning(), "#B45309");
     EXPECT_EQ(theme.statusDanger(), "#DC2626");
 
     // Chat message bubbles
@@ -79,6 +100,40 @@ TEST(UiThemeTest, LightModePaletteAndSwitching) {
     theme.setThemeMode(ThemeMode::Light);
     EXPECT_EQ(themeSpy.count(), 1);
     EXPECT_EQ(modeSpy.count(), 1);
+}
+
+TEST(UiThemeTest, WcagContrastInvariants) {
+    UiTheme theme;
+
+    // Dark Mode WCAG 2.1 AA contrast checks (>= 4.5:1 for normal text)
+    theme.setThemeMode(ThemeMode::Dark);
+    EXPECT_GE(contrastRatio(theme.textPrimary(), theme.backgroundPrimary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textPrimary(), theme.backgroundSecondary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textPrimary(), theme.backgroundElevated()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textSecondary(), theme.backgroundPrimary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textSecondary(), theme.backgroundSecondary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textSecondary(), theme.backgroundElevated()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textMuted(), theme.backgroundPrimary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textMuted(), theme.backgroundSecondary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textMuted(), theme.backgroundElevated()), 4.5);
+    EXPECT_GE(contrastRatio(theme.statusDanger(), theme.backgroundElevated()), 4.5);
+    EXPECT_GE(contrastRatio(theme.bubbleSelfText(), theme.bubbleSelf()), 4.5);
+
+    // Light Mode WCAG 2.1 AA contrast checks (>= 4.5:1 for normal text)
+    theme.setThemeMode(ThemeMode::Light);
+    EXPECT_GE(contrastRatio(theme.textPrimary(), theme.backgroundPrimary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textPrimary(), theme.backgroundSecondary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textPrimary(), theme.backgroundElevated()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textSecondary(), theme.backgroundPrimary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textSecondary(), theme.backgroundSecondary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textSecondary(), theme.backgroundElevated()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textMuted(), theme.backgroundPrimary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textMuted(), theme.backgroundSecondary()), 4.5);
+    EXPECT_GE(contrastRatio(theme.textMuted(), theme.backgroundElevated()), 4.5);
+    EXPECT_GE(contrastRatio(theme.statusSuccess(), theme.backgroundElevated()), 4.5);
+    EXPECT_GE(contrastRatio(theme.statusWarning(), theme.backgroundElevated()), 4.5);
+    EXPECT_GE(contrastRatio(theme.statusDanger(), theme.backgroundElevated()), 4.5);
+    EXPECT_GE(contrastRatio(theme.bubbleSelfText(), theme.bubbleSelf()), 4.5);
 }
 
 TEST(UiThemeTest, ToggleThemeFlipsBetweenModes) {
