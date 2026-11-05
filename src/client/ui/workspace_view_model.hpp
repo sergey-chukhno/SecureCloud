@@ -49,6 +49,10 @@ class WorkspaceViewModel : public QObject {
     // Right-Hand Inspector Drawer State (Zone 4)
     Q_PROPERTY(bool isInspectorOpen READ isInspectorOpen WRITE setInspectorOpen NOTIFY inspectorOpenChanged)
 
+    // Outbound Composer Priority State (ADR-007: 1 = Normal, 2 = Urgent, 3 = Emergency)
+    Q_PROPERTY(int composerPriority READ composerPriority WRITE setComposerPriority NOTIFY composerPriorityChanged)
+    Q_PROPERTY(QString composerPriorityLabel READ composerPriorityLabel NOTIFY composerPriorityChanged)
+
   public:
     WorkspaceViewModel(application::ClientApplication& app, NavigationController& nav_controller,
                        QObject* parent = nullptr);
@@ -87,11 +91,16 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] bool isInspectorOpen() const noexcept { return is_inspector_open_; }
     void setInspectorOpen(bool open);
 
+    [[nodiscard]] int composerPriority() const noexcept { return composer_priority_; }
+    void setComposerPriority(int priority);
+    [[nodiscard]] QString composerPriorityLabel() const;
+    Q_INVOKABLE void cycleComposerPriority();
+
     Q_INVOKABLE void selectConversation(const QString& conversationId);
     Q_INVOKABLE void selectContact(const QString& peerUserId);
     Q_INVOKABLE void selectTransfer(const QString& transferId);
     Q_INVOKABLE void toggleInspector();
-    Q_INVOKABLE bool sendMessage(const QString& plaintext);
+    Q_INVOKABLE bool sendMessage(const QString& plaintext, int priority = 0);
     Q_INVOKABLE QString stageEncryptedFileTransfer(const QString& fileName, qint64 fileSizeBytes = 2457600);
     Q_INVOKABLE bool cancelFileTransfer(const QString& transferId);
     Q_INVOKABLE void togglePeerVerified(const QString& peerUserId);
@@ -108,6 +117,7 @@ class WorkspaceViewModel : public QObject {
     void activeMessagesChanged();
     void selectedTransferChanged();
     void inspectorOpenChanged();
+    void composerPriorityChanged();
     void workspaceError(const QString& message);
 
   private:
@@ -124,6 +134,7 @@ class WorkspaceViewModel : public QObject {
         QString lastMessagePreview;
         QString timestampText;
         int unreadCount{0};
+        int lastMessagePriority{1}; // 1 = Normal, 2 = Urgent, 3 = Emergency
     };
 
     struct MessageEntry {
@@ -141,6 +152,7 @@ class WorkspaceViewModel : public QObject {
         QString fileSizeText;
         QString cipherSuite;
         QString sha256Short;
+        int priority{1}; // 1 = Normal, 2 = Urgent, 3 = Emergency
     };
 
     struct FileTransferEntry {
@@ -163,6 +175,7 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] ConversationEntry* findConversationMutable(const QString& conversationId);
     [[nodiscard]] bool matchesQuery(const QString& candidate) const;
     static QString formatFileSize(qint64 bytes);
+    static QString priorityToLabel(int priority);
 
     application::ClientApplication& app_;
     NavigationController& nav_controller_;
@@ -170,6 +183,7 @@ class WorkspaceViewModel : public QObject {
     QString selected_conversation_id_;
     QString selected_transfer_id_;
     bool is_inspector_open_{true};
+    int composer_priority_{1};
     int next_msg_seq_{100};
     int next_file_seq_{10};
 

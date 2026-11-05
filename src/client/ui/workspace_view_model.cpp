@@ -27,35 +27,35 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
         QStringLiteral("Frances Swann"), QStringLiteral("@frances.swann"), QStringLiteral("Online"), true, false,
         QStringLiteral("49281 04829 88310 77241 66109 31204"),
         QStringLiteral("Principal Cryptographic Architect · Key rotation policy enforced (Double Ratchet v2)."),
-        QStringLiteral("YOU: Architecture blueprint & key schedule approved."), QStringLiteral("Yesterday"), 0});
+        QStringLiteral("YOU: Architecture blueprint & key schedule approved."), QStringLiteral("Yesterday"), 0, 1});
 
     conversations_.push_back(ConversationEntry{
         QStringLiteral("conv-angelina"), QStringLiteral("angelina.froster@securecloud.org"),
         QStringLiteral("Angelina Froster"), QStringLiteral("@angelina.froster"), QStringLiteral("Online"), true, false,
         QStringLiteral("81726 39104 55291 00918 44127 98312"),
         QStringLiteral("Incident Response Lead · Hardware security key verified via out-of-band fingerprint."),
-        QStringLiteral("Uploaded threats-q4-report.pdf (AES-256-GCM)"), QStringLiteral("1 min ago"), 2});
+        QStringLiteral("Uploaded threats-q4-report.pdf (AES-256-GCM)"), QStringLiteral("1 min ago"), 2, 3});
 
     conversations_.push_back(ConversationEntry{
         QStringLiteral("conv-ricky"), QStringLiteral("ricky.smith@securecloud.org"), QStringLiteral("Ricky Smith"),
         QStringLiteral("@ricky.smith"), QStringLiteral("Busy"), true, false,
         QStringLiteral("72019 48201 99182 33410 11294 65018"),
         QStringLiteral("Security Operations Engineer · Gateway TLS 1.3 mTLS certificate custodian."),
-        QStringLiteral("Prekey bundle refreshed for workstation node-04."), QStringLiteral("Jan 02"), 0});
+        QStringLiteral("Prekey bundle refreshed for workstation node-04."), QStringLiteral("Jan 02"), 0, 1});
 
-    conversations_.push_back(
-        ConversationEntry{QStringLiteral("conv-corina"), QStringLiteral("corina.mccoy@securecloud.org"),
-                          QStringLiteral("Corina McCoy"), QStringLiteral("@corina.mccoy"), QStringLiteral("Offline"),
-                          false, false, QStringLiteral("10928 38471 66251 89201 44712 09182"),
-                          QStringLiteral("External Security Auditor · Safety number pending out-of-band verification."),
-                          QStringLiteral("Key exchange pending safety number check..."), QStringLiteral("Jan 01"), 1});
+    conversations_.push_back(ConversationEntry{
+        QStringLiteral("conv-corina"), QStringLiteral("corina.mccoy@securecloud.org"), QStringLiteral("Corina McCoy"),
+        QStringLiteral("@corina.mccoy"), QStringLiteral("Offline"), false, false,
+        QStringLiteral("10928 38471 66251 89201 44712 09182"),
+        QStringLiteral("External Security Auditor · Safety number pending out-of-band verification."),
+        QStringLiteral("Key exchange pending safety number check..."), QStringLiteral("Jan 01"), 1, 2});
 
     conversations_.push_back(
         ConversationEntry{QStringLiteral("conv-daniel"), QStringLiteral("daniel.hamilton@securecloud.org"),
                           QStringLiteral("Daniel Hamilton"), QStringLiteral("@daniel.hamilton"),
                           QStringLiteral("Offline"), true, false, QStringLiteral("55412 90812 31459 77812 00192 84711"),
                           QStringLiteral("Distributed Storage Engineer · Chunked AEAD file vault maintainer."),
-                          QStringLiteral("YOU: All 64 encrypted chunks verified."), QStringLiteral("Dec 23"), 0});
+                          QStringLiteral("YOU: All 64 encrypted chunks verified."), QStringLiteral("Dec 23"), 0, 1});
 
     // Persist contacts into ContactManager
     for (const auto& conv : conversations_) {
@@ -71,37 +71,60 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
         QStringLiteral("msg-1"), QStringLiteral("conv-frances"), QStringLiteral("Frances Swann"), false,
         QStringLiteral("Hi! Have you reviewed the Double Ratchet session key schedule for the desktop workspace?"),
         QStringLiteral("11:00 AM"), QStringLiteral("YESTERDAY"), QStringLiteral("Delivered"), false, QString(),
-        QString(), QString(), QString(), QString()});
+        QString(), QString(), QString(), QString(), 2});
 
     messages_.push_back(MessageEntry{
         QStringLiteral("msg-2"), QStringLiteral("conv-frances"), QStringLiteral("You"), true,
         QStringLiteral("Yes — verified the X3DH prekey signatures and chunked file encryption parameters."),
         QStringLiteral("11:02 AM"), QStringLiteral("YESTERDAY"), QStringLiteral("Read"), false, QString(), QString(),
-        QString(), QString(), QString()});
+        QString(), QString(), QString(), 1});
 
     messages_.push_back(MessageEntry{
         QStringLiteral("msg-3"), QStringLiteral("conv-frances"), QStringLiteral("Frances Swann"), false,
         QStringLiteral("Encrypted File Attachment"), QStringLiteral("11:05 AM"), QStringLiteral("YESTERDAY"),
         QStringLiteral("Verified"), true, QStringLiteral("tx-001"), QStringLiteral("zero-trust-key-schedule-v2.pdf"),
-        QStringLiteral("2.4 MB"), QStringLiteral("AES-256-GCM"), QStringLiteral("9f86d081...b0f00a08")});
+        QStringLiteral("2.4 MB"), QStringLiteral("AES-256-GCM"), QStringLiteral("9f86d081...b0f00a08"), 1});
 
     messages_.push_back(MessageEntry{QStringLiteral("msg-4"), QStringLiteral("conv-frances"), QStringLiteral("You"),
                                      true, QStringLiteral("Architecture blueprint & key schedule approved."),
                                      QStringLiteral("11:08 AM"), QStringLiteral("TODAY"), QStringLiteral("Read"), false,
-                                     QString(), QString(), QString(), QString(), QString()});
+                                     QString(), QString(), QString(), QString(), QString(), 1});
 
-    // Seed messages for Angelina Froster
-    messages_.push_back(MessageEntry{QStringLiteral("msg-5"), QStringLiteral("conv-angelina"),
-                                     QStringLiteral("Angelina Froster"), false,
-                                     QStringLiteral("Sharing the Q4 threat model and encrypted audit bundle now."),
-                                     QStringLiteral("12:40 PM"), QStringLiteral("TODAY"), QStringLiteral("Delivered"),
-                                     false, QString(), QString(), QString(), QString(), QString()});
+    // Seed messages for Angelina Froster (Emergency Priority)
+    messages_.push_back(MessageEntry{
+        QStringLiteral("msg-5"), QStringLiteral("conv-angelina"), QStringLiteral("Angelina Froster"), false,
+        QStringLiteral(
+            "Compromised edge relay certificate detected on node-eu-west-2 — rotate ephemeral ratchets immediately."),
+        QStringLiteral("12:40 PM"), QStringLiteral("TODAY"), QStringLiteral("Delivered"), false, QString(), QString(),
+        QString(), QString(), QString(), 3});
 
     messages_.push_back(MessageEntry{
         QStringLiteral("msg-6"), QStringLiteral("conv-angelina"), QStringLiteral("Angelina Froster"), false,
         QStringLiteral("Encrypted File Attachment"), QStringLiteral("12:41 PM"), QStringLiteral("TODAY"),
         QStringLiteral("Verified"), true, QStringLiteral("tx-002"), QStringLiteral("threats-q4-report.pdf"),
-        QStringLiteral("4.8 MB"), QStringLiteral("AES-256-GCM"), QStringLiteral("4a7d1ed4...91e83b2c")});
+        QStringLiteral("4.8 MB"), QStringLiteral("AES-256-GCM"), QStringLiteral("4a7d1ed4...91e83b2c"), 3});
+
+    // Seed messages for Ricky Smith
+    messages_.push_back(MessageEntry{
+        QStringLiteral("msg-7"), QStringLiteral("conv-ricky"), QStringLiteral("Ricky Smith"), false,
+        QStringLiteral("Prekey bundle refreshed for workstation node-04. mTLS pinning fingerprint matches enclave."),
+        QStringLiteral("09:15 AM"), QStringLiteral("JAN 02"), QStringLiteral("Delivered"), false, QString(), QString(),
+        QString(), QString(), QString(), 1});
+
+    // Seed messages for Corina McCoy (Urgent Priority)
+    messages_.push_back(MessageEntry{
+        QStringLiteral("msg-8"), QStringLiteral("conv-corina"), QStringLiteral("Corina McCoy"), false,
+        QStringLiteral(
+            "Key exchange pending out-of-band safety number verification before we sign off on the Q1 audit."),
+        QStringLiteral("04:30 PM"), QStringLiteral("JAN 01"), QStringLiteral("Delivered"), false, QString(), QString(),
+        QString(), QString(), QString(), 2});
+
+    // Seed messages for Daniel Hamilton
+    messages_.push_back(MessageEntry{
+        QStringLiteral("msg-9"), QStringLiteral("conv-daniel"), QStringLiteral("You"), true,
+        QStringLiteral("All 64 encrypted chunks verified against SHA-256 manifest in the distributed storage vault."),
+        QStringLiteral("06:12 PM"), QStringLiteral("DEC 23"), QStringLiteral("Read"), false, QString(), QString(),
+        QString(), QString(), QString(), 1});
 
     // Seed encrypted file transfers
     file_transfers_.push_back(FileTransferEntry{
@@ -153,11 +176,22 @@ bool WorkspaceViewModel::matchesQuery(const QString& candidate) const {
     return candidate.contains(trimmed, Qt::CaseInsensitive);
 }
 
+QString WorkspaceViewModel::priorityToLabel(int priority) {
+    if (priority == 3) {
+        return QStringLiteral("Emergency");
+    }
+    if (priority == 2) {
+        return QStringLiteral("Urgent");
+    }
+    return QStringLiteral("Normal");
+}
+
 QVariantList WorkspaceViewModel::conversations() const {
     QVariantList result;
     for (const auto& conv : conversations_) {
+        const QString priorityStr = priorityToLabel(conv.lastMessagePriority);
         if (!matchesQuery(conv.peerDisplayName) && !matchesQuery(conv.peerHandle) &&
-            !matchesQuery(conv.lastMessagePreview)) {
+            !matchesQuery(conv.lastMessagePreview) && !matchesQuery(priorityStr)) {
             continue;
         }
         QVariantMap item;
@@ -172,6 +206,8 @@ QVariantList WorkspaceViewModel::conversations() const {
         item.insert(QStringLiteral("lastMessagePreview"), conv.lastMessagePreview);
         item.insert(QStringLiteral("timestampText"), conv.timestampText);
         item.insert(QStringLiteral("unreadCount"), conv.unreadCount);
+        item.insert(QStringLiteral("priority"), conv.lastMessagePriority);
+        item.insert(QStringLiteral("priorityLabel"), priorityStr);
         item.insert(QStringLiteral("isSelected"), conv.conversationId == selected_conversation_id_);
         result.append(item);
     }
@@ -317,6 +353,8 @@ QVariantList WorkspaceViewModel::activeMessages() const {
         item.insert(QStringLiteral("fileSizeText"), msg.fileSizeText);
         item.insert(QStringLiteral("cipherSuite"), msg.cipherSuite);
         item.insert(QStringLiteral("sha256Short"), msg.sha256Short);
+        item.insert(QStringLiteral("priority"), msg.priority);
+        item.insert(QStringLiteral("priorityLabel"), priorityToLabel(msg.priority));
         result.append(item);
     }
     return result;
@@ -376,6 +414,24 @@ void WorkspaceViewModel::toggleInspector() {
     setInspectorOpen(!is_inspector_open_);
 }
 
+void WorkspaceViewModel::setComposerPriority(int priority) {
+    const int clamped = (priority < 1 || priority > 3) ? 1 : priority;
+    if (composer_priority_ == clamped) {
+        return;
+    }
+    composer_priority_ = clamped;
+    emit composerPriorityChanged();
+}
+
+QString WorkspaceViewModel::composerPriorityLabel() const {
+    return priorityToLabel(composer_priority_);
+}
+
+void WorkspaceViewModel::cycleComposerPriority() {
+    const int next = (composer_priority_ % 3) + 1;
+    setComposerPriority(next);
+}
+
 void WorkspaceViewModel::selectConversation(const QString& conversationId) {
     auto* conv = findConversationMutable(conversationId);
     if (!conv) {
@@ -415,7 +471,7 @@ void WorkspaceViewModel::selectTransfer(const QString& transferId) {
     }
 }
 
-bool WorkspaceViewModel::sendMessage(const QString& plaintext) {
+bool WorkspaceViewModel::sendMessage(const QString& plaintext, int priority) {
     const QString trimmed = plaintext.trimmed();
     if (trimmed.isEmpty()) {
         return false;
@@ -429,6 +485,8 @@ bool WorkspaceViewModel::sendMessage(const QString& plaintext) {
         emit workspaceError(QStringLiteral("Cannot send message: peer keys are blocked."));
         return false;
     }
+
+    const int effectivePriority = (priority >= 1 && priority <= 3) ? priority : composer_priority_;
 
     const auto& currentUserId = app_.bootstrap().auth_manager().current_user();
     const domain::UserId senderId =
@@ -446,10 +504,16 @@ bool WorkspaceViewModel::sendMessage(const QString& plaintext) {
     const QString msgId = QStringLiteral("msg-%1").arg(++next_msg_seq_);
     messages_.push_back(MessageEntry{msgId, conv->conversationId, QStringLiteral("You"), true, trimmed,
                                      QStringLiteral("Just now"), QStringLiteral("TODAY"), QStringLiteral("Encrypted"),
-                                     false, QString(), QString(), QString(), QString(), QString()});
+                                     false, QString(), QString(), QString(), QString(), QString(), effectivePriority});
 
     conv->lastMessagePreview = QStringLiteral("YOU: %1").arg(trimmed);
     conv->timestampText = QStringLiteral("Just now");
+    conv->lastMessagePriority = effectivePriority;
+
+    if (composer_priority_ != 1) {
+        composer_priority_ = 1;
+        emit composerPriorityChanged();
+    }
 
     emit activeMessagesChanged();
     emit conversationsChanged();

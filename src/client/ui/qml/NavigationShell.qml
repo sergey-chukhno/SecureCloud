@@ -127,20 +127,28 @@ Item {
                 return "transparent"
             }
             border.width: navItem.activeFocus ? 2 : (navItem.isDanger || navItem.isActive ? 1 : 0)
+            scale: (navMouse.pressed && navItem.enabled) ? 0.975 : 1.0
 
             Behavior on color {
                 ColorAnimation { duration: Theme.durationFast }
             }
+            Behavior on scale {
+                NumberAnimation { duration: 110; easing.type: Easing.OutQuad }
+            }
 
             // Active Left Accent Indicator Pill
             Rectangle {
-                visible: navItem.isActive && !navItem.isDanger
+                visible: !navItem.isDanger && height > 0
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 width: 3
-                height: 20
+                height: navItem.isActive ? 20 : 0
                 radius: 1.5
                 color: Theme.accentPrimary
+
+                Behavior on height {
+                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                }
             }
 
             RowLayout {

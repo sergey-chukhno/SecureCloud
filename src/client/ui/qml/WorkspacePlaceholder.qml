@@ -17,7 +17,7 @@ Rectangle {
         // Zone 2 — Master List Panel (Conversations / Contacts / Encrypted Files)
         Rectangle {
             Layout.fillHeight: true
-            Layout.preferredWidth: 284
+            Layout.preferredWidth: 300
             color: Theme.backgroundSecondary
 
             Rectangle {
@@ -54,155 +54,371 @@ Rectangle {
                     SCBadge {
                         text: {
                             if (!workspaceRoot.wvm) return "0"
+                            if (workspaceRoot.activeSection === "Contacts") {
+                                return qsTr("%1 Peers").arg(workspaceRoot.wvm.contacts.length)
+                            }
                             if (workspaceRoot.activeSection === "Files") {
                                 return qsTr("%1 Vault Items").arg(workspaceRoot.wvm.activeFileTransferCount)
                             }
                             return qsTr("%1 Unread").arg(workspaceRoot.wvm.totalUnreadCount)
                         }
-                        type: "Info"
+                        type: {
+                            if (workspaceRoot.activeSection === "Contacts") return "Verified"
+                            if (workspaceRoot.activeSection === "Messages" && workspaceRoot.wvm && workspaceRoot.wvm.totalUnreadCount === 0) {
+                                return "Offline"
+                            }
+                            return "Info"
+                        }
                         hasDot: false
                     }
                 }
 
                 // Real-Time Search Filter Input
-                SCTextField {
-                    id: masterSearchField
+                RowLayout {
                     Layout.fillWidth: true
-                    inputHeight: 36
-                    leadingIconName: "search"
-                    placeholderText: workspaceRoot.activeSection === "Files"
-                                     ? qsTr("Search encrypted files...")
-                                     : qsTr("Search conversations...")
-                    text: workspaceRoot.wvm ? workspaceRoot.wvm.searchQuery : ""
-                    onTextEdited: {
-                        if (workspaceRoot.wvm) {
-                            workspaceRoot.wvm.searchQuery = masterSearchField.text
+                    spacing: Theme.space8
+
+                    SCTextField {
+                        id: masterSearchField
+                        Layout.fillWidth: true
+                        inputHeight: 36
+                        leadingIconName: "search"
+                        placeholderText: {
+                            if (workspaceRoot.activeSection === "Contacts") return qsTr("Search contacts or roles...")
+                            if (workspaceRoot.activeSection === "Files") return qsTr("Search encrypted files...")
+                            return qsTr("Search conversations...")
+                        }
+                        text: workspaceRoot.wvm ? workspaceRoot.wvm.searchQuery : ""
+                        onTextEdited: {
+                            if (workspaceRoot.wvm) {
+                                workspaceRoot.wvm.searchQuery = masterSearchField.text
+                            }
+                        }
+                    }
+
+                    SCIconButton {
+                        visible: masterSearchField.text.length > 0
+                        iconName: "close"
+                        buttonSize: 30
+                        tooltipText: qsTr("Clear Search")
+                        onClicked: {
+                            masterSearchField.text = ""
+                            if (workspaceRoot.wvm) {
+                                workspaceRoot.wvm.searchQuery = ""
+                            }
                         }
                     }
                 }
 
                 // Dynamic Master List (Conversations / Contacts / Files)
-                ListView {
-                    id: masterListView
+                Item {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
-                    spacing: Theme.space8
-                    clip: true
-                    model: {
-                        if (!workspaceRoot.wvm) return []
-                        if (workspaceRoot.activeSection === "Contacts") return workspaceRoot.wvm.contacts
-                        if (workspaceRoot.activeSection === "Files") return workspaceRoot.wvm.fileTransfers
-                        return workspaceRoot.wvm.conversations
-                    }
 
-                    delegate: Rectangle {
-                        width: masterListView.width
-                        height: 68
-                        radius: Theme.radiusMedium
-                        color: modelData.isSelected
-                               ? Theme.backgroundElevated
-                               : (itemMouse.containsMouse ? (Theme.isDark ? "#192130" : "#E2E8F0") : "transparent")
-                        border.color: modelData.isSelected ? Theme.borderSubtle : "transparent"
-                        border.width: modelData.isSelected ? 1 : 0
+                    ListView {
+                        id: masterListView
+                        anchors.fill: parent
+                        spacing: Theme.space8
+                        clip: true
+                        model: {
+                            if (!workspaceRoot.wvm) return []
+                            if (workspaceRoot.activeSection === "Contacts") return workspaceRoot.wvm.contacts
+                            if (workspaceRoot.activeSection === "Files") return workspaceRoot.wvm.fileTransfers
+                            return workspaceRoot.wvm.conversations
+                        }
 
-                        RowLayout {
-                            anchors.fill: parent
-                            anchors.margins: Theme.space12
-                            spacing: Theme.space12
+                        delegate: Rectangle {
+                            id: cardDelegate
+                            width: masterListView.width
+                            height: 72
+                            radius: 12
+                            readonly property int itemPriority: modelData.priority || 1
+                            readonly property bool hasUnread: (modelData.unreadCount || 0) > 0
 
-                            SCAvatar {
-                                userId: workspaceRoot.activeSection === "Files"
-                                        ? (modelData.fileName || "file")
-                                        : (modelData.peerUserId || modelData.userId || "peer")
-                                displayName: workspaceRoot.activeSection === "Files"
-                                             ? (modelData.fileName || "F")
-                                             : (modelData.peerDisplayName || modelData.displayName || "Peer")
-                                size: 40
-                                presence: workspaceRoot.activeSection === "Files" ? "" : (modelData.presence || "Offline")
+                            color: {
+                                if (modelData.isSelected) {
+                                    return Theme.backgroundElevated
+                                }
+                                if (itemMouse.pressed) {
+                                    return Theme.isDark ? "#222C3F" : "#CBD5E1"
+                                }
+                                if (itemMouse.containsMouse) {
+                                    return Theme.isDark ? "#192130" : "#E2E8F0"
+                                }
+                                return "transparent"
+                            }
+                            border.color: {
+                                if (modelData.isSelected && !Theme.isDark) {
+                                    return Theme.borderSubtle
+                                }
+                                return "transparent"
+                            }
+                            border.width: (modelData.isSelected && !Theme.isDark) ? 1 : 0
+                            scale: itemMouse.pressed ? 0.985 : 1.0
+
+                            Behavior on color {
+                                ColorAnimation { duration: Theme.durationFast }
+                            }
+                            Behavior on scale {
+                                NumberAnimation { duration: 110; easing.type: Easing.OutQuad }
                             }
 
-                            ColumnLayout {
-                                Layout.fillWidth: true
-                                spacing: 3
+                            // Animated Active Left Accent Indicator Pill
+                            Rectangle {
+                                visible: height > 0
+                                anchors.left: parent.left
+                                anchors.verticalCenter: parent.verticalCenter
+                                width: 3
+                                height: modelData.isSelected ? 26 : 0
+                                radius: 1.5
+                                color: Theme.accentPrimary
 
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Theme.space4
+                                Behavior on height {
+                                    NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                                }
+                            }
 
-                                    Label {
-                                        text: workspaceRoot.activeSection === "Files"
-                                              ? (modelData.fileName || "")
-                                              : (modelData.peerDisplayName || modelData.displayName || "")
-                                        font.family: Theme.fontFamilyPrimary
-                                        font.pixelSize: Theme.fontBody
-                                        font.bold: true
-                                        color: Theme.textPrimary
-                                        elide: Text.ElideRight
-                                        Layout.fillWidth: true
-                                    }
+                            RowLayout {
+                                anchors.fill: parent
+                                anchors.leftMargin: Theme.space12
+                                anchors.rightMargin: Theme.space12
+                                anchors.topMargin: Theme.space10
+                                anchors.bottomMargin: Theme.space10
+                                spacing: Theme.space12
 
-                                    Label {
-                                        text: modelData.timestampText || modelData.handle || ""
-                                        font.family: Theme.fontFamilyPrimary
-                                        font.pixelSize: Theme.fontMicro
-                                        color: Theme.textMuted
+                                // Avatar for Messages/Contacts OR File-Lock Badge for Files
+                                Loader {
+                                    Layout.alignment: Qt.AlignVCenter
+                                    sourceComponent: workspaceRoot.activeSection === "Files" ? fileVaultIconComp : peerAvatarComp
+                                }
+
+                                Component {
+                                    id: peerAvatarComp
+                                    SCAvatar {
+                                        userId: modelData.peerUserId || modelData.userId || "peer"
+                                        displayName: modelData.peerDisplayName || modelData.displayName || "Peer"
+                                        size: 40
+                                        presence: modelData.presence || "Offline"
                                     }
                                 }
 
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: Theme.space8
-
-                                    Label {
-                                        text: {
-                                            if (workspaceRoot.activeSection === "Files") {
-                                                return (modelData.fileSizeText || "") + " · " + (modelData.cipherSuite || "") + " · " + (modelData.peerDisplayName || "")
-                                            }
-                                            if (workspaceRoot.activeSection === "Contacts") {
-                                                return modelData.roleNote || ""
-                                            }
-                                            return modelData.lastMessagePreview || ""
-                                        }
-                                        font.family: Theme.fontFamilyPrimary
-                                        font.pixelSize: Theme.fontCaption
-                                        color: (modelData.unreadCount && modelData.unreadCount > 0)
-                                               ? Theme.textPrimary
-                                               : Theme.textSecondary
-                                        font.bold: (modelData.unreadCount && modelData.unreadCount > 0) ? true : false
-                                        elide: Text.ElideRight
-                                        Layout.fillWidth: true
-                                    }
-
+                                Component {
+                                    id: fileVaultIconComp
                                     Rectangle {
-                                        visible: workspaceRoot.activeSection === "Messages" && (modelData.unreadCount || 0) > 0
-                                        width: 20
-                                        height: 20
+                                        width: 40
+                                        height: 40
                                         radius: 10
-                                        color: Theme.accentPrimary
+                                        color: Theme.isDark ? "#13233D" : "#DBEAFE"
+                                        border.color: Theme.accentPrimary
+                                        border.width: 1
+
+                                        SCIcon {
+                                            anchors.centerIn: parent
+                                            name: "file-lock"
+                                            size: 20
+                                            color: Theme.accentPrimary
+                                        }
+                                    }
+                                }
+
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    // Top Row: Display Name + Verification Icon + Timestamp
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 5
 
                                         Label {
-                                            anchors.centerIn: parent
-                                            text: (modelData.unreadCount || 0).toString()
-                                            font.pixelSize: Theme.fontMicro
+                                            text: workspaceRoot.activeSection === "Files"
+                                                  ? (modelData.fileName || "")
+                                                  : (modelData.peerDisplayName || modelData.displayName || "")
+                                            font.family: Theme.fontFamilyPrimary
+                                            font.pixelSize: Theme.fontBody
                                             font.bold: true
-                                            color: "#FFFFFF"
+                                            color: Theme.textPrimary
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
                                         }
+
+                                        SCIcon {
+                                            visible: workspaceRoot.activeSection !== "Files"
+                                            name: modelData.isBlocked
+                                                  ? "shield-alert"
+                                                  : (modelData.isVerified ? "shield-check" : "alert-triangle")
+                                            size: 13
+                                            color: modelData.isBlocked
+                                                   ? Theme.statusDanger
+                                                   : (modelData.isVerified ? Theme.accentPrimary : Theme.statusWarning)
+                                            Layout.alignment: Qt.AlignVCenter
+                                        }
+
+                                        Label {
+                                            text: workspaceRoot.activeSection === "Files"
+                                                  ? (modelData.fileSizeText || "")
+                                                  : (modelData.timestampText || modelData.handle || "")
+                                            font.family: Theme.fontFamilyPrimary
+                                            font.pixelSize: Theme.fontMicro
+                                            color: Theme.textMuted
+                                            Layout.alignment: Qt.AlignVCenter
+                                        }
+                                    }
+
+                                    // Bottom Row: Priority Pill + Preview / Role Note / Cipher Info + Unread Badge or Quick Action
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 6
+
+                                        // ADR-007 Priority Pill Badge (Urgent / Emergency)
+                                        Rectangle {
+                                            id: priorityPill
+                                            visible: workspaceRoot.activeSection === "Messages" && cardDelegate.itemPriority > 1
+                                            height: 17
+                                            width: priorityRow.implicitWidth + 8
+                                            radius: 8.5
+                                            color: cardDelegate.itemPriority === 3
+                                                   ? (Theme.isDark ? "rgba(239, 68, 68, 0.20)" : "#FEE2E2")
+                                                   : (Theme.isDark ? "rgba(245, 158, 11, 0.20)" : "#FEF3C7")
+                                            border.color: cardDelegate.itemPriority === 3 ? Theme.statusDanger : Theme.statusWarning
+                                            border.width: 1
+                                            Layout.alignment: Qt.AlignVCenter
+
+                                            SequentialAnimation on opacity {
+                                                running: priorityPill.visible && cardDelegate.itemPriority === 3 && cardDelegate.hasUnread
+                                                loops: Animation.Infinite
+                                                NumberAnimation { from: 1.0; to: 0.65; duration: 900; easing.type: Easing.InOutSine }
+                                                NumberAnimation { from: 0.65; to: 1.0; duration: 900; easing.type: Easing.InOutSine }
+                                            }
+
+                                            RowLayout {
+                                                id: priorityRow
+                                                anchors.centerIn: parent
+                                                spacing: 3
+
+                                                SCIcon {
+                                                    name: cardDelegate.itemPriority === 3 ? "shield-alert" : "zap"
+                                                    size: 10
+                                                    color: cardDelegate.itemPriority === 3 ? Theme.statusDanger : Theme.statusWarning
+                                                }
+
+                                                Label {
+                                                    text: cardDelegate.itemPriority === 3 ? qsTr("EMERGENCY") : qsTr("URGENT")
+                                                    font.family: Theme.fontFamilyPrimary
+                                                    font.pixelSize: 9
+                                                    font.bold: true
+                                                    color: cardDelegate.itemPriority === 3 ? Theme.statusDanger : Theme.statusWarning
+                                                }
+                                            }
+                                        }
+
+                                        Label {
+                                            text: {
+                                                if (workspaceRoot.activeSection === "Files") {
+                                                    return (modelData.cipherSuite || "AES-256-GCM") + " · " + (modelData.peerDisplayName || "")
+                                                }
+                                                if (workspaceRoot.activeSection === "Contacts") {
+                                                    return modelData.roleNote || ""
+                                                }
+                                                return modelData.lastMessagePreview || ""
+                                            }
+                                            font.family: Theme.fontFamilyPrimary
+                                            font.pixelSize: Theme.fontCaption
+                                            color: cardDelegate.hasUnread ? Theme.textPrimary : Theme.textSecondary
+                                            font.bold: cardDelegate.hasUnread
+                                            elide: Text.ElideRight
+                                            Layout.fillWidth: true
+                                        }
+
+                                        // Unread Counter Pill (Messages section)
+                                        Rectangle {
+                                            visible: workspaceRoot.activeSection === "Messages" && cardDelegate.hasUnread
+                                            width: 20
+                                            height: 20
+                                            radius: 10
+                                            color: cardDelegate.itemPriority === 3
+                                                   ? Theme.statusDanger
+                                                   : (cardDelegate.itemPriority === 2 ? Theme.statusWarning : Theme.accentPrimary)
+
+                                            Label {
+                                                anchors.centerIn: parent
+                                                text: (modelData.unreadCount || 0).toString()
+                                                font.pixelSize: Theme.fontMicro
+                                                font.bold: true
+                                                color: "#FFFFFF"
+                                            }
+                                        }
+
+                                        // Quick Jump to Encrypted Chat Button (Contacts section)
+                                        SCIconButton {
+                                            visible: workspaceRoot.activeSection === "Contacts"
+                                            iconName: "workspace"
+                                            buttonSize: 24
+                                            z: 2
+                                            tooltipText: qsTr("Open Encrypted Chat")
+                                            onClicked: {
+                                                if (workspaceRoot.wvm) {
+                                                    workspaceRoot.wvm.selectConversation(modelData.conversationId)
+                                                    workspaceRoot.wvm.activeSection = "Messages"
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            MouseArea {
+                                id: itemMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (!workspaceRoot.wvm) return
+                                    if (workspaceRoot.activeSection === "Files") {
+                                        workspaceRoot.wvm.selectTransfer(modelData.transferId)
+                                    } else if (workspaceRoot.activeSection === "Contacts") {
+                                        workspaceRoot.wvm.selectContact(modelData.userId)
+                                    } else {
+                                        workspaceRoot.wvm.selectConversation(modelData.conversationId)
                                     }
                                 }
                             }
                         }
+                    }
 
-                        MouseArea {
-                            id: itemMouse
-                            anchors.fill: parent
-                            hoverEnabled: true
-                            cursorShape: Qt.PointingHandCursor
+                    // Empty Search Filter State
+                    ColumnLayout {
+                        visible: masterListView.count === 0
+                        anchors.centerIn: parent
+                        width: parent.width - 32
+                        spacing: Theme.space8
+
+                        SCIcon {
+                            name: "search"
+                            size: 28
+                            color: Theme.textMuted
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+
+                        Label {
+                            text: qsTr("No matching items found")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontBody
+                            font.bold: true
+                            color: Theme.textSecondary
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.fillWidth: true
+                        }
+
+                        SCButton {
+                            text: qsTr("Reset Filter")
+                            variant: "Secondary"
+                            buttonHeight: 30
+                            Layout.alignment: Qt.AlignHCenter
                             onClicked: {
-                                if (!workspaceRoot.wvm) return
-                                if (workspaceRoot.activeSection === "Files") {
-                                    workspaceRoot.wvm.selectTransfer(modelData.transferId)
-                                } else {
-                                    workspaceRoot.wvm.selectConversation(modelData.conversationId)
+                                masterSearchField.text = ""
+                                if (workspaceRoot.wvm) {
+                                    workspaceRoot.wvm.searchQuery = ""
                                 }
                             }
                         }

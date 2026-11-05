@@ -55,9 +55,13 @@ FocusScope {
 
         border.color: control.activeFocus ? Theme.borderFocused : (control.variant === "Secondary" ? Theme.borderSubtle : "transparent")
         border.width: control.activeFocus ? 2 : (control.variant === "Secondary" ? 1 : 0)
+        scale: (mouseArea.pressed && control.enabled) ? 0.94 : 1.0
 
         Behavior on color {
             ColorAnimation { duration: Theme.durationFast }
+        }
+        Behavior on scale {
+            NumberAnimation { duration: 110; easing.type: Easing.OutQuad }
         }
 
         SCIcon {
