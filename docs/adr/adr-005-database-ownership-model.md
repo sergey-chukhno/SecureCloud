@@ -139,6 +139,8 @@ Such state must not become a hidden shared database dependency.
 
 If persistent Gateway-specific state becomes necessary, it must be explicitly owned by Gateway and documented through a subsequent architectural decision.
 
+> **Amendment (2026-11-05, ADR-011):** Per [ADR-011](file:///Users/sergeychukhno/Desktop/C:C++/SecureCloud/docs/adr/adr-011-gateway-audit-event-delivery.md), the Gateway is granted explicit ownership of a bounded, per-instance append-only disk spool on a dedicated persistent volume (`/var/spool/securecloud-gateway/audit`) strictly for asynchronous audit event delivery state. The Gateway remains logically stateless with respect to core platform business data.
+
 Gateway must never directly access:
 
 * Auth DB;
