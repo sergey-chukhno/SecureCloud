@@ -594,6 +594,41 @@ QVariantList WorkspaceViewModel::selectedConversationParticipants() const {
     return result;
 }
 
+bool WorkspaceViewModel::selectedGroupAllVerified() const {
+    const auto* conv = findConversation(selected_conversation_id_);
+    if (!conv || !conv->isGroup) {
+        return true;
+    }
+    for (const auto& uidStr : conv->participantUserIds) {
+        if (uidStr == QStringLiteral("operator@securecloud.org") || uidStr == QStringLiteral("alice@securecloud.org")) {
+            continue;
+        }
+        const auto cRes = app_.bootstrap().contact_manager().get_contact(domain::UserId(uidStr.toStdString()));
+        if (cRes.is_error() || cRes.value().verification_status() != domain::KeyVerificationStatus::Verified) {
+            return false;
+        }
+    }
+    return true;
+}
+
+int WorkspaceViewModel::selectedGroupUnverifiedCount() const {
+    const auto* conv = findConversation(selected_conversation_id_);
+    if (!conv || !conv->isGroup) {
+        return 0;
+    }
+    int unverified = 0;
+    for (const auto& uidStr : conv->participantUserIds) {
+        if (uidStr == QStringLiteral("operator@securecloud.org") || uidStr == QStringLiteral("alice@securecloud.org")) {
+            continue;
+        }
+        const auto cRes = app_.bootstrap().contact_manager().get_contact(domain::UserId(uidStr.toStdString()));
+        if (cRes.is_error() || cRes.value().verification_status() != domain::KeyVerificationStatus::Verified) {
+            ++unverified;
+        }
+    }
+    return unverified;
+}
+
 bool WorkspaceViewModel::selectedPeerKeyChanged() const {
     const auto* conv = findConversation(selected_conversation_id_);
     if (!conv) {

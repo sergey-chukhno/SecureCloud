@@ -42,7 +42,7 @@ class WorkspaceViewModel : public QObject {
     Q_PROPERTY(QVariantList activeMessages READ activeMessages NOTIFY activeMessagesChanged)
     Q_PROPERTY(QVariantList sharedFilesForSelectedPeer READ sharedFilesForSelectedPeer NOTIFY fileTransfersChanged)
 
-    // Group & Multi-Party Conversation Bindings (CLIENT-004-T02)
+    // Group & Multi-Party Conversation Bindings (CLIENT-004-T02 / CLIENT-004-T04)
     Q_PROPERTY(bool selectedConversationIsGroup READ selectedConversationIsGroup NOTIFY selectedConversationChanged)
     Q_PROPERTY(int selectedConversationParticipantCount READ selectedConversationParticipantCount NOTIFY
                    selectedConversationChanged)
@@ -50,6 +50,8 @@ class WorkspaceViewModel : public QObject {
                    selectedConversationChanged)
     Q_PROPERTY(QVariantList selectedConversationParticipants READ selectedConversationParticipants NOTIFY
                    selectedConversationChanged)
+    Q_PROPERTY(bool selectedGroupAllVerified READ selectedGroupAllVerified NOTIFY selectedConversationChanged)
+    Q_PROPERTY(int selectedGroupUnverifiedCount READ selectedGroupUnverifiedCount NOTIFY selectedConversationChanged)
 
     // ADR-008 Identity Key Change State & Warning Banner (CLIENT-004-T02)
     Q_PROPERTY(bool selectedPeerKeyChanged READ selectedPeerKeyChanged NOTIFY selectedConversationChanged)
@@ -118,6 +120,8 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] int selectedConversationParticipantCount() const;
     [[nodiscard]] int selectedConversationDeviceFanoutCount() const;
     [[nodiscard]] QVariantList selectedConversationParticipants() const;
+    [[nodiscard]] bool selectedGroupAllVerified() const;
+    [[nodiscard]] int selectedGroupUnverifiedCount() const;
 
     // ADR-008 Key Changed & Emergency State Getters
     [[nodiscard]] bool selectedPeerKeyChanged() const;

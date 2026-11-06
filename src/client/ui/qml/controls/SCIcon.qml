@@ -472,6 +472,19 @@ Item {
                 ctx.lineTo(18, 9);
                 ctx.lineTo(13, 9);
                 ctx.stroke();
+            } else if (n === "users") {
+                ctx.beginPath();
+                ctx.arc(9, 7, 3.5, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(9, 18, 5, Math.PI, 0, false);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(16, 7, 2.8, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(16, 17, 4.2, Math.PI, -0.2 * Math.PI, false);
+                ctx.stroke();
             }
         }
     }

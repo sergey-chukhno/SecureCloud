@@ -202,6 +202,16 @@ int main(int argc, char* argv[]) {
         captureWindow(QStringLiteral("workspace-keychanged-dark-1200x800.png"), 1200, 800);
         workspaceViewModel.acceptAndVerifyPeerKey(QStringLiteral("frances.swann@securecloud.org"));
 
+        // 6c. Encrypted Group Conversation & Group Encryption Roster (Dark & Light 1200x800)
+        workspaceViewModel.setActiveSection(QStringLiteral("Messages"));
+        workspaceViewModel.selectConversation(QStringLiteral("conv-secops"));
+        workspaceViewModel.setInspectorOpen(true);
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("workspace-group-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("workspace-group-light-1200x800.png"), 1200, 800);
+
         // 7. Authenticated Workspace state — Encrypted Files Vault View (Dark & Light 1200x800)
         workspaceViewModel.setActiveSection(QStringLiteral("Files"));
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);

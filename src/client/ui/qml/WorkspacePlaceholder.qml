@@ -84,6 +84,14 @@ Rectangle {
                     Item { Layout.fillWidth: true }
 
                     SCIconButton {
+                        visible: workspaceRoot.activeSection === "Messages"
+                        iconName: "plus"
+                        buttonSize: 28
+                        tooltipText: qsTr("New Conversation or Group")
+                        onClicked: newConversationDialog.open()
+                    }
+
+                    SCIconButton {
                         visible: workspaceRoot.activeSection === "Contacts"
                         iconName: "user-plus"
                         buttonSize: 28
@@ -297,6 +305,15 @@ Rectangle {
                                         }
 
                                         SCBadge {
+                                            visible: workspaceRoot.activeSection === "Messages" && (modelData.isGroup === true)
+                                            text: qsTr("Group")
+                                            type: "Info"
+                                            badgeHeight: 18
+                                            hasDot: false
+                                            Layout.alignment: Qt.AlignVCenter
+                                        }
+
+                                        SCBadge {
                                             visible: workspaceRoot.activeSection === "Contacts"
                                             text: {
                                                 if (modelData.isBlocked) return qsTr("Blocked")
@@ -379,11 +396,7 @@ Rectangle {
                                                 if (workspaceRoot.activeSection === "Contacts") {
                                                     var handle = modelData.handle || ""
                                                     var role = modelData.roleNote || ""
-                                                    var devCount = modelData.deviceCount || 1
-                                                    var str = handle
-                                                    if (role.length > 0) str += " · " + role
-                                                    str += " · " + qsTr("%1 dev%2").arg(devCount).arg(devCount > 1 ? "s" : "")
-                                                    return str
+                                                    return role.length > 0 ? (handle + " · " + role) : handle
                                                 }
                                                 return modelData.lastMessagePreview || ""
                                             }
@@ -559,6 +572,11 @@ Rectangle {
                                 SCBadge {
                                     text: {
                                         if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return qsTr("Key Changed")
+                                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedConversationIsGroup) {
+                                            return workspaceRoot.wvm.selectedGroupAllVerified
+                                                   ? qsTr("All Verified")
+                                                   : qsTr("Unverified (%1)").arg(workspaceRoot.wvm.selectedGroupUnverifiedCount)
+                                        }
                                         if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return qsTr("Blocked")
                                         return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
                                                ? qsTr("Verified")
@@ -566,6 +584,9 @@ Rectangle {
                                     }
                                     type: {
                                         if (workspaceRoot.wvm && (workspaceRoot.wvm.selectedPeerKeyChanged || workspaceRoot.wvm.selectedPeerBlocked)) return "Danger"
+                                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedConversationIsGroup) {
+                                            return workspaceRoot.wvm.selectedGroupAllVerified ? "Verified" : "Unverified"
+                                        }
                                         return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
                                                ? "Verified"
                                                : "Unverified"
@@ -606,6 +627,10 @@ Rectangle {
 
                             Label {
                                 text: {
+                                    if (workspaceRoot.wvm && workspaceRoot.wvm.selectedConversationIsGroup) {
+                                        return qsTr("Group · %1 Participants · Double Ratchet E2EE")
+                                            .arg(workspaceRoot.wvm.selectedConversationParticipantCount)
+                                    }
                                     var handle = workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerHandle : ""
                                     return handle + "  ·  " + qsTr("Double Ratchet E2EE")
                                 }
@@ -811,7 +836,7 @@ Rectangle {
                                 // Peer Avatar (Left-aligned for incoming messages)
                                 SCAvatar {
                                     visible: !modelData.isSelf
-                                    userId: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerUserId : "peer"
+                                    userId: modelData.senderName || "peer"
                                     displayName: modelData.senderName || "Peer"
                                     size: 28
                                     presence: ""
@@ -830,7 +855,17 @@ Rectangle {
                                         spacing: 6
 
                                         Label {
-                                            text: (modelData.senderName || "") + "  " + (modelData.timestampText || "")
+                                            visible: !modelData.isSelf && workspaceRoot.wvm && workspaceRoot.wvm.selectedConversationIsGroup
+                                            text: modelData.senderName || ""
+                                            font.family: Theme.fontFamilyPrimary
+                                            font.pixelSize: Theme.fontMicro
+                                            font.bold: true
+                                            color: Theme.accentPrimary
+                                        }
+
+                                        Label {
+                                            text: ((modelData.isSelf || !workspaceRoot.wvm || !workspaceRoot.wvm.selectedConversationIsGroup)
+                                                   ? ((modelData.senderName || "") + "  ") : "") + (modelData.timestampText || "")
                                             font.family: Theme.fontFamilyPrimary
                                             font.pixelSize: Theme.fontMicro
                                             color: Theme.textMuted
@@ -1694,7 +1729,9 @@ Rectangle {
                     Layout.fillWidth: true
 
                     Label {
-                        text: qsTr("PEER SECURITY INSPECTOR")
+                        text: (workspaceRoot.wvm && workspaceRoot.wvm.selectedConversationIsGroup)
+                              ? qsTr("GROUP ENCRYPTION ROSTER")
+                              : qsTr("PEER SECURITY INSPECTOR")
                         font.family: Theme.fontFamilyPrimary
                         font.pixelSize: 10
                         font.bold: true
@@ -1716,288 +1753,466 @@ Rectangle {
                     }
                 }
 
-                SCAvatar {
-                    userId: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerUserId : "peer"
-                    displayName: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "Peer"
-                    size: 72
-                    presence: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerPresence : "Online"
-                    Layout.alignment: Qt.AlignHCenter
-                }
-
-                RowLayout {
-                    Layout.alignment: Qt.AlignHCenter
-                    spacing: 6
-
-                    Label {
-                        text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerHandle : ""
-                        font.family: Theme.fontFamilyPrimary
-                        font.pixelSize: Theme.fontSubtitle
-                        font.bold: true
-                        color: Theme.textPrimary
-                    }
-
-                    SCIcon {
-                        name: {
-                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return "shield-alert"
-                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return "shield-alert"
-                            return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? "shield-check" : "alert-triangle"
-                        }
-                        size: 16
-                        color: {
-                            if (workspaceRoot.wvm && (workspaceRoot.wvm.selectedPeerBlocked || workspaceRoot.wvm.selectedPeerKeyChanged)) return Theme.statusDanger
-                            return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? Theme.accentPrimary : Theme.statusWarning
-                        }
-                    }
-                }
-
-                SCBadge {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: {
-                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return qsTr("Key Changed (ADR-008)")
-                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return qsTr("Blocked")
-                        return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? qsTr("Verified") : qsTr("Unverified")
-                    }
-                    type: {
-                        if (workspaceRoot.wvm && (workspaceRoot.wvm.selectedPeerKeyChanged || workspaceRoot.wvm.selectedPeerBlocked)) return "Danger"
-                        return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? "Verified" : "Unverified"
-                    }
-                }
-
-                // Quick Cryptographic Action Pills (Verify Key + Edit Profile)
-                RowLayout {
+                // 4A. 1-on-1 Peer Security Inspector Content
+                ColumnLayout {
+                    id: peerInspectorContent
+                    visible: !workspaceRoot.wvm || !workspaceRoot.wvm.selectedConversationIsGroup
                     Layout.fillWidth: true
-                    spacing: Theme.space8
+                    Layout.fillHeight: true
+                    spacing: Theme.space12
 
-                    SCButton {
-                        Layout.fillWidth: true
-                        text: {
-                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return qsTr("Verify Key")
-                            return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
-                                  ? qsTr("Verified Key")
-                                  : qsTr("Verify Key")
+                    SCAvatar {
+                        userId: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerUserId : "peer"
+                        displayName: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "Peer"
+                        size: 72
+                        presence: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerPresence : "Online"
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+
+                    RowLayout {
+                        Layout.alignment: Qt.AlignHCenter
+                        spacing: 6
+
+                        Label {
+                            text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerHandle : ""
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontSubtitle
+                            font.bold: true
+                            color: Theme.textPrimary
                         }
-                        iconName: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
-                                  ? "shield-check"
-                                  : "alert-triangle"
-                        variant: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) ? "Danger" : "Secondary"
-                        buttonHeight: 32
-                        horizontalPadding: 8
-                        onClicked: {
-                            if (workspaceRoot.wvm) {
-                                if (workspaceRoot.wvm.selectedPeerKeyChanged) {
-                                    workspaceRoot.wvm.acceptAndVerifyPeerKey(workspaceRoot.wvm.selectedPeerUserId)
-                                } else {
-                                    workspaceRoot.wvm.togglePeerVerified("")
-                                }
+
+                        SCIcon {
+                            name: {
+                                if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return "shield-alert"
+                                if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return "shield-alert"
+                                return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? "shield-check" : "alert-triangle"
+                            }
+                            size: 16
+                            color: {
+                                if (workspaceRoot.wvm && (workspaceRoot.wvm.selectedPeerBlocked || workspaceRoot.wvm.selectedPeerKeyChanged)) return Theme.statusDanger
+                                return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? Theme.accentPrimary : Theme.statusWarning
                             }
                         }
                     }
 
+                    SCBadge {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: {
+                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return qsTr("Key Changed (ADR-008)")
+                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return qsTr("Blocked")
+                            return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? qsTr("Verified") : qsTr("Unverified")
+                        }
+                        type: {
+                            if (workspaceRoot.wvm && (workspaceRoot.wvm.selectedPeerKeyChanged || workspaceRoot.wvm.selectedPeerBlocked)) return "Danger"
+                            return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? "Verified" : "Unverified"
+                        }
+                    }
+
+                    // Quick Cryptographic Action Pills (Verify Key + Edit Profile)
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.space8
+
+                        SCButton {
+                            Layout.fillWidth: true
+                            text: {
+                                if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return qsTr("Verify Key")
+                                return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
+                                      ? qsTr("Verified Key")
+                                      : qsTr("Verify Key")
+                            }
+                            iconName: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
+                                      ? "shield-check"
+                                      : "alert-triangle"
+                            variant: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) ? "Danger" : "Secondary"
+                            buttonHeight: 32
+                            horizontalPadding: 8
+                            onClicked: {
+                                if (workspaceRoot.wvm) {
+                                    if (workspaceRoot.wvm.selectedPeerKeyChanged) {
+                                        workspaceRoot.wvm.acceptAndVerifyPeerKey(workspaceRoot.wvm.selectedPeerUserId)
+                                    } else {
+                                        workspaceRoot.wvm.togglePeerVerified("")
+                                    }
+                                }
+                            }
+                        }
+
+                        SCButton {
+                            Layout.fillWidth: true
+                            text: qsTr("Edit Profile")
+                            iconName: "edit"
+                            variant: "Secondary"
+                            buttonHeight: 32
+                            horizontalPadding: 8
+                            onClicked: editContactDialog.openWithCurrentContact()
+                        }
+                    }
+
                     SCButton {
                         Layout.fillWidth: true
-                        text: qsTr("Edit Profile")
-                        iconName: "edit"
+                        text: qsTr("Send Encrypted File")
+                        iconName: "paperclip"
                         variant: "Secondary"
                         buttonHeight: 32
                         horizontalPadding: 8
-                        onClicked: editContactDialog.openWithCurrentContact()
-                    }
-                }
-
-                SCButton {
-                    Layout.fillWidth: true
-                    text: qsTr("Send Encrypted File")
-                    iconName: "paperclip"
-                    variant: "Secondary"
-                    buttonHeight: 32
-                    horizontalPadding: 8
-                    onClicked: workspaceRoot.triggerSampleFileAttachment()
-                }
-
-                // Safety Number Monospace Box
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
-
-                    Label {
-                        text: qsTr("Safety Number (X3DH):")
-                        font.family: Theme.fontFamilyPrimary
-                        font.pixelSize: Theme.fontCaption
-                        font.bold: true
-                        color: Theme.textPrimary
+                        onClicked: workspaceRoot.triggerSampleFileAttachment()
                     }
 
-                    Rectangle {
+                    // Safety Number Monospace Box
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        implicitHeight: safetyNumLabel.implicitHeight + 14
-                        radius: 8
-                        color: Theme.backgroundSecondary
-                        border.color: Theme.borderSubtle
-                        border.width: 1
+                        spacing: 4
 
                         Label {
-                            id: safetyNumLabel
-                            anchors.fill: parent
-                            anchors.margins: 7
-                            text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerSafetyNumber : ""
-                            font.family: Theme.fontFamilyMonospace
-                            font.pixelSize: 11
-                            color: Theme.accentPrimary
-                            wrapMode: Text.WordWrap
-                        }
-                    }
-                }
-
-                // Shared Encrypted Files Section
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 6
-
-                    RowLayout {
-                        Layout.fillWidth: true
-
-                        Label {
-                            text: qsTr("Shared Encrypted Files")
+                            text: qsTr("Safety Number (X3DH):")
                             font.family: Theme.fontFamilyPrimary
                             font.pixelSize: Theme.fontCaption
                             font.bold: true
                             color: Theme.textPrimary
                         }
 
-                        Item { Layout.fillWidth: true }
-
-                        Label {
-                            text: workspaceRoot.wvm ? workspaceRoot.wvm.sharedFilesForSelectedPeer.length.toString() : "0"
-                            font.family: Theme.fontFamilyMonospace
-                            font.pixelSize: Theme.fontMicro
-                            font.bold: true
-                            color: Theme.accentPrimary
-                        }
-                    }
-
-                    Repeater {
-                        model: workspaceRoot.wvm ? workspaceRoot.wvm.sharedFilesForSelectedPeer : []
-
-                        delegate: Rectangle {
+                        Rectangle {
                             Layout.fillWidth: true
-                            height: 36
+                            implicitHeight: safetyNumLabel.implicitHeight + 14
                             radius: 8
-                            color: sharedFileMouse.containsMouse ? Theme.backgroundElevated : Theme.backgroundSecondary
+                            color: Theme.backgroundSecondary
                             border.color: Theme.borderSubtle
                             border.width: 1
 
-                            RowLayout {
+                            Label {
+                                id: safetyNumLabel
                                 anchors.fill: parent
-                                anchors.leftMargin: 8
-                                anchors.rightMargin: 8
-                                spacing: 6
+                                anchors.margins: 7
+                                text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerSafetyNumber : ""
+                                font.family: Theme.fontFamilyMonospace
+                                font.pixelSize: 11
+                                color: Theme.accentPrimary
+                                wrapMode: Text.WordWrap
+                            }
+                        }
+                    }
 
-                                SCIcon {
-                                    name: "file-lock"
-                                    size: 14
-                                    color: Theme.accentPrimary
-                                }
+                    // Shared Encrypted Files Section
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 6
 
-                                Label {
-                                    text: modelData.fileName || ""
-                                    font.family: Theme.fontFamilyPrimary
-                                    font.pixelSize: Theme.fontMicro
-                                    font.bold: true
-                                    color: Theme.textPrimary
-                                    elide: Text.ElideRight
-                                    Layout.fillWidth: true
-                                }
+                        RowLayout {
+                            Layout.fillWidth: true
 
-                                Label {
-                                    text: modelData.fileSizeText || ""
-                                    font.family: Theme.fontFamilyMonospace
-                                    font.pixelSize: 10
-                                    color: Theme.textMuted
-                                }
+                            Label {
+                                text: qsTr("Shared Encrypted Files")
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontCaption
+                                font.bold: true
+                                color: Theme.textPrimary
                             }
 
-                            MouseArea {
-                                id: sharedFileMouse
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                cursorShape: Qt.PointingHandCursor
-                                onClicked: {
-                                    if (workspaceRoot.wvm) {
-                                        workspaceRoot.wvm.selectTransfer(modelData.transferId)
-                                        workspaceRoot.wvm.activeSection = "Files"
+                            Item { Layout.fillWidth: true }
+
+                            Label {
+                                text: workspaceRoot.wvm ? workspaceRoot.wvm.sharedFilesForSelectedPeer.length.toString() : "0"
+                                font.family: Theme.fontFamilyMonospace
+                                font.pixelSize: Theme.fontMicro
+                                font.bold: true
+                                color: Theme.accentPrimary
+                            }
+                        }
+
+                        Repeater {
+                            model: workspaceRoot.wvm ? workspaceRoot.wvm.sharedFilesForSelectedPeer : []
+
+                            delegate: Rectangle {
+                                Layout.fillWidth: true
+                                height: 36
+                                radius: 8
+                                color: sharedFileMouse.containsMouse ? Theme.backgroundElevated : Theme.backgroundSecondary
+                                border.color: Theme.borderSubtle
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    spacing: 6
+
+                                    SCIcon {
+                                        name: "file-lock"
+                                        size: 14
+                                        color: Theme.accentPrimary
+                                    }
+
+                                    Label {
+                                        text: modelData.fileName || ""
+                                        font.family: Theme.fontFamilyPrimary
+                                        font.pixelSize: Theme.fontMicro
+                                        font.bold: true
+                                        color: Theme.textPrimary
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+
+                                    Label {
+                                        text: modelData.fileSizeText || ""
+                                        font.family: Theme.fontFamilyMonospace
+                                        font.pixelSize: 10
+                                        color: Theme.textMuted
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: sharedFileMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (workspaceRoot.wvm) {
+                                            workspaceRoot.wvm.selectTransfer(modelData.transferId)
+                                            workspaceRoot.wvm.activeSection = "Files"
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Label {
+                            visible: !workspaceRoot.wvm || workspaceRoot.wvm.sharedFilesForSelectedPeer.length === 0
+                            text: qsTr("No encrypted files shared in this session yet.")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontMicro
+                            color: Theme.textMuted
+                        }
+                    }
+
+                    // Role & Cryptographic Policy Notes
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing: 4
+
+                        Label {
+                            text: qsTr("Notes:")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontCaption
+                            font.bold: true
+                            color: Theme.textPrimary
+                        }
+
+                        Label {
+                            text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerRoleNote : ""
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontMicro
+                            color: Theme.textSecondary
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    Item { Layout.fillHeight: true }
+
+                    // Simulate Key Change (ADR-008 testing) & Remove Contact Buttons
+                    SCButton {
+                        Layout.fillWidth: true
+                        text: qsTr("Simulate Key Change (ADR-008)")
+                        iconName: "refresh"
+                        variant: "Secondary"
+                        buttonHeight: 32
+                        horizontalPadding: 8
+                        onClicked: {
+                            if (workspaceRoot.wvm) {
+                                workspaceRoot.wvm.simulatePeerKeyChange(workspaceRoot.wvm.selectedPeerUserId)
+                            }
+                        }
+                    }
+
+                    SCButton {
+                        Layout.fillWidth: true
+                        text: qsTr("Remove Contact")
+                        iconName: "trash"
+                        variant: "Secondary"
+                        buttonHeight: 32
+                        horizontalPadding: 8
+                        onClicked: removeContactConfirmDialog.open()
+                    }
+
+                    SCButton {
+                        text: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked)
+                              ? qsTr("Unblock & Restore Keys")
+                              : qsTr("Block %1").arg(workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "")
+                        iconName: "shield-alert"
+                        variant: "Danger"
+                        fullWidth: true
+                        onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.togglePeerBlocked("")
+                    }
+                }
+
+                // 4B: Group Encryption Roster Content
+                ColumnLayout {
+                    id: groupRosterContent
+                    visible: workspaceRoot.wvm && workspaceRoot.wvm.selectedConversationIsGroup
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    spacing: Theme.space12
+
+                    SCAvatar {
+                        displayName: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "Group"
+                        userId: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerUserId : "group"
+                        size: 64
+                        presence: "Online"
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+
+                    Label {
+                        text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : ""
+                        font.family: Theme.fontFamilyPrimary
+                        font.pixelSize: Theme.fontSubtitle
+                        font.bold: true
+                        color: Theme.textPrimary
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+
+                    SCBadge {
+                        Layout.alignment: Qt.AlignHCenter
+                        text: {
+                            if (!workspaceRoot.wvm) return ""
+                            if (workspaceRoot.wvm.selectedPeerKeyChanged) return qsTr("Key Changed!")
+                            return workspaceRoot.wvm.selectedGroupAllVerified
+                                   ? qsTr("All Members Verified")
+                                   : qsTr("Unverified Members (%1)").arg(workspaceRoot.wvm.selectedGroupUnverifiedCount)
+                        }
+                        type: {
+                            if (!workspaceRoot.wvm) return "Offline"
+                            if (workspaceRoot.wvm.selectedPeerKeyChanged) return "Danger"
+                            return workspaceRoot.wvm.selectedGroupAllVerified ? "Verified" : "Unverified"
+                        }
+                    }
+
+                    // Add Participant Action Button
+                    SCButton {
+                        Layout.fillWidth: true
+                        text: qsTr("+ Add Participant")
+                        iconName: "user-plus"
+                        variant: "Secondary"
+                        buttonHeight: 32
+                        horizontalPadding: 8
+                        onClicked: addParticipantDialog.openWithUnusedContacts()
+                    }
+
+                    // Roster Header
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        Label {
+                            text: qsTr("PARTICIPANTS (%1)").arg(workspaceRoot.wvm ? workspaceRoot.wvm.selectedConversationParticipantCount : 0)
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: 10
+                            font.bold: true
+                            color: Theme.textMuted
+                        }
+
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    // Scrollable Participant List
+                    ScrollView {
+                        Layout.fillWidth: true
+                        Layout.fillHeight: true
+                        clip: true
+
+                        ColumnLayout {
+                            width: parent.width
+                            spacing: Theme.space8
+
+                            Repeater {
+                                model: (workspaceRoot.wvm && workspaceRoot.wvm.selectedConversationIsGroup)
+                                       ? workspaceRoot.wvm.selectedConversationParticipants
+                                       : []
+
+                                delegate: Rectangle {
+                                    Layout.fillWidth: true
+                                    height: 48
+                                    radius: 8
+                                    color: Theme.backgroundSecondary
+                                    border.color: Theme.borderSubtle
+                                    border.width: 1
+
+                                    RowLayout {
+                                        anchors.fill: parent
+                                        anchors.leftMargin: 8
+                                        anchors.rightMargin: 8
+                                        spacing: 8
+
+                                        SCAvatar {
+                                            displayName: modelData.name || "User"
+                                            userId: modelData.userId || "user"
+                                            size: 28
+                                            presence: modelData.presence || ""
+                                        }
+
+                                        ColumnLayout {
+                                            spacing: 1
+                                            Layout.fillWidth: true
+
+                                            RowLayout {
+                                                spacing: 4
+                                                Layout.fillWidth: true
+
+                                                Label {
+                                                    text: modelData.name || ""
+                                                    font.family: Theme.fontFamilyPrimary
+                                                    font.pixelSize: Theme.fontCaption
+                                                    font.bold: true
+                                                    color: Theme.textPrimary
+                                                    elide: Text.ElideRight
+                                                    Layout.fillWidth: true
+                                                }
+
+                                                SCBadge {
+                                                    text: modelData.isVerified ? qsTr("Verified") : qsTr("Unverified")
+                                                    type: modelData.isVerified ? "Verified" : "Unverified"
+                                                    badgeHeight: 16
+                                                    hasDot: false
+                                                }
+                                            }
+
+                                            Label {
+                                                text: modelData.handle || ""
+                                                font.family: Theme.fontFamilyPrimary
+                                                font.pixelSize: 10
+                                                color: Theme.textMuted
+                                                elide: Text.ElideRight
+                                                Layout.fillWidth: true
+                                            }
+                                        }
+
+                                        SCIconButton {
+                                            visible: !modelData.isSelf
+                                            iconName: "trash"
+                                            buttonSize: 22
+                                            tooltipText: qsTr("Remove from Group")
+                                            onClicked: {
+                                                if (workspaceRoot.wvm) {
+                                                    workspaceRoot.wvm.removeParticipantFromActiveGroup(modelData.userId)
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
 
-                    Label {
-                        visible: !workspaceRoot.wvm || workspaceRoot.wvm.sharedFilesForSelectedPeer.length === 0
-                        text: qsTr("No encrypted files shared in this session yet.")
-                        font.family: Theme.fontFamilyPrimary
-                        font.pixelSize: Theme.fontMicro
-                        color: Theme.textMuted
-                    }
-                }
-
-                // Role & Cryptographic Policy Notes
-                ColumnLayout {
-                    Layout.fillWidth: true
-                    spacing: 4
-
-                    Label {
-                        text: qsTr("Notes:")
-                        font.family: Theme.fontFamilyPrimary
-                        font.pixelSize: Theme.fontCaption
-                        font.bold: true
-                        color: Theme.textPrimary
-                    }
-
-                    Label {
-                        text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerRoleNote : ""
-                        font.family: Theme.fontFamilyPrimary
-                        font.pixelSize: Theme.fontMicro
-                        color: Theme.textSecondary
-                        wrapMode: Text.WordWrap
+                    // Leave Group Button
+                    SCButton {
                         Layout.fillWidth: true
+                        text: qsTr("Leave Encrypted Group")
+                        iconName: "shield-alert"
+                        variant: "Danger"
+                        buttonHeight: 34
+                        onClicked: leaveGroupConfirmDialog.open()
                     }
-                }
-
-                Item { Layout.fillHeight: true }
-
-                // Simulate Key Change (ADR-008 testing) & Remove Contact Buttons
-                SCButton {
-                    Layout.fillWidth: true
-                    text: qsTr("Simulate Key Change (ADR-008)")
-                    iconName: "refresh"
-                    variant: "Secondary"
-                    buttonHeight: 32
-                    horizontalPadding: 8
-                    onClicked: {
-                        if (workspaceRoot.wvm) {
-                            workspaceRoot.wvm.simulatePeerKeyChange(workspaceRoot.wvm.selectedPeerUserId)
-                        }
-                    }
-                }
-
-                SCButton {
-                    Layout.fillWidth: true
-                    text: qsTr("Remove Contact")
-                    iconName: "trash"
-                    variant: "Secondary"
-                    buttonHeight: 32
-                    horizontalPadding: 8
-                    onClicked: removeContactConfirmDialog.open()
-                }
-
-                SCButton {
-                    text: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked)
-                          ? qsTr("Unblock & Restore Keys")
-                          : qsTr("Block %1").arg(workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "")
-                    iconName: "shield-alert"
-                    variant: "Danger"
-                    fullWidth: true
-                    onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.togglePeerBlocked("")
                 }
             }
         }
@@ -2014,15 +2229,13 @@ Rectangle {
         property string draftHandle: ""
         property string draftName: ""
         property string draftRole: ""
-        property string draftSafety: ""
 
         onConfirmed: {
             if (workspaceRoot.wvm && draftHandle.trim().length > 0 && draftName.trim().length > 0) {
-                workspaceRoot.wvm.addContact(draftHandle.trim(), draftName.trim(), draftRole.trim(), draftSafety.trim())
+                workspaceRoot.wvm.addContact(draftHandle.trim(), draftName.trim(), draftRole.trim(), "")
                 draftHandle = ""
                 draftName = ""
                 draftRole = ""
-                draftSafety = ""
             }
         }
 
@@ -2049,18 +2262,10 @@ Rectangle {
 
                 SCTextField {
                     Layout.fillWidth: true
-                    label: qsTr("Role / Security Note")
+                    label: qsTr("Role / Security Note (Optional)")
                     placeholderText: qsTr("e.g. Senior Security Auditor")
                     text: addContactDialog.draftRole
                     onTextChanged: addContactDialog.draftRole = text
-                }
-
-                SCTextField {
-                    Layout.fillWidth: true
-                    label: qsTr("X3DH Safety Number (Optional)")
-                    placeholderText: qsTr("Leave blank for default verified fingerprint")
-                    text: addContactDialog.draftSafety
-                    onTextChanged: addContactDialog.draftSafety = text
                 }
             }
         }
@@ -2126,6 +2331,446 @@ Rectangle {
         onConfirmed: {
             if (workspaceRoot.wvm) {
                 workspaceRoot.wvm.removeContact(workspaceRoot.wvm.selectedPeerUserId)
+            }
+        }
+    }
+
+    // 4. New Direct or Group Conversation Modal Dialog
+    SCDialog {
+        id: newConversationDialog
+        objectName: "newConversationDialog"
+        title: isGroupMode ? qsTr("Create Encrypted Group") : qsTr("Start Direct Conversation")
+        confirmText: isGroupMode ? qsTr("Create Group") : qsTr("Open Chat")
+        cancelText: qsTr("Cancel")
+
+        property bool isGroupMode: false
+        property string draftGroupTitle: ""
+        property var selectedUserIds: []
+        property var unverifiedMembers: []
+
+        function resetAndOpen() {
+            isGroupMode = false
+            draftGroupTitle = ""
+            selectedUserIds = []
+            unverifiedMembers = []
+            open()
+        }
+
+        function toggleUser(userId) {
+            var arr = selectedUserIds.slice()
+            var idx = arr.indexOf(userId)
+            if (idx >= 0) {
+                arr.splice(idx, 1)
+            } else {
+                arr.push(userId)
+            }
+            selectedUserIds = arr
+            recomputeUnverified()
+        }
+
+        function selectSingleUser(userId) {
+            selectedUserIds = [userId]
+            recomputeUnverified()
+        }
+
+        function recomputeUnverified() {
+            var unverified = []
+            if (workspaceRoot.wvm) {
+                var cList = workspaceRoot.wvm.contacts
+                for (var i = 0; i < cList.length; ++i) {
+                    var c = cList[i]
+                    if (selectedUserIds.indexOf(c.userId) >= 0 && !c.isVerified) {
+                        unverified.push(c.displayName + " (" + c.handle + ")")
+                    }
+                }
+            }
+            unverifiedMembers = unverified
+        }
+
+        onConfirmed: {
+            if (!workspaceRoot.wvm) return
+            if (isGroupMode) {
+                if (draftGroupTitle.trim().length > 0 && selectedUserIds.length > 0) {
+                    workspaceRoot.wvm.createGroupConversation(draftGroupTitle.trim(), selectedUserIds)
+                }
+            } else {
+                if (selectedUserIds.length > 0) {
+                    workspaceRoot.wvm.createDirectConversation(selectedUserIds[0])
+                }
+            }
+        }
+
+        customContent: Component {
+            ColumnLayout {
+                spacing: Theme.space12
+                width: parent.width
+
+                // Tab Switcher: Direct Chat vs Encrypted Group
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 0
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 32
+                        color: !newConversationDialog.isGroupMode ? Theme.accentPrimary : Theme.backgroundSecondary
+                        radius: 6
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: qsTr("Direct Chat")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontCaption
+                            font.bold: true
+                            color: !newConversationDialog.isGroupMode ? "#FFFFFF" : Theme.textSecondary
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                newConversationDialog.isGroupMode = false
+                                newConversationDialog.selectedUserIds = []
+                                newConversationDialog.recomputeUnverified()
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 32
+                        color: newConversationDialog.isGroupMode ? Theme.accentPrimary : Theme.backgroundSecondary
+                        radius: 6
+
+                        Label {
+                            anchors.centerIn: parent
+                            text: qsTr("Encrypted Group")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontCaption
+                            font.bold: true
+                            color: newConversationDialog.isGroupMode ? "#FFFFFF" : Theme.textSecondary
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: {
+                                newConversationDialog.isGroupMode = true
+                                newConversationDialog.selectedUserIds = []
+                                newConversationDialog.recomputeUnverified()
+                            }
+                        }
+                    }
+                }
+
+                // Group Title Input (Group Mode only)
+                SCTextField {
+                    visible: newConversationDialog.isGroupMode
+                    Layout.fillWidth: true
+                    label: qsTr("Group Conversation Title")
+                    placeholderText: qsTr("e.g. Incident Response Alpha")
+                    text: newConversationDialog.draftGroupTitle
+                    onTextChanged: newConversationDialog.draftGroupTitle = text
+                }
+
+                Label {
+                    text: newConversationDialog.isGroupMode ? qsTr("Select Participants:") : qsTr("Select Contact:")
+                    font.family: Theme.fontFamilyPrimary
+                    font.pixelSize: Theme.fontCaption
+                    font.bold: true
+                    color: Theme.textPrimary
+                }
+
+                // Contact Selection List
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(180, (workspaceRoot.wvm ? workspaceRoot.wvm.contacts.length : 0) * 44)
+                    clip: true
+
+                    ColumnLayout {
+                        width: parent.width
+                        spacing: 4
+
+                        Repeater {
+                            model: workspaceRoot.wvm ? workspaceRoot.wvm.contacts : []
+
+                            delegate: Rectangle {
+                                Layout.fillWidth: true
+                                height: 40
+                                radius: 6
+                                readonly property bool isSelected: newConversationDialog.selectedUserIds.indexOf(modelData.userId) >= 0
+                                color: isSelected
+                                       ? (Theme.isDark ? "#1E293B" : "#E2E8F0")
+                                       : (contactItemMouse.containsMouse ? Theme.backgroundSecondary : "transparent")
+                                border.color: isSelected ? Theme.accentPrimary : Theme.borderSubtle
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    spacing: 8
+
+                                    SCIcon {
+                                        name: isSelected ? "shield-check" : "circle"
+                                        size: 16
+                                        color: isSelected ? Theme.accentPrimary : Theme.textMuted
+                                    }
+
+                                    SCAvatar {
+                                        displayName: modelData.displayName || "User"
+                                        userId: modelData.userId || "user"
+                                        size: 24
+                                    }
+
+                                    Label {
+                                        text: modelData.displayName || ""
+                                        font.family: Theme.fontFamilyPrimary
+                                        font.pixelSize: Theme.fontCaption
+                                        font.bold: true
+                                        color: Theme.textPrimary
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+
+                                    SCBadge {
+                                        text: modelData.isVerified ? qsTr("Verified") : qsTr("Unverified")
+                                        type: modelData.isVerified ? "Verified" : "Unverified"
+                                        badgeHeight: 16
+                                        hasDot: false
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: contactItemMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (newConversationDialog.isGroupMode) {
+                                            newConversationDialog.toggleUser(modelData.userId)
+                                        } else {
+                                            newConversationDialog.selectSingleUser(modelData.userId)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Security Warning Box for Unverified Selectees
+                Rectangle {
+                    visible: newConversationDialog.unverifiedMembers.length > 0
+                    Layout.fillWidth: true
+                    radius: 8
+                    color: Theme.isDark ? "rgba(245, 158, 11, 0.15)" : "#FEF3C7"
+                    border.color: Theme.statusWarning
+                    border.width: 1
+                    implicitHeight: unverifiedWarnCol.implicitHeight + 16
+
+                    ColumnLayout {
+                        id: unverifiedWarnCol
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 3
+
+                        RowLayout {
+                            spacing: 6
+                            SCIcon { name: "alert-triangle"; size: 14; color: Theme.statusWarning }
+                            Label {
+                                text: qsTr("Security Notice: Unverified Members Selected (%1)").arg(newConversationDialog.unverifiedMembers.length)
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontMicro
+                                font.bold: true
+                                color: Theme.statusWarning
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("The following contacts have unverified safety numbers: %1. Group messages will be encrypted to unverified identities.")
+                                .arg(newConversationDialog.unverifiedMembers.join(", "))
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: 10
+                            color: Theme.textSecondary
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 5. Add Participant to Active Group Dialog
+    SCDialog {
+        id: addParticipantDialog
+        objectName: "addParticipantDialog"
+        title: qsTr("Add Participant to Encrypted Group")
+        confirmText: qsTr("Add to Group")
+        cancelText: qsTr("Cancel")
+
+        property string selectedUserId: ""
+        property bool selectedIsUnverified: false
+        property string selectedUserName: ""
+
+        function openWithUnusedContacts() {
+            selectedUserId = ""
+            selectedIsUnverified = false
+            selectedUserName = ""
+            open()
+        }
+
+        onConfirmed: {
+            if (workspaceRoot.wvm && selectedUserId.trim().length > 0) {
+                workspaceRoot.wvm.addParticipantToActiveGroup(selectedUserId.trim())
+            }
+        }
+
+        customContent: Component {
+            ColumnLayout {
+                spacing: Theme.space12
+                width: parent.width
+
+                Label {
+                    text: qsTr("Select contact to add:")
+                    font.family: Theme.fontFamilyPrimary
+                    font.pixelSize: Theme.fontCaption
+                    font.bold: true
+                    color: Theme.textPrimary
+                }
+
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: Math.min(180, (workspaceRoot.wvm ? workspaceRoot.wvm.contacts.length : 0) * 44)
+                    clip: true
+
+                    ColumnLayout {
+                        width: parent.width
+                        spacing: 4
+
+                        Repeater {
+                            model: workspaceRoot.wvm ? workspaceRoot.wvm.contacts : []
+
+                            delegate: Rectangle {
+                                Layout.fillWidth: true
+                                height: 40
+                                radius: 6
+                                readonly property bool isSelected: addParticipantDialog.selectedUserId === modelData.userId
+                                color: isSelected
+                                       ? (Theme.isDark ? "#1E293B" : "#E2E8F0")
+                                       : (addPartMouse.containsMouse ? Theme.backgroundSecondary : "transparent")
+                                border.color: isSelected ? Theme.accentPrimary : Theme.borderSubtle
+                                border.width: 1
+
+                                RowLayout {
+                                    anchors.fill: parent
+                                    anchors.leftMargin: 8
+                                    anchors.rightMargin: 8
+                                    spacing: 8
+
+                                    SCIcon {
+                                        name: isSelected ? "shield-check" : "circle"
+                                        size: 16
+                                        color: isSelected ? Theme.accentPrimary : Theme.textMuted
+                                    }
+
+                                    SCAvatar {
+                                        displayName: modelData.displayName || "User"
+                                        userId: modelData.userId || "user"
+                                        size: 24
+                                    }
+
+                                    Label {
+                                        text: modelData.displayName || ""
+                                        font.family: Theme.fontFamilyPrimary
+                                        font.pixelSize: Theme.fontCaption
+                                        font.bold: true
+                                        color: Theme.textPrimary
+                                        elide: Text.ElideRight
+                                        Layout.fillWidth: true
+                                    }
+
+                                    SCBadge {
+                                        text: modelData.isVerified ? qsTr("Verified") : qsTr("Unverified")
+                                        type: modelData.isVerified ? "Verified" : "Unverified"
+                                        badgeHeight: 16
+                                        hasDot: false
+                                    }
+                                }
+
+                                MouseArea {
+                                    id: addPartMouse
+                                    anchors.fill: parent
+                                    hoverEnabled: true
+                                    cursorShape: Qt.PointingHandCursor
+                                    onClicked: {
+                                        addParticipantDialog.selectedUserId = modelData.userId
+                                        addParticipantDialog.selectedIsUnverified = !modelData.isVerified
+                                        addParticipantDialog.selectedUserName = modelData.displayName
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Security Warning if selected contact is unverified
+                Rectangle {
+                    visible: addParticipantDialog.selectedIsUnverified && addParticipantDialog.selectedUserId.length > 0
+                    Layout.fillWidth: true
+                    radius: 8
+                    color: Theme.isDark ? "rgba(245, 158, 11, 0.15)" : "#FEF3C7"
+                    border.color: Theme.statusWarning
+                    border.width: 1
+                    implicitHeight: addPartWarnCol.implicitHeight + 16
+
+                    ColumnLayout {
+                        id: addPartWarnCol
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        spacing: 3
+
+                        RowLayout {
+                            spacing: 6
+                            SCIcon { name: "alert-triangle"; size: 14; color: Theme.statusWarning }
+                            Label {
+                                text: qsTr("Notice: Unverified Identity")
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontMicro
+                                font.bold: true
+                                color: Theme.statusWarning
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("%1's safety number has not been verified yet. Adding this contact will downgrade the group's aggregate trust level.")
+                                .arg(addParticipantDialog.selectedUserName)
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: 10
+                            color: Theme.textSecondary
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 6. Leave Group Confirmation Dialog
+    SCDialog {
+        id: leaveGroupConfirmDialog
+        objectName: "leaveGroupConfirmDialog"
+        title: qsTr("Leave Encrypted Group")
+        message: qsTr("Are you sure you want to leave '%1'? Group sender keys will be rotated and you will no longer receive new messages from this group.")
+            .arg(workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "this group")
+        confirmText: qsTr("Leave Group")
+        cancelText: qsTr("Stay in Group")
+        isDanger: true
+        onConfirmed: {
+            if (workspaceRoot.wvm) {
+                workspaceRoot.wvm.leaveActiveGroup()
             }
         }
     }

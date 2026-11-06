@@ -33,6 +33,11 @@ class UiComponentsTest : public ::testing::Test {
         engine_.rootContext()->setContextProperty("navigationController", &navController_);
     }
 
+    void TearDown() override {
+        engine_.rootContext()->setContextProperty("appViewModel", QVariant());
+        engine_.rootContext()->setContextProperty("workspaceViewModel", QVariant());
+    }
+
     QQmlApplicationEngine engine_;
     UiTheme theme_;
     NavigationController navController_;
@@ -311,6 +316,64 @@ TEST_F(UiComponentsTest, ContactsDirectoryAndKeyChangedSecurityBanner) {
     auto* removeDialog = workspaceObj->findChild<QObject*>("removeContactConfirmDialog");
     ASSERT_NE(removeDialog, nullptr);
     EXPECT_FALSE(removeDialog->property("isOpen").toBool());
+
+    delete workspaceObj;
+}
+
+TEST_F(UiComponentsTest, GroupConversationCreationAndRosterInspection) {
+    const auto config = securecloud::client::application::ClientConfig::create_default();
+    securecloud::client::application::ClientApplication clientApp(config);
+    ASSERT_TRUE(clientApp.initialize().is_ok());
+
+    navController_.setAuthenticated(true);
+    AppViewModel appViewModel(clientApp, navController_);
+    WorkspaceViewModel workspaceViewModel(clientApp, navController_);
+
+    engine_.rootContext()->setContextProperty("appViewModel", &appViewModel);
+    engine_.rootContext()->setContextProperty("workspaceViewModel", &workspaceViewModel);
+
+    QQmlComponent workspaceComp(&engine_, QUrl("qrc:/qml/WorkspacePlaceholder.qml"));
+    ASSERT_TRUE(workspaceComp.isReady()) << workspaceComp.errorString().toStdString();
+    auto* workspaceObj = workspaceComp.create();
+    ASSERT_NE(workspaceObj, nullptr);
+
+    // 1. Verify existence of group management dialogs
+    auto* newConvDialog = workspaceObj->findChild<QObject*>("newConversationDialog");
+    ASSERT_NE(newConvDialog, nullptr);
+    EXPECT_FALSE(newConvDialog->property("isOpen").toBool());
+
+    auto* addPartDialog = workspaceObj->findChild<QObject*>("addParticipantDialog");
+    ASSERT_NE(addPartDialog, nullptr);
+    EXPECT_FALSE(addPartDialog->property("isOpen").toBool());
+
+    auto* leaveGroupDialog = workspaceObj->findChild<QObject*>("leaveGroupConfirmDialog");
+    ASSERT_NE(leaveGroupDialog, nullptr);
+    EXPECT_FALSE(leaveGroupDialog->property("isOpen").toBool());
+
+    // 2. Select seeded group conversation (SecOps Incident Bridge)
+    workspaceViewModel.selectConversation("conv-secops");
+    EXPECT_TRUE(workspaceViewModel.selectedConversationIsGroup());
+    EXPECT_GE(workspaceViewModel.selectedConversationParticipantCount(), 3);
+    EXPECT_FALSE(workspaceViewModel.selectedConversationParticipants().isEmpty());
+
+    // 3. Test aggregate verification getters
+    EXPECT_GE(workspaceViewModel.selectedGroupUnverifiedCount(), 0);
+
+    // 4. Test adding and removing a participant
+    const int initialCount = workspaceViewModel.selectedConversationParticipantCount();
+    EXPECT_TRUE(workspaceViewModel.addParticipantToActiveGroup("corina.mccoy@securecloud.org"));
+    EXPECT_EQ(workspaceViewModel.selectedConversationParticipantCount(), initialCount + 1);
+
+    EXPECT_TRUE(workspaceViewModel.removeParticipantFromActiveGroup("corina.mccoy@securecloud.org"));
+    EXPECT_EQ(workspaceViewModel.selectedConversationParticipantCount(), initialCount);
+
+    // 5. Test creating a new group conversation via ViewModel
+    const QVariantList members = {"angelina.froster@securecloud.org", "ricky.smith@securecloud.org"};
+    const QString newGroupId = workspaceViewModel.createGroupConversation("Zero-Trust Response Unit", members);
+    EXPECT_FALSE(newGroupId.isEmpty());
+    EXPECT_TRUE(workspaceViewModel.selectedConversationIsGroup());
+    EXPECT_EQ(workspaceViewModel.selectedPeerName(), "Zero-Trust Response Unit");
+    EXPECT_EQ(workspaceViewModel.selectedConversationParticipantCount(), 3); // 2 members + operator
 
     delete workspaceObj;
 }
