@@ -1,3 +1,4 @@
+#include "application/client_application.hpp"
 #include "application/client_config.hpp"
 #include "application/interfaces/i_crypto_provider.hpp"
 #include "application/interfaces/i_gateway_client.hpp"
@@ -18,6 +19,8 @@
 #include "infrastructure/adapters/memory_local_store.hpp"
 #include "infrastructure/adapters/memory_secure_storage.hpp"
 #include "infrastructure/adapters/stub_crypto_provider.hpp"
+#include "ui/navigation_controller.hpp"
+#include "ui/workspace_view_model.hpp"
 
 #include <gtest/gtest.h>
 
@@ -242,6 +245,141 @@ TEST_F(ContactsMessagingTest, MessageIdempotentRetryAndEmergencyAcknowledgement)
 
     auto acked_msg = local_store_->get_message(cid, msg.message_id()).value();
     EXPECT_TRUE(acked_msg.emergency_acknowledged());
+}
+
+TEST(WorkspaceViewModelGroupAndRetryTest, GroupConversationsAndRosterManagement) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    ui::NavigationController navController;
+    navController.setAuthenticated(true);
+    ui::WorkspaceViewModel workspace(app, navController);
+
+    // 1. Initial seeded state: Frances is direct, SecOps is group
+    workspace.selectConversation(QStringLiteral("conv-frances"));
+    EXPECT_FALSE(workspace.selectedConversationIsGroup());
+    EXPECT_EQ(workspace.selectedConversationParticipantCount(), 2);
+
+    workspace.selectConversation(QStringLiteral("conv-secops"));
+    EXPECT_TRUE(workspace.selectedConversationIsGroup());
+    EXPECT_EQ(workspace.selectedConversationParticipantCount(), 4);
+    EXPECT_GT(workspace.selectedConversationDeviceFanoutCount(), 0);
+    EXPECT_FALSE(workspace.selectedConversationParticipants().isEmpty());
+
+    // 2. Add and Remove participant from active group
+    EXPECT_TRUE(workspace.addParticipantToActiveGroup(QStringLiteral("corina.mccoy@securecloud.org")));
+    EXPECT_EQ(workspace.selectedConversationParticipantCount(), 5);
+
+    EXPECT_TRUE(workspace.removeParticipantFromActiveGroup(QStringLiteral("corina.mccoy@securecloud.org")));
+    EXPECT_EQ(workspace.selectedConversationParticipantCount(), 4);
+
+    // 3. Create a new group conversation
+    const QString newGid = workspace.createGroupConversation(
+        QStringLiteral("Frontend Strike Team"),
+        {QStringLiteral("frances.swann@securecloud.org"), QStringLiteral("daniel.hamilton@securecloud.org")});
+    EXPECT_FALSE(newGid.isEmpty());
+    workspace.selectConversation(newGid);
+    EXPECT_TRUE(workspace.selectedConversationIsGroup());
+    EXPECT_EQ(workspace.selectedPeerName(), QStringLiteral("Frontend Strike Team"));
+    // Creator (operator) + 2 invited members = 3 participants
+    EXPECT_EQ(workspace.selectedConversationParticipantCount(), 3);
+
+    // 4. Leave active group
+    EXPECT_TRUE(workspace.leaveActiveGroup());
+}
+
+TEST(WorkspaceViewModelGroupAndRetryTest, ContactsCRUDAndKeyVerificationWorkflow) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    ui::NavigationController navController;
+    navController.setAuthenticated(true);
+    ui::WorkspaceViewModel workspace(app, navController);
+
+    // 1. Add contact
+    const qsizetype initialContactCount = workspace.contacts().size();
+    EXPECT_TRUE(workspace.addContact(QStringLiteral("@eve.auditor"), QStringLiteral("Eve Auditor"),
+                                     QStringLiteral("External Red Team"), QStringLiteral("55555-44444")));
+    EXPECT_EQ(workspace.contacts().size(), initialContactCount + 1);
+
+    // 2. Update contact profile
+    EXPECT_TRUE(workspace.updateContactProfile(QStringLiteral("eve.auditor@securecloud.org"),
+                                               QStringLiteral("Eve Vance"), QStringLiteral("Senior Auditor")));
+
+    // 3. Key change simulation and non-bypassable warning flag
+    workspace.selectContact(QStringLiteral("frances.swann@securecloud.org"));
+    EXPECT_FALSE(workspace.selectedPeerKeyChanged());
+
+    workspace.simulatePeerKeyChange(QStringLiteral("frances.swann@securecloud.org"));
+    EXPECT_TRUE(workspace.selectedPeerKeyChanged());
+    EXPECT_FALSE(workspace.selectedPeerKeyChangedHandle().isEmpty());
+
+    // Outbound messaging must be blocked
+    EXPECT_FALSE(workspace.sendMessage(QStringLiteral("Should fail due to key change")));
+
+    // Verify key clears the warning
+    workspace.acceptAndVerifyPeerKey(QStringLiteral("frances.swann@securecloud.org"));
+    EXPECT_FALSE(workspace.selectedPeerKeyChanged());
+    EXPECT_TRUE(workspace.sendMessage(QStringLiteral("Key verified, hello Frances!")));
+
+    // 4. Remove contact
+    EXPECT_TRUE(workspace.removeContact(QStringLiteral("eve.auditor@securecloud.org")));
+    EXPECT_EQ(workspace.contacts().size(), initialContactCount);
+}
+
+TEST(WorkspaceViewModelGroupAndRetryTest, DeliveryFailureRetryAndEmergencyAcknowledgement) {
+    const auto config = ClientConfig::create_default();
+    ClientApplication app(config);
+    ASSERT_TRUE(app.initialize().is_ok());
+
+    ui::NavigationController navController;
+    navController.setAuthenticated(true);
+    ui::WorkspaceViewModel workspace(app, navController);
+
+    workspace.selectConversation(QStringLiteral("conv-frances"));
+
+    // 1. Simulate delivery failure
+    workspace.setSimulateDeliveryFailure(true);
+    EXPECT_TRUE(workspace.deliveryFailureSimulated());
+
+    const qsizetype initialCount = workspace.activeMessages().size();
+    EXPECT_TRUE(workspace.sendMessage(QStringLiteral("Testing failure pipeline"), 2));
+    EXPECT_EQ(workspace.activeMessages().size(), initialCount + 1);
+
+    const auto lastMsg = workspace.activeMessages().last().toMap();
+    EXPECT_EQ(lastMsg.value(QStringLiteral("deliveryState")).toString(), QStringLiteral("Failed"));
+    const QString failedMsgId = lastMsg.value(QStringLiteral("messageId")).toString();
+    const QString idemKey = lastMsg.value(QStringLiteral("idempotencyKey")).toString();
+
+    // 2. Turn off simulation and retry
+    workspace.setSimulateDeliveryFailure(false);
+    EXPECT_FALSE(workspace.deliveryFailureSimulated());
+
+    EXPECT_TRUE(workspace.retryFailedMessage(failedMsgId));
+    const auto retriedMsg = workspace.activeMessages().last().toMap();
+    EXPECT_EQ(retriedMsg.value(QStringLiteral("deliveryState")).toString(), QStringLiteral("Delivered"));
+    EXPECT_EQ(retriedMsg.value(QStringLiteral("idempotencyKey")).toString(), idemKey);
+
+    // 3. Emergency message & acknowledgement
+    workspace.selectConversation(QStringLiteral("conv-angelina"));
+    EXPECT_GT(workspace.unacknowledgedEmergencyCount(), 0);
+
+    const auto angelinaMsgs = workspace.activeMessages();
+    QString emergencyMsgId;
+    for (const auto& item : angelinaMsgs) {
+        const auto map = item.toMap();
+        if (map.value(QStringLiteral("priority")).toInt() == 3 &&
+            !map.value(QStringLiteral("emergencyAcknowledged")).toBool()) {
+            emergencyMsgId = map.value(QStringLiteral("messageId")).toString();
+            break;
+        }
+    }
+    ASSERT_FALSE(emergencyMsgId.isEmpty());
+    const int countBefore = workspace.unacknowledgedEmergencyCount();
+    EXPECT_TRUE(workspace.acknowledgeEmergencyMessage(emergencyMsgId));
+    EXPECT_EQ(workspace.unacknowledgedEmergencyCount(), countBefore - 1);
 }
 
 } // namespace

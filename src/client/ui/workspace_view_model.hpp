@@ -42,6 +42,26 @@ class WorkspaceViewModel : public QObject {
     Q_PROPERTY(QVariantList activeMessages READ activeMessages NOTIFY activeMessagesChanged)
     Q_PROPERTY(QVariantList sharedFilesForSelectedPeer READ sharedFilesForSelectedPeer NOTIFY fileTransfersChanged)
 
+    // Group & Multi-Party Conversation Bindings (CLIENT-004-T02)
+    Q_PROPERTY(bool selectedConversationIsGroup READ selectedConversationIsGroup NOTIFY selectedConversationChanged)
+    Q_PROPERTY(int selectedConversationParticipantCount READ selectedConversationParticipantCount NOTIFY
+                   selectedConversationChanged)
+    Q_PROPERTY(int selectedConversationDeviceFanoutCount READ selectedConversationDeviceFanoutCount NOTIFY
+                   selectedConversationChanged)
+    Q_PROPERTY(QVariantList selectedConversationParticipants READ selectedConversationParticipants NOTIFY
+                   selectedConversationChanged)
+
+    // ADR-008 Identity Key Change State & Warning Banner (CLIENT-004-T02)
+    Q_PROPERTY(bool selectedPeerKeyChanged READ selectedPeerKeyChanged NOTIFY selectedConversationChanged)
+    Q_PROPERTY(
+        QString selectedPeerKeyChangedHandle READ selectedPeerKeyChangedHandle NOTIFY selectedConversationChanged)
+
+    // ADR-007 Emergency Acknowledgement & Status (CLIENT-004-T02)
+    Q_PROPERTY(int unacknowledgedEmergencyCount READ unacknowledgedEmergencyCount NOTIFY selectedConversationChanged)
+    Q_PROPERTY(bool isLoadingMessages READ isLoadingMessages NOTIFY loadingMessagesChanged)
+    Q_PROPERTY(bool deliveryFailureSimulated READ deliveryFailureSimulated WRITE setDeliveryFailureSimulated NOTIFY
+                   deliveryFailureSimulatedChanged)
+
     // Selected File Transfer Properties (when activeSection == "Files")
     Q_PROPERTY(QString selectedTransferId READ selectedTransferId NOTIFY selectedTransferChanged)
     Q_PROPERTY(QVariantMap selectedTransferDetails READ selectedTransferDetails NOTIFY selectedTransferChanged)
@@ -93,6 +113,20 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] QVariantList activeMessages() const;
     [[nodiscard]] QVariantList sharedFilesForSelectedPeer() const;
 
+    // Group & Multi-Party Conversation Getters (CLIENT-004-T02)
+    [[nodiscard]] bool selectedConversationIsGroup() const;
+    [[nodiscard]] int selectedConversationParticipantCount() const;
+    [[nodiscard]] int selectedConversationDeviceFanoutCount() const;
+    [[nodiscard]] QVariantList selectedConversationParticipants() const;
+
+    // ADR-008 Key Changed & Emergency State Getters
+    [[nodiscard]] bool selectedPeerKeyChanged() const;
+    [[nodiscard]] QString selectedPeerKeyChangedHandle() const;
+    [[nodiscard]] int unacknowledgedEmergencyCount() const;
+    [[nodiscard]] bool isLoadingMessages() const noexcept { return is_loading_messages_; }
+    [[nodiscard]] bool deliveryFailureSimulated() const noexcept { return delivery_failure_simulated_; }
+    void setDeliveryFailureSimulated(bool simulated);
+
     [[nodiscard]] QString selectedTransferId() const { return selected_transfer_id_; }
     [[nodiscard]] QVariantMap selectedTransferDetails() const;
 
@@ -113,6 +147,7 @@ class WorkspaceViewModel : public QObject {
     void setHardwareKeyEnforced(bool enforced);
     [[nodiscard]] QString totpEnrollmentSecret() const { return totp_enrollment_secret_; }
 
+    // Existing Invokables
     Q_INVOKABLE void selectConversation(const QString& conversationId);
     Q_INVOKABLE void selectContact(const QString& peerUserId);
     Q_INVOKABLE void selectTransfer(const QString& transferId);
@@ -129,6 +164,28 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE void regenerateTotpSecret();
     Q_INVOKABLE void resetForEmergencyWipe();
 
+    // New Invokables for CLIENT-004-T02
+    // Contacts Directory Management
+    Q_INVOKABLE bool addContact(const QString& handle, const QString& displayName, const QString& roleNote,
+                                const QString& safetyNumber = QString());
+    Q_INVOKABLE bool updateContactProfile(const QString& userId, const QString& displayName, const QString& roleNote);
+    Q_INVOKABLE bool removeContact(const QString& userId);
+    Q_INVOKABLE void simulatePeerKeyChange(const QString& userId);
+    Q_INVOKABLE void acceptAndVerifyPeerKey(const QString& userId);
+
+    // Group Conversations Management
+    Q_INVOKABLE QString createDirectConversation(const QString& peerUserId);
+    Q_INVOKABLE QString createGroupConversation(const QString& groupTitle, const QVariantList& participantUserIds);
+    Q_INVOKABLE bool addParticipantToActiveGroup(const QString& userId);
+    Q_INVOKABLE bool removeParticipantFromActiveGroup(const QString& userId);
+    Q_INVOKABLE bool leaveActiveGroup();
+
+    // Message Retry & Emergency Acknowledgement
+    Q_INVOKABLE bool retryFailedMessage(const QString& messageId);
+    Q_INVOKABLE bool discardFailedMessage(const QString& messageId);
+    Q_INVOKABLE void setSimulateDeliveryFailure(bool enabled);
+    Q_INVOKABLE bool acknowledgeEmergencyMessage(const QString& messageId);
+
   signals:
     void activeSectionChanged();
     void searchQueryChanged();
@@ -143,6 +200,8 @@ class WorkspaceViewModel : public QObject {
     void devicesChanged();
     void localDeviceIdentityChanged();
     void mfaPolicyChanged();
+    void loadingMessagesChanged();
+    void deliveryFailureSimulatedChanged();
     void workspaceError(const QString& message);
 
   private:
@@ -160,6 +219,10 @@ class WorkspaceViewModel : public QObject {
         QString timestampText;
         int unreadCount{0};
         int lastMessagePriority{1}; // 1 = Normal, 2 = Urgent, 3 = Emergency
+        bool isGroup{false};
+        std::vector<QString> participantUserIds;
+        int authorizedDeviceCount{1};
+        QString verificationStatus{QStringLiteral("Verified")};
     };
 
     struct MessageEntry {
@@ -178,6 +241,8 @@ class WorkspaceViewModel : public QObject {
         QString cipherSuite;
         QString sha256Short;
         int priority{1}; // 1 = Normal, 2 = Urgent, 3 = Emergency
+        QString idempotencyKey;
+        bool emergencyAcknowledged{false};
     };
 
     struct FileTransferEntry {
@@ -229,6 +294,8 @@ class WorkspaceViewModel : public QObject {
     int prekey_epoch_{14};
     bool mfa_required_on_login_{true};
     bool hardware_key_enforced_{true};
+    bool is_loading_messages_{false};
+    bool delivery_failure_simulated_{false};
     QString totp_enrollment_secret_{QStringLiteral("JBSWY3DPEHPK3PXP · SHA-256 (6-digit / 30s)")};
 
     std::vector<ConversationEntry> conversations_;
