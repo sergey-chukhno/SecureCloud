@@ -195,10 +195,10 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-v3-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v4-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
+            vcpkg-msvc-v4-
             vcpkg-msvc-v3-
-            vcpkg-msvc-v2-
             vcpkg-msvc-
 
       - name: Ensure vcpkg cache directories exist
@@ -210,19 +210,19 @@ jobs:
       - name: Pre-fetch vcpkg tools
         shell: pwsh
         run: |
-          $cmakeZip = "${{ github.workspace }}/.vcpkg_downloads/cmake-4.4.3-windows-x86_64.zip"
+          $cmakeZip = "${{ github.workspace }}/.vcpkg_downloads/cmake-4.4.4-windows-x86_64.zip"
           $needsDownload = $true
           if (Test-Path -Path $cmakeZip) {
             $file = Get-Item -Path $cmakeZip
             if ($file.Length -gt 10000000) {
               $needsDownload = $false
-              Write-Host "cmake-4.4.3-windows-x86_64.zip already cached ($($file.Length) bytes)."
+              Write-Host "cmake-4.4.4-windows-x86_64.zip already cached ($($file.Length) bytes)."
             }
           }
 
           if ($needsDownload) {
-            Write-Host "Pre-fetching cmake-4.4.3-windows-x86_64.zip with retries..."
-            $url = "https://github.com/Kitware/CMake/releases/download/v4.4.3/cmake-4.4.3-windows-x86_64.zip"
+            Write-Host "Pre-fetching cmake-4.4.4-windows-x86_64.zip with retries..."
+            $url = "https://github.com/Kitware/CMake/releases/download/v4.4.4/cmake-4.4.4-windows-x86_64.zip"
             $retries = 5
             for ($i = 1; $i -le $retries; $i++) {
               Write-Host "Download attempt $i of $retries..."
@@ -279,7 +279,7 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-v3-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v4-${{ hashFiles('vcpkg.json') }}
 
       - name: Build All Targets
         shell: pwsh
