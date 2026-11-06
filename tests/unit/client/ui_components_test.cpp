@@ -18,29 +18,24 @@ using namespace securecloud::client::ui;
 
 class UiComponentsTest : public ::testing::Test {
   protected:
-    static void SetUpTestSuite() {
-        if (!qobject_cast<QGuiApplication*>(QGuiApplication::instance())) {
-            static int argc = 1;
-            static char appName[] = "UiComponentsTest";
-            static char* argv[] = {appName, nullptr};
-            // Intentionally allocate on heap to avoid static destruction order issues with gtest_main
-            [[maybe_unused]] static auto* app = new QGuiApplication(argc, argv);
-        }
-    }
-
     void SetUp() override {
         engine_.rootContext()->setContextProperty("Theme", &theme_);
         engine_.rootContext()->setContextProperty("navigationController", &navController_);
     }
 
     void TearDown() override {
+        engine_.clearComponentCache();
+        engine_.rootContext()->setContextProperty("Theme", QVariant());
+        engine_.rootContext()->setContextProperty("navigationController", QVariant());
         engine_.rootContext()->setContextProperty("appViewModel", QVariant());
         engine_.rootContext()->setContextProperty("workspaceViewModel", QVariant());
+        QCoreApplication::sendPostedEvents();
+        QCoreApplication::processEvents();
     }
 
-    QQmlApplicationEngine engine_;
     UiTheme theme_;
     NavigationController navController_;
+    QQmlApplicationEngine engine_;
 };
 
 TEST_F(UiComponentsTest, SCButtonInstantiationAndProperties) {
@@ -265,6 +260,11 @@ TEST_F(UiComponentsTest, WorkspaceAndSettingsViewsInstantiation) {
     auto* settingsObj = settingsComp.create();
     ASSERT_NE(settingsObj, nullptr);
     delete settingsObj;
+
+    engine_.rootContext()->setContextProperty("workspaceViewModel", QVariant());
+    engine_.rootContext()->setContextProperty("appViewModel", QVariant());
+    QCoreApplication::sendPostedEvents();
+    QCoreApplication::processEvents();
 }
 
 TEST_F(UiComponentsTest, ContactsDirectoryAndKeyChangedSecurityBanner) {
@@ -318,6 +318,10 @@ TEST_F(UiComponentsTest, ContactsDirectoryAndKeyChangedSecurityBanner) {
     EXPECT_FALSE(removeDialog->property("isOpen").toBool());
 
     delete workspaceObj;
+    engine_.rootContext()->setContextProperty("workspaceViewModel", QVariant());
+    engine_.rootContext()->setContextProperty("appViewModel", QVariant());
+    QCoreApplication::sendPostedEvents();
+    QCoreApplication::processEvents();
 }
 
 TEST_F(UiComponentsTest, GroupConversationCreationAndRosterInspection) {
@@ -376,6 +380,10 @@ TEST_F(UiComponentsTest, GroupConversationCreationAndRosterInspection) {
     EXPECT_EQ(workspaceViewModel.selectedConversationParticipantCount(), 3); // 2 members + operator
 
     delete workspaceObj;
+    engine_.rootContext()->setContextProperty("workspaceViewModel", QVariant());
+    engine_.rootContext()->setContextProperty("appViewModel", QVariant());
+    QCoreApplication::sendPostedEvents();
+    QCoreApplication::processEvents();
 }
 
 TEST_F(UiComponentsTest, DeliveryStateRetryAndEmergencyAcknowledgement) {
@@ -458,6 +466,10 @@ TEST_F(UiComponentsTest, DeliveryStateRetryAndEmergencyAcknowledgement) {
     EXPECT_TRUE(workspaceViewModel.searchQuery().isEmpty());
 
     delete workspaceObj;
+    engine_.rootContext()->setContextProperty("workspaceViewModel", QVariant());
+    engine_.rootContext()->setContextProperty("appViewModel", QVariant());
+    QCoreApplication::sendPostedEvents();
+    QCoreApplication::processEvents();
 }
 
 } // namespace

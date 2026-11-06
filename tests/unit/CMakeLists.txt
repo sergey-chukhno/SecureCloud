@@ -3550,7 +3550,7 @@ if(Qt6_FOUND)
         Qt6::Qml
         Qt6::Quick
         Qt6::Test
-        GTest::gtest_main
+        GTest::gtest
     )
     gtest_discover_tests(securecloud_client_foundation_test ${SECURECLOUD_TEST_PROPERTIES})
 
