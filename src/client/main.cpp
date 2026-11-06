@@ -223,7 +223,8 @@ int main(int argc, char* argv[]) {
         // 6e. Delivery Failure Simulation & Idempotent Retry Action Bar (Dark & Light 1200x800)
         workspaceViewModel.selectConversation(QStringLiteral("conv-frances"));
         workspaceViewModel.setSimulateDeliveryFailure(true);
-        (void)workspaceViewModel.sendMessage(QStringLiteral("Critical payload broadcast — packet dropped due to simulated relay timeout."), 1);
+        (void)workspaceViewModel.sendMessage(
+            QStringLiteral("Critical payload broadcast — packet dropped due to simulated relay timeout."), 1);
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
         captureWindow(QStringLiteral("workspace-failed-retry-dark-1200x800.png"), 1200, 800);
 

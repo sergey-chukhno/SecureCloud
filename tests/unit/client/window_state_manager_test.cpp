@@ -9,8 +9,7 @@ namespace {
 
 using namespace securecloud::client::ui;
 
-class WindowStateManagerTest : public ::testing::Test {
-};
+class WindowStateManagerTest : public ::testing::Test {};
 
 TEST_F(WindowStateManagerTest, DefaultValuesAndConstants) {
     QTemporaryDir tempDir;
