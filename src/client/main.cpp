@@ -186,7 +186,23 @@ int main(int argc, char* argv[]) {
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
         captureWindow(QStringLiteral("workspace-light-1200x800.png"), 1200, 800);
 
-        // 6. Authenticated Workspace state — Encrypted Files Vault View (Dark & Light 1200x800)
+        // 6. Authenticated Workspace state — Contacts Directory View (Dark & Light 1200x800)
+        workspaceViewModel.setActiveSection(QStringLiteral("Contacts"));
+        workspaceViewModel.setInspectorOpen(true);
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("workspace-contacts-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("workspace-contacts-light-1200x800.png"), 1200, 800);
+
+        // 6b. Key Change Security Alert (ADR-008 Banner) state
+        workspaceViewModel.setActiveSection(QStringLiteral("Messages"));
+        workspaceViewModel.simulatePeerKeyChange(QStringLiteral("frances.swann@securecloud.org"));
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("workspace-keychanged-dark-1200x800.png"), 1200, 800);
+        workspaceViewModel.acceptAndVerifyPeerKey(QStringLiteral("frances.swann@securecloud.org"));
+
+        // 7. Authenticated Workspace state — Encrypted Files Vault View (Dark & Light 1200x800)
         workspaceViewModel.setActiveSection(QStringLiteral("Files"));
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
         captureWindow(QStringLiteral("workspace-files-dark-1200x800.png"), 1200, 800);

@@ -262,4 +262,57 @@ TEST_F(UiComponentsTest, WorkspaceAndSettingsViewsInstantiation) {
     delete settingsObj;
 }
 
+TEST_F(UiComponentsTest, ContactsDirectoryAndKeyChangedSecurityBanner) {
+    const auto config = securecloud::client::application::ClientConfig::create_default();
+    securecloud::client::application::ClientApplication clientApp(config);
+    ASSERT_TRUE(clientApp.initialize().is_ok());
+
+    navController_.setAuthenticated(true);
+    AppViewModel appViewModel(clientApp, navController_);
+    WorkspaceViewModel workspaceViewModel(clientApp, navController_);
+
+    engine_.rootContext()->setContextProperty("appViewModel", &appViewModel);
+    engine_.rootContext()->setContextProperty("workspaceViewModel", &workspaceViewModel);
+
+    QQmlComponent workspaceComp(&engine_, QUrl("qrc:/qml/WorkspacePlaceholder.qml"));
+    ASSERT_TRUE(workspaceComp.isReady()) << workspaceComp.errorString().toStdString();
+    auto* workspaceObj = workspaceComp.create();
+    ASSERT_NE(workspaceObj, nullptr);
+
+    // 1. Verify Contacts section active state & seeded count
+    workspaceViewModel.setActiveSection("Contacts");
+    EXPECT_EQ(workspaceObj->property("activeSection").toString(), "Contacts");
+    EXPECT_EQ(workspaceViewModel.contacts().size(), 5);
+
+    // 2. Locate ADR-008 Key Changed Security Banner
+    auto* banner = workspaceObj->findChild<QObject*>("keyChangedSecurityBanner");
+    ASSERT_NE(banner, nullptr);
+    EXPECT_FALSE(banner->property("visible").toBool());
+
+    // 3. Simulate peer identity key change -> banner becomes visible
+    workspaceViewModel.simulatePeerKeyChange("frances.swann@securecloud.org");
+    EXPECT_TRUE(workspaceViewModel.selectedPeerKeyChanged());
+    EXPECT_TRUE(banner->property("visible").toBool());
+
+    // 4. Verify safety number -> banner becomes hidden again
+    workspaceViewModel.acceptAndVerifyPeerKey("frances.swann@securecloud.org");
+    EXPECT_FALSE(workspaceViewModel.selectedPeerKeyChanged());
+    EXPECT_FALSE(banner->property("visible").toBool());
+
+    // 5. Verify Add Contact Dialog & Edit Contact Dialog exist
+    auto* addDialog = workspaceObj->findChild<QObject*>("addContactDialog");
+    ASSERT_NE(addDialog, nullptr);
+    EXPECT_FALSE(addDialog->property("isOpen").toBool());
+
+    auto* editDialog = workspaceObj->findChild<QObject*>("editContactDialog");
+    ASSERT_NE(editDialog, nullptr);
+    EXPECT_FALSE(editDialog->property("isOpen").toBool());
+
+    auto* removeDialog = workspaceObj->findChild<QObject*>("removeContactConfirmDialog");
+    ASSERT_NE(removeDialog, nullptr);
+    EXPECT_FALSE(removeDialog->property("isOpen").toBool());
+
+    delete workspaceObj;
+}
+
 } // namespace

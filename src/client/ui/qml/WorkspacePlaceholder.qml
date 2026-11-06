@@ -49,7 +49,7 @@ Rectangle {
         // Zone 2 — Master List Panel (Conversations / Contacts / Encrypted Files)
         Rectangle {
             Layout.fillHeight: true
-            Layout.preferredWidth: 300
+            Layout.preferredWidth: 320
             color: Theme.backgroundSecondary
 
             Rectangle {
@@ -82,6 +82,14 @@ Rectangle {
                     }
 
                     Item { Layout.fillWidth: true }
+
+                    SCIconButton {
+                        visible: workspaceRoot.activeSection === "Contacts"
+                        iconName: "user-plus"
+                        buttonSize: 28
+                        tooltipText: qsTr("Add New Contact")
+                        onClicked: addContactDialog.open()
+                    }
 
                     SCBadge {
                         text: {
@@ -275,21 +283,40 @@ Rectangle {
                                         }
 
                                         SCIcon {
-                                            visible: workspaceRoot.activeSection !== "Files"
+                                            visible: workspaceRoot.activeSection === "Messages"
                                             name: modelData.isBlocked
                                                   ? "shield-alert"
-                                                  : (modelData.isVerified ? "shield-check" : "alert-triangle")
+                                                  : ((modelData.verificationStatus === "KeyChanged")
+                                                     ? "shield-alert"
+                                                     : (modelData.isVerified ? "shield-check" : "alert-triangle"))
                                             size: 13
-                                            color: modelData.isBlocked
+                                            color: (modelData.isBlocked || modelData.verificationStatus === "KeyChanged")
                                                    ? Theme.statusDanger
                                                    : (modelData.isVerified ? Theme.accentPrimary : Theme.statusWarning)
                                             Layout.alignment: Qt.AlignVCenter
                                         }
 
+                                        SCBadge {
+                                            visible: workspaceRoot.activeSection === "Contacts"
+                                            text: {
+                                                if (modelData.isBlocked) return qsTr("Blocked")
+                                                if (modelData.verificationStatus === "KeyChanged") return qsTr("Key Changed!")
+                                                return modelData.isVerified ? qsTr("Verified") : qsTr("Unverified")
+                                            }
+                                            type: {
+                                                if (modelData.isBlocked || modelData.verificationStatus === "KeyChanged") return "Danger"
+                                                return modelData.isVerified ? "Verified" : "Unverified"
+                                            }
+                                            badgeHeight: 18
+                                            hasDot: false
+                                            Layout.alignment: Qt.AlignVCenter
+                                        }
+
                                         Label {
+                                            visible: workspaceRoot.activeSection !== "Contacts"
                                             text: workspaceRoot.activeSection === "Files"
                                                   ? (modelData.fileSizeText || "")
-                                                  : (modelData.timestampText || modelData.handle || "")
+                                                  : (modelData.timestampText || "")
                                             font.family: Theme.fontFamilyPrimary
                                             font.pixelSize: Theme.fontMicro
                                             color: Theme.textMuted
@@ -350,7 +377,13 @@ Rectangle {
                                                     return (modelData.cipherSuite || "AES-256-GCM") + " · " + (modelData.peerDisplayName || "")
                                                 }
                                                 if (workspaceRoot.activeSection === "Contacts") {
-                                                    return modelData.roleNote || ""
+                                                    var handle = modelData.handle || ""
+                                                    var role = modelData.roleNote || ""
+                                                    var devCount = modelData.deviceCount || 1
+                                                    var str = handle
+                                                    if (role.length > 0) str += " · " + role
+                                                    str += " · " + qsTr("%1 dev%2").arg(devCount).arg(devCount > 1 ? "s" : "")
+                                                    return str
                                                 }
                                                 return modelData.lastMessagePreview || ""
                                             }
@@ -519,18 +552,20 @@ Rectangle {
                                     font.bold: true
                                     color: Theme.textPrimary
                                     elide: Text.ElideRight
-                                    Layout.maximumWidth: Math.max(100, peerHeaderBar.width - 230)
+                                    Layout.preferredWidth: implicitWidth
+                                    Layout.maximumWidth: Math.max(120, peerHeaderBar.width - 180)
                                 }
 
                                 SCBadge {
                                     text: {
+                                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return qsTr("Key Changed")
                                         if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return qsTr("Blocked")
                                         return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
                                                ? qsTr("Verified")
                                                : qsTr("Unverified")
                                     }
                                     type: {
-                                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return "Danger"
+                                        if (workspaceRoot.wvm && (workspaceRoot.wvm.selectedPeerKeyChanged || workspaceRoot.wvm.selectedPeerBlocked)) return "Danger"
                                         return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
                                                ? "Verified"
                                                : "Unverified"
@@ -597,6 +632,81 @@ Rectangle {
                                          ? qsTr("Hide Peer Security Inspector")
                                          : qsTr("Show Peer Security Inspector")
                             onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.toggleInspector()
+                        }
+                    }
+                }
+
+                // ADR-008 Non-Bypassable Identity Key Changed Security Alert Banner
+                Rectangle {
+                    id: keyChangedSecurityBanner
+                    objectName: "keyChangedSecurityBanner"
+                    visible: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerKeyChanged : false
+                    Layout.fillWidth: true
+                    implicitHeight: bannerContentColumn.implicitHeight + (Theme.space12 * 2)
+                    color: Theme.isDark ? "rgba(239, 68, 68, 0.16)" : "#FEE2E2"
+                    border.color: Theme.statusDanger
+                    border.width: 1
+
+                    ColumnLayout {
+                        id: bannerContentColumn
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: Theme.space12
+                        spacing: Theme.space8
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.space8
+
+                            SCIcon {
+                                name: "shield-alert"
+                                size: 18
+                                color: Theme.statusDanger
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            Label {
+                                text: qsTr("CRITICAL: Peer Identity Key Changed (ADR-008)")
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontBody
+                                font.bold: true
+                                color: Theme.statusDanger
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        Label {
+                            text: {
+                                var handle = workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerKeyChangedHandle : ""
+                                return qsTr("The identity key for %1 has changed unexpectedly. Outbound messaging is strictly suspended to protect against MITM eavesdropping. You must verify the new safety number to resume communication.")
+                                    .arg(handle.length > 0 ? handle : "this peer")
+                            }
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontCaption
+                            color: Theme.isDark ? "#FCA5A5" : "#991B1B"
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            Item { Layout.fillWidth: true }
+
+                            SCButton {
+                                text: qsTr("Verify Safety Number")
+                                iconName: "shield-check"
+                                variant: "Danger"
+                                buttonHeight: 30
+                                horizontalPadding: 12
+                                onClicked: {
+                                    if (workspaceRoot.wvm) {
+                                        workspaceRoot.wvm.acceptAndVerifyPeerKey(workspaceRoot.wvm.selectedPeerUserId)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1055,6 +1165,7 @@ Rectangle {
                                 selectionColor: Theme.accentPrimary
                                 selectedTextColor: "#FFFFFF"
                                 clip: true
+                                enabled: !(workspaceRoot.wvm && (workspaceRoot.wvm.selectedPeerKeyChanged || workspaceRoot.wvm.selectedPeerBlocked))
                                 onAccepted: sendCircleBtn.triggerSend()
 
                                 Text {
@@ -1065,6 +1176,12 @@ Rectangle {
                                     color: Theme.textMuted
                                     elide: Text.ElideRight
                                     text: {
+                                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) {
+                                            return qsTr("Outbound messaging suspended until safety number is verified (ADR-008)...")
+                                        }
+                                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) {
+                                            return qsTr("Cannot send message: peer is blocked...")
+                                        }
                                         if (workspaceRoot.currentPriority === 3) {
                                             return qsTr("Type an EMERGENCY priority broadcast...")
                                         }
@@ -1083,10 +1200,11 @@ Rectangle {
                             width: 38
                             height: 38
                             radius: 19
-                            readonly property bool canSend: composerInput.text.trim().length > 0
+                            readonly property bool canSend: composerInput.text.trim().length > 0 &&
+                                !(workspaceRoot.wvm && (workspaceRoot.wvm.selectedPeerKeyChanged || workspaceRoot.wvm.selectedPeerBlocked))
 
                             function triggerSend() {
-                                if (!workspaceRoot.wvm) return
+                                if (!workspaceRoot.wvm || !canSend) return
                                 var txt = composerInput.text
                                 if (txt.trim().length === 0) return
                                 workspaceRoot.animateNewMessages = true
@@ -1543,7 +1661,7 @@ Rectangle {
             readonly property bool isExpanded: workspaceRoot.wvm ? workspaceRoot.wvm.isInspectorOpen : true
             visible: Layout.preferredWidth > 0
             Layout.fillHeight: true
-            Layout.preferredWidth: isExpanded ? 292 : 0
+            Layout.preferredWidth: isExpanded ? 330 : 0
             color: Theme.backgroundPrimary
             clip: true
 
@@ -1560,10 +1678,9 @@ Rectangle {
             }
 
             ColumnLayout {
-                width: 292 - (Theme.space20 !== undefined ? Theme.space20 * 2 : 40)
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.fill: parent
+                anchors.leftMargin: Theme.space16
+                anchors.rightMargin: Theme.space16
                 anchors.topMargin: Theme.space16
                 anchors.bottomMargin: Theme.space16
                 spacing: Theme.space12
@@ -1622,42 +1739,79 @@ Rectangle {
                     SCIcon {
                         name: {
                             if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return "shield-alert"
+                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return "shield-alert"
                             return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? "shield-check" : "alert-triangle"
                         }
                         size: 16
                         color: {
-                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return Theme.statusDanger
+                            if (workspaceRoot.wvm && (workspaceRoot.wvm.selectedPeerBlocked || workspaceRoot.wvm.selectedPeerKeyChanged)) return Theme.statusDanger
                             return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? Theme.accentPrimary : Theme.statusWarning
                         }
                     }
                 }
 
-                // Quick Cryptographic Action Pills (Verify Safety Number + Send Encrypted File)
-                RowLayout {
+                SCBadge {
                     Layout.alignment: Qt.AlignHCenter
+                    text: {
+                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return qsTr("Key Changed (ADR-008)")
+                        if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) return qsTr("Blocked")
+                        return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? qsTr("Verified") : qsTr("Unverified")
+                    }
+                    type: {
+                        if (workspaceRoot.wvm && (workspaceRoot.wvm.selectedPeerKeyChanged || workspaceRoot.wvm.selectedPeerBlocked)) return "Danger"
+                        return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified) ? "Verified" : "Unverified"
+                    }
+                }
+
+                // Quick Cryptographic Action Pills (Verify Key + Edit Profile)
+                RowLayout {
+                    Layout.fillWidth: true
                     spacing: Theme.space8
 
                     SCButton {
-                        text: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
-                              ? qsTr("Verified Key")
-                              : qsTr("Verify Key")
+                        Layout.fillWidth: true
+                        text: {
+                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return qsTr("Verify Key")
+                            return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
+                                  ? qsTr("Verified Key")
+                                  : qsTr("Verify Key")
+                        }
                         iconName: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
                                   ? "shield-check"
                                   : "alert-triangle"
-                        variant: "Secondary"
-                        buttonHeight: 30
-                        horizontalPadding: 10
-                        onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.togglePeerVerified("")
+                        variant: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) ? "Danger" : "Secondary"
+                        buttonHeight: 32
+                        horizontalPadding: 8
+                        onClicked: {
+                            if (workspaceRoot.wvm) {
+                                if (workspaceRoot.wvm.selectedPeerKeyChanged) {
+                                    workspaceRoot.wvm.acceptAndVerifyPeerKey(workspaceRoot.wvm.selectedPeerUserId)
+                                } else {
+                                    workspaceRoot.wvm.togglePeerVerified("")
+                                }
+                            }
+                        }
                     }
 
                     SCButton {
-                        text: qsTr("Send File")
-                        iconName: "paperclip"
+                        Layout.fillWidth: true
+                        text: qsTr("Edit Profile")
+                        iconName: "edit"
                         variant: "Secondary"
-                        buttonHeight: 30
-                        horizontalPadding: 10
-                        onClicked: workspaceRoot.triggerSampleFileAttachment()
+                        buttonHeight: 32
+                        horizontalPadding: 8
+                        onClicked: editContactDialog.openWithCurrentContact()
                     }
+                }
+
+                SCButton {
+                    Layout.fillWidth: true
+                    text: qsTr("Send Encrypted File")
+                    iconName: "paperclip"
+                    variant: "Secondary"
+                    buttonHeight: 32
+                    horizontalPadding: 8
+                    onClicked: workspaceRoot.triggerSampleFileAttachment()
                 }
 
                 // Safety Number Monospace Box
@@ -1811,6 +1965,31 @@ Rectangle {
 
                 Item { Layout.fillHeight: true }
 
+                // Simulate Key Change (ADR-008 testing) & Remove Contact Buttons
+                SCButton {
+                    Layout.fillWidth: true
+                    text: qsTr("Simulate Key Change (ADR-008)")
+                    iconName: "refresh"
+                    variant: "Secondary"
+                    buttonHeight: 32
+                    horizontalPadding: 8
+                    onClicked: {
+                        if (workspaceRoot.wvm) {
+                            workspaceRoot.wvm.simulatePeerKeyChange(workspaceRoot.wvm.selectedPeerUserId)
+                        }
+                    }
+                }
+
+                SCButton {
+                    Layout.fillWidth: true
+                    text: qsTr("Remove Contact")
+                    iconName: "trash"
+                    variant: "Secondary"
+                    buttonHeight: 32
+                    horizontalPadding: 8
+                    onClicked: removeContactConfirmDialog.open()
+                }
+
                 SCButton {
                     text: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked)
                           ? qsTr("Unblock & Restore Keys")
@@ -1820,6 +1999,133 @@ Rectangle {
                     fullWidth: true
                     onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.togglePeerBlocked("")
                 }
+            }
+        }
+    }
+
+    // Modal Dialogs for Contact Management
+    // 1. Add Contact Modal Dialog
+    SCDialog {
+        id: addContactDialog
+        objectName: "addContactDialog"
+        title: qsTr("Add New Secure Contact")
+        confirmText: qsTr("Add Contact")
+        cancelText: qsTr("Cancel")
+        property string draftHandle: ""
+        property string draftName: ""
+        property string draftRole: ""
+        property string draftSafety: ""
+
+        onConfirmed: {
+            if (workspaceRoot.wvm && draftHandle.trim().length > 0 && draftName.trim().length > 0) {
+                workspaceRoot.wvm.addContact(draftHandle.trim(), draftName.trim(), draftRole.trim(), draftSafety.trim())
+                draftHandle = ""
+                draftName = ""
+                draftRole = ""
+                draftSafety = ""
+            }
+        }
+
+        customContent: Component {
+            ColumnLayout {
+                spacing: Theme.space12
+                width: parent.width
+
+                SCTextField {
+                    Layout.fillWidth: true
+                    label: qsTr("Peer Handle / Identity")
+                    placeholderText: qsTr("@username or username@securecloud.org")
+                    text: addContactDialog.draftHandle
+                    onTextChanged: addContactDialog.draftHandle = text
+                }
+
+                SCTextField {
+                    Layout.fillWidth: true
+                    label: qsTr("Display Name")
+                    placeholderText: qsTr("e.g. Eve Vance")
+                    text: addContactDialog.draftName
+                    onTextChanged: addContactDialog.draftName = text
+                }
+
+                SCTextField {
+                    Layout.fillWidth: true
+                    label: qsTr("Role / Security Note")
+                    placeholderText: qsTr("e.g. Senior Security Auditor")
+                    text: addContactDialog.draftRole
+                    onTextChanged: addContactDialog.draftRole = text
+                }
+
+                SCTextField {
+                    Layout.fillWidth: true
+                    label: qsTr("X3DH Safety Number (Optional)")
+                    placeholderText: qsTr("Leave blank for default verified fingerprint")
+                    text: addContactDialog.draftSafety
+                    onTextChanged: addContactDialog.draftSafety = text
+                }
+            }
+        }
+    }
+
+    // 2. Edit Contact Profile Modal Dialog
+    SCDialog {
+        id: editContactDialog
+        objectName: "editContactDialog"
+        title: qsTr("Edit Contact Profile")
+        confirmText: qsTr("Save Changes")
+        cancelText: qsTr("Cancel")
+        property string draftName: ""
+        property string draftRole: ""
+
+        function openWithCurrentContact() {
+            if (!workspaceRoot.wvm) return
+            draftName = workspaceRoot.wvm.selectedPeerName
+            draftRole = workspaceRoot.wvm.selectedPeerRoleNote
+            open()
+        }
+
+        onConfirmed: {
+            if (workspaceRoot.wvm && draftName.trim().length > 0) {
+                workspaceRoot.wvm.updateContactProfile(workspaceRoot.wvm.selectedPeerUserId, draftName.trim(), draftRole.trim())
+            }
+        }
+
+        customContent: Component {
+            ColumnLayout {
+                spacing: Theme.space12
+                width: parent.width
+
+                SCTextField {
+                    Layout.fillWidth: true
+                    label: qsTr("Display Name")
+                    placeholderText: qsTr("Display alias")
+                    text: editContactDialog.draftName
+                    onTextChanged: editContactDialog.draftName = text
+                }
+
+                SCTextField {
+                    Layout.fillWidth: true
+                    label: qsTr("Role / Security Note")
+                    placeholderText: qsTr("Cryptographic role & security context")
+                    text: editContactDialog.draftRole
+                    onTextChanged: editContactDialog.draftRole = text
+                }
+            }
+        }
+    }
+
+    // 3. Remove Contact Confirmation Dialog
+    SCDialog {
+        id: removeContactConfirmDialog
+        objectName: "removeContactConfirmDialog"
+        title: qsTr("Remove Secure Contact")
+        message: qsTr("Are you sure you want to remove %1 from your local contacts directory? All cached safety numbers for this peer will be deleted.")
+            .arg(workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "this contact")
+        confirmText: qsTr("Remove Contact")
+        cancelText: qsTr("Keep Contact")
+        isDanger: true
+        onConfirmed: {
+            if (workspaceRoot.wvm) {
+                workspaceRoot.wvm.removeContact(workspaceRoot.wvm.selectedPeerUserId)
             }
         }
     }

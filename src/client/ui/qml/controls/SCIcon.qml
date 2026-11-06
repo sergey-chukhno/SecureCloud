@@ -404,6 +404,74 @@ Item {
                 ctx.lineTo(12.5, 10.5);
                 ctx.closePath();
                 ctx.stroke();
+            } else if (n === "plus") {
+                ctx.beginPath();
+                ctx.moveTo(12, 5);
+                ctx.lineTo(12, 19);
+                ctx.moveTo(5, 12);
+                ctx.lineTo(19, 12);
+                ctx.stroke();
+            } else if (n === "user-plus") {
+                ctx.beginPath();
+                ctx.arc(9, 8, 3.5, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(3, 19);
+                ctx.arcTo(3, 15, 6, 15, 3);
+                ctx.lineTo(12, 15);
+                ctx.arcTo(15, 15, 15, 19, 3);
+                ctx.lineTo(15, 19);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(19, 8);
+                ctx.lineTo(19, 14);
+                ctx.moveTo(16, 11);
+                ctx.lineTo(22, 11);
+                ctx.stroke();
+            } else if (n === "edit") {
+                ctx.beginPath();
+                ctx.moveTo(11, 4);
+                ctx.lineTo(4, 4);
+                ctx.arcTo(2, 4, 2, 6, 2);
+                ctx.lineTo(2, 20);
+                ctx.arcTo(2, 22, 4, 22, 2);
+                ctx.lineTo(18, 22);
+                ctx.arcTo(20, 22, 20, 20, 2);
+                ctx.lineTo(20, 13);
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(18.5, 2.5);
+                ctx.lineTo(21.5, 5.5);
+                ctx.lineTo(12, 15);
+                ctx.lineTo(9, 15);
+                ctx.lineTo(9, 12);
+                ctx.closePath();
+                ctx.stroke();
+            } else if (n === "trash") {
+                ctx.beginPath();
+                ctx.moveTo(3, 6);
+                ctx.lineTo(21, 6);
+                ctx.moveTo(19, 6);
+                ctx.lineTo(18, 20);
+                ctx.arcTo(18, 21, 17, 21, 1);
+                ctx.lineTo(7, 21);
+                ctx.arcTo(6, 21, 6, 20, 1);
+                ctx.lineTo(5, 6);
+                ctx.moveTo(8, 6);
+                ctx.lineTo(9, 3);
+                ctx.lineTo(15, 3);
+                ctx.lineTo(16, 6);
+                ctx.stroke();
+            } else if (n === "refresh" || n === "refresh-cw") {
+                ctx.beginPath();
+                ctx.arc(12, 12, 7, -0.2 * Math.PI, 1.4 * Math.PI);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(17, 4);
+                ctx.lineTo(18, 9);
+                ctx.lineTo(13, 9);
+                ctx.stroke();
             }
         }
     }
