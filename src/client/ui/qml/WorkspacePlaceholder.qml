@@ -49,7 +49,9 @@ Rectangle {
         // Zone 2 — Master List Panel (Conversations / Contacts / Encrypted Files)
         Rectangle {
             Layout.fillHeight: true
-            Layout.preferredWidth: 320
+            Layout.preferredWidth: 280
+            Layout.minimumWidth: 240
+            Layout.maximumWidth: 320
             color: Theme.backgroundSecondary
 
             Rectangle {
@@ -305,15 +307,6 @@ Rectangle {
                                         }
 
                                         SCBadge {
-                                            visible: workspaceRoot.activeSection === "Messages" && (modelData.isGroup === true)
-                                            text: qsTr("Group")
-                                            type: "Info"
-                                            badgeHeight: 18
-                                            hasDot: false
-                                            Layout.alignment: Qt.AlignVCenter
-                                        }
-
-                                        SCBadge {
                                             visible: workspaceRoot.activeSection === "Contacts"
                                             text: {
                                                 if (modelData.isBlocked) return qsTr("Blocked")
@@ -345,6 +338,15 @@ Rectangle {
                                     RowLayout {
                                         Layout.fillWidth: true
                                         spacing: 6
+
+                                        SCBadge {
+                                            visible: workspaceRoot.activeSection === "Messages" && (modelData.isGroup === true)
+                                            text: qsTr("Group")
+                                            type: "Info"
+                                            badgeHeight: 18
+                                            hasDot: false
+                                            Layout.alignment: Qt.AlignVCenter
+                                        }
 
                                         // ADR-007 Priority Pill Badge (Urgent / Emergency)
                                         Rectangle {
@@ -479,24 +481,29 @@ Rectangle {
                         }
 
                         Label {
-                            text: qsTr("No matching items found")
+                            text: (workspaceRoot.wvm && workspaceRoot.wvm.searchQuery !== "")
+                                  ? qsTr("No matching items found for \"%1\"").arg(workspaceRoot.wvm.searchQuery)
+                                  : qsTr("No items in this section")
                             font.family: Theme.fontFamilyPrimary
                             font.pixelSize: Theme.fontBody
                             font.bold: true
                             color: Theme.textSecondary
                             horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                         }
 
                         SCButton {
-                            text: qsTr("Reset Filter")
+                            visible: workspaceRoot.wvm ? (workspaceRoot.wvm.searchQuery !== "") : false
+                            text: qsTr("Clear Search")
+                            iconName: "close"
                             variant: "Secondary"
                             buttonHeight: 30
                             Layout.alignment: Qt.AlignHCenter
                             onClicked: {
                                 masterSearchField.text = ""
                                 if (workspaceRoot.wvm) {
-                                    workspaceRoot.wvm.searchQuery = ""
+                                    workspaceRoot.wvm.clearSearchQuery()
                                 }
                             }
                         }
@@ -510,7 +517,7 @@ Rectangle {
             id: zone3Pane
             Layout.fillWidth: true
             Layout.fillHeight: true
-            Layout.minimumWidth: 320
+            Layout.minimumWidth: 240
             color: Theme.backgroundPrimary
             clip: true
 
@@ -518,7 +525,7 @@ Rectangle {
 
             // 3A. Conversation Stream & Floating Composer (active when section is Messages or Contacts)
             ColumnLayout {
-                visible: workspaceRoot.activeSection !== "Files"
+                visible: (workspaceRoot.activeSection !== "Files") && (workspaceRoot.wvm ? (workspaceRoot.wvm.selectedConversationId !== "") : true)
                 anchors.fill: parent
                 spacing: 0
 
@@ -736,6 +743,60 @@ Rectangle {
                     }
                 }
 
+                // ADR-007 Active Emergency Alert Banner (unacknowledged messages in active conversation)
+                Rectangle {
+                    id: emergencyAlertBanner
+                    objectName: "emergencyAlertBanner"
+                    visible: workspaceRoot.wvm ? (workspaceRoot.wvm.unacknowledgedEmergencyCount > 0) : false
+                    Layout.fillWidth: true
+                    implicitHeight: emergencyBannerCol.implicitHeight + (Theme.space12 * 2)
+                    color: Theme.isDark ? "rgba(239, 68, 68, 0.18)" : "#FEE2E2"
+                    border.color: Theme.statusDanger
+                    border.width: 1
+
+                    ColumnLayout {
+                        id: emergencyBannerCol
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.top: parent.top
+                        anchors.margins: Theme.space12
+                        spacing: Theme.space8
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: Theme.space8
+
+                            SCIcon {
+                                name: "shield-alert"
+                                size: 18
+                                color: Theme.statusDanger
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+
+                            Label {
+                                text: qsTr("ACTIVE EMERGENCY ALERT: %1 unacknowledged message%2 requiring immediate operator action")
+                                      .arg(workspaceRoot.wvm ? workspaceRoot.wvm.unacknowledgedEmergencyCount : 0)
+                                      .arg((workspaceRoot.wvm && workspaceRoot.wvm.unacknowledgedEmergencyCount > 1) ? "s" : "")
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontBody
+                                font.bold: true
+                                color: Theme.statusDanger
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("One or more high-priority encrypted emergency alerts have been transmitted in this thread. Operating procedures require explicit receipt acknowledgement.")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontCaption
+                            color: Theme.isDark ? "#FCA5A5" : "#991B1B"
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                    }
+                }
+
                 // Active Conversation Messages & Inline Encrypted File Cards
                 ListView {
                     id: messageListView
@@ -912,24 +973,85 @@ Rectangle {
                                         implicitHeight: msgColumn.implicitHeight + (Theme.space12 * 2)
                                         radius: 16
                                         color: {
+                                            if (modelData.deliveryState === "Failed") {
+                                                return Theme.isDark ? "#2D1518" : "#FEF2F2"
+                                            }
                                             if (msgDelegate.isEmergency && !modelData.isSelf) {
                                                 return Theme.isDark ? "#2A161D" : "#FEF2F2"
                                             }
                                             return modelData.isSelf ? Theme.bubbleSelf : Theme.bubblePeer
                                         }
                                         border.color: {
+                                            if (modelData.deliveryState === "Failed") return Theme.statusDanger
                                             if (msgDelegate.isEmergency) return Theme.statusDanger
                                             if (msgDelegate.isUrgent) return Theme.statusWarning
                                             if (modelData.isFileTransfer) return Theme.accentPrimary
                                             return "transparent"
                                         }
-                                        border.width: (msgDelegate.msgPriority > 1) ? 1.5 : (modelData.isFileTransfer ? 1 : 0)
+                                        border.width: (modelData.deliveryState === "Failed" || msgDelegate.msgPriority > 1) ? 1.5 : (modelData.isFileTransfer ? 1 : 0)
 
                                         ColumnLayout {
                                             id: msgColumn
                                             anchors.fill: parent
                                             anchors.margins: Theme.space12
                                             spacing: 6
+
+                                            // ADR-007 Emergency Acknowledgement Card
+                                            Rectangle {
+                                                visible: msgDelegate.isEmergency
+                                                Layout.fillWidth: true
+                                                implicitHeight: emergencyAckCol.implicitHeight + 14
+                                                radius: 8
+                                                color: modelData.emergencyAcknowledged
+                                                       ? (Theme.isDark ? "rgba(16, 185, 129, 0.15)" : "#D1FAE5")
+                                                       : (Theme.isDark ? "rgba(239, 68, 68, 0.25)" : "#FEE2E2")
+                                                border.color: modelData.emergencyAcknowledged ? Theme.statusSuccess : Theme.statusDanger
+                                                border.width: 1
+
+                                                ColumnLayout {
+                                                    id: emergencyAckCol
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+                                                    spacing: 6
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 6
+
+                                                        SCIcon {
+                                                            name: modelData.emergencyAcknowledged ? "shield-check" : "shield-alert"
+                                                            size: 13
+                                                            color: modelData.emergencyAcknowledged ? Theme.statusSuccess : Theme.statusDanger
+                                                        }
+
+                                                        Label {
+                                                            text: modelData.emergencyAcknowledged
+                                                                  ? qsTr("✓ Emergency Acknowledged")
+                                                                  : qsTr("ACTION REQUIRED: Unacknowledged Emergency Alert")
+                                                            font.family: Theme.fontFamilyPrimary
+                                                            font.pixelSize: 10
+                                                            font.bold: true
+                                                            color: modelData.emergencyAcknowledged ? Theme.statusSuccess : Theme.statusDanger
+                                                            Layout.fillWidth: true
+                                                            wrapMode: Text.WordWrap
+                                                        }
+                                                    }
+
+                                                    SCButton {
+                                                        visible: !modelData.emergencyAcknowledged
+                                                        text: qsTr("Acknowledge Receipt")
+                                                        iconName: "shield-check"
+                                                        variant: "Danger"
+                                                        buttonHeight: 26
+                                                        horizontalPadding: 10
+                                                        onClicked: {
+                                                            if (workspaceRoot.wvm) {
+                                                                workspaceRoot.wvm.acknowledgeEmergencyMessage(modelData.messageId)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
 
                                             // Inline Encrypted File Attachment Card Header
                                             RowLayout {
@@ -1008,6 +1130,75 @@ Rectangle {
                                                 wrapMode: Text.WordWrap
                                                 Layout.fillWidth: true
                                             }
+
+                                            // Failed Delivery Warning & Idempotent Retry Action Bar
+                                            Rectangle {
+                                                visible: modelData.isSelf && modelData.deliveryState === "Failed"
+                                                Layout.fillWidth: true
+                                                implicitHeight: failedActionCol.implicitHeight + 14
+                                                radius: 8
+                                                color: Theme.isDark ? "rgba(239, 68, 68, 0.22)" : "#FEE2E2"
+                                                border.color: Theme.statusDanger
+                                                border.width: 1
+
+                                                ColumnLayout {
+                                                    id: failedActionCol
+                                                    anchors.fill: parent
+                                                    anchors.margins: 8
+                                                    spacing: 6
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 6
+
+                                                        SCIcon {
+                                                            name: "alert-circle"
+                                                            size: 13
+                                                            color: Theme.statusDanger
+                                                        }
+
+                                                        Label {
+                                                            text: qsTr("Delivery Failed — network endpoint unreachable")
+                                                            font.family: Theme.fontFamilyPrimary
+                                                            font.pixelSize: 10
+                                                            font.bold: true
+                                                            color: Theme.statusDanger
+                                                            Layout.fillWidth: true
+                                                        }
+                                                    }
+
+                                                    RowLayout {
+                                                        Layout.fillWidth: true
+                                                        spacing: 8
+
+                                                        SCButton {
+                                                            text: qsTr("Retry Send (Idempotent)")
+                                                            iconName: "refresh-cw"
+                                                            variant: "Danger"
+                                                            buttonHeight: 26
+                                                            horizontalPadding: 10
+                                                            onClicked: {
+                                                                if (workspaceRoot.wvm) {
+                                                                    workspaceRoot.wvm.retryFailedMessage(modelData.messageId)
+                                                                }
+                                                            }
+                                                        }
+
+                                                        SCButton {
+                                                            text: qsTr("Discard")
+                                                            iconName: "trash"
+                                                            variant: "Ghost"
+                                                            buttonHeight: 26
+                                                            horizontalPadding: 8
+                                                            onClicked: {
+                                                                if (workspaceRoot.wvm) {
+                                                                    workspaceRoot.wvm.discardFailedMessage(modelData.messageId)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
 
@@ -1018,18 +1209,49 @@ Rectangle {
                                         spacing: 4
 
                                         SCIcon {
-                                            name: "lock"
-                                            size: 10
-                                            color: Theme.textMuted
+                                            name: {
+                                                var state = modelData.deliveryState || ""
+                                                if (state === "Failed") return "alert-circle"
+                                                if (state === "LocalPending") return "clock"
+                                                if (state === "Submitting") return "upload-cloud"
+                                                if (state === "Accepted") return "check"
+                                                if (state === "Delivered") return "check-check"
+                                                if (state === "Read") return "shield-check"
+                                                return "lock"
+                                            }
+                                            size: 12
+                                            color: {
+                                                var state = modelData.deliveryState || ""
+                                                if (state === "Failed") return Theme.statusDanger
+                                                if (state === "Read") return Theme.statusSuccess
+                                                if (state === "Delivered") return Theme.accentPrimary
+                                                if (state === "Accepted" || state === "Submitting") return Theme.accentPrimary
+                                                return Theme.textMuted
+                                            }
                                         }
 
                                         Label {
-                                            text: qsTr("E2EE · %1 · %2")
-                                                  .arg(modelData.deliveryState || "Encrypted")
-                                                  .arg(modelData.timestampText || "")
+                                            text: {
+                                                var state = modelData.deliveryState || ""
+                                                var ts = modelData.timestampText || ""
+                                                if (state === "Failed") return qsTr("Delivery Failed · %1").arg(ts)
+                                                if (state === "LocalPending") return qsTr("Pending Local Queue · %1").arg(ts)
+                                                if (state === "Submitting") return qsTr("Submitting via mTLS... · %1").arg(ts)
+                                                if (state === "Accepted") return qsTr("Accepted by Gateway · %1").arg(ts)
+                                                if (state === "Delivered") return qsTr("Delivered · E2EE · %1").arg(ts)
+                                                if (state === "Read") return qsTr("Read · Verified · %1").arg(ts)
+                                                return qsTr("E2EE · %1 · %2").arg(state).arg(ts)
+                                            }
                                             font.family: Theme.fontFamilyPrimary
                                             font.pixelSize: 10
-                                            color: Theme.textMuted
+                                            font.bold: (modelData.deliveryState === "Failed")
+                                            color: {
+                                                var state = modelData.deliveryState || ""
+                                                if (state === "Failed") return Theme.statusDanger
+                                                if (state === "Read") return Theme.isDark ? "#6EE7B7" : "#047857"
+                                                if (state === "Delivered") return Theme.accentPrimary
+                                                return Theme.textMuted
+                                            }
                                         }
                                     }
                                 }
@@ -1057,6 +1279,81 @@ Rectangle {
                             }
                         }
                     }
+
+                    // Empty Conversation Stream State (Double Ratchet Initialized)
+                    ColumnLayout {
+                        visible: (messageListView.count === 0) && (workspaceRoot.wvm && workspaceRoot.wvm.selectedConversationId !== "") && !(workspaceRoot.wvm && workspaceRoot.wvm.isLoadingMessages)
+                        anchors.centerIn: parent
+                        width: Math.min(360, parent.width - 48)
+                        spacing: Theme.space12
+
+                        Rectangle {
+                            width: 56
+                            height: 56
+                            radius: 28
+                            color: Theme.isDark ? "rgba(37, 99, 235, 0.16)" : "#EFF6FF"
+                            border.color: Theme.accentPrimary
+                            border.width: 1
+                            Layout.alignment: Qt.AlignHCenter
+
+                            SCIcon {
+                                anchors.centerIn: parent
+                                name: "lock"
+                                size: 26
+                                color: Theme.accentPrimary
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("End-to-End Encrypted Session Initialized")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontBody
+                            font.bold: true
+                            color: Theme.textPrimary
+                            horizontalAlignment: Text.AlignHCenter
+                            Layout.fillWidth: true
+                        }
+
+                        Label {
+                            text: qsTr("Messages and files in this thread are cryptographically secured with the Double Ratchet and X3DH protocols. Send a message to advance the ratchet.")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontCaption
+                            color: Theme.textMuted
+                            horizontalAlignment: Text.AlignHCenter
+                            wrapMode: Text.WordWrap
+                            Layout.fillWidth: true
+                        }
+                    }
+
+                    // Loading Messages State Overlay
+                    ColumnLayout {
+                        visible: workspaceRoot.wvm ? workspaceRoot.wvm.isLoadingMessages : false
+                        anchors.centerIn: parent
+                        spacing: Theme.space12
+
+                        SCIcon {
+                            name: "refresh-cw"
+                            size: 28
+                            color: Theme.accentPrimary
+                            Layout.alignment: Qt.AlignHCenter
+
+                            RotationAnimation on rotation {
+                                running: workspaceRoot.wvm ? workspaceRoot.wvm.isLoadingMessages : false
+                                loops: Animation.Infinite
+                                from: 0
+                                to: 360
+                                duration: 1000
+                            }
+                        }
+
+                        Label {
+                            text: qsTr("Loading encrypted messages...")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontBody
+                            color: Theme.textSecondary
+                            Layout.alignment: Qt.AlignHCenter
+                        }
+                    }
                 }
 
                 // Floating Pill Composer Bar (Element 4 of Visual Reference Blueprint)
@@ -1069,6 +1366,7 @@ Rectangle {
                     Layout.topMargin: Theme.space4
                     height: 54
                     radius: 20
+                    clip: true
                     color: Theme.backgroundSecondary
                     border.color: {
                         if (workspaceRoot.currentPriority === 3) return Theme.statusDanger
@@ -1091,7 +1389,7 @@ Rectangle {
                         // Attach Encrypted File Button (Paperclip)
                         SCIconButton {
                             iconName: "paperclip"
-                            buttonSize: 34
+                            buttonSize: 32
                             tooltipText: qsTr("Attach & Encrypt File (AES-256-GCM)")
                             onClicked: workspaceRoot.triggerSampleFileAttachment()
                         }
@@ -1100,7 +1398,7 @@ Rectangle {
                         Rectangle {
                             id: composerPriorityBtn
                             height: 30
-                            width: priorityBtnRow.implicitWidth + 16
+                            width: priorityBtnRow.implicitWidth + 14
                             radius: 15
                             color: {
                                 if (workspaceRoot.currentPriority === 3) {
@@ -1182,9 +1480,71 @@ Rectangle {
                             }
                         }
 
+                        // Network Failure Simulation Toggle Chip (CLIENT-004-T05)
+                        Rectangle {
+                            id: failSimChip
+                            height: 30
+                            width: (workspaceRoot.wvm && workspaceRoot.wvm.deliveryFailureSimulated)
+                                   ? (failSimRow.implicitWidth + 12)
+                                   : 30
+                            radius: 15
+                            color: (workspaceRoot.wvm && workspaceRoot.wvm.deliveryFailureSimulated)
+                                   ? (Theme.isDark ? "rgba(239, 68, 68, 0.28)" : "#FEE2E2")
+                                   : (failSimMouse.containsMouse ? Theme.backgroundElevated : Theme.backgroundPrimary)
+                            border.color: (workspaceRoot.wvm && workspaceRoot.wvm.deliveryFailureSimulated)
+                                          ? Theme.statusDanger
+                                          : Theme.borderSubtle
+                            border.width: 1
+
+                            RowLayout {
+                                id: failSimRow
+                                anchors.centerIn: parent
+                                spacing: 3
+
+                                SCIcon {
+                                    name: "alert-circle"
+                                    size: 13
+                                    color: (workspaceRoot.wvm && workspaceRoot.wvm.deliveryFailureSimulated)
+                                           ? Theme.statusDanger
+                                           : Theme.textMuted
+                                }
+
+                                Label {
+                                    visible: workspaceRoot.wvm && workspaceRoot.wvm.deliveryFailureSimulated
+                                    text: qsTr("Fail ON")
+                                    font.family: Theme.fontFamilyPrimary
+                                    font.pixelSize: 10
+                                    font.bold: true
+                                    color: Theme.statusDanger
+                                }
+                            }
+
+                            ToolTip {
+                                visible: failSimMouse.containsMouse
+                                text: (workspaceRoot.wvm && workspaceRoot.wvm.deliveryFailureSimulated)
+                                      ? qsTr("Simulate Delivery Failure (Active: outbound sends will fail)")
+                                      : qsTr("Simulate Delivery Failure (Click to test packet drop & retry)")
+                                delay: 250
+                                timeout: 2500
+                            }
+
+                            MouseArea {
+                                id: failSimMouse
+                                anchors.fill: parent
+                                hoverEnabled: true
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    if (workspaceRoot.wvm) {
+                                        workspaceRoot.wvm.setSimulateDeliveryFailure(!workspaceRoot.wvm.deliveryFailureSimulated)
+                                    }
+                                }
+                            }
+                        }
+
                         // Seamless Integrated Text Input inside the Floating Pill
                         Item {
                             Layout.fillWidth: true
+                            Layout.minimumWidth: 60
                             Layout.fillHeight: true
 
                             TextInput {
@@ -1288,6 +1648,74 @@ Rectangle {
                                 cursorShape: Qt.PointingHandCursor
                                 onClicked: sendCircleBtn.triggerSend()
                             }
+                        }
+                    }
+                }
+            }
+
+            // 3C. No Conversation Selected State (when selectedConversationId is empty and section !== "Files")
+            ColumnLayout {
+                visible: (workspaceRoot.activeSection !== "Files") && (workspaceRoot.wvm ? (workspaceRoot.wvm.selectedConversationId === "") : false)
+                anchors.centerIn: parent
+                width: Math.min(380, parent.width - 48)
+                spacing: Theme.space16
+
+                Rectangle {
+                    width: 64
+                    height: 64
+                    radius: 32
+                    color: Theme.isDark ? "rgba(255, 255, 255, 0.06)" : "#F3F4F6"
+                    border.color: Theme.borderSubtle
+                    border.width: 1
+                    Layout.alignment: Qt.AlignHCenter
+
+                    SCIcon {
+                        anchors.centerIn: parent
+                        name: "workspace"
+                        size: 30
+                        color: Theme.textMuted
+                    }
+                }
+
+                Label {
+                    text: qsTr("No Conversation Selected")
+                    font.family: Theme.fontFamilyPrimary
+                    font.pixelSize: Theme.fontTitle
+                    font.bold: true
+                    color: Theme.textPrimary
+                    horizontalAlignment: Text.AlignHCenter
+                    Layout.fillWidth: true
+                }
+
+                Label {
+                    text: qsTr("Select a secure thread from the sidebar or initiate a new end-to-end encrypted session.")
+                    font.family: Theme.fontFamilyPrimary
+                    font.pixelSize: Theme.fontBody
+                    color: Theme.textMuted
+                    horizontalAlignment: Text.AlignHCenter
+                    wrapMode: Text.WordWrap
+                    Layout.fillWidth: true
+                }
+
+                RowLayout {
+                    Layout.alignment: Qt.AlignHCenter
+                    spacing: 12
+
+                    SCButton {
+                        text: qsTr("New Conversation")
+                        iconName: "plus"
+                        variant: "Primary"
+                        buttonHeight: 34
+                        onClicked: workspaceRoot.isNewConversationModalOpen = true
+                    }
+
+                    SCButton {
+                        text: qsTr("Browse Contacts")
+                        iconName: "contacts"
+                        variant: "Secondary"
+                        buttonHeight: 34
+                        onClicked: {
+                            if (workspaceRoot.wvm) workspaceRoot.wvm.activeSection = "Contacts"
                         }
                     }
                 }
@@ -1402,6 +1830,19 @@ Rectangle {
                     clip: true
                     contentWidth: availableWidth
                     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
+
+                    ScrollBar.vertical: ScrollBar {
+                        policy: ScrollBar.AsNeeded
+                        width: 6
+                        contentItem: Rectangle {
+                            implicitWidth: 6
+                            radius: 3
+                            color: Theme.isDark ? "rgba(255, 255, 255, 0.28)" : "rgba(0, 0, 0, 0.25)"
+                        }
+                        background: Rectangle {
+                            color: "transparent"
+                        }
+                    }
 
                     ColumnLayout {
                         width: vaultScrollView.availableWidth
@@ -1696,7 +2137,9 @@ Rectangle {
             readonly property bool isExpanded: workspaceRoot.wvm ? workspaceRoot.wvm.isInspectorOpen : true
             visible: Layout.preferredWidth > 0
             Layout.fillHeight: true
-            Layout.preferredWidth: isExpanded ? 330 : 0
+            Layout.preferredWidth: isExpanded ? Math.min(260, Math.max(210, workspaceRoot.width * 0.28)) : 0
+            Layout.minimumWidth: isExpanded ? 200 : 0
+            Layout.maximumWidth: 280
             color: Theme.backgroundPrimary
             clip: true
 
@@ -1714,11 +2157,11 @@ Rectangle {
 
             ColumnLayout {
                 anchors.fill: parent
-                anchors.leftMargin: Theme.space16
-                anchors.rightMargin: Theme.space16
-                anchors.topMargin: Theme.space16
-                anchors.bottomMargin: Theme.space16
-                spacing: Theme.space12
+                anchors.leftMargin: Theme.space12
+                anchors.rightMargin: Theme.space12
+                anchors.topMargin: Theme.space12
+                anchors.bottomMargin: Theme.space12
+                spacing: Theme.space8
                 opacity: inspectorDrawer.isExpanded ? 1.0 : 0.0
 
                 Behavior on opacity {
@@ -1808,45 +2251,42 @@ Rectangle {
                         }
                     }
 
-                    // Quick Cryptographic Action Pills (Verify Key + Edit Profile)
-                    RowLayout {
+                    // Quick Cryptographic Action Buttons (Verify Safety Number + Edit Profile)
+                    SCButton {
                         Layout.fillWidth: true
-                        spacing: Theme.space8
-
-                        SCButton {
-                            Layout.fillWidth: true
-                            text: {
-                                if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return qsTr("Verify Key")
-                                return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
-                                      ? qsTr("Verified Key")
-                                      : qsTr("Verify Key")
-                            }
-                            iconName: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
-                                      ? "shield-check"
-                                      : "alert-triangle"
-                            variant: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) ? "Danger" : "Secondary"
-                            buttonHeight: 32
-                            horizontalPadding: 8
-                            onClicked: {
-                                if (workspaceRoot.wvm) {
-                                    if (workspaceRoot.wvm.selectedPeerKeyChanged) {
-                                        workspaceRoot.wvm.acceptAndVerifyPeerKey(workspaceRoot.wvm.selectedPeerUserId)
-                                    } else {
-                                        workspaceRoot.wvm.togglePeerVerified("")
-                                    }
+                        text: {
+                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) return qsTr("Verify Safety Number")
+                            return (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
+                                  ? qsTr("Verified Safety Number")
+                                  : qsTr("Verify Safety Number")
+                        }
+                        iconName: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerVerified)
+                                  ? "shield-check"
+                                  : "alert-triangle"
+                        variant: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerKeyChanged) ? "Danger" : "Secondary"
+                        buttonHeight: 32
+                        horizontalPadding: 8
+                        fontSize: Theme.fontCaption
+                        onClicked: {
+                            if (workspaceRoot.wvm) {
+                                if (workspaceRoot.wvm.selectedPeerKeyChanged) {
+                                    workspaceRoot.wvm.acceptAndVerifyPeerKey(workspaceRoot.wvm.selectedPeerUserId)
+                                } else {
+                                    workspaceRoot.wvm.togglePeerVerified("")
                                 }
                             }
                         }
+                    }
 
-                        SCButton {
-                            Layout.fillWidth: true
-                            text: qsTr("Edit Profile")
-                            iconName: "edit"
-                            variant: "Secondary"
-                            buttonHeight: 32
-                            horizontalPadding: 8
-                            onClicked: editContactDialog.openWithCurrentContact()
-                        }
+                    SCButton {
+                        Layout.fillWidth: true
+                        text: qsTr("Edit Profile & Notes")
+                        iconName: "edit"
+                        variant: "Secondary"
+                        buttonHeight: 32
+                        horizontalPadding: 8
+                        fontSize: Theme.fontCaption
+                        onClicked: editContactDialog.openWithCurrentContact()
                     }
 
                     SCButton {
@@ -1856,6 +2296,7 @@ Rectangle {
                         variant: "Secondary"
                         buttonHeight: 32
                         horizontalPadding: 8
+                        fontSize: Theme.fontCaption
                         onClicked: workspaceRoot.triggerSampleFileAttachment()
                     }
 
@@ -1886,9 +2327,9 @@ Rectangle {
                                 anchors.margins: 7
                                 text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerSafetyNumber : ""
                                 font.family: Theme.fontFamilyMonospace
-                                font.pixelSize: 11
+                                font.pixelSize: 10
                                 color: Theme.accentPrimary
-                                wrapMode: Text.WordWrap
+                                wrapMode: Text.WrapAnywhere
                             }
                         }
                     }
@@ -2013,11 +2454,12 @@ Rectangle {
                     // Simulate Key Change (ADR-008 testing) & Remove Contact Buttons
                     SCButton {
                         Layout.fillWidth: true
-                        text: qsTr("Simulate Key Change (ADR-008)")
+                        text: qsTr("Simulate Key Change")
                         iconName: "refresh"
                         variant: "Secondary"
                         buttonHeight: 32
                         horizontalPadding: 8
+                        fontSize: Theme.fontCaption
                         onClicked: {
                             if (workspaceRoot.wvm) {
                                 workspaceRoot.wvm.simulatePeerKeyChange(workspaceRoot.wvm.selectedPeerUserId)
@@ -2032,16 +2474,20 @@ Rectangle {
                         variant: "Secondary"
                         buttonHeight: 32
                         horizontalPadding: 8
+                        fontSize: Theme.fontCaption
                         onClicked: removeContactConfirmDialog.open()
                     }
 
                     SCButton {
+                        Layout.fillWidth: true
                         text: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked)
-                              ? qsTr("Unblock & Restore Keys")
+                              ? qsTr("Unblock Peer")
                               : qsTr("Block %1").arg(workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "")
                         iconName: "shield-alert"
                         variant: "Danger"
-                        fullWidth: true
+                        buttonHeight: 32
+                        horizontalPadding: 8
+                        fontSize: Theme.fontCaption
                         onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.togglePeerBlocked("")
                     }
                 }
@@ -2092,11 +2538,12 @@ Rectangle {
                     // Add Participant Action Button
                     SCButton {
                         Layout.fillWidth: true
-                        text: qsTr("+ Add Participant")
+                        text: qsTr("Add Participant")
                         iconName: "user-plus"
                         variant: "Secondary"
                         buttonHeight: 32
                         horizontalPadding: 8
+                        fontSize: Theme.fontCaption
                         onClicked: addParticipantDialog.openWithUnusedContacts()
                     }
 
@@ -2120,6 +2567,19 @@ Rectangle {
                         Layout.fillWidth: true
                         Layout.fillHeight: true
                         clip: true
+
+                        ScrollBar.vertical: ScrollBar {
+                            policy: ScrollBar.AsNeeded
+                            width: 6
+                            contentItem: Rectangle {
+                                implicitWidth: 6
+                                radius: 3
+                                color: Theme.isDark ? "rgba(255, 255, 255, 0.28)" : "rgba(0, 0, 0, 0.25)"
+                            }
+                            background: Rectangle {
+                                color: "transparent"
+                            }
+                        }
 
                         ColumnLayout {
                             width: parent.width
@@ -2487,6 +2947,19 @@ Rectangle {
                     Layout.preferredHeight: Math.min(180, (workspaceRoot.wvm ? workspaceRoot.wvm.contacts.length : 0) * 44)
                     clip: true
 
+                    ScrollBar.vertical: ScrollBar {
+                        policy: ScrollBar.AsNeeded
+                        width: 6
+                        contentItem: Rectangle {
+                            implicitWidth: 6
+                            radius: 3
+                            color: Theme.isDark ? "rgba(255, 255, 255, 0.28)" : "rgba(0, 0, 0, 0.25)"
+                        }
+                        background: Rectangle {
+                            color: "transparent"
+                        }
+                    }
+
                     ColumnLayout {
                         width: parent.width
                         spacing: 4
@@ -2644,6 +3117,19 @@ Rectangle {
                     Layout.fillWidth: true
                     Layout.preferredHeight: Math.min(180, (workspaceRoot.wvm ? workspaceRoot.wvm.contacts.length : 0) * 44)
                     clip: true
+
+                    ScrollBar.vertical: ScrollBar {
+                        policy: ScrollBar.AsNeeded
+                        width: 6
+                        contentItem: Rectangle {
+                            implicitWidth: 6
+                            radius: 3
+                            color: Theme.isDark ? "rgba(255, 255, 255, 0.28)" : "rgba(0, 0, 0, 0.25)"
+                        }
+                        background: Rectangle {
+                            color: "transparent"
+                        }
+                    }
 
                     ColumnLayout {
                         width: parent.width

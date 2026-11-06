@@ -189,6 +189,7 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE bool discardFailedMessage(const QString& messageId);
     Q_INVOKABLE void setSimulateDeliveryFailure(bool enabled);
     Q_INVOKABLE bool acknowledgeEmergencyMessage(const QString& messageId);
+    Q_INVOKABLE void clearSearchQuery();
 
   signals:
     void activeSectionChanged();

@@ -212,6 +212,45 @@ int main(int argc, char* argv[]) {
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
         captureWindow(QStringLiteral("workspace-group-light-1200x800.png"), 1200, 800);
 
+        // 6d. Emergency Alert Banner & Unacknowledged Message (Dark & Light 1200x800)
+        workspaceViewModel.selectConversation(QStringLiteral("conv-angelina"));
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("workspace-emergency-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("workspace-emergency-light-1200x800.png"), 1200, 800);
+
+        // 6e. Delivery Failure Simulation & Idempotent Retry Action Bar (Dark & Light 1200x800)
+        workspaceViewModel.selectConversation(QStringLiteral("conv-frances"));
+        workspaceViewModel.setSimulateDeliveryFailure(true);
+        (void)workspaceViewModel.sendMessage(QStringLiteral("Critical payload broadcast — packet dropped due to simulated relay timeout."), 1);
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("workspace-failed-retry-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("workspace-failed-retry-light-1200x800.png"), 1200, 800);
+        workspaceViewModel.setSimulateDeliveryFailure(false);
+
+        // 6f. 1-to-1 Corina McCoy Chat & Full Inspector at Compact 1000x680 (verifying no truncation or overflow)
+        workspaceViewModel.setActiveSection(QStringLiteral("Messages"));
+        workspaceViewModel.selectConversation(QStringLiteral("conv-corina"));
+        workspaceViewModel.setInspectorOpen(true);
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("workspace-corina-dark-1000x680.png"), 1000, 680);
+
+        // 6f-2. 1-to-1 Frances Swann Chat at Compact 1000x680 (verifying Zone 2 group names & Zone 4 buttons)
+        workspaceViewModel.selectConversation(QStringLiteral("conv-frances"));
+        captureWindow(QStringLiteral("workspace-frances-dark-1000x680.png"), 1000, 680);
+
+        // 6g. Group Creation Modal with custom transparent scrollbar
+        auto* newConvModal = window->findChild<QObject*>("newConversationDialog");
+        if (newConvModal) {
+            newConvModal->setProperty("isGroupMode", true);
+            newConvModal->setProperty("isOpen", true);
+            captureWindow(QStringLiteral("workspace-group-modal-dark-1000x680.png"), 1000, 680);
+            newConvModal->setProperty("isOpen", false);
+        }
+
         // 7. Authenticated Workspace state — Encrypted Files Vault View (Dark & Light 1200x800)
         workspaceViewModel.setActiveSection(QStringLiteral("Files"));
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);

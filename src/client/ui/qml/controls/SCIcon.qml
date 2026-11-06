@@ -472,6 +472,49 @@ Item {
                 ctx.lineTo(18, 9);
                 ctx.lineTo(13, 9);
                 ctx.stroke();
+            } else if (n === "alert-circle") {
+                ctx.beginPath();
+                ctx.arc(12, 12, 9, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(12, 8);
+                ctx.lineTo(12, 13);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.arc(12, 16, 1.0, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (n === "clock") {
+                ctx.beginPath();
+                ctx.arc(12, 12, 9, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(12, 7);
+                ctx.lineTo(12, 12);
+                ctx.lineTo(15.5, 14);
+                ctx.stroke();
+            } else if (n === "check-check") {
+                ctx.beginPath();
+                ctx.moveTo(2, 12.5);
+                ctx.lineTo(6.5, 17);
+                ctx.lineTo(15, 7);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(9, 12.5);
+                ctx.lineTo(13.5, 17);
+                ctx.lineTo(22, 7);
+                ctx.stroke();
+            } else if (n === "upload-cloud") {
+                ctx.beginPath();
+                ctx.moveTo(12, 17);
+                ctx.lineTo(12, 7);
+                ctx.moveTo(8.5, 10.5);
+                ctx.lineTo(12, 7);
+                ctx.lineTo(15.5, 10.5);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(6, 19);
+                ctx.lineTo(18, 19);
+                ctx.stroke();
             } else if (n === "users") {
                 ctx.beginPath();
                 ctx.arc(9, 7, 3.5, 0, Math.PI * 2);

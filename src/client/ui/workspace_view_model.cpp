@@ -1559,6 +1559,9 @@ bool WorkspaceViewModel::retryFailedMessage(const QString& messageId) {
             if (conv) {
                 conv->lastMessagePreview = QStringLiteral("YOU: %1").arg(msg.text);
             }
+            (void)app_.bootstrap().messaging_manager().retry_failed_message(
+                domain::ConversationId(msg.conversationId.toStdString()),
+                domain::MessageId(msg.messageId.toStdString()));
             emit activeMessagesChanged();
             emit conversationsChanged();
             return true;
@@ -1603,6 +1606,10 @@ bool WorkspaceViewModel::acknowledgeEmergencyMessage(const QString& messageId) {
         }
     }
     return false;
+}
+
+void WorkspaceViewModel::clearSearchQuery() {
+    setSearchQuery(QString());
 }
 
 } // namespace securecloud::client::ui

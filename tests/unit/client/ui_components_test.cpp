@@ -378,4 +378,86 @@ TEST_F(UiComponentsTest, GroupConversationCreationAndRosterInspection) {
     delete workspaceObj;
 }
 
+TEST_F(UiComponentsTest, DeliveryStateRetryAndEmergencyAcknowledgement) {
+    const auto config = securecloud::client::application::ClientConfig::create_default();
+    securecloud::client::application::ClientApplication clientApp(config);
+    ASSERT_TRUE(clientApp.initialize().is_ok());
+
+    navController_.setAuthenticated(true);
+    AppViewModel appViewModel(clientApp, navController_);
+    WorkspaceViewModel workspaceViewModel(clientApp, navController_);
+
+    engine_.rootContext()->setContextProperty("appViewModel", &appViewModel);
+    engine_.rootContext()->setContextProperty("workspaceViewModel", &workspaceViewModel);
+
+    QQmlComponent workspaceComp(&engine_, QUrl("qrc:/qml/WorkspacePlaceholder.qml"));
+    ASSERT_TRUE(workspaceComp.isReady()) << workspaceComp.errorString().toStdString();
+    auto* workspaceObj = workspaceComp.create();
+    ASSERT_NE(workspaceObj, nullptr);
+
+    // 1. Verify existence of emergency alert banner
+    auto* emergencyBanner = workspaceObj->findChild<QObject*>("emergencyAlertBanner");
+    ASSERT_NE(emergencyBanner, nullptr);
+
+    // 2. Select conversation with emergency message (conv-angelina)
+    workspaceViewModel.selectConversation("conv-angelina");
+    EXPECT_EQ(workspaceViewModel.unacknowledgedEmergencyCount(), 2);
+    EXPECT_TRUE(emergencyBanner->property("visible").toBool());
+
+    // 3. Acknowledge emergency messages
+    EXPECT_TRUE(workspaceViewModel.acknowledgeEmergencyMessage("msg-5"));
+    EXPECT_EQ(workspaceViewModel.unacknowledgedEmergencyCount(), 1);
+    EXPECT_TRUE(emergencyBanner->property("visible").toBool());
+
+    EXPECT_TRUE(workspaceViewModel.acknowledgeEmergencyMessage("msg-6"));
+    EXPECT_EQ(workspaceViewModel.unacknowledgedEmergencyCount(), 0);
+    EXPECT_FALSE(emergencyBanner->property("visible").toBool());
+
+    // 4. Test delivery failure simulation toggle
+    EXPECT_FALSE(workspaceViewModel.deliveryFailureSimulated());
+    workspaceViewModel.setSimulateDeliveryFailure(true);
+    EXPECT_TRUE(workspaceViewModel.deliveryFailureSimulated());
+
+    // 5. Send message with failure simulation active
+    EXPECT_TRUE(workspaceViewModel.sendMessage("Simulated packet drop payload", 1));
+    const auto activeMsgs = workspaceViewModel.activeMessages();
+    ASSERT_FALSE(activeMsgs.isEmpty());
+    const auto lastMsg = activeMsgs.last().toMap();
+    EXPECT_EQ(lastMsg.value("deliveryState").toString(), "Failed");
+    const QString failedMsgId = lastMsg.value("messageId").toString();
+    const QString idemKey = lastMsg.value("idempotencyKey").toString();
+    EXPECT_FALSE(failedMsgId.isEmpty());
+    EXPECT_FALSE(idemKey.isEmpty());
+
+    // 6. Test idempotent retry
+    EXPECT_TRUE(workspaceViewModel.retryFailedMessage(failedMsgId));
+    const auto activeMsgsAfterRetry = workspaceViewModel.activeMessages();
+    const auto retriedMsg = activeMsgsAfterRetry.last().toMap();
+    EXPECT_EQ(retriedMsg.value("deliveryState").toString(), "Delivered");
+    EXPECT_EQ(retriedMsg.value("idempotencyKey").toString(), idemKey); // Preserved
+
+    // 7. Test discard failed message
+    EXPECT_TRUE(workspaceViewModel.sendMessage("Transient drop to be discarded", 1));
+    const auto msgsBeforeDiscard = workspaceViewModel.activeMessages();
+    const auto discardMsg = msgsBeforeDiscard.last().toMap();
+    EXPECT_EQ(discardMsg.value("deliveryState").toString(), "Failed");
+    const QString discardMsgId = discardMsg.value("messageId").toString();
+
+    EXPECT_TRUE(workspaceViewModel.discardFailedMessage(discardMsgId));
+    const auto msgsAfterDiscard = workspaceViewModel.activeMessages();
+    EXPECT_EQ(msgsAfterDiscard.size(), msgsBeforeDiscard.size() - 1);
+
+    // Turn failure simulation back off
+    workspaceViewModel.setSimulateDeliveryFailure(false);
+    EXPECT_FALSE(workspaceViewModel.deliveryFailureSimulated());
+
+    // 8. Test Search Query and clearSearchQuery
+    workspaceViewModel.setSearchQuery("nonexistent_filter_query");
+    EXPECT_EQ(workspaceViewModel.searchQuery(), "nonexistent_filter_query");
+    workspaceViewModel.clearSearchQuery();
+    EXPECT_TRUE(workspaceViewModel.searchQuery().isEmpty());
+
+    delete workspaceObj;
+}
+
 } // namespace
