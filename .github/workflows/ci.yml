@@ -21,7 +21,7 @@ jobs:
   # ============================================================================
   quality-gates:
     name: Quality Gates (Formatting, Clang-Tidy, Contracts)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -56,7 +56,7 @@ jobs:
   # ============================================================================
   macos-build-test:
     name: macOS (AppleClang / arm64)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
