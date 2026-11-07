@@ -53,6 +53,20 @@ application::ClientResult<std::vector<domain::Conversation>> MemoryLocalStore::l
     return application::ClientResult<std::vector<domain::Conversation>>::ok(std::move(result));
 }
 
+application::ClientResult<void> MemoryLocalStore::delete_conversation(const domain::ConversationId& id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    const auto it = conversations_.find(id);
+    if (it == conversations_.end()) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Conversation not found"));
+    }
+    conversations_.erase(it);
+    messages_.erase(id);
+    return application::ClientResult<void>::ok();
+}
+
 application::ClientResult<void> MemoryLocalStore::save_message(const domain::Message& message) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!is_open_) {
@@ -80,6 +94,44 @@ application::ClientResult<std::vector<domain::Message>> MemoryLocalStore::get_me
     return application::ClientResult<std::vector<domain::Message>>::ok(std::move(result));
 }
 
+application::ClientResult<domain::Message> MemoryLocalStore::get_message(const domain::ConversationId& conversation_id,
+                                                                         const domain::MessageId& message_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<domain::Message>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    const auto it = messages_.find(conversation_id);
+    if (it == messages_.end()) {
+        return application::ClientResult<domain::Message>::error(
+            application::ClientError::storage("Message not found"));
+    }
+    for (const auto& msg : it->second) {
+        if (msg.message_id() == message_id) {
+            return application::ClientResult<domain::Message>::ok(msg);
+        }
+    }
+    return application::ClientResult<domain::Message>::error(application::ClientError::storage("Message not found"));
+}
+
+application::ClientResult<void> MemoryLocalStore::update_message(const domain::Message& message) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    auto it = messages_.find(message.conversation_id());
+    if (it == messages_.end()) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Message not found"));
+    }
+    for (auto& msg : it->second) {
+        if (msg.message_id() == message.message_id()) {
+            msg = message;
+            return application::ClientResult<void>::ok();
+        }
+    }
+    return application::ClientResult<void>::error(application::ClientError::storage("Message not found"));
+}
+
 application::ClientResult<void> MemoryLocalStore::save_contact(const domain::Contact& contact) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!is_open_) {
@@ -87,6 +139,20 @@ application::ClientResult<void> MemoryLocalStore::save_contact(const domain::Con
     }
     contacts_[contact.user_id()] = contact;
     return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<domain::Contact> MemoryLocalStore::get_contact(const domain::UserId& user_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<domain::Contact>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    const auto it = contacts_.find(user_id);
+    if (it == contacts_.end()) {
+        return application::ClientResult<domain::Contact>::error(
+            application::ClientError::storage("Contact not found"));
+    }
+    return application::ClientResult<domain::Contact>::ok(it->second);
 }
 
 application::ClientResult<std::vector<domain::Contact>> MemoryLocalStore::list_contacts() {
@@ -101,6 +167,19 @@ application::ClientResult<std::vector<domain::Contact>> MemoryLocalStore::list_c
         result.push_back(contact);
     }
     return application::ClientResult<std::vector<domain::Contact>>::ok(std::move(result));
+}
+
+application::ClientResult<void> MemoryLocalStore::delete_contact(const domain::UserId& user_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    const auto it = contacts_.find(user_id);
+    if (it == contacts_.end()) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Contact not found"));
+    }
+    contacts_.erase(it);
+    return application::ClientResult<void>::ok();
 }
 
 void MemoryLocalStore::clear() {

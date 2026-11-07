@@ -262,7 +262,7 @@ Item {
             id: sideRail
             visible: navShell.showShellNavigation
             Layout.fillHeight: true
-            Layout.preferredWidth: navShell.isSidebarCollapsed ? 64 : 236
+            Layout.preferredWidth: navShell.isSidebarCollapsed ? 64 : 200
             color: Theme.backgroundSecondary
 
             Rectangle {
@@ -288,12 +288,12 @@ Item {
                     Layout.topMargin: Theme.space4
                     Layout.bottomMargin: Theme.space4
                     Layout.leftMargin: navShell.isSidebarCollapsed ? 0 : Theme.space4
-                    spacing: Theme.space8
+                    spacing: Theme.space4
 
                     Rectangle {
                         visible: !navShell.isSidebarCollapsed
-                        width: 28
-                        height: 28
+                        width: 24
+                        height: 24
                         radius: Theme.radiusSmall
                         color: Theme.isDark ? "#13233D" : "#DBEAFE"
                         border.color: Theme.accentPrimary
@@ -302,7 +302,7 @@ Item {
                         SCIcon {
                             anchors.centerIn: parent
                             name: "shield-check"
-                            size: 16
+                            size: 14
                             color: Theme.accentPrimary
                         }
                     }
@@ -310,7 +310,7 @@ Item {
                     Label {
                         visible: !navShell.isSidebarCollapsed
                         text: qsTr("SecureCloud")
-                        font.pixelSize: Theme.fontSubtitle
+                        font.pixelSize: Theme.fontBody
                         font.bold: true
                         font.family: Theme.fontFamilyPrimary
                         color: Theme.textPrimary
@@ -321,14 +321,14 @@ Item {
                     SCIconButton {
                         visible: !navShell.isSidebarCollapsed
                         iconName: Theme.isDark ? "sun" : "moon"
-                        buttonSize: 30
+                        buttonSize: 26
                         tooltipText: Theme.isDark ? qsTr("Switch to Light Theme") : qsTr("Switch to Dark Theme")
                         onClicked: Theme.toggleTheme()
                     }
 
                     SCIconButton {
                         iconName: navShell.isSidebarCollapsed ? "sidebar-expand" : "sidebar-collapse"
-                        buttonSize: 30
+                        buttonSize: 26
                         Layout.alignment: navShell.isSidebarCollapsed ? Qt.AlignHCenter : Qt.AlignVCenter
                         tooltipText: navShell.isSidebarCollapsed ? qsTr("Expand Sidebar") : qsTr("Collapse Sidebar")
                         onClicked: navShell.isSidebarCollapsed = !navShell.isSidebarCollapsed

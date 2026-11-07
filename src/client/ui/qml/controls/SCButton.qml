@@ -13,6 +13,8 @@ FocusScope {
     property string iconName: ""
     property string iconText: ""
     property bool fullWidth: false
+    property int fontSize: Theme.fontBody
+    property bool elideText: true
 
     Accessible.role: Accessible.Button
     Accessible.name: control.text
@@ -32,6 +34,7 @@ FocusScope {
         id: bg
         anchors.fill: parent
         radius: Theme.radiusMedium
+        clip: true
         color: {
             if (!control.enabled) {
                 return Theme.isDark ? "#1C2433" : "#E2E8F0"
@@ -81,6 +84,7 @@ FocusScope {
         RowLayout {
             id: contentRow
             anchors.centerIn: parent
+            width: Math.min(implicitWidth, Math.max(0, parent.width - (control.horizontalPadding * 2)))
             spacing: Theme.space8
 
             // Vector Icon
@@ -126,7 +130,7 @@ FocusScope {
                 id: labelText
                 text: control.busy ? qsTr("Processing...") : control.text
                 font.family: Theme.fontFamilyPrimary
-                font.pixelSize: Theme.fontBody
+                font.pixelSize: control.fontSize
                 font.bold: control.variant === "Primary" || control.variant === "Danger"
                 color: {
                     if (!control.enabled) {
@@ -137,7 +141,10 @@ FocusScope {
                     }
                     return Theme.textPrimary
                 }
+                elide: control.elideText ? Text.ElideRight : Text.ElideNone
+                horizontalAlignment: Text.AlignHCenter
                 Layout.alignment: Qt.AlignVCenter
+                Layout.fillWidth: true
             }
         }
 

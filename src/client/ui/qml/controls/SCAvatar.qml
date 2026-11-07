@@ -16,11 +16,12 @@ Item {
     function getInitials(name, fallbackId) {
         var str = (name && name.trim().length > 0) ? name.trim() : fallbackId;
         if (!str || str.length === 0) return "?";
-        var parts = str.split(" ");
+        var cleanStr = str.replace(/[()\[\]{}@]/g, "").trim();
+        var parts = cleanStr.split(/\s+/);
         if (parts.length >= 2 && parts[0].length > 0 && parts[1].length > 0) {
             return (parts[0][0] + parts[1][0]).toUpperCase();
         }
-        return str.substring(0, Math.min(2, str.length)).toUpperCase();
+        return cleanStr.substring(0, Math.min(2, cleanStr.length)).toUpperCase();
     }
 
     function getHashColor(str) {

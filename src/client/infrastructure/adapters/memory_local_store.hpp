@@ -19,13 +19,19 @@ class MemoryLocalStore final : public application::interfaces::ILocalStore {
     application::ClientResult<void> save_conversation(const domain::Conversation& conversation) override;
     application::ClientResult<domain::Conversation> get_conversation(const domain::ConversationId& id) override;
     application::ClientResult<std::vector<domain::Conversation>> list_conversations() override;
+    application::ClientResult<void> delete_conversation(const domain::ConversationId& id) override;
 
     application::ClientResult<void> save_message(const domain::Message& message) override;
     application::ClientResult<std::vector<domain::Message>> get_messages(const domain::ConversationId& id,
                                                                          std::size_t limit) override;
+    application::ClientResult<domain::Message> get_message(const domain::ConversationId& conversation_id,
+                                                           const domain::MessageId& message_id) override;
+    application::ClientResult<void> update_message(const domain::Message& message) override;
 
     application::ClientResult<void> save_contact(const domain::Contact& contact) override;
+    application::ClientResult<domain::Contact> get_contact(const domain::UserId& user_id) override;
     application::ClientResult<std::vector<domain::Contact>> list_contacts() override;
+    application::ClientResult<void> delete_contact(const domain::UserId& user_id) override;
 
     void clear();
 
