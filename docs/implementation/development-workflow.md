@@ -317,8 +317,8 @@ The official CI pipeline is authored in `.github/workflows/ci.yml`. It uses expl
 
 | Job Name | Runner Version | Responsibilities |
 | :--- | :--- | :--- |
-| **`quality-gates`** | `macos-14` | Canonical quality gate: `.clang-format` check, `clang-tidy` static analysis (`WarningsAsErrors: '*'`), Protobuf/gRPC contract smoke test. Avoids running expensive static analysis three times. |
-| **`macos-build-test`** | `macos-14` | Native AppleClang build (`ci-macos`) and 81/81 CTest suite execution. |
+| **`quality-gates`** | `macos-15` | Canonical quality gate: `.clang-format` check, `clang-tidy` static analysis (`WarningsAsErrors: '*'`), Protobuf/gRPC contract smoke test. Avoids running expensive static analysis three times. |
+| **`macos-build-test`** | `macos-15` | Native AppleClang build (`ci-macos`) and 81/81 CTest suite execution. |
 | **`windows-msvc-build-test`** | `windows-2022` | Native MSVC 2022 build (`ci-windows-msvc`) with vcpkg binary cache restore and CTest suite execution. |
 | **`windows-mingw-build-test`** | `windows-2022` | Native MinGW GCC build (`ci-windows-mingw`) using precompiled MSYS2 UCRT64 packages and CTest suite execution. |
 
