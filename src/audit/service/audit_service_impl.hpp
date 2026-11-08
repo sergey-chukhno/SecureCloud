@@ -2,6 +2,7 @@
 
 #include "securecloud/audit/v1/audit.grpc.pb.h"
 #include "security/grpc_producer_identity_validator.hpp"
+#include "security/internal_security_event_recorder.hpp"
 #include "service/audit_ingestion_service.hpp"
 #include "service/audit_proto_mapper.hpp"
 
@@ -12,7 +13,8 @@ namespace securecloud::audit::service {
 
 class AuditServiceImpl final : public v1::AuditIngestionService::Service {
   public:
-    explicit AuditServiceImpl(std::shared_ptr<AuditIngestionService> ingestion_service);
+    explicit AuditServiceImpl(std::shared_ptr<AuditIngestionService> ingestion_service,
+                              std::shared_ptr<security::InternalSecurityEventRecorder> security_recorder = nullptr);
 
     grpc::Status SubmitAuditEvent(grpc::ServerContext* context, const v1::SubmitAuditEventRequest* request,
                                   v1::SubmitAuditEventResponse* response) override;
@@ -22,6 +24,7 @@ class AuditServiceImpl final : public v1::AuditIngestionService::Service {
 
   private:
     std::shared_ptr<AuditIngestionService> ingestion_service_;
+    std::shared_ptr<security::InternalSecurityEventRecorder> security_recorder_;
 
     static grpc::Status map_error_to_grpc_status(const IngestionResult& result);
 };

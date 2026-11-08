@@ -1216,3 +1216,20 @@ target_link_libraries(securecloud_audit_retention_integration_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_retention_integration_test)
+
+# Audit Service Internal Security Integration Test Suite (AUDIT-009-T06)
+add_executable(securecloud_audit_internal_security_integration_test
+        audit_internal_security_integration_test.cpp
+)
+
+target_link_libraries(securecloud_audit_internal_security_integration_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_internal_security_integration_test)
