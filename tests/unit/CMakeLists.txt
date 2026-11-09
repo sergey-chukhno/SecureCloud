@@ -3637,6 +3637,64 @@ target_link_libraries(securecloud_audit_server_stop_test PRIVATE
 
 gtest_discover_tests(securecloud_audit_server_stop_test)
 
+# Audit Service Metrics & Telemetry Unit Test Suite (AUDIT-011-T01)
+add_executable(securecloud_audit_metrics_test
+        audit/audit_metrics_test.cpp
+)
+
+target_link_libraries(securecloud_audit_metrics_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_metrics_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Queue & Aggregator Telemetry Unit Test Suite (AUDIT-011-T03)
+add_executable(securecloud_audit_queue_telemetry_test
+        audit/audit_queue_telemetry_test.cpp
+)
+
+target_link_libraries(securecloud_audit_queue_telemetry_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_queue_telemetry_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Persistence & Resilience Telemetry Unit Test Suite (AUDIT-011-T04)
+add_executable(securecloud_audit_persistence_telemetry_test
+        audit/audit_persistence_telemetry_test.cpp
+)
+
+target_link_libraries(securecloud_audit_persistence_telemetry_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_persistence_telemetry_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Diagnostics Unit Test Suite (AUDIT-011-T05)
+add_executable(securecloud_audit_diagnostics_test
+        audit/audit_diagnostics_test.cpp
+)
+
+target_link_libraries(securecloud_audit_diagnostics_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_diagnostics_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Desktop Client Foundation Test Suite (CLIENT-001-T01 through CLIENT-001-T05)
 if(Qt6_FOUND)
     add_executable(securecloud_client_foundation_test

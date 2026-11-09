@@ -1,5 +1,6 @@
 #include "security/internal_security_event_recorder.hpp"
 #include "service/audit_service_impl.hpp"
+#include "telemetry/audit_metrics.hpp"
 
 #include <chrono>
 #include <gmock/gmock.h>
@@ -33,10 +34,11 @@ class MockAuditEventRepository : public repository::IAuditEventRepository {
 class AuditServiceImplTest : public ::testing::Test {
   protected:
     void SetUp() override {
+        telemetry::AuditMetrics::instance().reset();
         security::GrpcProducerIdentityValidator::set_bypass_peer_verification_for_testing(true);
         mock_repo_ = std::make_shared<NiceMock<MockAuditEventRepository>>();
 
-        // Default behavior for secondary implicit persistence calls (e.g., internal security event logging)
+        // Default behavior for secondary implicit persistence calls
         ON_CALL(*mock_repo_, insert_batch(_)).WillByDefault(Return(true));
 
         ingestion_service_ = std::make_shared<AuditIngestionService>(mock_repo_);
@@ -83,6 +85,10 @@ TEST_F(AuditServiceImplTest, RejectsMissingEvent) {
 
     auto status = service_->SubmitAuditEvent(&context, &request, &response);
     EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+
+    std::string metrics_text = telemetry::AuditMetrics::instance().to_prometheus_text();
+    EXPECT_NE(metrics_text.find("audit_ingestion_requests_total{rpc=\"SubmitAuditEvent\",status=\"rejected\"} 1"),
+              std::string::npos);
 }
 
 TEST_F(AuditServiceImplTest, SubmitSingleEventHappyPath) {
@@ -99,6 +105,12 @@ TEST_F(AuditServiceImplTest, SubmitSingleEventHappyPath) {
     EXPECT_TRUE(response.success());
     EXPECT_FALSE(response.event_id().empty());
     EXPECT_GT(response.received_at_ms(), 0);
+
+    std::string metrics_text = telemetry::AuditMetrics::instance().to_prometheus_text();
+    EXPECT_NE(metrics_text.find("audit_ingestion_requests_total{rpc=\"SubmitAuditEvent\",status=\"success\"} 1"),
+              std::string::npos);
+    EXPECT_NE(metrics_text.find("audit_ingested_events_total{producer=\"auth\",severity=\"info\"} 1"),
+              std::string::npos);
 }
 
 TEST_F(AuditServiceImplTest, SubmitBoundedBatchSuccess) {
@@ -117,6 +129,12 @@ TEST_F(AuditServiceImplTest, SubmitBoundedBatchSuccess) {
     EXPECT_EQ(response.accepted_count(), 100u);
     EXPECT_EQ(response.rejected_count(), 0u);
     EXPECT_EQ(response.rejected_event_ids_size(), 0);
+
+    std::string metrics_text = telemetry::AuditMetrics::instance().to_prometheus_text();
+    EXPECT_NE(metrics_text.find("audit_ingestion_requests_total{rpc=\"BatchSubmitAuditEvents\",status=\"success\"} 1"),
+              std::string::npos);
+    EXPECT_NE(metrics_text.find("audit_ingested_events_total{producer=\"auth\",severity=\"info\"} 100"),
+              std::string::npos);
 }
 
 TEST_F(AuditServiceImplTest, SubmitOversizedBatchRejectedAndRecorded) {
@@ -133,6 +151,9 @@ TEST_F(AuditServiceImplTest, SubmitOversizedBatchRejectedAndRecorded) {
     EXPECT_EQ(response.accepted_count(), 0u);
     EXPECT_EQ(response.rejected_count(), 101u);
     EXPECT_EQ(security_recorder_->events_recorded_count(), 1u);
+
+    std::string metrics_text = telemetry::AuditMetrics::instance().to_prometheus_text();
+    EXPECT_NE(metrics_text.find("audit_rejected_events_total{reason=\"oversized_batch\"} 1"), std::string::npos);
 }
 
 TEST_F(AuditServiceImplTest, FutureClockSkewRecordsSecurityEvent) {
@@ -151,6 +172,9 @@ TEST_F(AuditServiceImplTest, FutureClockSkewRecordsSecurityEvent) {
 
     EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
     EXPECT_EQ(security_recorder_->events_recorded_count(), 1u);
+
+    std::string metrics_text = telemetry::AuditMetrics::instance().to_prometheus_text();
+    EXPECT_NE(metrics_text.find("audit_rejected_events_total{reason=\"clock_skew\"} 1"), std::string::npos);
 }
 
 TEST_F(AuditServiceImplTest, SensitiveDataViolationRecordsSecurityEvent) {
@@ -165,6 +189,9 @@ TEST_F(AuditServiceImplTest, SensitiveDataViolationRecordsSecurityEvent) {
 
     EXPECT_EQ(status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
     EXPECT_EQ(security_recorder_->events_recorded_count(), 1u);
+
+    std::string metrics_text = telemetry::AuditMetrics::instance().to_prometheus_text();
+    EXPECT_NE(metrics_text.find("audit_rejected_events_total{reason=\"sensitive_data\"} 1"), std::string::npos);
 }
 
 TEST_F(AuditServiceImplTest, PeerAuthenticationEnforcedRecordsUnauthenticatedConnection) {
@@ -178,6 +205,9 @@ TEST_F(AuditServiceImplTest, PeerAuthenticationEnforcedRecordsUnauthenticatedCon
 
     EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
     EXPECT_EQ(security_recorder_->events_recorded_count(), 1u);
+
+    std::string metrics_text = telemetry::AuditMetrics::instance().to_prometheus_text();
+    EXPECT_NE(metrics_text.find("audit_rejected_events_total{reason=\"unauthenticated\"} 1"), std::string::npos);
 }
 
 } // namespace securecloud::audit::service::testing

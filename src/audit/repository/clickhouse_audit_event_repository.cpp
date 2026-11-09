@@ -3,12 +3,36 @@
 #include "clickhouse_event_serializer.hpp"
 #include "domain/audit_event.hpp"
 #include "repository/clickhouse_query_builder.hpp"
+#include "telemetry/audit_metrics.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <sstream>
+#include <unordered_map>
 
 namespace securecloud::audit::repository {
+
+namespace {
+
+telemetry::ProducerLabel map_producer_label(domain::ProducerService producer) noexcept {
+    switch (producer) {
+    case domain::ProducerService::Gateway:
+        return telemetry::ProducerLabel::Gateway;
+    case domain::ProducerService::Auth:
+        return telemetry::ProducerLabel::Auth;
+    case domain::ProducerService::Messaging:
+        return telemetry::ProducerLabel::Messaging;
+    case domain::ProducerService::Files:
+        return telemetry::ProducerLabel::Files;
+    case domain::ProducerService::Audit:
+        return telemetry::ProducerLabel::Audit;
+    default:
+        return telemetry::ProducerLabel::Unknown;
+    }
+}
+
+} // namespace
 
 ClickHouseAuditEventRepository::ClickHouseAuditEventRepository(std::shared_ptr<ClickHouseClient> client)
     : client_(std::move(client)) {}
@@ -37,10 +61,39 @@ bool ClickHouseAuditEventRepository::insert_batch(const std::vector<domain::Audi
     if (events.empty())
         return true;
 
+    auto start_time = std::chrono::steady_clock::now();
+
     std::string body_data = ClickHouseEventSerializer::serialize_for_insert(events);
     std::string query = "INSERT INTO audit_events FORMAT TabSeparated";
 
-    return client_->execute_insert(query, body_data);
+    bool success = false;
+    try {
+        success = client_->execute_insert(query, body_data);
+    } catch (...) {
+        success = false;
+    }
+
+    auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
+    auto& metrics = telemetry::AuditMetrics::instance();
+    metrics.observe_clickhouse_insert_duration(elapsed);
+
+    if (success) {
+        metrics.record_clickhouse_insert_operation(telemetry::OperationOutcome::Success);
+        metrics.record_persisted_batch(telemetry::OperationOutcome::Success);
+
+        std::unordered_map<domain::ProducerService, uint64_t> producer_counts;
+        for (const auto& evt : events) {
+            producer_counts[evt.producer_service]++;
+        }
+        for (const auto& [producer, count] : producer_counts) {
+            metrics.record_persisted_events(map_producer_label(producer), count);
+        }
+    } else {
+        metrics.record_clickhouse_insert_operation(telemetry::OperationOutcome::Failure);
+        metrics.record_persisted_batch(telemetry::OperationOutcome::Failure);
+    }
+
+    return success;
 }
 
 std::vector<domain::AuditEvent>

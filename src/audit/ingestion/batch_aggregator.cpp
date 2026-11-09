@@ -1,5 +1,7 @@
 #include "ingestion/batch_aggregator.hpp"
 
+#include "telemetry/audit_metrics.hpp"
+
 namespace securecloud::audit::ingestion {
 
 // --- BoundedBatchQueue Implementation ---
@@ -120,9 +122,20 @@ size_t BatchAggregator::total_timer_triggers() const noexcept {
     return total_timer_triggers_.load(std::memory_order_relaxed);
 }
 
-void BatchAggregator::flush_active_batch(bool is_count_trigger) {
+void BatchAggregator::flush_active_batch(bool is_count_trigger, bool is_shutdown_trigger) {
     if (active_batch_.empty()) {
         return;
+    }
+
+    const uint64_t batch_size = static_cast<uint64_t>(active_batch_.size());
+    telemetry::AuditMetrics::instance().observe_batch_size(batch_size);
+
+    if (is_shutdown_trigger) {
+        telemetry::AuditMetrics::instance().record_batch_flush(telemetry::FlushTrigger::Shutdown);
+    } else if (is_count_trigger) {
+        telemetry::AuditMetrics::instance().record_batch_flush(telemetry::FlushTrigger::Count);
+    } else {
+        telemetry::AuditMetrics::instance().record_batch_flush(telemetry::FlushTrigger::Timer);
     }
 
     IngestionBatch batch_to_dispatch;
@@ -163,7 +176,7 @@ void BatchAggregator::aggregator_loop() {
             active_batch_.push_back(std::move(envelope_opt.value()));
 
             if (active_batch_.size() >= max_batch_size_) {
-                flush_active_batch(true);
+                flush_active_batch(true, false);
             }
         }
 
@@ -171,7 +184,7 @@ void BatchAggregator::aggregator_loop() {
             auto current_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - batch_start_time_);
             if (current_elapsed >= max_batch_delay_) {
-                flush_active_batch(false);
+                flush_active_batch(false, false);
             }
         }
     }
@@ -183,13 +196,13 @@ void BatchAggregator::aggregator_loop() {
         }
         active_batch_.push_back(std::move(envelope_opt.value()));
         if (active_batch_.size() >= max_batch_size_) {
-            flush_active_batch(true);
+            flush_active_batch(true, false);
         }
     }
 
-    // Flush any remaining active batch
+    // Flush any remaining active batch with shutdown trigger
     if (!active_batch_.empty()) {
-        flush_active_batch(false);
+        flush_active_batch(false, true);
     }
 }
 

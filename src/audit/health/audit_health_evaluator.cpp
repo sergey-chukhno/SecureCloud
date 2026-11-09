@@ -1,5 +1,7 @@
 #include "health/audit_health_evaluator.hpp"
 
+#include "telemetry/audit_metrics.hpp"
+
 #include <exception>
 #include <iostream>
 #include <utility>
@@ -94,6 +96,8 @@ bool AuditHealthEvaluator::evaluate_once() noexcept {
     }
 
     bool ch_healthy = is_clickhouse_healthy_.load(std::memory_order_acquire);
+    telemetry::AuditMetrics::instance().set_clickhouse_available(ch_healthy);
+
     bool q_saturated = is_queue_saturated_.load(std::memory_order_acquire);
     bool is_shutting_down = health_manager_.is_shutting_down();
 
