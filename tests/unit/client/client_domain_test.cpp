@@ -230,6 +230,36 @@ class MockGatewayClient final : public IGatewayClient {
         return ClientResult<bool>::ok(!token.empty());
     }
     ClientResult<void> disconnect() override { return ClientResult<void>::ok(); }
+
+    ClientResult<DeviceRegistrationResult> register_device(const UserId& /*user_id*/,
+                                                           const PrekeyBundle& /*bundle*/) override {
+        DeviceRegistrationResult res{
+            .device_id = DeviceId("dev-mock-001"),
+            .status = DeviceAuthorizationStatus::Authorized,
+            .registered_at = std::chrono::system_clock::now(),
+        };
+        return ClientResult<DeviceRegistrationResult>::ok(std::move(res));
+    }
+
+    ClientResult<PrekeyUpdateResult>
+    update_crypto_prekeys(const DeviceId& /*device_id*/, std::optional<std::vector<uint8_t>> /*signed_prekey*/,
+                          std::optional<std::vector<uint8_t>> /*signed_prekey_signature*/,
+                          std::vector<OneTimePrekeyRecord> one_time_prekeys) override {
+        PrekeyUpdateResult res{
+            .active_one_time_prekey_count = static_cast<int32_t>(one_time_prekeys.size()),
+            .updated_at = std::chrono::system_clock::now(),
+        };
+        return ClientResult<PrekeyUpdateResult>::ok(std::move(res));
+    }
+
+    ClientResult<PrekeyInventoryStatus> get_prekey_inventory_status(const DeviceId& /*device_id*/) override {
+        return ClientResult<PrekeyInventoryStatus>::ok(PrekeyInventoryStatus{});
+    }
+
+    ClientResult<std::vector<DeviceCryptoDirectoryEntry>>
+    get_device_crypto_directory(const UserId& /*user_id*/, const std::vector<DeviceId>& /*device_ids*/) override {
+        return ClientResult<std::vector<DeviceCryptoDirectoryEntry>>::ok({});
+    }
 };
 
 TEST(ApplicationInterfacesTest, InterfacePolymorphismAndContracts) {
