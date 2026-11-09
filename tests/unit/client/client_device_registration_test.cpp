@@ -12,8 +12,8 @@
 #include "ui/navigation_controller.hpp"
 #include "ui/workspace_view_model.hpp"
 
-#include <gtest/gtest.h>
 #include <QSignalSpy>
+#include <gtest/gtest.h>
 
 namespace {
 
@@ -38,9 +38,9 @@ std::unique_ptr<ClientApplication> create_test_app() {
     auto secure_storage = std::make_unique<MemorySecureStorage>();
     auto crypto_provider = std::make_unique<OpenSslCryptoProvider>();
 
-    auto bootstrap = ClientBootstrap::create_with_adapters(
-        make_test_config(), std::move(gateway), std::move(local_store),
-        std::move(secure_storage), std::move(crypto_provider));
+    auto bootstrap =
+        ClientBootstrap::create_with_adapters(make_test_config(), std::move(gateway), std::move(local_store),
+                                              std::move(secure_storage), std::move(crypto_provider));
 
     return std::make_unique<ClientApplication>(std::move(bootstrap));
 }
@@ -123,10 +123,9 @@ TEST(ClientDeviceRegistrationTest, PrekeyReplenishmentAndRotationPipeline) {
 
     // Verify signature of rotated prekey
     const auto dev = device_mgr.get_local_device().value();
-    auto verify_res = device_mgr.crypto_provider().verify_signed_prekey(
-        dev.crypto_identity().identity_key_bytes(),
-        dev.crypto_identity().signed_prekey_bytes(),
-        dev.crypto_identity().signature_bytes());
+    auto verify_res = device_mgr.crypto_provider().verify_signed_prekey(dev.crypto_identity().identity_key_bytes(),
+                                                                        dev.crypto_identity().signed_prekey_bytes(),
+                                                                        dev.crypto_identity().signature_bytes());
     ASSERT_TRUE(verify_res.is_ok());
     EXPECT_TRUE(verify_res.value());
 }
@@ -147,10 +146,8 @@ TEST(ClientDeviceRegistrationTest, WorkspaceViewModelSettingsTrustCenterIntegrat
 
     // 1. Verify localDeviceIdentity reflects the real device
     const QVariantMap local_id = vm.localDeviceIdentity();
-    EXPECT_EQ(local_id.value(QStringLiteral("deviceId")).toString().toStdString(),
-              real_device.device_id().value());
-    EXPECT_EQ(local_id.value(QStringLiteral("displayName")).toString().toStdString(),
-              real_device.display_name());
+    EXPECT_EQ(local_id.value(QStringLiteral("deviceId")).toString().toStdString(), real_device.device_id().value());
+    EXPECT_EQ(local_id.value(QStringLiteral("displayName")).toString().toStdString(), real_device.display_name());
     EXPECT_EQ(local_id.value(QStringLiteral("identityKeyHex")).toString().toStdString(),
               real_device.crypto_identity().identity_key());
     EXPECT_EQ(local_id.value(QStringLiteral("fingerprint")).toString().toStdString(),

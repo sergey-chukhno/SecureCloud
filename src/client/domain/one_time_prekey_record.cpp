@@ -60,4 +60,3 @@ bool OneTimePrekeyRecord::operator==(const OneTimePrekeyRecord& other) const noe
 }
 
 } // namespace securecloud::client::domain
-

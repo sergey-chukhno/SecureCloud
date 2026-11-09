@@ -8,8 +8,8 @@
 #include "infrastructure/adapters/openssl_crypto_provider.hpp"
 
 #include <gtest/gtest.h>
-#include <openssl/evp.h>
 #include <iomanip>
+#include <openssl/evp.h>
 #include <sstream>
 
 namespace {
@@ -31,8 +31,7 @@ std::string compute_raw_sha256_colon_hex(const std::vector<uint8_t>& data) {
         if (i > 0) {
             oss << ':';
         }
-        oss << std::uppercase << std::hex << std::setw(2) << std::setfill('0')
-            << static_cast<int>(hash[i]);
+        oss << std::uppercase << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(hash[i]);
     }
     return oss.str();
 }

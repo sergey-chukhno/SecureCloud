@@ -21,4 +21,3 @@ struct PrekeyPolicy {
 };
 
 } // namespace securecloud::client::domain
-

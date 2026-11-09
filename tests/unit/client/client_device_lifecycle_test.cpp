@@ -141,9 +141,9 @@ TEST(DeviceManagerTest, PrekeyReplenishmentAndRotation) {
     EXPECT_NE(rotated_bundle.signed_prekey_signature(), original_sig);
 
     // Verify new signature is mathematically valid
-    auto verify_res = crypto.verify_signed_prekey(rotated_bundle.identity_public_key(),
-                                                  rotated_bundle.signed_prekey_public_key(),
-                                                  rotated_bundle.signed_prekey_signature());
+    auto verify_res =
+        crypto.verify_signed_prekey(rotated_bundle.identity_public_key(), rotated_bundle.signed_prekey_public_key(),
+                                    rotated_bundle.signed_prekey_signature());
     ASSERT_TRUE(verify_res.is_ok());
     EXPECT_TRUE(verify_res.value());
 
@@ -212,4 +212,3 @@ TEST(DeviceManagerTest, DeviceRevocationAndKeyWipe) {
 }
 
 } // namespace
-

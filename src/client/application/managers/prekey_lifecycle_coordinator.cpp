@@ -1,4 +1,5 @@
 #include "application/managers/prekey_lifecycle_coordinator.hpp"
+
 #include "infrastructure/adapters/key_storage_helper.hpp"
 
 namespace securecloud::client::application::managers {
@@ -17,8 +18,8 @@ PrekeyLifecycleCoordinator::check_inventory(const domain::DeviceId& device_id) {
     return gateway_.get_prekey_inventory_status(device_id);
 }
 
-ClientResult<std::size_t>
-PrekeyLifecycleCoordinator::replenish_one_time_prekeys(const domain::DeviceId& device_id, std::size_t batch_size) {
+ClientResult<std::size_t> PrekeyLifecycleCoordinator::replenish_one_time_prekeys(const domain::DeviceId& device_id,
+                                                                                 std::size_t batch_size) {
     if (device_id.empty()) {
         return ClientResult<std::size_t>::error(
             ClientError::validation("Device ID cannot be empty when replenishing prekeys"));
@@ -129,4 +130,3 @@ ClientResult<bool> PrekeyLifecycleCoordinator::reconcile_prekeys(const domain::D
 }
 
 } // namespace securecloud::client::application::managers
-

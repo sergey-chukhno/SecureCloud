@@ -51,4 +51,3 @@ class PrekeyInventoryStatus {
 };
 
 } // namespace securecloud::client::domain
-

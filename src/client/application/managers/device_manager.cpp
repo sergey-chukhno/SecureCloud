@@ -1,4 +1,5 @@
 #include "application/managers/device_manager.hpp"
+
 #include "domain/prekey_policy.hpp"
 #include "infrastructure/adapters/key_storage_helper.hpp"
 
@@ -28,24 +29,19 @@ ClientResult<domain::Device> DeviceManager::initialize_or_load_device(const doma
             const std::string dev_id_str = id_secret_res.value().expose_unredacted_secret();
             if (!dev_id_str.empty()) {
                 const domain::DeviceId dev_id(dev_id_str);
-                auto has_bundle_res =
-                    infrastructure::adapters::KeyStorageHelper::has_bundle(secure_storage_, dev_id);
+                auto has_bundle_res = infrastructure::adapters::KeyStorageHelper::has_bundle(secure_storage_, dev_id);
                 if (has_bundle_res.is_ok() && has_bundle_res.value()) {
-                    auto load_res =
-                        infrastructure::adapters::KeyStorageHelper::load_bundle(secure_storage_, dev_id);
+                    auto load_res = infrastructure::adapters::KeyStorageHelper::load_bundle(secure_storage_, dev_id);
                     if (load_res.is_ok()) {
                         const auto& bundle = load_res.value();
-                        auto fp_res =
-                            crypto_provider_.compute_identity_fingerprint(bundle.identity_public_key());
+                        auto fp_res = crypto_provider_.compute_identity_fingerprint(bundle.identity_public_key());
                         std::string fp = fp_res.is_ok() ? fp_res.value() : "SHA256:UNKNOWN";
 
                         domain::CryptoIdentity identity(
-                            bundle.identity_public_key(), std::move(fp),
-                            domain::KeyVerificationStatus::Verified, bundle.signed_prekey_public_key(),
-                            bundle.signed_prekey_signature(), bundle.created_at());
+                            bundle.identity_public_key(), std::move(fp), domain::KeyVerificationStatus::Verified,
+                            bundle.signed_prekey_public_key(), bundle.signed_prekey_signature(), bundle.created_at());
 
-                        std::string dname =
-                            display_name.empty() ? "Primary Device" : std::string(display_name);
+                        std::string dname = display_name.empty() ? "Primary Device" : std::string(display_name);
                         local_device_ =
                             domain::Device(dev_id, user_id, std::move(dname), std::move(identity),
                                            domain::DeviceAuthorizationStatus::Authorized, bundle.created_at());
@@ -82,8 +78,7 @@ ClientResult<domain::Device> DeviceManager::register_device(const domain::UserId
     auto spk_result = std::move(spk_res).value();
 
     // 3. Generate initial batch of 100 OTPKs
-    auto otpk_res =
-        crypto_provider_.generate_one_time_prekeys(domain::PrekeyPolicy::kInitialPrekeyBatchSize, 1);
+    auto otpk_res = crypto_provider_.generate_one_time_prekeys(domain::PrekeyPolicy::kInitialPrekeyBatchSize, 1);
     if (!otpk_res.is_ok()) {
         return ClientResult<domain::Device>::error(otpk_res.error());
     }
@@ -112,9 +107,9 @@ ClientResult<domain::Device> DeviceManager::register_device(const domain::UserId
     const domain::DeviceId assigned_id = reg_result.device_id;
 
     // 6. Assemble DevicePrivateBundle and store in ISecureStorage
-    domain::DevicePrivateBundle priv_bundle(
-        assigned_id, id_pair.public_key, std::move(id_pair.private_key), spk_result.public_key,
-        std::move(spk_result.private_key), spk_result.signature, std::move(otpk_privates));
+    domain::DevicePrivateBundle priv_bundle(assigned_id, id_pair.public_key, std::move(id_pair.private_key),
+                                            spk_result.public_key, std::move(spk_result.private_key),
+                                            spk_result.signature, std::move(otpk_privates));
 
     auto save_res = infrastructure::adapters::KeyStorageHelper::save_bundle(secure_storage_, priv_bundle);
     if (!save_res.is_ok()) {
@@ -136,16 +131,15 @@ ClientResult<domain::Device> DeviceManager::register_device(const domain::UserId
                                     spk_result.public_key, spk_result.signature);
 
     std::string dname = display_name.empty() ? "Primary Device" : std::string(display_name);
-    local_device_ = domain::Device(assigned_id, user_id, std::move(dname), std::move(identity),
-                                   reg_result.status, reg_result.registered_at);
+    local_device_ = domain::Device(assigned_id, user_id, std::move(dname), std::move(identity), reg_result.status,
+                                   reg_result.registered_at);
 
     return ClientResult<domain::Device>::ok(*local_device_);
 }
 
 ClientResult<domain::Device> DeviceManager::get_local_device() const {
     if (!local_device_.has_value()) {
-        return ClientResult<domain::Device>::error(
-            ClientError::validation("No local device registered or loaded"));
+        return ClientResult<domain::Device>::error(ClientError::validation("No local device registered or loaded"));
     }
     return ClientResult<domain::Device>::ok(*local_device_);
 }
@@ -181,13 +175,12 @@ ClientResult<void> DeviceManager::rotate_signed_prekey() {
         infrastructure::adapters::KeyStorageHelper::load_bundle(secure_storage_, local_device_->device_id());
     if (load_res.is_ok()) {
         const auto& bundle = load_res.value();
-        domain::CryptoIdentity updated_id(
-            bundle.identity_public_key(), local_device_->crypto_identity().fingerprint(),
-            local_device_->crypto_identity().verification_status(), bundle.signed_prekey_public_key(),
-            bundle.signed_prekey_signature());
-        local_device_ = domain::Device(local_device_->device_id(), local_device_->user_id(),
-                                       local_device_->display_name(), std::move(updated_id),
-                                       local_device_->status(), local_device_->last_seen_at());
+        domain::CryptoIdentity updated_id(bundle.identity_public_key(), local_device_->crypto_identity().fingerprint(),
+                                          local_device_->crypto_identity().verification_status(),
+                                          bundle.signed_prekey_public_key(), bundle.signed_prekey_signature());
+        local_device_ =
+            domain::Device(local_device_->device_id(), local_device_->user_id(), local_device_->display_name(),
+                           std::move(updated_id), local_device_->status(), local_device_->last_seen_at());
     }
 
     return ClientResult<void>::ok();
@@ -195,8 +188,7 @@ ClientResult<void> DeviceManager::rotate_signed_prekey() {
 
 ClientResult<bool> DeviceManager::reconcile_prekeys() {
     if (!local_device_.has_value()) {
-        return ClientResult<bool>::error(
-            ClientError::validation("Cannot reconcile prekeys: no local device active"));
+        return ClientResult<bool>::error(ClientError::validation("Cannot reconcile prekeys: no local device active"));
     }
     return coordinator_.reconcile_prekeys(local_device_->device_id());
 }

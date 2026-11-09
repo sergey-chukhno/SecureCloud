@@ -21,9 +21,9 @@ class PrekeyLifecycleCoordinator {
 
     ClientResult<domain::PrekeyInventoryStatus> check_inventory(const domain::DeviceId& device_id);
 
-    ClientResult<std::size_t> replenish_one_time_prekeys(
-        const domain::DeviceId& device_id,
-        std::size_t batch_size = domain::PrekeyPolicy::kReplenishmentBatchSize);
+    ClientResult<std::size_t>
+    replenish_one_time_prekeys(const domain::DeviceId& device_id,
+                               std::size_t batch_size = domain::PrekeyPolicy::kReplenishmentBatchSize);
 
     ClientResult<void> rotate_signed_prekey(const domain::DeviceId& device_id);
 
@@ -36,4 +36,3 @@ class PrekeyLifecycleCoordinator {
 };
 
 } // namespace securecloud::client::application::managers
-

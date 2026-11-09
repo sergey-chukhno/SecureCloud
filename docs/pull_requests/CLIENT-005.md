@@ -86,3 +86,4 @@ The feature branch has been validated across all 6 tickets (`CLIENT-005-T01` thr
 - [x] **ADR-008 §5**: Account authentication (JWT) is decoupled from physical cryptographic device identity.
 - [x] **Memory Safety**: `OPENSSL_cleanse` actively zeroizes private key buffers upon destruction and explicit clear.
 - [x] **Port Safety**: Host PostgreSQL on port 5432 is strictly protected; containerized tests bind exclusively to 5433.
+

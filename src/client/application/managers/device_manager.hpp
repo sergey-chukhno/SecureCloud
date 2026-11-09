@@ -27,15 +27,13 @@ class DeviceManager {
     ClientResult<domain::Device> initialize_or_load_device(const domain::UserId& user_id,
                                                            std::string_view display_name = "");
 
-    ClientResult<domain::Device> register_device(const domain::UserId& user_id,
-                                                 std::string_view display_name = "");
+    ClientResult<domain::Device> register_device(const domain::UserId& user_id, std::string_view display_name = "");
 
     [[nodiscard]] ClientResult<domain::Device> get_local_device() const;
 
     ClientResult<domain::PrekeyInventoryStatus> check_prekey_inventory();
 
-    ClientResult<std::size_t> replenish_prekeys(
-        std::size_t batch_size = domain::PrekeyPolicy::kReplenishmentBatchSize);
+    ClientResult<std::size_t> replenish_prekeys(std::size_t batch_size = domain::PrekeyPolicy::kReplenishmentBatchSize);
 
     ClientResult<void> rotate_signed_prekey();
 
