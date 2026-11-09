@@ -33,6 +33,7 @@ if(Qt6_FOUND)
         infrastructure/adapters/memory_local_store.cpp
         infrastructure/adapters/memory_secure_storage.cpp
         infrastructure/adapters/stub_crypto_provider.cpp
+        infrastructure/adapters/openssl_crypto_provider.cpp
     )
     add_library(securecloud::client_infra ALIAS securecloud_client_infra)
     target_include_directories(securecloud_client_infra PUBLIC
@@ -42,6 +43,7 @@ if(Qt6_FOUND)
         securecloud_client_domain
         securecloud::common
         securecloud::compiler_flags
+        OpenSSL::Crypto
         Qt6::Core
         Qt6::Network
     )

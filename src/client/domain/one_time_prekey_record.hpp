@@ -43,3 +43,4 @@ class OneTimePrekeyRecord {
 };
 
 } // namespace securecloud::client::domain
+

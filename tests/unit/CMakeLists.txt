@@ -3702,6 +3702,7 @@ if(Qt6_FOUND)
         client/client_config_test.cpp
         client/client_error_test.cpp
         client/client_domain_test.cpp
+        client/client_crypto_provider_test.cpp
         client/client_contacts_messaging_test.cpp
         client/client_lifecycle_test.cpp
         client/navigation_controller_test.cpp
