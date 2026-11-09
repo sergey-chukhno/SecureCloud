@@ -8,6 +8,9 @@ if(Qt6_FOUND)
         domain/message_id.cpp
         domain/delivery_state.cpp
         domain/crypto_identity.cpp
+        domain/prekey_bundle.cpp
+        domain/one_time_prekey_record.cpp
+        domain/prekey_inventory_status.cpp
         domain/device.cpp
         domain/user.cpp
         domain/contact.cpp
