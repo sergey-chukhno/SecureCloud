@@ -311,13 +311,29 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
         QStringLiteral("Outbound"), QStringLiteral("Encrypted & Verified"), QStringLiteral("Today · 09:15 AM")});
 
     // Seed operator devices & cryptographic identities
-    devices_.push_back(DeviceEntry{QStringLiteral("dev-local-01"), QStringLiteral("SecOps Workstation · macOS"),
-                                   QStringLiteral("Apple M-Series Secure Enclave · TLS 1.3 mTLS"),
-                                   QStringLiteral("ED25519-PUB-9F86D081884C7D659A2FEAA0C55AD015"),
-                                   QStringLiteral("7F8A 9B2C 1E4D 6610 9981 3042 5519 A8C1"),
-                                   QStringLiteral("SPK-X25519-0014"), QStringLiteral("SIG-ED25519-4419A8B2...C901E24F"),
-                                   QStringLiteral("Authorized"), QStringLiteral("Active now (Current Device)"), true,
-                                   false});
+    auto local_dev_res = app_.bootstrap().device_manager().get_local_device();
+    if (local_dev_res.is_ok()) {
+        const auto& real_dev = local_dev_res.value();
+        devices_.push_back(DeviceEntry{
+            QString::fromStdString(real_dev.device_id().value()), QString::fromStdString(real_dev.display_name()),
+            QStringLiteral("Apple M-Series Secure Enclave · TLS 1.3 mTLS"),
+            QString::fromStdString(real_dev.crypto_identity().identity_key()),
+            QString::fromStdString(real_dev.crypto_identity().fingerprint()),
+            QString::fromStdString(real_dev.crypto_identity().signed_prekey()),
+            QString::fromStdString(real_dev.crypto_identity().signature()),
+            QString::fromUtf8(domain::to_string(real_dev.status()).data(),
+                              static_cast<qsizetype>(domain::to_string(real_dev.status()).size())),
+            QStringLiteral("Active now (Current Device)"), true,
+            real_dev.crypto_identity().verification_status() == domain::KeyVerificationStatus::Verified});
+    } else {
+        devices_.push_back(DeviceEntry{QStringLiteral("dev-local-01"), QStringLiteral("SecOps Workstation · macOS"),
+                                       QStringLiteral("Apple M-Series Secure Enclave · TLS 1.3 mTLS"),
+                                       QStringLiteral("ED25519-PUB-9F86D081884C7D659A2FEAA0C55AD015"),
+                                       QStringLiteral("7F8A 9B2C 1E4D 6610 9981 3042 5519 A8C1"),
+                                       QStringLiteral("SPK-X25519-0014"),
+                                       QStringLiteral("SIG-ED25519-4419A8B2...C901E24F"), QStringLiteral("Authorized"),
+                                       QStringLiteral("Active now (Current Device)"), true, false});
+    }
 
     devices_.push_back(DeviceEntry{QStringLiteral("dev-mobile-02"), QStringLiteral("Field Enclave Handset · iOS 18"),
                                    QStringLiteral("Hardware Key Attested · X3DH Prekey v2"),
@@ -794,19 +810,43 @@ void WorkspaceViewModel::cycleComposerPriority() {
 
 QVariantList WorkspaceViewModel::devices() const {
     QVariantList result;
+    auto local_res = app_.bootstrap().device_manager().get_local_device();
+
     for (const auto& dev : devices_) {
         QVariantMap item;
-        item.insert(QStringLiteral("deviceId"), dev.deviceId);
-        item.insert(QStringLiteral("displayName"), dev.displayName);
-        item.insert(QStringLiteral("platformInfo"), dev.platformInfo);
-        item.insert(QStringLiteral("identityKeyHex"), dev.identityKeyHex);
-        item.insert(QStringLiteral("fingerprint"), dev.fingerprint);
-        item.insert(QStringLiteral("signedPrekeyId"), dev.signedPrekeyId);
-        item.insert(QStringLiteral("prekeySignatureHex"), dev.prekeySignatureHex);
-        item.insert(QStringLiteral("status"), dev.status);
-        item.insert(QStringLiteral("lastSeenText"), dev.lastSeenText);
-        item.insert(QStringLiteral("isCurrentDevice"), dev.isCurrentDevice);
-        item.insert(QStringLiteral("isVerified"), dev.isVerified);
+        if (dev.isCurrentDevice && local_res.is_ok()) {
+            const auto& real_dev = local_res.value();
+            item.insert(QStringLiteral("deviceId"), QString::fromStdString(real_dev.device_id().value()));
+            item.insert(QStringLiteral("displayName"), QString::fromStdString(real_dev.display_name()));
+            item.insert(QStringLiteral("platformInfo"), dev.platformInfo);
+            item.insert(QStringLiteral("identityKeyHex"),
+                        QString::fromStdString(real_dev.crypto_identity().identity_key()));
+            item.insert(QStringLiteral("fingerprint"),
+                        QString::fromStdString(real_dev.crypto_identity().fingerprint()));
+            item.insert(QStringLiteral("signedPrekeyId"),
+                        QString::fromStdString(real_dev.crypto_identity().signed_prekey()));
+            item.insert(QStringLiteral("prekeySignatureHex"),
+                        QString::fromStdString(real_dev.crypto_identity().signature()));
+            item.insert(QStringLiteral("status"),
+                        QString::fromUtf8(domain::to_string(real_dev.status()).data(),
+                                          static_cast<qsizetype>(domain::to_string(real_dev.status()).size())));
+            item.insert(QStringLiteral("lastSeenText"), dev.lastSeenText);
+            item.insert(QStringLiteral("isCurrentDevice"), true);
+            item.insert(QStringLiteral("isVerified"),
+                        real_dev.crypto_identity().verification_status() == domain::KeyVerificationStatus::Verified);
+        } else {
+            item.insert(QStringLiteral("deviceId"), dev.deviceId);
+            item.insert(QStringLiteral("displayName"), dev.displayName);
+            item.insert(QStringLiteral("platformInfo"), dev.platformInfo);
+            item.insert(QStringLiteral("identityKeyHex"), dev.identityKeyHex);
+            item.insert(QStringLiteral("fingerprint"), dev.fingerprint);
+            item.insert(QStringLiteral("signedPrekeyId"), dev.signedPrekeyId);
+            item.insert(QStringLiteral("prekeySignatureHex"), dev.prekeySignatureHex);
+            item.insert(QStringLiteral("status"), dev.status);
+            item.insert(QStringLiteral("lastSeenText"), dev.lastSeenText);
+            item.insert(QStringLiteral("isCurrentDevice"), dev.isCurrentDevice);
+            item.insert(QStringLiteral("isVerified"), dev.isVerified);
+        }
         result.append(item);
     }
     return result;
@@ -823,6 +863,29 @@ int WorkspaceViewModel::pendingDeviceCount() const noexcept {
 }
 
 QVariantMap WorkspaceViewModel::localDeviceIdentity() const {
+    auto dev_res = app_.bootstrap().device_manager().get_local_device();
+    if (dev_res.is_ok()) {
+        const auto& dev = dev_res.value();
+        QVariantMap item;
+        item.insert(QStringLiteral("deviceId"), QString::fromStdString(dev.device_id().value()));
+        item.insert(QStringLiteral("displayName"), QString::fromStdString(dev.display_name()));
+        item.insert(QStringLiteral("platformInfo"), QStringLiteral("Apple M-Series Secure Enclave · TLS 1.3 mTLS"));
+        item.insert(QStringLiteral("identityKeyHex"), QString::fromStdString(dev.crypto_identity().identity_key()));
+        item.insert(QStringLiteral("fingerprint"), QString::fromStdString(dev.crypto_identity().fingerprint()));
+        item.insert(QStringLiteral("signedPrekeyId"), QString::fromStdString(dev.crypto_identity().signed_prekey()));
+        item.insert(QStringLiteral("prekeySignatureHex"), QString::fromStdString(dev.crypto_identity().signature()));
+        item.insert(QStringLiteral("status"),
+                    QString::fromUtf8(domain::to_string(dev.status()).data(),
+                                      static_cast<qsizetype>(domain::to_string(dev.status()).size())));
+        item.insert(QStringLiteral("isVerified"),
+                    dev.crypto_identity().verification_status() == domain::KeyVerificationStatus::Verified);
+        item.insert(QStringLiteral("lastSeenText"), QStringLiteral("Active now (Current Device)"));
+        item.insert(QStringLiteral("isCurrentDevice"), true);
+        item.insert(QStringLiteral("prekeyCount"), local_prekey_count_);
+        item.insert(QStringLiteral("prekeyHealthStatus"), local_prekey_health_);
+        return item;
+    }
+
     QVariantMap item;
     for (const auto& dev : devices_) {
         if (dev.isCurrentDevice) {
@@ -835,6 +898,10 @@ QVariantMap WorkspaceViewModel::localDeviceIdentity() const {
             item.insert(QStringLiteral("prekeySignatureHex"), dev.prekeySignatureHex);
             item.insert(QStringLiteral("status"), dev.status);
             item.insert(QStringLiteral("isVerified"), dev.isVerified);
+            item.insert(QStringLiteral("lastSeenText"), dev.lastSeenText);
+            item.insert(QStringLiteral("isCurrentDevice"), true);
+            item.insert(QStringLiteral("prekeyCount"), local_prekey_count_);
+            item.insert(QStringLiteral("prekeyHealthStatus"), local_prekey_health_);
             return item;
         }
     }
@@ -1145,19 +1212,62 @@ QString WorkspaceViewModel::pairNewDevice(const QString& displayName) {
 }
 
 void WorkspaceViewModel::rotateSignedPrekey() {
-    ++prekey_epoch_;
-    for (auto& dev : devices_) {
-        if (dev.isCurrentDevice) {
-            dev.signedPrekeyId = QStringLiteral("SPK-X25519-00%1").arg(prekey_epoch_);
-            dev.prekeySignatureHex =
-                QStringLiteral("SIG-ED25519-%1F8...A20%2").arg(prekey_epoch_ * 73).arg(prekey_epoch_);
-            dev.isVerified = true;
-            dev.lastSeenText = QStringLiteral("Prekey rotated & attested just now");
-            break;
+    auto rot_res = app_.bootstrap().device_manager().rotate_signed_prekey();
+    if (rot_res.is_ok()) {
+        auto dev_res = app_.bootstrap().device_manager().get_local_device();
+        if (dev_res.is_ok()) {
+            const auto& dev = dev_res.value();
+            for (auto& d : devices_) {
+                if (d.isCurrentDevice) {
+                    d.signedPrekeyId = QString::fromStdString(dev.crypto_identity().signed_prekey());
+                    d.prekeySignatureHex = QString::fromStdString(dev.crypto_identity().signature());
+                    d.isVerified = true;
+                    d.lastSeenText = QStringLiteral("Prekey rotated & attested just now");
+                    break;
+                }
+            }
+        }
+        refreshPrekeyInventory();
+    } else {
+        ++prekey_epoch_;
+        for (auto& dev : devices_) {
+            if (dev.isCurrentDevice) {
+                dev.signedPrekeyId = QStringLiteral("SPK-X25519-00%1").arg(prekey_epoch_);
+                dev.prekeySignatureHex =
+                    QStringLiteral("SIG-ED25519-%1F8...A20%2").arg(prekey_epoch_ * 73).arg(prekey_epoch_);
+                dev.isVerified = true;
+                dev.lastSeenText = QStringLiteral("Prekey rotated & attested just now");
+                break;
+            }
         }
     }
     emit localDeviceIdentityChanged();
     emit devicesChanged();
+}
+
+void WorkspaceViewModel::refreshPrekeyInventory() {
+    auto inv_res = app_.bootstrap().device_manager().check_prekey_inventory();
+    if (inv_res.is_ok()) {
+        local_prekey_count_ = static_cast<int>(inv_res.value().active_prekey_count());
+        if (inv_res.value().is_exhausted()) {
+            local_prekey_health_ = QStringLiteral("Exhausted");
+        } else if (inv_res.value().needs_replenishment()) {
+            local_prekey_health_ = QStringLiteral("Low");
+        } else {
+            local_prekey_health_ = QStringLiteral("Healthy");
+        }
+    }
+    emit localDeviceIdentityChanged();
+}
+
+bool WorkspaceViewModel::replenishPrekeys(int batchSize) {
+    const std::size_t batch = batchSize > 0 ? static_cast<std::size_t>(batchSize) : 50u;
+    auto rep_res = app_.bootstrap().device_manager().replenish_prekeys(batch);
+    if (rep_res.is_ok()) {
+        refreshPrekeyInventory();
+        return true;
+    }
+    return false;
 }
 
 void WorkspaceViewModel::regenerateTotpSecret() {

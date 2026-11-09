@@ -8,6 +8,10 @@ if(Qt6_FOUND)
         domain/message_id.cpp
         domain/delivery_state.cpp
         domain/crypto_identity.cpp
+        domain/prekey_bundle.cpp
+        domain/one_time_prekey_record.cpp
+        domain/prekey_inventory_status.cpp
+        domain/device_private_bundle.cpp
         domain/device.cpp
         domain/user.cpp
         domain/contact.cpp
@@ -19,6 +23,7 @@ if(Qt6_FOUND)
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
     target_link_libraries(securecloud_client_domain PUBLIC
+        securecloud::common
         securecloud::compiler_flags
     )
 
@@ -30,6 +35,8 @@ if(Qt6_FOUND)
         infrastructure/adapters/memory_local_store.cpp
         infrastructure/adapters/memory_secure_storage.cpp
         infrastructure/adapters/stub_crypto_provider.cpp
+        infrastructure/adapters/openssl_crypto_provider.cpp
+        infrastructure/adapters/key_storage_helper.cpp
     )
     add_library(securecloud::client_infra ALIAS securecloud_client_infra)
     target_include_directories(securecloud_client_infra PUBLIC
@@ -39,6 +46,7 @@ if(Qt6_FOUND)
         securecloud_client_domain
         securecloud::common
         securecloud::compiler_flags
+        OpenSSL::Crypto
         Qt6::Core
         Qt6::Network
     )
@@ -54,6 +62,7 @@ if(Qt6_FOUND)
         application/managers/messaging_manager.cpp
         application/managers/contact_manager.cpp
         application/managers/device_manager.cpp
+        application/managers/prekey_lifecycle_coordinator.cpp
         application/managers/file_manager.cpp
         application/managers/emergency_manager.cpp
         application/managers/sync_manager.cpp

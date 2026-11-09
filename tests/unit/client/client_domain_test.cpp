@@ -11,6 +11,10 @@
 #include "domain/device_id.hpp"
 #include "domain/message.hpp"
 #include "domain/message_id.hpp"
+#include "domain/one_time_prekey_record.hpp"
+#include "domain/prekey_bundle.hpp"
+#include "domain/prekey_inventory_status.hpp"
+#include "domain/prekey_policy.hpp"
 #include "domain/user.hpp"
 #include "domain/user_id.hpp"
 
@@ -226,6 +230,36 @@ class MockGatewayClient final : public IGatewayClient {
         return ClientResult<bool>::ok(!token.empty());
     }
     ClientResult<void> disconnect() override { return ClientResult<void>::ok(); }
+
+    ClientResult<DeviceRegistrationResult> register_device(const UserId& /*user_id*/,
+                                                           const PrekeyBundle& /*bundle*/) override {
+        DeviceRegistrationResult res{
+            .device_id = DeviceId("dev-mock-001"),
+            .status = DeviceAuthorizationStatus::Authorized,
+            .registered_at = std::chrono::system_clock::now(),
+        };
+        return ClientResult<DeviceRegistrationResult>::ok(std::move(res));
+    }
+
+    ClientResult<PrekeyUpdateResult>
+    update_crypto_prekeys(const DeviceId& /*device_id*/, std::optional<std::vector<uint8_t>> /*signed_prekey*/,
+                          std::optional<std::vector<uint8_t>> /*signed_prekey_signature*/,
+                          std::vector<OneTimePrekeyRecord> one_time_prekeys) override {
+        PrekeyUpdateResult res{
+            .active_one_time_prekey_count = static_cast<int32_t>(one_time_prekeys.size()),
+            .updated_at = std::chrono::system_clock::now(),
+        };
+        return ClientResult<PrekeyUpdateResult>::ok(std::move(res));
+    }
+
+    ClientResult<PrekeyInventoryStatus> get_prekey_inventory_status(const DeviceId& /*device_id*/) override {
+        return ClientResult<PrekeyInventoryStatus>::ok(PrekeyInventoryStatus{});
+    }
+
+    ClientResult<std::vector<DeviceCryptoDirectoryEntry>>
+    get_device_crypto_directory(const UserId& /*user_id*/, const std::vector<DeviceId>& /*device_ids*/) override {
+        return ClientResult<std::vector<DeviceCryptoDirectoryEntry>>::ok({});
+    }
 };
 
 TEST(ApplicationInterfacesTest, InterfacePolymorphismAndContracts) {
@@ -248,6 +282,189 @@ TEST(ApplicationInterfacesTest, InterfacePolymorphismAndContracts) {
 
     const auto disc_res = gateway->disconnect();
     EXPECT_TRUE(disc_res.is_ok());
+}
+
+TEST(DomainOneTimePrekeyRecordTest, ConstructionAndValidation) {
+    const std::vector<uint8_t> valid_key(PrekeyPolicy::kX25519PublicKeySize, 0x42);
+    OneTimePrekeyRecord otpk("otpk-1", valid_key, OneTimePrekeyStatus::Active);
+
+    EXPECT_EQ(otpk.id(), "otpk-1");
+    EXPECT_EQ(otpk.public_key(), valid_key);
+    std::string expected_hex;
+    for (std::size_t i = 0; i < PrekeyPolicy::kX25519PublicKeySize; ++i) {
+        expected_hex += "42";
+    }
+    EXPECT_EQ(otpk.public_key_hex(), expected_hex);
+    EXPECT_EQ(otpk.status(), OneTimePrekeyStatus::Active);
+    EXPECT_EQ(to_string(otpk.status()), "Active");
+
+    otpk.set_status(OneTimePrekeyStatus::Claimed);
+    EXPECT_EQ(otpk.status(), OneTimePrekeyStatus::Claimed);
+    EXPECT_EQ(to_string(otpk.status()), "Claimed");
+
+    otpk.set_status(OneTimePrekeyStatus::PendingUpload);
+    EXPECT_EQ(otpk.status(), OneTimePrekeyStatus::PendingUpload);
+    EXPECT_EQ(to_string(otpk.status()), "PendingUpload");
+
+    // Numeric ID constructor
+    const OneTimePrekeyRecord otpk_num(42u, valid_key);
+    EXPECT_EQ(otpk_num.id(), "42");
+    EXPECT_EQ(otpk_num.status(), OneTimePrekeyStatus::Active);
+
+    // Equality
+    const OneTimePrekeyRecord otpk_copy("otpk-1", valid_key, OneTimePrekeyStatus::PendingUpload);
+    EXPECT_EQ(otpk, otpk_copy);
+    EXPECT_NE(otpk, otpk_num);
+
+    // Invalidation: empty ID
+    EXPECT_THROW(OneTimePrekeyRecord("", valid_key), std::invalid_argument);
+
+    // Invalidation: wrong key size
+    const std::vector<uint8_t> short_key(31, 0x01);
+    const std::vector<uint8_t> long_key(33, 0x01);
+    EXPECT_THROW(OneTimePrekeyRecord("otpk-bad-1", short_key), std::invalid_argument);
+    EXPECT_THROW(OneTimePrekeyRecord("otpk-bad-2", long_key), std::invalid_argument);
+}
+
+TEST(DomainPrekeyInventoryStatusTest, ThresholdsAndPolicyDefaults) {
+    EXPECT_EQ(PrekeyPolicy::kEd25519PublicKeySize, 32u);
+    EXPECT_EQ(PrekeyPolicy::kEd25519PrivateKeySize, 32u);
+    EXPECT_EQ(PrekeyPolicy::kEd25519SignatureSize, 64u);
+    EXPECT_EQ(PrekeyPolicy::kX25519PublicKeySize, 32u);
+    EXPECT_EQ(PrekeyPolicy::kX25519PrivateKeySize, 32u);
+    EXPECT_EQ(PrekeyPolicy::kInitialPrekeyBatchSize, 100u);
+    EXPECT_EQ(PrekeyPolicy::kLowPrekeyThreshold, 20u);
+    EXPECT_EQ(PrekeyPolicy::kReplenishmentBatchSize, 50u);
+
+    PrekeyInventoryStatus status_default;
+    EXPECT_EQ(status_default.active_prekey_count(), 0);
+    EXPECT_EQ(status_default.claimed_prekey_count(), 0);
+    EXPECT_EQ(status_default.total_prekey_count(), 0);
+    EXPECT_TRUE(status_default.is_low_inventory());
+    EXPECT_TRUE(status_default.is_exhausted());
+    EXPECT_TRUE(status_default.needs_replenishment());
+    EXPECT_FALSE(status_default.needs_rotation());
+
+    // Healthy inventory
+    PrekeyInventoryStatus healthy(80, 20, 20, std::chrono::system_clock::now(), std::chrono::hours(24), false);
+    EXPECT_EQ(healthy.active_prekey_count(), 80);
+    EXPECT_EQ(healthy.claimed_prekey_count(), 20);
+    EXPECT_EQ(healthy.total_prekey_count(), 100);
+    EXPECT_FALSE(healthy.is_low_inventory());
+    EXPECT_FALSE(healthy.is_exhausted());
+    EXPECT_FALSE(healthy.needs_replenishment());
+    EXPECT_FALSE(healthy.needs_rotation());
+
+    // Low inventory trigger (<= 20)
+    healthy.set_active_prekey_count(20);
+    EXPECT_TRUE(healthy.is_low_inventory());
+    EXPECT_FALSE(healthy.is_exhausted());
+    EXPECT_TRUE(healthy.needs_replenishment());
+
+    // Exhausted trigger (<= 0)
+    healthy.set_active_prekey_count(0);
+    EXPECT_TRUE(healthy.is_low_inventory());
+    EXPECT_TRUE(healthy.is_exhausted());
+
+    // Explicit rotation flag
+    healthy.set_signed_prekey_needs_rotation(true);
+    EXPECT_TRUE(healthy.needs_rotation());
+
+    // Age-based rotation (>= 7 days)
+    healthy.set_signed_prekey_needs_rotation(false);
+    healthy.set_signed_prekey_age(std::chrono::hours(24 * 7));
+    EXPECT_TRUE(healthy.needs_rotation());
+}
+
+TEST(DomainPrekeyBundleTest, ConstructionValidationAndAccessors) {
+    const std::vector<uint8_t> id_key(PrekeyPolicy::kEd25519PublicKeySize, 0x11);
+    const std::vector<uint8_t> spk(PrekeyPolicy::kX25519PublicKeySize, 0x22);
+    const std::vector<uint8_t> sig(PrekeyPolicy::kEd25519SignatureSize, 0x33);
+
+    const std::vector<uint8_t> otpk1_bytes(PrekeyPolicy::kX25519PublicKeySize, 0x44);
+    const std::vector<uint8_t> otpk2_bytes(PrekeyPolicy::kX25519PublicKeySize, 0x55);
+    const std::vector<OneTimePrekeyRecord> otpks = {
+        OneTimePrekeyRecord("1", otpk1_bytes),
+        OneTimePrekeyRecord("2", otpk2_bytes),
+    };
+
+    PrekeyBundle bundle(id_key, spk, sig, otpks);
+    EXPECT_EQ(bundle.identity_key(), id_key);
+    EXPECT_EQ(bundle.signed_prekey(), spk);
+    EXPECT_EQ(bundle.signed_prekey_signature(), sig);
+    EXPECT_EQ(bundle.one_time_prekey_count(), 2u);
+    EXPECT_EQ(bundle.one_time_prekeys().size(), 2u);
+
+    EXPECT_FALSE(bundle.identity_key_hex().empty());
+    EXPECT_FALSE(bundle.signed_prekey_hex().empty());
+    EXPECT_FALSE(bundle.signed_prekey_signature_hex().empty());
+
+    // Add OTPK
+    const std::vector<uint8_t> otpk3_bytes(PrekeyPolicy::kX25519PublicKeySize, 0x66);
+    bundle.add_one_time_prekey(OneTimePrekeyRecord("3", otpk3_bytes));
+    EXPECT_EQ(bundle.one_time_prekey_count(), 3u);
+
+    // Update signed prekey
+    const std::vector<uint8_t> new_spk(PrekeyPolicy::kX25519PublicKeySize, 0x77);
+    const std::vector<uint8_t> new_sig(PrekeyPolicy::kEd25519SignatureSize, 0x88);
+    bundle.set_signed_prekey(new_spk, new_sig);
+    EXPECT_EQ(bundle.signed_prekey(), new_spk);
+    EXPECT_EQ(bundle.signed_prekey_signature(), new_sig);
+
+    // Clear OTPKs
+    bundle.clear_one_time_prekeys();
+    EXPECT_EQ(bundle.one_time_prekey_count(), 0u);
+
+    // Size validation assertions
+    const std::vector<uint8_t> bad_size_10(10, 0x01);
+    EXPECT_THROW(PrekeyBundle(bad_size_10, spk, sig), std::invalid_argument);
+    EXPECT_THROW(PrekeyBundle(id_key, bad_size_10, sig), std::invalid_argument);
+    EXPECT_THROW(PrekeyBundle(id_key, spk, bad_size_10), std::invalid_argument);
+    EXPECT_THROW(bundle.set_signed_prekey(bad_size_10, sig), std::invalid_argument);
+    EXPECT_THROW(bundle.set_signed_prekey(spk, bad_size_10), std::invalid_argument);
+}
+
+TEST(DomainCryptoIdentityTest, EnhancedFingerprintAndPrekeyBundleIntegration) {
+    // Valid standard SHA-256 fingerprint (102 chars, uppercase, colon-separated)
+    const std::string valid_fp = "SHA256:01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF:"
+                                 "01:23:45:67:89:AB:CD:EF:01:23:45:67:89:AB:CD:EF";
+    EXPECT_EQ(valid_fp.size(), 102u);
+    EXPECT_TRUE(CryptoIdentity::is_valid_fingerprint(valid_fp));
+
+    // Invalid fingerprints
+    EXPECT_FALSE(CryptoIdentity::is_valid_fingerprint(""));
+    EXPECT_FALSE(CryptoIdentity::is_valid_fingerprint("fingerprint-hex-1234")); // legacy mock format
+    EXPECT_FALSE(CryptoIdentity::is_valid_fingerprint("SHA256:short"));
+    // Lowercase hex rejected
+    std::string lowercase_fp = valid_fp;
+    lowercase_fp[7] = 'a';
+    EXPECT_FALSE(CryptoIdentity::is_valid_fingerprint(lowercase_fp));
+    // Missing colon rejected
+    std::string no_colon_fp = valid_fp;
+    no_colon_fp[9] = 'X';
+    EXPECT_FALSE(CryptoIdentity::is_valid_fingerprint(no_colon_fp));
+
+    // Construction from raw byte spans
+    const std::vector<uint8_t> raw_id_key(32, 0xAA);
+    const std::vector<uint8_t> raw_spk(32, 0xBB);
+    const std::vector<uint8_t> raw_sig(64, 0xCC);
+
+    const CryptoIdentity identity_from_bytes(raw_id_key, valid_fp, KeyVerificationStatus::Verified, raw_spk, raw_sig);
+    EXPECT_EQ(identity_from_bytes.fingerprint(), valid_fp);
+    EXPECT_EQ(identity_from_bytes.verification_status(), KeyVerificationStatus::Verified);
+    EXPECT_EQ(identity_from_bytes.identity_key_bytes(), raw_id_key);
+    EXPECT_EQ(identity_from_bytes.signed_prekey_bytes(), raw_spk);
+    EXPECT_EQ(identity_from_bytes.signature_bytes(), raw_sig);
+
+    // Factory from PrekeyBundle
+    const PrekeyBundle bundle(raw_id_key, raw_spk, raw_sig);
+    const CryptoIdentity identity_from_bundle = CryptoIdentity::from_prekey_bundle(bundle, valid_fp);
+    EXPECT_EQ(identity_from_bundle.fingerprint(), valid_fp);
+    EXPECT_EQ(identity_from_bundle.verification_status(), KeyVerificationStatus::Verified);
+    EXPECT_EQ(identity_from_bundle.identity_key(), bundle.identity_key_hex());
+    EXPECT_EQ(identity_from_bundle.signed_prekey(), bundle.signed_prekey_hex());
+    EXPECT_EQ(identity_from_bundle.signature(), bundle.signed_prekey_signature_hex());
+    EXPECT_EQ(identity_from_bundle.identity_key_bytes(), raw_id_key);
 }
 
 } // namespace
