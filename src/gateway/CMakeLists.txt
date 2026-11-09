@@ -1,3 +1,26 @@
+add_library(securecloud_gateway_audit STATIC
+        audit/gateway_audit_event_types.cpp
+        audit/gateway_audit_validator.cpp
+        audit/gateway_audit_event_factory.cpp
+)
+
+add_library(securecloud::gateway_audit ALIAS securecloud_gateway_audit)
+
+target_include_directories(securecloud_gateway_audit PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/audit
+        ${PROJECT_SOURCE_DIR}/src/audit
+)
+
+target_link_libraries(securecloud_gateway_audit PUBLIC
+        securecloud_proto
+        securecloud_audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        PRIVATE
+        securecloud::gateway_config
+)
+
 add_library(securecloud_gateway_config STATIC
     gateway_config.cpp
 )
@@ -145,6 +168,7 @@ target_link_libraries(securecloud-gateway PRIVATE
     securecloud::gateway_grpc
     securecloud::gateway_health
     securecloud::gateway_tls
+    securecloud::gateway_audit
     securecloud::common
     securecloud::compiler_flags
 )

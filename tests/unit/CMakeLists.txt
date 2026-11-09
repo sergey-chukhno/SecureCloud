@@ -3745,3 +3745,38 @@ if(Qt6_FOUND)
         set_tests_properties(client_startup_smoke_test PROPERTIES ENVIRONMENT_MODIFICATION "${_TEST_ENV_MODS}")
     endif()
 endif()
+
+# Gateway Audit Event Factory & Local Validation Test Suite (AUDIT-012-T02)
+add_executable(securecloud_gateway_audit_event_factory_test
+        gateway/gateway_audit_event_factory_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_event_factory_test PRIVATE
+        securecloud::gateway_audit
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_event_factory_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Include-Path & ODR Collision Compile-Guard Test (AUDIT-012-T02)
+add_executable(securecloud_gateway_audit_header_collision_test
+        gateway/header_collision_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_header_collision_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_http
+        securecloud::auth
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_header_collision_test ${SECURECLOUD_TEST_PROPERTIES})
+
