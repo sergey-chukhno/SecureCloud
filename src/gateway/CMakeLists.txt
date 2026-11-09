@@ -32,6 +32,10 @@ target_link_libraries(securecloud_gateway_tls PUBLIC
     securecloud::compiler_flags
 )
 
+target_compile_definitions(securecloud_gateway_tls PRIVATE
+    OPENSSL_API_COMPAT=30000
+)
+
 add_library(securecloud_gateway_grpc STATIC
     grpc/channel_manager.cpp
     grpc/client_call_context.cpp

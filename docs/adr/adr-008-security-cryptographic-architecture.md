@@ -526,7 +526,79 @@ The client must detect unexpected identity-key changes and warn the user.
 
 For high-risk deployments, explicit out-of-band verification should be supported.
 
-Key transparency is not required for the initial MVP architecture but remains a possible future strengthening mechanism.
+---
+
+## 18.1 Four Identity Verification Paradigms
+
+To verify that public keys distributed by the directory have not been tampered with or intercepted via a Man-In-The-Middle (MITM) attack, SecureCloud evaluates four distinct verification paradigms:
+
+1. **Explicit Out-of-Band Safety Number Verification (MVP Baseline)**:
+   - **Mechanism**: A 30-digit decimal fingerprint or Short Authentication String (SAS / QR code / 4-emoji sequence) derived mathematically from `Hash(Alice_Identity_Key || Bob_Identity_Key)`.
+   - **Execution**: Both parties compare the identical fingerprint over an external out-of-band channel (voice call, video stream, or in-person meeting).
+   - **Trade-off**: Zero infrastructure dependencies, 100% mathematically secure against MITM, but requires manual human effort. Retained in Zone 4 Peer Security Inspector for explicit verification.
+
+2. **Automated Key Transparency (Public Verifiable Ledger)**:
+   - **Mechanism**: The directory publishes all public key transitions into an append-only, tamper-evident cryptographic log (Merkle tree / verifiable log, as deployed by WhatsApp Key Transparency and Apple Contact Key Verification).
+   - **Execution**: Clients and third-party auditors continuously monitor the log; the server cannot serve a malicious key to Alice without publicly publishing the forgery to the ledger where it is instantly detected.
+   - **Trade-off**: Completely automated and transparent to users, but requires running public audit log infrastructure.
+
+3. **Enterprise OIDC & PKI Key Attestation (Roadmap Priority)**:
+   - **Mechanism**: The user's cryptographic identity keys are certified and attested by the enterprise Identity Provider (IdP) or an internal Public Key Infrastructure (PKI) Certificate Authority (CA), binding the device public key to a verified corporate identity and hardware root of trust.
+   - **Execution**: Upon key exchange, Alice's client validates the digital signature issued by the enterprise CA/IdP.
+   - **Trade-off**: Provides instant, automated "Verified" status across corporate organizations without requiring any manual safety number checks.
+
+4. **Transitive Trust ("Web of Trust" / Mutual Colleague Endorsement)**:
+   - **Mechanism**: Cryptographic cross-signing where trusted colleagues attest to each other's public keys.
+   - **Execution**: If Alice has verified Charlie, and Charlie has verified Bob, Alice's client can display: *"Bob's key is attested by Charlie (verified on Nov 3rd)"*.
+   - **Trade-off**: Useful in decentralized or federated environments, but introduces transitive trust graphs.
+
+---
+
+## 18.2 Architectural Roadmap: Enterprise OIDC & PKI Key Attestation
+
+For enterprise and zero-trust deployments, SecureCloud will integrate automated key attestation into the client key-exchange pipeline. This allows organizations to issue cryptographically signed identity credentials for employee endpoints, eliminating manual safety-number verification for corporate users.
+
+### 18.2.1 Integration Architecture
+
+```text
+┌────────────────────────────────────────────────────────┐
+│               Enterprise Identity Provider             │
+│            (Okta / Entra ID / Google / Keycloak)       │
+└───────────────────────────┬────────────────────────────┘
+                            │ OIDC Token + WebAuthn Attestation
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│            Enterprise PKI / Private CA                 │
+│         (HashiCorp Vault / Smallstep / AWS CA)         │
+└───────────────────────────┬────────────────────────────┘
+                            │ Signed X.509 Identity Attestation Cert
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│                 Client Endpoint                        │
+│   TPM 2.0 / Apple Secure Enclave / YubiKey Hardware    │
+│   ────────► Generates Identity Keypair (IK)            │
+│   ────────► Attaches Signed Corporate Certificate      │
+└────────────────────────────────────────────────────────┘
+```
+
+### 18.2.2 Concrete Supported Providers
+
+1. **Enterprise Identity Providers (OIDC / OAuth 2.0)**:
+   - **Okta Workforce Identity Cloud**: Uses OpenID Connect (OIDC) ID tokens with WebAuthn/FIDO2 hardware-bound authenticator attestation, binding identity keys to employee Okta sessions.
+   - **Microsoft Entra ID (Azure Active Directory)**: Uses Primary Refresh Tokens (PRT) and Microsoft Intune Device Health Attestation, certifying that the device key originates from a compliant enterprise-managed laptop or workstation.
+   - **Google Workspace (Cloud Identity)**: BeyondCorp enterprise context-aware device attestation, binding cryptographic identities to managed Google enterprise profiles and hardware Titan Security Keys.
+   - **Keycloak**: Sovereign and self-hosted open-source IAM supporting corporate OIDC claims and mTLS client certificate authentication.
+
+2. **Enterprise PKI & Private Certificate Authorities**:
+   - **HashiCorp Vault PKI Secrets Engine**: Generates dynamic, short-lived X.509 certificates and signatures for endpoint identity keys, integrated directly with role-based enterprise access control policies (Vault AppRole / OIDC).
+   - **Smallstep (`step-ca`)**: Open-source, automated private Certificate Authority supporting ACME, SCEP, and EST protocols to automatically issue and renew X.509 device identity certificates for endpoints.
+   - **AWS Private Certificate Authority (AWS Private CA)**: Managed, high-assurance private CA for enterprise organizations running hybrid cloud infrastructures.
+   - **CFSSL (Cloudflare PKI & TLS)**: Lightweight, distributed PKI infrastructure for signing and bundling endpoint trust chains.
+
+3. **Hardware Roots of Trust (Endpoint Key Protection)**:
+   - **Apple Secure Enclave (macOS / iOS)**: Generates and seals the identity key inside dedicated hardware silicon; keys never touch memory and require biometric (Touch ID) authorization.
+   - **TPM 2.0 (Trusted Platform Module - Windows / Linux)**: Hardware cryptographic co-processor providing platform integrity attestation and non-exportable identity keys.
+   - **YubiKey (Yubico PIV & FIDO2)**: Removable physical security keys storing PIV hardware certificates and signing identity key bundles out-of-band.
 
 ---
 

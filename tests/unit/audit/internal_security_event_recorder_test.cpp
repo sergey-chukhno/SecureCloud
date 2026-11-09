@@ -103,14 +103,13 @@ TEST_F(InternalSecurityEventRecorderUnitTest, ContextAttributionAndMissingIdenti
 
 // Test 3: Anti-Recursion Prevention (recursion depth strictly bounded to 0)
 TEST_F(InternalSecurityEventRecorderUnitTest, AntiRecursionPrevention) {
-    EXPECT_CALL(*mock_repo_, insert_batch_classified(_))
-        .WillOnce(::testing::Invoke([this](const std::vector<domain::AuditEvent>&) {
-            SecurityEventContext inner_ctx;
-            bool inner_res = recorder_->record_event(InternalSecurityEventType::IngestionQueueSaturated, inner_ctx);
-            EXPECT_FALSE(inner_res);
-            return repository::RepositoryBatchWriteResult{
-                .status = repository::RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
-        }));
+    EXPECT_CALL(*mock_repo_, insert_batch_classified(_)).WillOnce([this](const std::vector<domain::AuditEvent>&) {
+        SecurityEventContext inner_ctx;
+        bool inner_res = recorder_->record_event(InternalSecurityEventType::IngestionQueueSaturated, inner_ctx);
+        EXPECT_FALSE(inner_res);
+        return repository::RepositoryBatchWriteResult{
+            .status = repository::RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
+    });
 
     SecurityEventContext ctx;
     bool outer_res = recorder_->record_event(InternalSecurityEventType::ServiceStarted, ctx);
