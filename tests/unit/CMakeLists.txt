@@ -3426,16 +3426,16 @@ target_link_libraries(securecloud_audit_page_cursor_test PRIVATE
 gtest_discover_tests(securecloud_audit_page_cursor_test)
 
 # ClickHouse Query Builder Test (AUDIT-007-T03)
-add_executable(securecloud_clickhouse_query_builder_test
+add_executable(securecloud_audit_clickhouse_query_builder_test
         audit/clickhouse_query_builder_test.cpp
 )
-target_link_libraries(securecloud_clickhouse_query_builder_test PRIVATE
+target_link_libraries(securecloud_audit_clickhouse_query_builder_test PRIVATE
         securecloud::audit_repository
         securecloud::common
         securecloud::compiler_flags
         GTest::gtest_main
 )
-gtest_discover_tests(securecloud_clickhouse_query_builder_test)
+gtest_discover_tests(securecloud_audit_clickhouse_query_builder_test)
 
 # Audit Query Application Service Test (AUDIT-007-T04)
 add_executable(securecloud_audit_query_application_service_test
@@ -3577,6 +3577,65 @@ target_link_libraries(securecloud_audit_internal_security_event_recorder_test PR
 )
 
 gtest_discover_tests(securecloud_audit_internal_security_event_recorder_test)
+
+# Audit Service Health Evaluator Unit Test Suite (AUDIT-010-T01)
+add_executable(securecloud_audit_health_evaluator_test
+        audit/audit_health_evaluator_test.cpp
+)
+
+target_link_libraries(securecloud_audit_health_evaluator_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_health_evaluator_test)
+
+# Audit Service State Test Suite (AUDIT-010-T02)
+add_executable(securecloud_audit_service_state_test
+        audit/audit_service_state_test.cpp
+)
+
+target_link_libraries(securecloud_audit_service_state_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_service_state_test)
+
+# Audit Service Graceful Drain Unit Test Suite (AUDIT-010-T03)
+add_executable(securecloud_audit_service_drain_test
+        audit/audit_service_drain_test.cpp
+)
+
+target_link_libraries(securecloud_audit_service_drain_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_service_drain_test)
+
+# Audit Server Stop Idempotency Unit Test Suite (AUDIT-010-T04)
+add_executable(securecloud_audit_server_stop_test
+        audit/audit_server_stop_test.cpp
+)
+
+target_link_libraries(securecloud_audit_server_stop_test PRIVATE
+        securecloud::audit_server
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_server_stop_test)
 
 # Desktop Client Foundation Test Suite (CLIENT-001-T01 through CLIENT-001-T05)
 if(Qt6_FOUND)

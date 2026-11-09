@@ -100,6 +100,7 @@ add_library(securecloud_audit_service STATIC
         security/internal_security_event_factory.cpp
         security/anti_recursion_guard.cpp
         security/internal_security_event_recorder.cpp
+        health/audit_health_evaluator.cpp
 )
 
 add_library(securecloud::audit_service ALIAS securecloud_audit_service)

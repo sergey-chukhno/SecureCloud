@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <string>
 #include <utility>
 
 namespace securecloud::audit {
@@ -15,9 +16,7 @@ AuditServer::AuditServer(AuditConfig config) : config_(std::move(config)) {
 }
 
 AuditServer::~AuditServer() {
-    if (state_.load(std::memory_order_acquire) == ServiceState::Running) {
-        stop();
-    }
+    stop();
 }
 
 bool AuditServer::start() {
@@ -107,10 +106,23 @@ bool AuditServer::start() {
 void AuditServer::stop() {
     auto expected = ServiceState::Running;
     if (!state_.compare_exchange_strong(expected, ServiceState::Draining, std::memory_order_acq_rel)) {
+        // Already draining, stopped, or failed; return safely without redundant work
         return;
     }
 
-    std::cout << "[SecureCloud] [" << config_.common.service_name << "] Shutting down mTLS server...\n";
+    std::cout << "[SecureCloud] [" << config_.common.service_name
+              << "] Initiating multi-phase graceful drain sequence...\n";
+
+    // Phase 1: Withdraw Readiness (health check becomes NOT_SERVING)
+    if (health_manager_) {
+        health_manager_->set_shutting_down(true);
+        health_manager_->set_ready(false);
+    }
+
+    // Phase 2: Reject New Ingress
+    if (audit_service_) {
+        audit_service_->set_draining(true);
+    }
 
     if (security_recorder_) {
         security::SecurityEventContext drain_ctx;
@@ -118,21 +130,19 @@ void AuditServer::stop() {
         security_recorder_->record_event(security::InternalSecurityEventType::ServiceDraining, drain_ctx);
     }
 
-    if (health_manager_) {
-        health_manager_->set_shutting_down(true);
-        health_manager_->set_ready(false);
-    }
-
+    // Phase 3, 4 & 5: Flush existing ingestion queue, await in-flight batches, complete durability promises
     if (pipeline_) {
         pipeline_->shutdown(std::chrono::milliseconds(config_.retention.shutdown_grace_period_ms));
     }
 
+    // Phase 6: Shutdown gRPC server
     if (server_) {
         auto deadline =
             std::chrono::system_clock::now() + std::chrono::milliseconds(config_.retention.shutdown_grace_period_ms);
         server_->Shutdown(deadline);
     }
 
+    // Phase 7: Transition state to Stopped
     state_.store(ServiceState::Stopped, std::memory_order_release);
     std::cout << "[SecureCloud] [" << config_.common.service_name << "] AuditServer stopped gracefully.\n";
 }

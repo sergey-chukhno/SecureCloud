@@ -1233,3 +1233,19 @@ target_link_libraries(securecloud_audit_internal_security_integration_test PRIVA
 )
 
 gtest_discover_tests(securecloud_audit_internal_security_integration_test)
+
+# Audit Service Graceful Shutdown Integration Test Suite (AUDIT-010-T06)
+add_executable(securecloud_audit_graceful_shutdown_integration_test
+        audit_graceful_shutdown_integration_test.cpp
+)
+
+target_link_libraries(securecloud_audit_graceful_shutdown_integration_test PRIVATE
+        securecloud::audit_server
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_graceful_shutdown_integration_test ${SECURECLOUD_TEST_PROPERTIES})
