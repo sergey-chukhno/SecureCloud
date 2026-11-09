@@ -58,6 +58,8 @@ class DevicePrivateBundle {
                               securecloud::common::configuration::SecretString new_private_key,
                               std::vector<uint8_t> new_signature);
 
+    void clear();
+
     [[nodiscard]] PrekeyBundle to_public_bundle(const std::vector<OneTimePrekeyRecord>& otpk_public_records = {}) const;
 
     bool operator==(const DevicePrivateBundle& other) const noexcept;

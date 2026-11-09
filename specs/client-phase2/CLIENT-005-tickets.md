@@ -18,6 +18,17 @@ With the completion of **Client Phase 1 (`CLIENT-001` through `CLIENT-004`)**, t
 
 **Card `CLIENT-005` initiates Client Phase 2**: transitioning the client from mock cryptographic stubs (`StubCryptoProvider`) and placeholder identities to **production cryptographic identity generation, X3DH prekey publication, device registration with the backend Auth service via the Gateway, secure private key handling, and automated prekey replenishment/rotation**.
 
+### Ticket Status Matrix
+
+| Ticket | Description | Status | Commit / Notes |
+|---|---|---|---|
+| **CLIENT-005-T01** | Cryptographic Domain Models & Value Objects | Completed | `11266ec` |
+| **CLIENT-005-T02** | OpenSSL 3.x EVP Cryptographic Provider | Completed | `ddccf27` |
+| **CLIENT-005-T03** | Secure Private Key Storage & Secret Zeroization | Completed | `74acdec` |
+| **CLIENT-005-T04** | Gateway Client Protocol Extensions for Device & Prekeys | Completed | `ab7b9af` |
+| **CLIENT-005-T05** | Device Lifecycle, Registration & Prekey Replenishment Pipeline | Completed | `41800bd` |
+| **CLIENT-005-T06** | Settings Trust Center ViewModel Integration & Comprehensive Test Suite | Completed | Pending user validation & commit |
+
 ```text
                                SECURECLOUD CLIENT (Phase 2)
  ┌────────────────────────────────────────────────────────────────────────────────────────┐

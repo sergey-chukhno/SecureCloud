@@ -112,6 +112,15 @@ void DevicePrivateBundle::update_signed_prekey(std::vector<uint8_t> new_public_k
     signed_prekey_signature_ = std::move(new_signature);
 }
 
+void DevicePrivateBundle::clear() {
+    identity_public_key_.clear();
+    identity_private_key_ = securecloud::common::configuration::SecretString();
+    signed_prekey_public_key_.clear();
+    signed_prekey_private_key_ = securecloud::common::configuration::SecretString();
+    signed_prekey_signature_.clear();
+    one_time_prekey_privates_.clear();
+}
+
 PrekeyBundle DevicePrivateBundle::to_public_bundle(const std::vector<OneTimePrekeyRecord>& otpk_public_records) const {
     return PrekeyBundle(identity_public_key_, signed_prekey_public_key_, signed_prekey_signature_, otpk_public_records,
                         created_at_);

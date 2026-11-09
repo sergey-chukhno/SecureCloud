@@ -3706,6 +3706,8 @@ if(Qt6_FOUND)
         client/client_key_storage_test.cpp
         client/client_gateway_test.cpp
         client/client_device_lifecycle_test.cpp
+        client/client_crypto_identity_test.cpp
+        client/client_device_registration_test.cpp
         client/client_contacts_messaging_test.cpp
         client/client_lifecycle_test.cpp
         client/navigation_controller_test.cpp
