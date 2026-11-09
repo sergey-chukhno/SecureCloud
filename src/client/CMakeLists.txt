@@ -11,6 +11,7 @@ if(Qt6_FOUND)
         domain/prekey_bundle.cpp
         domain/one_time_prekey_record.cpp
         domain/prekey_inventory_status.cpp
+        domain/device_private_bundle.cpp
         domain/device.cpp
         domain/user.cpp
         domain/contact.cpp
@@ -22,6 +23,7 @@ if(Qt6_FOUND)
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
     target_link_libraries(securecloud_client_domain PUBLIC
+        securecloud::common
         securecloud::compiler_flags
     )
 
@@ -34,6 +36,7 @@ if(Qt6_FOUND)
         infrastructure/adapters/memory_secure_storage.cpp
         infrastructure/adapters/stub_crypto_provider.cpp
         infrastructure/adapters/openssl_crypto_provider.cpp
+        infrastructure/adapters/key_storage_helper.cpp
     )
     add_library(securecloud::client_infra ALIAS securecloud_client_infra)
     target_include_directories(securecloud_client_infra PUBLIC
