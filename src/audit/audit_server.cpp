@@ -6,6 +6,7 @@
 
 #include <chrono>
 #include <iostream>
+#include <string>
 #include <utility>
 
 namespace securecloud::audit {

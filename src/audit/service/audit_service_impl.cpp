@@ -4,6 +4,7 @@
 #include "telemetry/audit_metrics.hpp"
 
 #include <chrono>
+#include <string>
 
 namespace securecloud::audit::service {
 
