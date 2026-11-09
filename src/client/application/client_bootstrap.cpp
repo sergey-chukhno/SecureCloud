@@ -39,7 +39,7 @@ void ClientBootstrap::wire_managers() {
     auth_manager_ = std::make_unique<managers::AuthManager>(*gateway_, *secure_storage_);
     messaging_manager_ = std::make_unique<managers::MessagingManager>(*gateway_, *local_store_, *crypto_provider_);
     contact_manager_ = std::make_unique<managers::ContactManager>(*local_store_);
-    device_manager_ = std::make_unique<managers::DeviceManager>(*gateway_, *secure_storage_);
+    device_manager_ = std::make_unique<managers::DeviceManager>(*gateway_, *secure_storage_, *crypto_provider_);
     file_manager_ = std::make_unique<managers::FileManager>(*gateway_, *crypto_provider_);
     emergency_manager_ = std::make_unique<managers::EmergencyManager>(*local_store_, *secure_storage_);
     sync_manager_ = std::make_unique<managers::SyncManager>(*gateway_, config_);
