@@ -3,6 +3,7 @@
 #include "domain/audit_event_validator.hpp"
 
 #include <chrono>
+#include <string>
 
 namespace securecloud::audit::service {
 
