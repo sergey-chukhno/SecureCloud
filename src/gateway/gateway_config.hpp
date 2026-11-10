@@ -74,6 +74,21 @@ struct GatewayStreamingConfig {
     uint32_t idle_timeout_ms{30000};         // 30 s default
 };
 
+/// Typed configuration model for Gateway Audit Producer & Perimeter Aggregation (AUDIT-012-T05).
+struct GatewayAuditProducerConfig {
+    bool enabled{true};
+    std::string mode{"spool"}; // "spool" or "memory"
+    std::string spool_directory{"/var/spool/securecloud/gateway/audit"};
+    size_t max_spool_bytes{1073741824}; // 1 GiB
+    size_t max_spool_records{100000};
+    uint32_t batch_size{100};
+    uint32_t backoff_ms{100};
+    uint32_t drain_budget_ms{3000};
+    uint32_t aggregation_window_sec{10};
+    size_t aggregation_max_keys{1000};
+    std::string instance_name{"gateway-node-1"};
+};
+
 /// Typed configuration model for Gateway service (GW-001, GW-002).
 
 /// Holds HTTP server runtime settings, TLS parameters, resource limits, downstream microservice endpoints,
@@ -123,8 +138,9 @@ struct GatewayConfig {
     std::string peer_probe_target;
     std::string peer_probe_name;
 
-    // Gateway Audit Spool & WAL Persistence Settings (AUDIT-012-T03)
+    // Gateway Audit Spool & WAL Persistence Settings (AUDIT-012-T03 & AUDIT-012-T05)
     audit::GatewayAuditSpoolConfig audit_spool;
+    GatewayAuditProducerConfig audit_producer;
 
     /// Returns the combined HTTP listen endpoint formatted as "<http_listen_address>:<http_listen_port>".
     [[nodiscard]] std::string http_listen_endpoint() const;

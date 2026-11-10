@@ -26,11 +26,10 @@ struct AuditDeliveryDispatcherConfig {
  */
 class AuditDeliveryDispatcher {
   public:
-    AuditDeliveryDispatcher(
-        std::shared_ptr<IAuditPendingStore> pending_store,
-        std::shared_ptr<securecloud::gateway::grpc::IAuditIngestionClient> audit_client,
-        std::shared_ptr<securecloud::gateway::http::CircuitBreaker> circuit_breaker = nullptr,
-        AuditDeliveryDispatcherConfig config = {});
+    AuditDeliveryDispatcher(std::shared_ptr<IAuditPendingStore> pending_store,
+                            std::shared_ptr<securecloud::gateway::grpc::IAuditIngestionClient> audit_client,
+                            std::shared_ptr<securecloud::gateway::http::CircuitBreaker> circuit_breaker = nullptr,
+                            AuditDeliveryDispatcherConfig config = {});
 
     ~AuditDeliveryDispatcher();
 

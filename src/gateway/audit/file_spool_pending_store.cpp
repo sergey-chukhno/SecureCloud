@@ -25,8 +25,7 @@ struct RecordHeader {
 
 } // namespace
 
-FileSpoolPendingStore::FileSpoolPendingStore(GatewayAuditSpoolConfig config)
-    : config_(std::move(config)) {
+FileSpoolPendingStore::FileSpoolPendingStore(GatewayAuditSpoolConfig config) : config_(std::move(config)) {
     init_spool();
 }
 
@@ -132,9 +131,8 @@ AdmissionResult FileSpoolPendingStore::append(PendingRecord record) noexcept {
 void FileSpoolPendingStore::writer_thread_loop() {
     while (running_.load(std::memory_order_acquire)) {
         std::unique_lock<std::mutex> lock(mutex_);
-        cv_.wait_for(lock, std::chrono::milliseconds(config_.group_commit_interval_ms), [this] {
-            return !handoff_queue_.empty() || !running_.load(std::memory_order_relaxed);
-        });
+        cv_.wait_for(lock, std::chrono::milliseconds(config_.group_commit_interval_ms),
+                     [this] { return !handoff_queue_.empty() || !running_.load(std::memory_order_relaxed); });
 
         if (handoff_queue_.empty()) {
             continue;
@@ -163,9 +161,8 @@ void FileSpoolPendingStore::perform_group_commit() {
         RecordHeader hdr;
         hdr.payload_length = static_cast<uint32_t>(rec.proto_bytes.size());
         hdr.crc32c = compute_crc32c(rec.proto_bytes);
-        hdr.enqueued_at_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                                 rec.enqueued_at.time_since_epoch())
-                                 .count();
+        hdr.enqueued_at_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(rec.enqueued_at.time_since_epoch()).count();
         hdr.attempt_count = rec.attempt_count;
         std::memcpy(hdr.event_id_bytes, rec.event_id.bytes().data(), 16);
 
@@ -213,7 +210,8 @@ void FileSpoolPendingStore::mark_delivered(std::span<const securecloud::audit::d
     }
 }
 
-void FileSpoolPendingStore::mark_terminal(const securecloud::audit::domain::EventId& event_id, TerminalReason /*reason*/) {
+void FileSpoolPendingStore::mark_terminal(const securecloud::audit::domain::EventId& event_id,
+                                          TerminalReason /*reason*/) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (claimed_map_.erase(event_id) > 0) {
         ++unrecoverable_count_;

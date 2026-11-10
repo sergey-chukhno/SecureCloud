@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audit/gateway_audit_producer.hpp"
 #include "gateway_config.hpp"
 #include "http/middleware/middleware.hpp"
 
@@ -34,8 +35,14 @@ class RateLimiterMiddleware : public Middleware {
         uint32_t reset_sec{0};
     };
 
-    explicit RateLimiterMiddleware(GatewayRateLimitingConfig config, ClockFn clock_fn = nullptr);
-    explicit RateLimiterMiddleware(const GatewayConfig& config, ClockFn clock_fn = nullptr);
+    explicit RateLimiterMiddleware(GatewayRateLimitingConfig config,
+                                   std::shared_ptr<audit::IGatewayAuditProducer> audit_producer = nullptr,
+                                   ClockFn clock_fn = nullptr);
+
+    explicit RateLimiterMiddleware(const GatewayConfig& config,
+                                   std::shared_ptr<audit::IGatewayAuditProducer> audit_producer = nullptr,
+                                   ClockFn clock_fn = nullptr);
+
     ~RateLimiterMiddleware() override = default;
 
     RateLimiterMiddleware(const RateLimiterMiddleware&) = delete;
@@ -72,6 +79,7 @@ class RateLimiterMiddleware : public Middleware {
     static std::string extract_request_id(const httplib::Request& req, const httplib::Response& res);
 
     GatewayRateLimitingConfig config_;
+    std::shared_ptr<audit::IGatewayAuditProducer> audit_producer_{nullptr};
     ClockFn clock_fn_;
     mutable std::mutex mutex_;
     std::list<std::string> lru_list_;

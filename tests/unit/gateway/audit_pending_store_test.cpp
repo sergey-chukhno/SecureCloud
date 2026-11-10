@@ -3,11 +3,10 @@
 #include "audit/gateway_audit_spool_config.hpp"
 #include "domain/event_id.hpp"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <gtest/gtest.h>
 #include <thread>
 #include <vector>
 

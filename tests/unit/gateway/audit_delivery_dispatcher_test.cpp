@@ -3,9 +3,8 @@
 #include "grpc/audit_client_interface.hpp"
 #include "grpc/dependency_error.hpp"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
+#include <gtest/gtest.h>
 #include <memory>
 #include <thread>
 #include <vector>

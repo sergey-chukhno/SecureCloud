@@ -11,12 +11,9 @@ namespace securecloud::gateway::audit {
 AuditDeliveryDispatcher::AuditDeliveryDispatcher(
     std::shared_ptr<IAuditPendingStore> pending_store,
     std::shared_ptr<securecloud::gateway::grpc::IAuditIngestionClient> audit_client,
-    std::shared_ptr<securecloud::gateway::http::CircuitBreaker> circuit_breaker,
-    AuditDeliveryDispatcherConfig config)
-    : pending_store_(std::move(pending_store)),
-      audit_client_(std::move(audit_client)),
-      circuit_breaker_(std::move(circuit_breaker)),
-      config_(config) {}
+    std::shared_ptr<securecloud::gateway::http::CircuitBreaker> circuit_breaker, AuditDeliveryDispatcherConfig config)
+    : pending_store_(std::move(pending_store)), audit_client_(std::move(audit_client)),
+      circuit_breaker_(std::move(circuit_breaker)), config_(config) {}
 
 AuditDeliveryDispatcher::~AuditDeliveryDispatcher() {
     stop();
@@ -69,9 +66,8 @@ void AuditDeliveryDispatcher::worker_loop() {
 
         if (!had_work) {
             std::unique_lock<std::mutex> lock(mutex_);
-            cv_.wait_for(lock, std::chrono::milliseconds(config_.poll_interval_ms), [this] {
-                return stop_requested_.load(std::memory_order_relaxed);
-            });
+            cv_.wait_for(lock, std::chrono::milliseconds(config_.poll_interval_ms),
+                         [this] { return stop_requested_.load(std::memory_order_relaxed); });
         }
     }
 }
@@ -105,8 +101,7 @@ bool AuditDeliveryDispatcher::process_next_batch() {
         return true;
     }
 
-    securecloud::gateway::grpc::ClientCallContext ctx(
-        std::chrono::milliseconds(config_.audit_timeout_ms));
+    securecloud::gateway::grpc::ClientCallContext ctx(std::chrono::milliseconds(config_.audit_timeout_ms));
 
     auto result = audit_client_->batch_submit_events(request, ctx);
 
@@ -145,24 +140,24 @@ bool AuditDeliveryDispatcher::process_next_batch() {
         }
 
         switch (grpc_code) {
-            case ::grpc::StatusCode::INVALID_ARGUMENT:
-            case ::grpc::StatusCode::ALREADY_EXISTS:
-            case ::grpc::StatusCode::FAILED_PRECONDITION:
-                for (const auto& id : valid_ids) {
-                    pending_store_->mark_terminal(id, TerminalReason::ValidationFailed);
-                }
-                break;
+        case ::grpc::StatusCode::INVALID_ARGUMENT:
+        case ::grpc::StatusCode::ALREADY_EXISTS:
+        case ::grpc::StatusCode::FAILED_PRECONDITION:
+            for (const auto& id : valid_ids) {
+                pending_store_->mark_terminal(id, TerminalReason::ValidationFailed);
+            }
+            break;
 
-            case ::grpc::StatusCode::UNAUTHENTICATED:
-            case ::grpc::StatusCode::PERMISSION_DENIED:
-            case ::grpc::StatusCode::UNAVAILABLE:
-            case ::grpc::StatusCode::DEADLINE_EXCEEDED:
-            case ::grpc::StatusCode::RESOURCE_EXHAUSTED:
-            case ::grpc::StatusCode::INTERNAL:
-            case ::grpc::StatusCode::UNKNOWN:
-            default:
-                pending_store_->release(valid_ids);
-                break;
+        case ::grpc::StatusCode::UNAUTHENTICATED:
+        case ::grpc::StatusCode::PERMISSION_DENIED:
+        case ::grpc::StatusCode::UNAVAILABLE:
+        case ::grpc::StatusCode::DEADLINE_EXCEEDED:
+        case ::grpc::StatusCode::RESOURCE_EXHAUSTED:
+        case ::grpc::StatusCode::INTERNAL:
+        case ::grpc::StatusCode::UNKNOWN:
+        default:
+            pending_store_->release(valid_ids);
+            break;
         }
     }
 

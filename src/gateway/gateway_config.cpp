@@ -667,6 +667,83 @@ void load_token_verification_config(GatewayConfig& config, const common::configu
     }
 }
 
+void load_audit_producer_config(GatewayConfig& config, const common::configuration::ConfigurationSource& source,
+                                common::configuration::ValidationResult& out_errors) {
+    auto enabled_str = source.get("SECURECLOUD_GATEWAY_AUDIT_ENABLED");
+    if (enabled_str.has_value()) {
+        auto parsed = common::configuration::ConfigParser::parse_bool("SECURECLOUD_GATEWAY_AUDIT_ENABLED",
+                                                                      enabled_str.value(), out_errors);
+        if (parsed.has_value()) {
+            config.audit_producer.enabled = parsed.value();
+        }
+    } else {
+        config.audit_producer.enabled = true;
+    }
+
+    auto mode_opt = source.get("SECURECLOUD_GATEWAY_AUDIT_MODE");
+    if (mode_opt.has_value()) {
+        config.audit_producer.mode = mode_opt.value();
+    }
+
+    auto dir_opt = source.get("SECURECLOUD_GATEWAY_AUDIT_SPOOL_DIR");
+    if (!dir_opt.has_value()) {
+        dir_opt = source.get("SECURECLOUD_GATEWAY_AUDIT_SPOOL_DIRECTORY");
+    }
+    if (dir_opt.has_value()) {
+        config.audit_producer.spool_directory = dir_opt.value();
+        config.audit_spool.spool_directory = dir_opt.value();
+    }
+
+    auto max_bytes_str = source.get("SECURECLOUD_GATEWAY_AUDIT_MAX_SPOOL_BYTES");
+    if (max_bytes_str.has_value()) {
+        parse_size_t("SECURECLOUD_GATEWAY_AUDIT_MAX_SPOOL_BYTES", max_bytes_str.value(),
+                     config.audit_producer.max_spool_bytes, out_errors, 1024 * 1024, 10737418240ULL);
+        config.audit_spool.max_spool_bytes = config.audit_producer.max_spool_bytes;
+    }
+
+    auto max_records_str = source.get("SECURECLOUD_GATEWAY_AUDIT_MAX_SPOOL_RECORDS");
+    if (max_records_str.has_value()) {
+        parse_size_t("SECURECLOUD_GATEWAY_AUDIT_MAX_SPOOL_RECORDS", max_records_str.value(),
+                     config.audit_producer.max_spool_records, out_errors, 100, 10000000);
+        config.audit_spool.max_spool_records = config.audit_producer.max_spool_records;
+    }
+
+    auto batch_str = source.get("SECURECLOUD_GATEWAY_AUDIT_BATCH_SIZE");
+    if (batch_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_AUDIT_BATCH_SIZE", batch_str.value(), config.audit_producer.batch_size,
+                     out_errors, 1, 1000);
+    }
+
+    auto backoff_str = source.get("SECURECLOUD_GATEWAY_AUDIT_BACKOFF_MS");
+    if (backoff_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_AUDIT_BACKOFF_MS", backoff_str.value(), config.audit_producer.backoff_ms,
+                     out_errors, 10, 60000);
+    }
+
+    auto drain_str = source.get("SECURECLOUD_GATEWAY_AUDIT_DRAIN_BUDGET_MS");
+    if (drain_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_AUDIT_DRAIN_BUDGET_MS", drain_str.value(),
+                     config.audit_producer.drain_budget_ms, out_errors, 100, 30000);
+    }
+
+    auto agg_win_str = source.get("SECURECLOUD_GATEWAY_AUDIT_AGGREGATION_WINDOW_SEC");
+    if (agg_win_str.has_value()) {
+        parse_uint32("SECURECLOUD_GATEWAY_AUDIT_AGGREGATION_WINDOW_SEC", agg_win_str.value(),
+                     config.audit_producer.aggregation_window_sec, out_errors, 1, 3600);
+    }
+
+    auto agg_keys_str = source.get("SECURECLOUD_GATEWAY_AUDIT_AGGREGATION_MAX_KEYS");
+    if (agg_keys_str.has_value()) {
+        parse_size_t("SECURECLOUD_GATEWAY_AUDIT_AGGREGATION_MAX_KEYS", agg_keys_str.value(),
+                     config.audit_producer.aggregation_max_keys, out_errors, 10, 100000);
+    }
+
+    auto inst_opt = source.get("SECURECLOUD_GATEWAY_AUDIT_INSTANCE_NAME");
+    if (inst_opt.has_value()) {
+        config.audit_producer.instance_name = inst_opt.value();
+    }
+}
+
 } // namespace
 
 std::string GatewayConfig::http_listen_endpoint() const {
@@ -717,6 +794,7 @@ GatewayConfig GatewayConfig::load(const common::configuration::ConfigurationSour
     load_streaming_config(config, source, out_errors);
     load_downstream_endpoints(config, source, out_errors);
     load_token_verification_config(config, source, out_errors, validate_file_paths);
+    load_audit_producer_config(config, source, out_errors);
 
     config.peer_probe_target = source.get("SECURECLOUD_GATEWAY_PEER_PROBE_TARGET")
                                    .value_or(source.get("SECURECLOUD_PEER_PROBE_TARGET").value_or(""));

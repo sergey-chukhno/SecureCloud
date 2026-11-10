@@ -23,7 +23,9 @@ enum class AdmissionResult : uint8_t {
     AcceptedNonDurable,  // Accepted into bounded in-memory buffer
     RejectedFull,        // Store capacity limit reached
     RejectedUnavailable, // Disk spool directory unwritable / I/O failure
-    RejectedInvalid      // Format or validation failure
+    RejectedInvalid,     // Format or validation failure
+    RejectedSpoolFull,   // Spool capacity cap reached
+    RejectedDisabled     // Producer disabled in configuration
 };
 
 enum class TerminalReason : uint8_t { ValidationFailed, FormatCorrupted, MaxRetriesExceeded };

@@ -3,7 +3,7 @@
 
 #include <gtest/gtest.h>
 
-using namespace securecloud::gateway::audit;
+namespace securecloud::gateway::audit {
 
 TEST(GatewayAuditEventFactoryTest, GeneratesValidCanonicalEvent) {
     GatewayAuditEventFactory factory("gateway-test-instance");
@@ -60,3 +60,5 @@ TEST(GatewayAuditEventFactoryTest, FiltersUnwhitelistedMetadata) {
     EXPECT_EQ(domain_event.metadata.count("reason"), 1);
     EXPECT_EQ(domain_event.metadata.count("unapproved_custom_field"), 0);
 }
+
+} // namespace securecloud::gateway::audit

@@ -3813,3 +3813,20 @@ target_link_libraries(securecloud_gateway_audit_delivery_dispatcher_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_gateway_audit_delivery_dispatcher_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Producer & Aggregation Window Unit Test Suite (AUDIT-012-T05)
+add_executable(securecloud_gateway_audit_producer_test
+        gateway/gateway_audit_producer_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_producer_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_http
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_producer_test ${SECURECLOUD_TEST_PROPERTIES})

@@ -1,133 +1,160 @@
 #include "http/middleware/rate_limiter_middleware.hpp"
 
-#include "http/auth/request_context.hpp"
-#include "http/errors/error_mapper.hpp"
+#include "http/auth/authenticated_context.hpp"
+#include "http/auth/authentication_middleware.hpp"
+
+#include <httplib.h>
+#include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
-#include <httplib.h>
 
 namespace securecloud::gateway::http {
 
-RateLimiterMiddleware::RateLimiterMiddleware(GatewayRateLimitingConfig config, ClockFn clock_fn)
-    : config_(config), clock_fn_(std::move(clock_fn)) {
-    if (!clock_fn_) {
-        clock_fn_ = [] { return std::chrono::steady_clock::now(); };
+RateLimiterMiddleware::RateLimiterMiddleware(GatewayRateLimitingConfig config,
+                                               std::shared_ptr<audit::IGatewayAuditProducer> audit_producer,
+                                               ClockFn clock_fn)
+    : config_(config),
+      audit_producer_(std::move(audit_producer)),
+      clock_fn_(std::move(clock_fn)) {}
+
+RateLimiterMiddleware::RateLimiterMiddleware(const GatewayConfig& config,
+                                               std::shared_ptr<audit::IGatewayAuditProducer> audit_producer,
+                                               ClockFn clock_fn)
+    : RateLimiterMiddleware(config.rate_limiting, std::move(audit_producer), std::move(clock_fn)) {}
+
+void RateLimiterMiddleware::process(const httplib::Request& req, httplib::Response& res, const NextHandler& next) {
+    if (!config_.enabled) {
+        next(req, res);
+        return;
     }
-}
 
-RateLimiterMiddleware::RateLimiterMiddleware(const GatewayConfig& config, ClockFn clock_fn)
-    : RateLimiterMiddleware(config.rate_limiting, std::move(clock_fn)) {}
+    const std::string key = resolve_client_key(req);
+    const auto acquire_res = acquire(key);
 
-std::string RateLimiterMiddleware::resolve_client_key(const httplib::Request& req) {
-    if (const auto* rc = RequestContext::current()) {
-        if (rc->is_authenticated() && rc->authenticated_context().has_value() &&
-            !rc->authenticated_context()->user_id().empty()) {
-            return "user:" + rc->authenticated_context()->user_id();
+    res.set_header("X-RateLimit-Limit", std::to_string(acquire_res.limit));
+    res.set_header("X-RateLimit-Remaining", std::to_string(acquire_res.remaining));
+    res.set_header("X-RateLimit-Reset", std::to_string(acquire_res.reset_sec));
+
+    if (!acquire_res.allowed) {
+        res.set_header("Retry-After", std::to_string(acquire_res.retry_after_sec));
+
+        const std::string req_id = extract_request_id(req, res);
+
+        if (audit_producer_) {
+            audit::GatewayAuditObservation obs;
+            obs.type = audit::GatewayAuditEventType::RateLimitExceeded;
+            obs.client_ip = req.remote_addr;
+            obs.route_class = req.path;
+            obs.http_method = req.method;
+            obs.client_request_id = req_id;
+
+            if (auto auth_ctx = AuthenticationMiddleware::get_context(req)) {
+                obs.actor_id = auth_ctx->user_id();
+                obs.device_id = auth_ctx->device_id();
+                obs.session_id = auth_ctx->session_id();
+            }
+
+            obs.metadata["limit"] = std::to_string(acquire_res.limit);
+            obs.metadata["key"] = key;
+
+            audit_producer_->record_observation(obs);
         }
+
+        nlohmann::json problem = {
+            {"type", "https://securecloud.local/errors/rate-limit-exceeded"},
+            {"title", "Rate Limit Exceeded"},
+            {"status", 429},
+            {"detail", "Too many requests from identity/IP key within the rate limit window."},
+            {"instance", "/requests/" + req_id}
+        };
+        res.status = 429;
+        res.set_content(problem.dump(), "application/problem+json");
+        return;
     }
 
-    if (req.has_header("X-Forwarded-For")) {
-        auto xff = req.get_header_value("X-Forwarded-For");
-        auto comma_pos = xff.find(',');
-        std::string first_ip = (comma_pos != std::string::npos) ? xff.substr(0, comma_pos) : xff;
-        size_t start = first_ip.find_first_not_of(" \t\r\n");
-        size_t end = first_ip.find_last_not_of(" \t\r\n");
-        if (start != std::string::npos && end != std::string::npos) {
-            return "ip:" + first_ip.substr(start, end - start + 1);
-        }
-    }
-
-    if (!req.remote_addr.empty()) {
-        return "ip:" + req.remote_addr;
-    }
-
-    return "ip:anonymous";
+    next(req, res);
 }
 
 RateLimiterMiddleware::AcquireResult RateLimiterMiddleware::acquire(const std::string& key) {
-    if (!config_.enabled) {
-        return AcquireResult{
-            .allowed = true,
-            .remaining = config_.burst_capacity,
-            .limit = config_.burst_capacity,
-            .retry_after_sec = 0,
-            .reset_sec = 0,
-        };
-    }
-
     std::lock_guard<std::mutex> lock(mutex_);
-    const auto now = clock_fn_();
+
+    const auto now_tp = clock_fn_ ? clock_fn_() : std::chrono::steady_clock::now();
+    const auto epoch_sec = std::chrono::duration_cast<std::chrono::seconds>(now_tp.time_since_epoch()).count();
 
     auto it = client_map_.find(key);
-    if (it != client_map_.end()) {
-        lru_list_.splice(lru_list_.begin(), lru_list_, it->second.lru_iter);
-        it->second.lru_iter = lru_list_.begin();
 
-        double elapsed_sec = std::chrono::duration<double>(now - it->second.last_refill).count();
-        if (elapsed_sec < 0.0) {
-            elapsed_sec = 0.0;
-        }
-
-        if (elapsed_sec >= static_cast<double>(config_.client_ttl.count())) {
-            it->second.tokens = static_cast<double>(config_.burst_capacity);
-        } else {
-            it->second.tokens = std::min(static_cast<double>(config_.burst_capacity),
-                                         it->second.tokens + elapsed_sec * config_.refill_rate_per_sec);
-        }
-        it->second.last_refill = now;
-    } else {
-        while (client_map_.size() >= config_.max_tracked_clients && !lru_list_.empty()) {
-            const auto& oldest_key = lru_list_.back();
+    if (it == client_map_.end()) {
+        if (client_map_.size() >= config_.max_tracked_clients && !lru_list_.empty()) {
+            const std::string oldest_key = lru_list_.back();
             client_map_.erase(oldest_key);
             lru_list_.pop_back();
         }
 
         lru_list_.push_front(key);
-        ClientEntry entry;
-        entry.tokens = static_cast<double>(config_.burst_capacity);
-        entry.last_refill = now;
-        entry.lru_iter = lru_list_.begin();
-        it = client_map_.emplace(key, entry).first;
+        ClientEntry entry{
+            .tokens = static_cast<double>(config_.burst_capacity) - 1.0,
+            .last_refill = now_tp,
+            .lru_iter = lru_list_.begin()
+        };
+        client_map_.emplace(key, entry);
+
+        return AcquireResult{
+            .allowed = true,
+            .remaining = config_.burst_capacity > 0 ? config_.burst_capacity - 1 : 0,
+            .limit = config_.burst_capacity,
+            .retry_after_sec = 0,
+            .reset_sec = static_cast<uint32_t>(epoch_sec + 1)
+        };
     }
 
-    AcquireResult result;
-    result.limit = config_.burst_capacity;
+    lru_list_.erase(it->second.lru_iter);
+    lru_list_.push_front(key);
+    it->second.lru_iter = lru_list_.begin();
 
-    if (it->second.tokens >= 1.0) {
-        it->second.tokens -= 1.0;
-        result.allowed = true;
-        result.remaining = static_cast<uint32_t>(std::floor(it->second.tokens));
-        result.retry_after_sec = 0;
+    auto& entry = it->second;
+    const auto elapsed_sec = std::chrono::duration_cast<std::chrono::duration<double>>(now_tp - entry.last_refill).count();
+    entry.last_refill = now_tp;
 
-        double missing_for_full = static_cast<double>(config_.burst_capacity) - it->second.tokens;
-        if (missing_for_full <= 0.0 || config_.refill_rate_per_sec <= 0.0) {
-            result.reset_sec = 0;
-        } else {
-            result.reset_sec = static_cast<uint32_t>(std::ceil(missing_for_full / config_.refill_rate_per_sec));
-        }
-    } else {
-        result.allowed = false;
-        result.remaining = 0;
+    entry.tokens = std::min(static_cast<double>(config_.burst_capacity),
+                            entry.tokens + (elapsed_sec * config_.refill_rate_per_sec));
 
-        double missing_for_one = 1.0 - it->second.tokens;
-        if (config_.refill_rate_per_sec > 0.0) {
-            result.retry_after_sec = static_cast<uint32_t>(std::ceil(missing_for_one / config_.refill_rate_per_sec));
-            double missing_for_full = static_cast<double>(config_.burst_capacity) - it->second.tokens;
-            result.reset_sec = static_cast<uint32_t>(std::ceil(missing_for_full / config_.refill_rate_per_sec));
-        } else {
-            result.retry_after_sec = 1;
-            result.reset_sec = 1;
-        }
-        if (result.retry_after_sec == 0) {
-            result.retry_after_sec = 1;
-        }
-        if (result.reset_sec == 0) {
-            result.reset_sec = 1;
-        }
+    if (entry.tokens >= 1.0) {
+        entry.tokens -= 1.0;
+        const uint32_t remaining = static_cast<uint32_t>(std::floor(entry.tokens));
+
+        return AcquireResult{
+            .allowed = true,
+            .remaining = remaining,
+            .limit = config_.burst_capacity,
+            .retry_after_sec = 0,
+            .reset_sec = static_cast<uint32_t>(epoch_sec + 1)
+        };
     }
 
-    return result;
+    const double missing_tokens = 1.0 - entry.tokens;
+    const uint32_t retry_after = static_cast<uint32_t>(std::ceil(missing_tokens / config_.refill_rate_per_sec));
+
+    return AcquireResult{
+        .allowed = false,
+        .remaining = 0,
+        .limit = config_.burst_capacity,
+        .retry_after_sec = std::max(1u, retry_after),
+        .reset_sec = static_cast<uint32_t>(epoch_sec + retry_after)
+    };
+}
+
+std::string RateLimiterMiddleware::resolve_client_key(const httplib::Request& req) {
+    if (auto auth_ctx = AuthenticationMiddleware::get_context(req)) {
+        if (!auth_ctx->user_id().empty()) {
+            return "usr:" + auth_ctx->user_id();
+        }
+    }
+    if (!req.remote_addr.empty()) {
+        return "ip:" + req.remote_addr;
+    }
+    return "ip:127.0.0.1";
 }
 
 size_t RateLimiterMiddleware::tracked_client_count() const {
@@ -137,25 +164,20 @@ size_t RateLimiterMiddleware::tracked_client_count() const {
 
 size_t RateLimiterMiddleware::prune_expired() {
     std::lock_guard<std::mutex> lock(mutex_);
-    const auto now = clock_fn_();
-    size_t pruned = 0;
+    const auto now_tp = clock_fn_ ? clock_fn_() : std::chrono::steady_clock::now();
+    size_t pruned_count = 0;
 
-    auto it = lru_list_.rbegin();
-    while (it != lru_list_.rend()) {
-        auto map_it = client_map_.find(*it);
-        if (map_it != client_map_.end()) {
-            double elapsed_sec = std::chrono::duration<double>(now - map_it->second.last_refill).count();
-            if (elapsed_sec >= static_cast<double>(config_.client_ttl.count())) {
-                client_map_.erase(map_it);
-                auto erase_iter = std::next(it).base();
-                it = decltype(it)(lru_list_.erase(erase_iter));
-                ++pruned;
-                continue;
-            }
+    for (auto it = client_map_.begin(); it != client_map_.end();) {
+        if (now_tp - it->second.last_refill > config_.client_ttl) {
+            lru_list_.erase(it->second.lru_iter);
+            it = client_map_.erase(it);
+            ++pruned_count;
+        } else {
+            ++it;
         }
-        ++it;
     }
-    return pruned;
+
+    return pruned_count;
 }
 
 void RateLimiterMiddleware::clear() {
@@ -165,54 +187,13 @@ void RateLimiterMiddleware::clear() {
 }
 
 std::string RateLimiterMiddleware::extract_request_id(const httplib::Request& req, const httplib::Response& res) {
-    if (const auto* rc = RequestContext::current()) {
-        if (!rc->request_id().empty()) {
-            return rc->request_id();
-        }
+    if (req.has_header("X-Request-ID")) {
+        return req.get_header_value("X-Request-ID");
     }
     if (res.has_header("X-Request-ID")) {
         return res.get_header_value("X-Request-ID");
     }
-    if (res.has_header("X-Request-Id")) {
-        return res.get_header_value("X-Request-Id");
-    }
-    if (req.has_header("X-Request-ID")) {
-        return req.get_header_value("X-Request-ID");
-    }
-    if (req.has_header("X-Request-Id")) {
-        return req.get_header_value("X-Request-Id");
-    }
-    return "";
-}
-
-void RateLimiterMiddleware::process(const httplib::Request& req, httplib::Response& res, const NextHandler& next) {
-    if (!config_.enabled) {
-        next(req, res);
-        return;
-    }
-
-    std::string key = resolve_client_key(req);
-    auto result = acquire(key);
-
-    if (result.allowed) {
-        res.set_header("X-RateLimit-Limit", std::to_string(result.limit));
-        res.set_header("X-RateLimit-Remaining", std::to_string(result.remaining));
-        next(req, res);
-        return;
-    }
-
-    std::string request_id = extract_request_id(req, res);
-
-    res.status = 429;
-    res.set_header("Content-Type", "application/problem+json");
-    res.set_header("Retry-After", std::to_string(result.retry_after_sec));
-    res.set_header("X-RateLimit-Limit", std::to_string(result.limit));
-    res.set_header("X-RateLimit-Remaining", "0");
-    res.set_header("X-RateLimit-Reset", std::to_string(result.reset_sec));
-
-    res.body = ErrorMapper::format_problem_details(
-        429, "https://securecloud.internal/errors/rate-limit-exceeded", "Too Many Requests",
-        "Client rate limit exceeded; retry after backoff", "RATE_LIMIT_EXCEEDED", request_id);
+    return "unknown";
 }
 
 } // namespace securecloud::gateway::http
