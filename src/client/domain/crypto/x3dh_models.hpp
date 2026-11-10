@@ -61,4 +61,3 @@ struct X3dhResponderResult {
 };
 
 } // namespace securecloud::client::domain::crypto
-

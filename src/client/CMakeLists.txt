@@ -19,6 +19,8 @@ if(Qt6_FOUND)
         domain/message.cpp
         domain/crypto/x3dh_models.cpp
         domain/crypto/x3dh_engine.cpp
+        domain/crypto/ratchet_models.cpp
+        domain/crypto/double_ratchet_engine.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)
     target_include_directories(securecloud_client_domain PUBLIC
