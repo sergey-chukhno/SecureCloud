@@ -23,8 +23,8 @@ With the completion of **Card `CLIENT-005`**, the client generates valid Ed25519
 
 | Ticket | Description | Status | Commit / Notes |
 |---|---|---|---|
-| **CLIENT-006-T01** | Cryptographic Primitives Expansion for X3DH & Double Ratchet | Completed | Pending user validation & commit |
-| **CLIENT-006-T02** | X3DH Key Agreement Engine & Handshake Protocol | Planned | Alice initiator / Bob receiver handshake, bundle verification |
+| **CLIENT-006-T01** | Cryptographic Primitives Expansion for X3DH & Double Ratchet | Completed | `1f28223` |
+| **CLIENT-006-T02** | X3DH Key Agreement Engine & Handshake Protocol | Completed | Pending user validation & commit |
 | **CLIENT-006-T03** | Double Ratchet State Machine & Key Derivation Chains | Planned | Root chain, Symmetric sending/receiving chains, DH ratchet step |
 | **CLIENT-006-T04** | Skipped Message Key Store & Out-of-Order Packet Delivery | Planned | Bounded skipped keys, TTL expiration, replay defense |
 | **CLIENT-006-T05** | Ratchet Session Manager, Multi-Device Fan-out & Secure Session Persistence | Planned | Device-pair sessions, secure serialization to `ISecureStorage` |

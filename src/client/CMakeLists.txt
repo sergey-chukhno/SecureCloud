@@ -17,6 +17,8 @@ if(Qt6_FOUND)
         domain/contact.cpp
         domain/conversation.cpp
         domain/message.cpp
+        domain/crypto/x3dh_models.cpp
+        domain/crypto/x3dh_engine.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)
     target_include_directories(securecloud_client_domain PUBLIC
@@ -25,6 +27,7 @@ if(Qt6_FOUND)
     target_link_libraries(securecloud_client_domain PUBLIC
         securecloud::common
         securecloud::compiler_flags
+        OpenSSL::Crypto
     )
 
     # 2. Infrastructure Layer (Adapters, Networking via Gateway, Persistence)
