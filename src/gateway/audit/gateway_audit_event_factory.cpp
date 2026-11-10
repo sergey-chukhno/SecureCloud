@@ -20,14 +20,14 @@ constexpr size_t kMaxMetadataValueLength = 1024;
 
 securecloud::audit::domain::Severity map_severity(AuditSeverity severity) noexcept {
     switch (severity) {
-        case AuditSeverity::Info:
-            return securecloud::audit::domain::Severity::Info;
-        case AuditSeverity::Warning:
-            return securecloud::audit::domain::Severity::Warning;
-        case AuditSeverity::Security:
-            return securecloud::audit::domain::Severity::Security;
-        case AuditSeverity::Critical:
-            return securecloud::audit::domain::Severity::Critical;
+    case AuditSeverity::Info:
+        return securecloud::audit::domain::Severity::Info;
+    case AuditSeverity::Warning:
+        return securecloud::audit::domain::Severity::Warning;
+    case AuditSeverity::Security:
+        return securecloud::audit::domain::Severity::Security;
+    case AuditSeverity::Critical:
+        return securecloud::audit::domain::Severity::Critical;
     }
     return securecloud::audit::domain::Severity::Info;
 }
@@ -39,27 +39,27 @@ bool is_whitelisted_metadata_key(GatewayAuditEventType type, std::string_view ke
     }
 
     switch (type) {
-        case GatewayAuditEventType::TokenRejected:
-            return key == "reason";
-        case GatewayAuditEventType::AuthorizationDenied:
-            return key == "reason" || key == "required_scope";
-        case GatewayAuditEventType::IdentityHeaderStripped:
-            return key == "header_names" || key == "count";
-        case GatewayAuditEventType::ChunkIntegrityRejected:
-            return key == "chunk_index" || key == "reason";
-        case GatewayAuditEventType::RateLimitExceeded:
-            return key == "window_start" || key == "window_seconds" || key == "rejected_count" || key == "key_type";
-        case GatewayAuditEventType::RequestRejected:
-            return key == "reason" || key == "rejected_count" || key == "window";
-        case GatewayAuditEventType::CircuitOpened:
-        case GatewayAuditEventType::CircuitClosed:
-            return key == "dependency" || key == "failure_count";
-        case GatewayAuditEventType::LifecycleStarted:
-        case GatewayAuditEventType::LifecycleDrainStarted:
-        case GatewayAuditEventType::LifecycleStopped:
-            return key == "version" || key == "pending_audit_events";
-        case GatewayAuditEventType::EventsLost:
-            return key == "lost_count" || key == "reason";
+    case GatewayAuditEventType::TokenRejected:
+        return key == "reason";
+    case GatewayAuditEventType::AuthorizationDenied:
+        return key == "reason" || key == "required_scope";
+    case GatewayAuditEventType::IdentityHeaderStripped:
+        return key == "header_names" || key == "count";
+    case GatewayAuditEventType::ChunkIntegrityRejected:
+        return key == "chunk_index" || key == "reason";
+    case GatewayAuditEventType::RateLimitExceeded:
+        return key == "window_start" || key == "window_seconds" || key == "rejected_count" || key == "key_type";
+    case GatewayAuditEventType::RequestRejected:
+        return key == "reason" || key == "rejected_count" || key == "window";
+    case GatewayAuditEventType::CircuitOpened:
+    case GatewayAuditEventType::CircuitClosed:
+        return key == "dependency" || key == "failure_count";
+    case GatewayAuditEventType::LifecycleStarted:
+    case GatewayAuditEventType::LifecycleDrainStarted:
+    case GatewayAuditEventType::LifecycleStopped:
+        return key == "version" || key == "pending_audit_events";
+    case GatewayAuditEventType::EventsLost:
+        return key == "lost_count" || key == "reason";
     }
     return false;
 }
@@ -83,7 +83,7 @@ std::string GatewayAuditEventFactory::sanitize_correlation_id(const std::optiona
 
 std::map<std::string, std::string>
 GatewayAuditEventFactory::sanitize_metadata(GatewayAuditEventType type,
-                                           const GatewayAuditObservation& observation) const {
+                                            const GatewayAuditObservation& observation) const {
     std::map<std::string, std::string> clean_metadata;
 
     // Standard context entries
@@ -178,81 +178,81 @@ GatewayAuditEventFactory::to_protobuf(const securecloud::audit::domain::AuditEve
     proto.set_event_type(domain_event.event_type);
 
     switch (domain_event.severity) {
-        case securecloud::audit::domain::Severity::Info:
-            proto.set_severity(::securecloud::audit::v1::SEVERITY_INFO);
-            break;
-        case securecloud::audit::domain::Severity::Warning:
-            proto.set_severity(::securecloud::audit::v1::SEVERITY_WARNING);
-            break;
-        case securecloud::audit::domain::Severity::Security:
-            proto.set_severity(::securecloud::audit::v1::SEVERITY_SECURITY);
-            break;
-        case securecloud::audit::domain::Severity::Critical:
-            proto.set_severity(::securecloud::audit::v1::SEVERITY_CRITICAL);
-            break;
+    case securecloud::audit::domain::Severity::Info:
+        proto.set_severity(::securecloud::audit::v1::SEVERITY_INFO);
+        break;
+    case securecloud::audit::domain::Severity::Warning:
+        proto.set_severity(::securecloud::audit::v1::SEVERITY_WARNING);
+        break;
+    case securecloud::audit::domain::Severity::Security:
+        proto.set_severity(::securecloud::audit::v1::SEVERITY_SECURITY);
+        break;
+    case securecloud::audit::domain::Severity::Critical:
+        proto.set_severity(::securecloud::audit::v1::SEVERITY_CRITICAL);
+        break;
     }
 
     switch (domain_event.producer_service) {
-        case securecloud::audit::domain::ProducerService::Gateway:
-            proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_GATEWAY);
-            break;
-        case securecloud::audit::domain::ProducerService::Auth:
-            proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_AUTH);
-            break;
-        case securecloud::audit::domain::ProducerService::Messaging:
-            proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING);
-            break;
-        case securecloud::audit::domain::ProducerService::Files:
-            proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_FILES);
-            break;
-        case securecloud::audit::domain::ProducerService::Audit:
-            proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_AUDIT);
-            break;
-        default:
-            proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_UNSPECIFIED);
-            break;
+    case securecloud::audit::domain::ProducerService::Gateway:
+        proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_GATEWAY);
+        break;
+    case securecloud::audit::domain::ProducerService::Auth:
+        proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_AUTH);
+        break;
+    case securecloud::audit::domain::ProducerService::Messaging:
+        proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING);
+        break;
+    case securecloud::audit::domain::ProducerService::Files:
+        proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_FILES);
+        break;
+    case securecloud::audit::domain::ProducerService::Audit:
+        proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_AUDIT);
+        break;
+    default:
+        proto.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_UNSPECIFIED);
+        break;
     }
 
     proto.set_producer_instance(domain_event.producer_instance);
 
     switch (domain_event.actor_type) {
-        case securecloud::audit::domain::ActorType::User:
-            proto.set_actor_type(::securecloud::audit::v1::ACTOR_TYPE_USER);
-            break;
-        case securecloud::audit::domain::ActorType::Device:
-            proto.set_actor_type(::securecloud::audit::v1::ACTOR_TYPE_DEVICE);
-            break;
-        case securecloud::audit::domain::ActorType::Service:
-            proto.set_actor_type(::securecloud::audit::v1::ACTOR_TYPE_SERVICE);
-            break;
-        case securecloud::audit::domain::ActorType::System:
-            proto.set_actor_type(::securecloud::audit::v1::ACTOR_TYPE_SYSTEM);
-            break;
-        default:
-            proto.set_actor_type(::securecloud::audit::v1::ACTOR_TYPE_UNSPECIFIED);
-            break;
+    case securecloud::audit::domain::ActorType::User:
+        proto.set_actor_type(::securecloud::audit::v1::ACTOR_TYPE_USER);
+        break;
+    case securecloud::audit::domain::ActorType::Device:
+        proto.set_actor_type(::securecloud::audit::v1::ACTOR_TYPE_DEVICE);
+        break;
+    case securecloud::audit::domain::ActorType::Service:
+        proto.set_actor_type(::securecloud::audit::v1::ACTOR_TYPE_SERVICE);
+        break;
+    case securecloud::audit::domain::ActorType::System:
+        proto.set_actor_type(::securecloud::audit::v1::ACTOR_TYPE_SYSTEM);
+        break;
+    default:
+        proto.set_actor_type(::securecloud::audit::v1::ACTOR_TYPE_UNSPECIFIED);
+        break;
     }
     proto.set_actor_id(domain_event.actor_id);
 
     switch (domain_event.target_type) {
-        case securecloud::audit::domain::TargetType::User:
-            proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_USER);
-            break;
-        case securecloud::audit::domain::TargetType::Device:
-            proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_DEVICE);
-            break;
-        case securecloud::audit::domain::TargetType::Conversation:
-            proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_CONVERSATION);
-            break;
-        case securecloud::audit::domain::TargetType::File:
-            proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_FILE);
-            break;
-        case securecloud::audit::domain::TargetType::Service:
-            proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_SERVICE);
-            break;
-        default:
-            proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_UNSPECIFIED);
-            break;
+    case securecloud::audit::domain::TargetType::User:
+        proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_USER);
+        break;
+    case securecloud::audit::domain::TargetType::Device:
+        proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_DEVICE);
+        break;
+    case securecloud::audit::domain::TargetType::Conversation:
+        proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_CONVERSATION);
+        break;
+    case securecloud::audit::domain::TargetType::File:
+        proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_FILE);
+        break;
+    case securecloud::audit::domain::TargetType::Service:
+        proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_SERVICE);
+        break;
+    default:
+        proto.set_target_type(::securecloud::audit::v1::TARGET_TYPE_UNSPECIFIED);
+        break;
     }
     proto.set_target_id(domain_event.target_id);
 

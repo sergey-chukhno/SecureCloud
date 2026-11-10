@@ -3780,3 +3780,18 @@ target_link_libraries(securecloud_gateway_audit_header_collision_test PRIVATE
 
 gtest_discover_tests(securecloud_gateway_audit_header_collision_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Gateway Pending Audit Store Unit Test Suite (AUDIT-012-T03)
+add_executable(securecloud_gateway_audit_pending_store_test
+        gateway/audit_pending_store_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_pending_store_test PRIVATE
+        securecloud::gateway_audit
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_pending_store_test ${SECURECLOUD_TEST_PROPERTIES})

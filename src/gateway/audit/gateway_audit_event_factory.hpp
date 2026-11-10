@@ -1,10 +1,9 @@
 #pragma once
 
+#include "domain/audit_event.hpp"
 #include "gateway_audit_event_types.hpp"
 #include "gateway_audit_observation.hpp"
 #include "gateway_audit_validator.hpp"
-
-#include "domain/audit_event.hpp"
 #include "securecloud/audit/v1/audit.pb.h"
 
 #include <cstdint>
@@ -14,13 +13,13 @@
 
 namespace securecloud::gateway::audit {
 
-  /**
-   * @brief Pure, I/O-free canonical AuditEvent construction and serialization factory.
-   *
-   * Enforces trusted attribution mapping, correlation-ID hardening, metadata whitelisting,
-   * truncation, sensitive data filtering, and local validation.
-   */
-  class GatewayAuditEventFactory {
+/**
+ * @brief Pure, I/O-free canonical AuditEvent construction and serialization factory.
+ *
+ * Enforces trusted attribution mapping, correlation-ID hardening, metadata whitelisting,
+ * truncation, sensitive data filtering, and local validation.
+ */
+class GatewayAuditEventFactory {
   public:
     explicit GatewayAuditEventFactory(std::string producer_instance = "gateway-1");
 
@@ -47,6 +46,6 @@ namespace securecloud::gateway::audit {
 
     std::string producer_instance_;
     GatewayAuditEventValidator validator_;
-  };
+};
 
 } // namespace securecloud::gateway::audit

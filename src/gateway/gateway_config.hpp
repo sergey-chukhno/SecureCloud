@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audit/gateway_audit_spool_config.hpp"
 #include "securecloud/configuration/common_service_config.hpp"
 #include "securecloud/configuration/configuration_source.hpp"
 #include "securecloud/configuration/validation_error.hpp"
@@ -121,6 +122,9 @@ struct GatewayConfig {
     // Peer Probe Settings
     std::string peer_probe_target;
     std::string peer_probe_name;
+
+    // Gateway Audit Spool & WAL Persistence Settings (AUDIT-012-T03)
+    audit::GatewayAuditSpoolConfig audit_spool;
 
     /// Returns the combined HTTP listen endpoint formatted as "<http_listen_address>:<http_listen_port>".
     [[nodiscard]] std::string http_listen_endpoint() const;
