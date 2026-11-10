@@ -20,6 +20,7 @@ if(Qt6_FOUND)
         domain/crypto/x3dh_models.cpp
         domain/crypto/x3dh_engine.cpp
         domain/crypto/ratchet_models.cpp
+        domain/crypto/skipped_keys_store.cpp
         domain/crypto/double_ratchet_engine.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)

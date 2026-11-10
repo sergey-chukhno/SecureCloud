@@ -241,4 +241,3 @@ TEST(DoubleRatchetEngineTest, StubCryptoProviderParity) {
 }
 
 } // namespace
-

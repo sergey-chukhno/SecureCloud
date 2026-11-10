@@ -1,6 +1,7 @@
 #pragma once
 
 #include "application/interfaces/i_crypto_provider.hpp"
+#include "domain/crypto/skipped_keys_store.hpp"
 #include "securecloud/configuration/secret_string.hpp"
 
 #include <cstdint>
@@ -17,7 +18,7 @@ struct RatchetState {
     uint32_t ns{0};
     uint32_t nr{0};
     uint32_t pn{0};
+    SkippedKeysStore skipped_keys;
 };
 
 } // namespace securecloud::client::domain::crypto
-

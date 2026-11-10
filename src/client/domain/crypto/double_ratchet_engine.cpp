@@ -85,6 +85,32 @@ derive_iv(application::interfaces::ICryptoProvider& crypto,
     return application::ClientResult<std::vector<uint8_t>>::ok(std::vector<uint8_t>(iv_bytes.begin(), iv_bytes.end()));
 }
 
+application::ClientResult<void> skip_message_keys(application::interfaces::ICryptoProvider& crypto, RatchetState& state,
+                                                  std::span<const uint8_t> dh_pub, uint32_t until) {
+    if (state.nr + SkippedKeysStore::kMaxSkipGap < until) {
+        return application::ClientResult<void>::error(
+            application::ClientError::crypto("DoubleRatchet skip gap exceeds maximum allowed threshold"));
+    }
+
+    if (!state.receiving_chain_key.empty()) {
+        while (state.nr < until) {
+            auto ck_res = kdf_ck(crypto, state.receiving_chain_key);
+            if (!ck_res.is_ok()) {
+                return application::ClientResult<void>::error(ck_res.error());
+            }
+            auto [skipped_mk, next_ck] = std::move(ck_res).value();
+            state.receiving_chain_key = std::move(next_ck);
+
+            auto store_res = state.skipped_keys.store_key(dh_pub, state.nr, std::move(skipped_mk));
+            if (!store_res.is_ok()) {
+                return store_res;
+            }
+            state.nr++;
+        }
+    }
+    return application::ClientResult<void>::ok();
+}
+
 } // namespace
 
 application::ClientResult<RatchetState>
@@ -230,10 +256,33 @@ application::ClientResult<securecloud::common::configuration::SecretString>
 DoubleRatchetEngine::ratchet_decrypt(application::interfaces::ICryptoProvider& crypto, RatchetState& state,
                                      const DoubleRatchetMessage& message) {
     const auto& header = message.header;
+    const auto aad = header.serialize();
+
+    // Step 1: Try already skipped message keys
+    auto opt_skipped_key = state.skipped_keys.extract_and_remove(header.dh_pub(), header.n());
+    if (opt_skipped_key.has_value()) {
+        auto dec_res =
+            crypto.decrypt_aes_gcm(opt_skipped_key.value(), message.iv, message.ciphertext, message.auth_tag, aad);
+        if (!dec_res.is_ok()) {
+            return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+                application::ClientError::crypto("Decryption failed for skipped message key"));
+        }
+        return dec_res;
+    }
+
     const bool is_dh_turn = state.peer_dh_pub.empty() || header.dh_pub() != state.peer_dh_pub;
 
     if (is_dh_turn) {
-        // Step 1: Receiving Turn — fold peer's new DH key into root key
+        // Step 2a: Skip remaining messages in peer's previous ratchet epoch up to header.pn()
+        if (!state.peer_dh_pub.empty() && !state.receiving_chain_key.empty()) {
+            auto skip_res = skip_message_keys(crypto, state, state.peer_dh_pub, header.pn());
+            if (!skip_res.is_ok()) {
+                return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+                    skip_res.error());
+            }
+        }
+
+        // Step 2b: Receiving Turn — fold peer's new DH key into root key
         auto dh_recv_res = crypto.diffie_hellman(state.sending_dh_pair.private_key, header.dh_pub());
         if (!dh_recv_res.is_ok()) {
             return application::ClientResult<securecloud::common::configuration::SecretString>::error(
@@ -252,7 +301,7 @@ DoubleRatchetEngine::ratchet_decrypt(application::interfaces::ICryptoProvider& c
         state.ns = 0;
         state.nr = 0;
 
-        // Step 2: Sending Turn — generate fresh DH keypair and fold into root key for our next sends
+        // Step 2c: Sending Turn — generate fresh DH keypair and fold into root key for our next sends
         auto new_dh_res = crypto.generate_dh_keypair();
         if (!new_dh_res.is_ok()) {
             return application::ClientResult<securecloud::common::configuration::SecretString>::error(
@@ -280,7 +329,20 @@ DoubleRatchetEngine::ratchet_decrypt(application::interfaces::ICryptoProvider& c
             application::ClientError::crypto("Cannot decrypt: receiving chain key is uninitialized"));
     }
 
-    // Advance symmetric receiving chain: (MK, CK_next) = KDF_CK(CK_r)
+    // Step 3: Check replay / duplicate on current receiving chain
+    if (header.n() < state.nr) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("DoubleRatchet duplicate or expired message rejected"));
+    }
+
+    // Step 4: Skip intermediate messages in current chain up to header.n()
+    auto skip_curr_res = skip_message_keys(crypto, state, header.dh_pub(), header.n());
+    if (!skip_curr_res.is_ok()) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            skip_curr_res.error());
+    }
+
+    // Step 5: Advance symmetric receiving chain: (MK, CK_next) = KDF_CK(CK_r)
     auto ck_res = kdf_ck(crypto, state.receiving_chain_key);
     if (!ck_res.is_ok()) {
         return application::ClientResult<securecloud::common::configuration::SecretString>::error(ck_res.error());
@@ -289,8 +351,7 @@ DoubleRatchetEngine::ratchet_decrypt(application::interfaces::ICryptoProvider& c
     state.receiving_chain_key = std::move(next_ck);
     state.nr++;
 
-    // Validate and decrypt with AES-256-GCM using serialized header as AAD
-    const auto aad = header.serialize();
+    // Step 6: Validate and decrypt with AES-256-GCM using serialized header as AAD
     return crypto.decrypt_aes_gcm(message_key, message.iv, message.ciphertext, message.auth_tag, aad);
 }
 

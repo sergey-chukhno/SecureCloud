@@ -48,4 +48,3 @@ struct DoubleRatchetMessage {
 };
 
 } // namespace securecloud::client::domain::crypto
-

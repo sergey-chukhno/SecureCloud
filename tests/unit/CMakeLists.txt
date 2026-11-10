@@ -3716,6 +3716,7 @@ if(Qt6_FOUND)
         client/window_state_manager_test.cpp
         client/x3dh_engine_test.cpp
         client/double_ratchet_engine_test.cpp
+        client/skipped_keys_store_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES
