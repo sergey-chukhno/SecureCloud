@@ -5,6 +5,7 @@ add_library(securecloud_gateway_audit STATIC
     audit/gateway_audit_event_factory.cpp
     audit/bounded_memory_pending_store.cpp
     audit/file_spool_pending_store.cpp
+    audit/audit_delivery_dispatcher.cpp
 )
 
 add_library(securecloud::gateway_audit ALIAS securecloud_gateway_audit)
@@ -20,6 +21,7 @@ target_link_libraries(securecloud_gateway_audit PUBLIC
     securecloud_audit_domain
     securecloud::common
     securecloud::compiler_flags
+    securecloud::gateway_http
     PRIVATE
     securecloud::gateway_config
 )
@@ -68,6 +70,7 @@ add_library(securecloud_gateway_grpc STATIC
     grpc/auth_service_client.cpp
     grpc/files_service_client.cpp
     grpc/messaging_service_client.cpp
+    grpc/audit_ingestion_client.cpp
 )
 
 add_library(securecloud::gateway_grpc ALIAS securecloud_gateway_grpc)

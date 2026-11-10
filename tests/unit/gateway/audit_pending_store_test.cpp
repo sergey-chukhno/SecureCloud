@@ -11,7 +11,7 @@
 #include <thread>
 #include <vector>
 
-using namespace securecloud::gateway::audit;
+namespace securecloud::gateway::audit {
 
 class PendingStoreTest : public ::testing::Test {
   protected:
@@ -294,3 +294,5 @@ TEST_F(PendingStoreTest, FileSpoolStoreReleaseAndMarkTerminal) {
         EXPECT_EQ(stats.claimed_records, 0);
     }
 }
+
+} // namespace securecloud::gateway::audit

@@ -3795,3 +3795,21 @@ target_link_libraries(securecloud_gateway_audit_pending_store_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_gateway_audit_pending_store_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Delivery Dispatcher Unit Test Suite (AUDIT-012-T04)
+add_executable(securecloud_gateway_audit_delivery_dispatcher_test
+        gateway/audit_delivery_dispatcher_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_delivery_dispatcher_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_grpc
+        securecloud::gateway_http
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_delivery_dispatcher_test ${SECURECLOUD_TEST_PROPERTIES})
