@@ -126,4 +126,96 @@ application::ClientResult<DoubleRatchetMessage> DoubleRatchetMessage::deserializ
                              .auth_tag = std::move(tag)});
 }
 
+bool EncryptedMessageEnvelope::operator==(const EncryptedMessageEnvelope& other) const noexcept {
+    return x3dh_header == other.x3dh_header && ratchet_message == other.ratchet_message;
+}
+
+std::vector<uint8_t> EncryptedMessageEnvelope::serialize() const {
+    std::vector<uint8_t> out;
+    out.push_back(kMagic[0]);
+    out.push_back(kMagic[1]);
+    out.push_back(kMagic[2]);
+    out.push_back(kFormatVersion);
+
+    const uint8_t flags = x3dh_header.has_value() ? 0x01 : 0x00;
+    out.push_back(flags);
+
+    if (x3dh_header.has_value()) {
+        auto x3dh_bytes = x3dh_header->serialize();
+        const auto xlen = static_cast<uint16_t>(x3dh_bytes.size());
+        out.push_back(static_cast<uint8_t>((xlen >> 8) & 0xFF));
+        out.push_back(static_cast<uint8_t>(xlen & 0xFF));
+        out.insert(out.end(), x3dh_bytes.begin(), x3dh_bytes.end());
+    }
+
+    auto ratchet_bytes = ratchet_message.serialize();
+    const auto rlen = static_cast<uint32_t>(ratchet_bytes.size());
+    write_uint32_be(out, rlen);
+    out.insert(out.end(), ratchet_bytes.begin(), ratchet_bytes.end());
+
+    return out;
+}
+
+application::ClientResult<EncryptedMessageEnvelope>
+EncryptedMessageEnvelope::deserialize(std::span<const uint8_t> bytes) {
+    if (bytes.size() < 5 + 4) {
+        return application::ClientResult<EncryptedMessageEnvelope>::error(
+            application::ClientError::validation("EncryptedMessageEnvelope too short"));
+    }
+
+    if (bytes[0] != kMagic[0] || bytes[1] != kMagic[1] || bytes[2] != kMagic[2]) {
+        return application::ClientResult<EncryptedMessageEnvelope>::error(
+            application::ClientError::validation("Invalid magic bytes in EncryptedMessageEnvelope"));
+    }
+
+    if (bytes[3] != kFormatVersion) {
+        return application::ClientResult<EncryptedMessageEnvelope>::error(
+            application::ClientError::validation("Unsupported EncryptedMessageEnvelope version"));
+    }
+
+    std::size_t offset = 4;
+    const uint8_t flags = bytes[offset++];
+    const bool has_x3dh = (flags & 0x01) != 0;
+
+    std::optional<X3dhHeader> x3dh;
+    if (has_x3dh) {
+        if (offset + 2 > bytes.size()) {
+            return application::ClientResult<EncryptedMessageEnvelope>::error(
+                application::ClientError::validation("Truncated X3DH length in EncryptedMessageEnvelope"));
+        }
+        const uint16_t xlen = static_cast<uint16_t>((static_cast<uint16_t>(bytes[offset]) << 8) | bytes[offset + 1]);
+        offset += 2;
+        if (offset + xlen > bytes.size()) {
+            return application::ClientResult<EncryptedMessageEnvelope>::error(
+                application::ClientError::validation("Truncated X3DH payload in EncryptedMessageEnvelope"));
+        }
+        auto x3dh_res = X3dhHeader::deserialize(bytes.subspan(offset, xlen));
+        if (!x3dh_res.is_ok()) {
+            return application::ClientResult<EncryptedMessageEnvelope>::error(x3dh_res.error());
+        }
+        x3dh = std::move(x3dh_res).value();
+        offset += xlen;
+    }
+
+    if (offset + 4 > bytes.size()) {
+        return application::ClientResult<EncryptedMessageEnvelope>::error(
+            application::ClientError::validation("Truncated ratchet length in EncryptedMessageEnvelope"));
+    }
+
+    const uint32_t rlen = read_uint32_be(bytes, offset);
+    offset += 4;
+    if (offset + rlen > bytes.size()) {
+        return application::ClientResult<EncryptedMessageEnvelope>::error(
+            application::ClientError::validation("Truncated ratchet payload in EncryptedMessageEnvelope"));
+    }
+
+    auto ratchet_res = DoubleRatchetMessage::deserialize(bytes.subspan(offset, rlen));
+    if (!ratchet_res.is_ok()) {
+        return application::ClientResult<EncryptedMessageEnvelope>::error(ratchet_res.error());
+    }
+
+    return application::ClientResult<EncryptedMessageEnvelope>::ok(
+        EncryptedMessageEnvelope{.x3dh_header = std::move(x3dh), .ratchet_message = std::move(ratchet_res).value()});
+}
+
 } // namespace securecloud::client::domain::crypto

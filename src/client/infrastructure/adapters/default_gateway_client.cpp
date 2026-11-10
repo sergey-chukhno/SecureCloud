@@ -163,6 +163,12 @@ DefaultGatewayClient::get_device_crypto_directory(const domain::UserId& user_id,
             application::ClientError::validation("User ID cannot be empty for crypto directory query"));
     }
 
+    auto user_it = simulated_user_directories_.find(user_id);
+    if (user_it != simulated_user_directories_.end()) {
+        return application::ClientResult<std::vector<application::interfaces::DeviceCryptoDirectoryEntry>>::ok(
+            user_it->second);
+    }
+
     return application::ClientResult<std::vector<application::interfaces::DeviceCryptoDirectoryEntry>>::ok(
         simulated_directory_);
 }
@@ -180,6 +186,11 @@ void DefaultGatewayClient::set_simulated_registration_status(domain::DeviceAutho
 void DefaultGatewayClient::set_simulated_directory(
     std::vector<application::interfaces::DeviceCryptoDirectoryEntry> directory) {
     simulated_directory_ = std::move(directory);
+}
+
+void DefaultGatewayClient::set_simulated_user_directory(
+    const domain::UserId& user_id, std::vector<application::interfaces::DeviceCryptoDirectoryEntry> directory) {
+    simulated_user_directories_[user_id] = std::move(directory);
 }
 
 void DefaultGatewayClient::set_simulated_failure(bool fail, std::string error_message) {
