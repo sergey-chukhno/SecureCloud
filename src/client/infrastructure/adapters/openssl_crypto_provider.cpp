@@ -4,9 +4,14 @@
 
 #include <algorithm>
 #include <array>
+#include <iomanip>
+#include <openssl/core_names.h>
 #include <openssl/crypto.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
+#include <openssl/kdf.h>
+#include <openssl/params.h>
+#include <sstream>
 #include <string>
 
 namespace securecloud::client::infrastructure::adapters {
@@ -253,6 +258,59 @@ OpenSslCryptoProvider::compute_identity_fingerprint(std::span<const uint8_t> ide
     return application::ClientResult<std::string>::ok(std::move(result));
 }
 
+application::ClientResult<securecloud::common::configuration::SecretString>
+derive_hkdf(int mode, std::span<const uint8_t> salt, const void* key_data, std::size_t key_len,
+            std::span<const uint8_t> info, std::size_t out_len) {
+    EVP_KDF* kdf = EVP_KDF_fetch(nullptr, "HKDF", nullptr);
+    if (!kdf) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to fetch OpenSSL HKDF: " + get_openssl_error_string()));
+    }
+
+    EVP_KDF_CTX* kctx = EVP_KDF_CTX_new(kdf);
+    EVP_KDF_free(kdf);
+    if (!kctx) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to create OpenSSL HKDF CTX: " + get_openssl_error_string()));
+    }
+
+    OSSL_PARAM params[6];
+    std::size_t p_idx = 0;
+
+    char md_name[] = "SHA256";
+    params[p_idx++] = OSSL_PARAM_construct_utf8_string(OSSL_KDF_PARAM_DIGEST, md_name, 0);
+    params[p_idx++] = OSSL_PARAM_construct_int(OSSL_KDF_PARAM_MODE, &mode);
+
+    if (key_data && key_len > 0) {
+        params[p_idx++] = OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_KEY, const_cast<void*>(key_data), key_len);
+    }
+    if (!salt.empty()) {
+        params[p_idx++] =
+            OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_SALT, const_cast<uint8_t*>(salt.data()), salt.size());
+    }
+    if (!info.empty()) {
+        params[p_idx++] =
+            OSSL_PARAM_construct_octet_string(OSSL_KDF_PARAM_INFO, const_cast<uint8_t*>(info.data()), info.size());
+    }
+    params[p_idx] = OSSL_PARAM_construct_end();
+
+    std::vector<uint8_t> out_buf(out_len, 0);
+    if (EVP_KDF_derive(kctx, out_buf.data(), out_buf.size(), params) <= 0) {
+        OPENSSL_cleanse(out_buf.data(), out_buf.size());
+        EVP_KDF_CTX_free(kctx);
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("OpenSSL HKDF derivation failed: " + get_openssl_error_string()));
+    }
+
+    EVP_KDF_CTX_free(kctx);
+
+    std::string out_str(reinterpret_cast<const char*>(out_buf.data()), out_buf.size());
+    OPENSSL_cleanse(out_buf.data(), out_buf.size());
+
+    return application::ClientResult<securecloud::common::configuration::SecretString>::ok(
+        securecloud::common::configuration::SecretString(std::move(out_str)));
+}
+
 application::ClientResult<domain::CryptoIdentity> OpenSslCryptoProvider::generate_device_identity() {
     auto id_res = generate_identity_keypair();
     if (!id_res.is_ok()) {
@@ -304,6 +362,364 @@ application::ClientResult<bool> OpenSslCryptoProvider::verify_identity_fingerpri
         return application::ClientResult<bool>::ok(false);
     }
     return application::ClientResult<bool>::ok(domain::CryptoIdentity::is_valid_fingerprint(fingerprint));
+}
+
+application::ClientResult<application::interfaces::DhKeyPair> OpenSslCryptoProvider::generate_dh_keypair() {
+    auto key_res = generate_raw_evp_keypair(EVP_PKEY_X25519, domain::PrekeyPolicy::kX25519PublicKeySize);
+    if (!key_res.is_ok()) {
+        return application::ClientResult<application::interfaces::DhKeyPair>::error(key_res.error());
+    }
+    auto [pub, priv] = std::move(key_res).value();
+    return application::ClientResult<application::interfaces::DhKeyPair>::ok(application::interfaces::DhKeyPair{
+        .public_key = std::move(pub),
+        .private_key = std::move(priv),
+    });
+}
+
+application::ClientResult<securecloud::common::configuration::SecretString>
+OpenSslCryptoProvider::diffie_hellman(const securecloud::common::configuration::SecretString& our_private_key,
+                                      std::span<const uint8_t> peer_public_key) {
+    if (our_private_key.size() != domain::PrekeyPolicy::kX25519PrivateKeySize) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Our private key must be exactly 32 bytes"));
+    }
+    if (peer_public_key.size() != domain::PrekeyPolicy::kX25519PublicKeySize) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Peer public key must be exactly 32 bytes"));
+    }
+
+    const auto& priv_bytes = our_private_key.expose_unredacted_secret();
+    EVP_PKEY* priv_pkey = EVP_PKEY_new_raw_private_key(
+        EVP_PKEY_X25519, nullptr, reinterpret_cast<const unsigned char*>(priv_bytes.data()), priv_bytes.size());
+    if (!priv_pkey) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to import X25519 private key: " + get_openssl_error_string()));
+    }
+
+    EVP_PKEY* peer_pkey =
+        EVP_PKEY_new_raw_public_key(EVP_PKEY_X25519, nullptr, peer_public_key.data(), peer_public_key.size());
+    if (!peer_pkey) {
+        EVP_PKEY_free(priv_pkey);
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to import peer X25519 public key: " + get_openssl_error_string()));
+    }
+
+    EVP_PKEY_CTX* ctx = EVP_PKEY_CTX_new(priv_pkey, nullptr);
+    if (!ctx) {
+        EVP_PKEY_free(peer_pkey);
+        EVP_PKEY_free(priv_pkey);
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to create EVP_PKEY_CTX for derivation"));
+    }
+
+    if (EVP_PKEY_derive_init(ctx) <= 0 || EVP_PKEY_derive_set_peer(ctx, peer_pkey) <= 0) {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(peer_pkey);
+        EVP_PKEY_free(priv_pkey);
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to init Diffie-Hellman derivation: " +
+                                             get_openssl_error_string()));
+    }
+
+    std::size_t secret_len = 0;
+    if (EVP_PKEY_derive(ctx, nullptr, &secret_len) <= 0 || secret_len != domain::PrekeyPolicy::kSharedSecretSize) {
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(peer_pkey);
+        EVP_PKEY_free(priv_pkey);
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to determine shared secret length: " +
+                                             get_openssl_error_string()));
+    }
+
+    std::vector<uint8_t> secret_buf(secret_len, 0);
+    if (EVP_PKEY_derive(ctx, secret_buf.data(), &secret_len) <= 0 ||
+        secret_len != domain::PrekeyPolicy::kSharedSecretSize) {
+        OPENSSL_cleanse(secret_buf.data(), secret_buf.size());
+        EVP_PKEY_CTX_free(ctx);
+        EVP_PKEY_free(peer_pkey);
+        EVP_PKEY_free(priv_pkey);
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("EVP_PKEY_derive failed: " + get_openssl_error_string()));
+    }
+
+    EVP_PKEY_CTX_free(ctx);
+    EVP_PKEY_free(peer_pkey);
+    EVP_PKEY_free(priv_pkey);
+
+    std::string secret_str(reinterpret_cast<const char*>(secret_buf.data()), secret_buf.size());
+    OPENSSL_cleanse(secret_buf.data(), secret_buf.size());
+
+    return application::ClientResult<securecloud::common::configuration::SecretString>::ok(
+        securecloud::common::configuration::SecretString(std::move(secret_str)));
+}
+
+application::ClientResult<securecloud::common::configuration::SecretString>
+OpenSslCryptoProvider::hkdf_extract(std::span<const uint8_t> salt,
+                                    const securecloud::common::configuration::SecretString& ikm) {
+    if (ikm.empty()) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("HKDF IKM cannot be empty"));
+    }
+    const auto& ikm_bytes = ikm.expose_unredacted_secret();
+    return derive_hkdf(EVP_KDF_HKDF_MODE_EXTRACT_ONLY, salt, ikm_bytes.data(), ikm_bytes.size(), {}, 32);
+}
+
+application::ClientResult<securecloud::common::configuration::SecretString>
+OpenSslCryptoProvider::hkdf_expand(const securecloud::common::configuration::SecretString& prk,
+                                   std::span<const uint8_t> info, std::size_t length) {
+    if (prk.empty() || length == 0) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("HKDF Expand invalid parameters"));
+    }
+    const auto& prk_bytes = prk.expose_unredacted_secret();
+    return derive_hkdf(EVP_KDF_HKDF_MODE_EXPAND_ONLY, {}, prk_bytes.data(), prk_bytes.size(), info, length);
+}
+
+application::ClientResult<securecloud::common::configuration::SecretString>
+OpenSslCryptoProvider::hkdf_extract_and_expand(std::span<const uint8_t> salt,
+                                               const securecloud::common::configuration::SecretString& ikm,
+                                               std::span<const uint8_t> info, std::size_t length) {
+    if (ikm.empty() || length == 0) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("HKDF Extract-and-Expand invalid parameters"));
+    }
+    const auto& ikm_bytes = ikm.expose_unredacted_secret();
+    return derive_hkdf(EVP_KDF_HKDF_MODE_EXTRACT_AND_EXPAND, salt, ikm_bytes.data(), ikm_bytes.size(), info, length);
+}
+
+application::ClientResult<application::interfaces::AeadCiphertext>
+OpenSslCryptoProvider::encrypt_aes_gcm(const securecloud::common::configuration::SecretString& key,
+                                       std::span<const uint8_t> iv, std::span<const uint8_t> plaintext,
+                                       std::span<const uint8_t> associated_data) {
+    if (key.size() != domain::PrekeyPolicy::kAes256KeySize) {
+        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
+            application::ClientError::crypto("AES key must be 32 bytes"));
+    }
+    if (iv.size() != domain::PrekeyPolicy::kAeadGcmIvSize) {
+        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
+            application::ClientError::crypto("AES GCM IV must be 12 bytes"));
+    }
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) {
+        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
+            application::ClientError::crypto("Failed to create EVP_CIPHER_CTX"));
+    }
+
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
+            application::ClientError::crypto("Failed to init AES-256-GCM cipher"));
+    }
+
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(iv.size()), nullptr) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
+            application::ClientError::crypto("Failed to set GCM IV length"));
+    }
+
+    const auto& key_bytes = key.expose_unredacted_secret();
+    if (EVP_EncryptInit_ex(ctx, nullptr, nullptr, reinterpret_cast<const unsigned char*>(key_bytes.data()),
+                           iv.data()) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
+            application::ClientError::crypto("Failed to set GCM key and IV"));
+    }
+
+    int out_len = 0;
+    if (!associated_data.empty()) {
+        if (EVP_EncryptUpdate(ctx, nullptr, &out_len, associated_data.data(),
+                              static_cast<int>(associated_data.size())) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return application::ClientResult<application::interfaces::AeadCiphertext>::error(
+                application::ClientError::crypto("Failed to process GCM AAD"));
+        }
+    }
+
+    std::vector<uint8_t> ciphertext(plaintext.size());
+    if (!plaintext.empty()) {
+        if (EVP_EncryptUpdate(ctx, ciphertext.data(), &out_len, plaintext.data(), static_cast<int>(plaintext.size())) !=
+            1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return application::ClientResult<application::interfaces::AeadCiphertext>::error(
+                application::ClientError::crypto("Failed to encrypt GCM plaintext"));
+        }
+    }
+
+    int final_len = 0;
+    if (EVP_EncryptFinal_ex(ctx, ciphertext.data() + out_len, &final_len) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
+            application::ClientError::crypto("Failed to finalize GCM encryption"));
+    }
+
+    std::vector<uint8_t> tag(domain::PrekeyPolicy::kAeadGcmTagSize);
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, static_cast<int>(tag.size()), tag.data()) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
+            application::ClientError::crypto("Failed to retrieve GCM auth tag"));
+    }
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    std::vector<uint8_t> iv_copy(iv.begin(), iv.end());
+    return application::ClientResult<application::interfaces::AeadCiphertext>::ok(
+        application::interfaces::AeadCiphertext{
+            .ciphertext = std::move(ciphertext),
+            .iv = std::move(iv_copy),
+            .auth_tag = std::move(tag),
+        });
+}
+
+application::ClientResult<securecloud::common::configuration::SecretString>
+OpenSslCryptoProvider::decrypt_aes_gcm(const securecloud::common::configuration::SecretString& key,
+                                       std::span<const uint8_t> iv, std::span<const uint8_t> ciphertext,
+                                       std::span<const uint8_t> auth_tag, std::span<const uint8_t> associated_data) {
+    if (key.size() != domain::PrekeyPolicy::kAes256KeySize) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("AES key must be 32 bytes"));
+    }
+    if (iv.size() != domain::PrekeyPolicy::kAeadGcmIvSize) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("AES GCM IV must be 12 bytes"));
+    }
+    if (auth_tag.size() != domain::PrekeyPolicy::kAeadGcmTagSize) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("AES GCM tag must be 16 bytes"));
+    }
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) {
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to create EVP_CIPHER_CTX"));
+    }
+
+    if (EVP_DecryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to init AES-256-GCM cipher"));
+    }
+
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(iv.size()), nullptr) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to set GCM IV length"));
+    }
+
+    const auto& key_bytes = key.expose_unredacted_secret();
+    if (EVP_DecryptInit_ex(ctx, nullptr, nullptr, reinterpret_cast<const unsigned char*>(key_bytes.data()),
+                           iv.data()) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to set GCM key and IV"));
+    }
+
+    int out_len = 0;
+    if (!associated_data.empty()) {
+        if (EVP_DecryptUpdate(ctx, nullptr, &out_len, associated_data.data(),
+                              static_cast<int>(associated_data.size())) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+                application::ClientError::crypto("Failed to process GCM AAD"));
+        }
+    }
+
+    std::vector<uint8_t> plaintext(ciphertext.size());
+    if (!ciphertext.empty()) {
+        if (EVP_DecryptUpdate(ctx, plaintext.data(), &out_len, ciphertext.data(),
+                              static_cast<int>(ciphertext.size())) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+                application::ClientError::crypto("Failed to decrypt GCM ciphertext"));
+        }
+    }
+
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_TAG, static_cast<int>(auth_tag.size()),
+                            const_cast<uint8_t*>(auth_tag.data())) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto("Failed to set GCM auth tag for verification"));
+    }
+
+    int final_len = 0;
+    if (EVP_DecryptFinal_ex(ctx, plaintext.data() + out_len, &final_len) <= 0) {
+        OPENSSL_cleanse(plaintext.data(), plaintext.size());
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<securecloud::common::configuration::SecretString>::error(
+            application::ClientError::crypto(
+                "AES-256-GCM authentication verification failed (tampered ciphertext, tag, or AAD)"));
+    }
+
+    EVP_CIPHER_CTX_free(ctx);
+
+    std::string pt_str(reinterpret_cast<const char*>(plaintext.data()), plaintext.size());
+    OPENSSL_cleanse(plaintext.data(), plaintext.size());
+
+    return application::ClientResult<securecloud::common::configuration::SecretString>::ok(
+        securecloud::common::configuration::SecretString(std::move(pt_str)));
+}
+
+application::ClientResult<std::string> OpenSslCryptoProvider::compute_safety_number(
+    const domain::UserId& local_user_id, std::span<const uint8_t> local_identity_key,
+    const domain::UserId& peer_user_id, std::span<const uint8_t> peer_identity_key) {
+    if (local_user_id.empty() || peer_user_id.empty()) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::crypto("User IDs cannot be empty for safety number computation"));
+    }
+    if (local_identity_key.size() != domain::PrekeyPolicy::kEd25519PublicKeySize ||
+        peer_identity_key.size() != domain::PrekeyPolicy::kEd25519PublicKeySize) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::crypto("Identity public keys must be 32 bytes"));
+    }
+
+    std::span<const uint8_t> first_key = local_identity_key;
+    std::span<const uint8_t> second_key = peer_identity_key;
+    if (std::lexicographical_compare(peer_identity_key.begin(), peer_identity_key.end(), local_identity_key.begin(),
+                                     local_identity_key.end())) {
+        std::swap(first_key, second_key);
+    }
+
+    std::string_view first_user = local_user_id.str();
+    std::string_view second_user = peer_user_id.str();
+    if (first_user > second_user) {
+        std::swap(first_user, second_user);
+    }
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (!ctx) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::crypto("Failed to create EVP_MD_CTX for safety number"));
+    }
+
+    std::vector<uint8_t> digest(64);
+    unsigned int md_len = 0;
+
+    if (EVP_DigestInit_ex(ctx, EVP_sha512(), nullptr) != 1 ||
+        EVP_DigestUpdate(ctx, first_key.data(), first_key.size()) != 1 ||
+        EVP_DigestUpdate(ctx, second_key.data(), second_key.size()) != 1 ||
+        EVP_DigestUpdate(ctx, first_user.data(), first_user.size()) != 1 ||
+        EVP_DigestUpdate(ctx, second_user.data(), second_user.size()) != 1 ||
+        EVP_DigestFinal_ex(ctx, digest.data(), &md_len) != 1 || md_len != 64) {
+        EVP_MD_CTX_free(ctx);
+        return application::ClientResult<std::string>::error(
+            application::ClientError::crypto("SHA-512 digest computation failed for safety number"));
+    }
+    EVP_MD_CTX_free(ctx);
+
+    std::ostringstream oss;
+    for (std::size_t k = 0; k < 12; ++k) {
+        uint64_t val = 0;
+        for (std::size_t m = 0; m < 5; ++m) {
+            val = (val << 8) | digest[k * 5 + m];
+        }
+        val %= 100000;
+        if (k > 0) {
+            oss << ' ';
+        }
+        oss << std::setw(5) << std::setfill('0') << val;
+    }
+
+    return application::ClientResult<std::string>::ok(oss.str());
 }
 
 } // namespace securecloud::client::infrastructure::adapters
