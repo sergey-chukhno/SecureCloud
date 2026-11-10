@@ -1,5 +1,6 @@
 #include "audit/audit_delivery_dispatcher.hpp"
 
+#include "audit/audit_producer_metrics.hpp"
 #include "domain/event_id.hpp"
 #include "grpc/client_call_context.hpp"
 
@@ -11,9 +12,11 @@ namespace securecloud::gateway::audit {
 AuditDeliveryDispatcher::AuditDeliveryDispatcher(
     std::shared_ptr<IAuditPendingStore> pending_store,
     std::shared_ptr<securecloud::gateway::grpc::IAuditIngestionClient> audit_client,
-    std::shared_ptr<securecloud::gateway::http::CircuitBreaker> circuit_breaker, AuditDeliveryDispatcherConfig config)
+    std::shared_ptr<securecloud::gateway::http::CircuitBreaker> circuit_breaker,
+    std::shared_ptr<AuditProducerMetrics> metrics,
+    AuditDeliveryDispatcherConfig config)
     : pending_store_(std::move(pending_store)), audit_client_(std::move(audit_client)),
-      circuit_breaker_(std::move(circuit_breaker)), config_(config) {}
+      circuit_breaker_(std::move(circuit_breaker)), metrics_(std::move(metrics)), config_(config) {}
 
 AuditDeliveryDispatcher::~AuditDeliveryDispatcher() {
     stop();
@@ -63,12 +66,20 @@ void AuditDeliveryDispatcher::notify_new_records() {
 void AuditDeliveryDispatcher::worker_loop() {
     while (!stop_requested_.load(std::memory_order_acquire)) {
         bool had_work = process_next_batch();
+        update_circuit_state_metrics();
 
         if (!had_work) {
             std::unique_lock<std::mutex> lock(mutex_);
             cv_.wait_for(lock, std::chrono::milliseconds(config_.poll_interval_ms),
                          [this] { return stop_requested_.load(std::memory_order_relaxed); });
         }
+    }
+}
+
+void AuditDeliveryDispatcher::update_circuit_state_metrics() {
+    if (metrics_ && circuit_breaker_) {
+        // Assume CB provides an enum/state: 0=Closed, 1=HalfOpen, 2=Open
+        metrics_->set_circuit_state(circuit_breaker_->allow_request() ? 0 : 2);
     }
 }
 
@@ -86,6 +97,7 @@ bool AuditDeliveryDispatcher::process_next_batch() {
         ::securecloud::audit::v1::AuditEventProto proto_event;
         if (!proto_event.ParseFromArray(rec.proto_bytes.data(), static_cast<int>(rec.proto_bytes.size()))) {
             pending_store_->mark_terminal(rec.event_id, TerminalReason::FormatCorrupted);
+            if (metrics_) metrics_->increment_quarantined("corrupted");
             continue;
         }
         *request.add_events() = std::move(proto_event);
@@ -102,13 +114,12 @@ bool AuditDeliveryDispatcher::process_next_batch() {
     }
 
     securecloud::gateway::grpc::ClientCallContext ctx(std::chrono::milliseconds(config_.audit_timeout_ms));
-
     auto result = audit_client_->batch_submit_events(request, ctx);
 
     if (result) {
-        if (circuit_breaker_) {
-            circuit_breaker_->record_success();
-        }
+        if (circuit_breaker_) circuit_breaker_->record_success();
+
+        if (metrics_) metrics_->increment_batches("success");
 
         const auto& response = result.value();
         if (response.rejected_event_ids_size() > 0) {
@@ -117,6 +128,7 @@ bool AuditDeliveryDispatcher::process_next_batch() {
                 if (auto parsed = securecloud::audit::domain::EventId::from_string(response.rejected_event_ids(i))) {
                     rejected_set.insert(*parsed);
                     pending_store_->mark_terminal(*parsed, TerminalReason::ValidationFailed);
+                    if (metrics_) metrics_->increment_quarantined("validation_failed");
                 }
             }
 
@@ -129,33 +141,49 @@ bool AuditDeliveryDispatcher::process_next_batch() {
             }
             if (!accepted_ids.empty()) {
                 pending_store_->mark_delivered(accepted_ids);
+                if (metrics_) metrics_->increment_events_delivered(accepted_ids.size());
             }
         } else {
             pending_store_->mark_delivered(valid_ids);
+            if (metrics_) metrics_->increment_events_delivered(valid_ids.size());
         }
     } else {
         const auto grpc_code = result.error().grpc_code;
-        if (circuit_breaker_) {
-            circuit_breaker_->record_status(grpc_code);
-        }
+        if (circuit_breaker_) circuit_breaker_->record_status(grpc_code);
 
         switch (grpc_code) {
         case ::grpc::StatusCode::INVALID_ARGUMENT:
         case ::grpc::StatusCode::ALREADY_EXISTS:
         case ::grpc::StatusCode::FAILED_PRECONDITION:
+            if (metrics_) metrics_->increment_batches("terminal");
             for (const auto& id : valid_ids) {
                 pending_store_->mark_terminal(id, TerminalReason::ValidationFailed);
+                if (metrics_) metrics_->increment_quarantined("validation_failed");
             }
             break;
 
-        case ::grpc::StatusCode::UNAUTHENTICATED:
-        case ::grpc::StatusCode::PERMISSION_DENIED:
-        case ::grpc::StatusCode::UNAVAILABLE:
         case ::grpc::StatusCode::DEADLINE_EXCEEDED:
-        case ::grpc::StatusCode::RESOURCE_EXHAUSTED:
+            if (metrics_) {
+                metrics_->increment_batches("retryable");
+                metrics_->increment_retries("timeout");
+            }
+            pending_store_->release(valid_ids);
+            break;
+
         case ::grpc::StatusCode::INTERNAL:
-        case ::grpc::StatusCode::UNKNOWN:
+        case ::grpc::StatusCode::UNAVAILABLE:
+            if (metrics_) {
+                metrics_->increment_batches("retryable");
+                metrics_->increment_retries("server_error");
+            }
+            pending_store_->release(valid_ids);
+            break;
+
         default:
+            if (metrics_) {
+                metrics_->increment_batches("retryable");
+                metrics_->increment_retries("network");
+            }
             pending_store_->release(valid_ids);
             break;
         }

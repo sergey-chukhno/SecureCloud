@@ -8,6 +8,7 @@ add_library(securecloud_gateway_audit STATIC
         audit/audit_delivery_dispatcher.cpp
         audit/audit_aggregation_window.cpp
         audit/gateway_audit_producer.cpp
+        audit/audit_producer_metrics.cpp
 )
 
 add_library(securecloud::gateway_audit ALIAS securecloud_gateway_audit)
@@ -164,6 +165,7 @@ target_include_directories(securecloud_gateway_health PUBLIC
 
 target_link_libraries(securecloud_gateway_health PUBLIC
         securecloud::gateway_grpc
+        securecloud::gateway_audit
         securecloud::common
         securecloud::compiler_flags
 )
