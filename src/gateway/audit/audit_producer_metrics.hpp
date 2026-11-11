@@ -7,11 +7,7 @@
 namespace securecloud::gateway::audit {
 
 /// State of Gateway Audit Producer operational health.
-enum class ProducerHealthState : uint8_t {
-    Healthy,
-    Degraded,
-    Unavailable
-};
+enum class ProducerHealthState : uint8_t { Healthy, Degraded, Unavailable };
 
 [[nodiscard]] constexpr const char* to_string(ProducerHealthState state) noexcept {
     switch (state) {

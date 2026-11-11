@@ -31,8 +31,7 @@ class AuditDeliveryDispatcher {
     AuditDeliveryDispatcher(std::shared_ptr<IAuditPendingStore> pending_store,
                             std::shared_ptr<securecloud::gateway::grpc::IAuditIngestionClient> audit_client,
                             std::shared_ptr<securecloud::gateway::http::CircuitBreaker> circuit_breaker,
-                            std::shared_ptr<AuditProducerMetrics> metrics,
-                            AuditDeliveryDispatcherConfig config = {});
+                            std::shared_ptr<AuditProducerMetrics> metrics, AuditDeliveryDispatcherConfig config = {});
 
     ~AuditDeliveryDispatcher();
 

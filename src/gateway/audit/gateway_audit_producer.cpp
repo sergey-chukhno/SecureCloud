@@ -12,13 +12,9 @@ namespace securecloud::gateway::audit {
 class GatewayAuditProducer final : public IGatewayAuditProducer {
   public:
     GatewayAuditProducer(std::shared_ptr<IAuditPendingStore> pending_store,
-                         std::shared_ptr<GatewayAuditEventFactory> factory,
-                         bool enabled = true,
-                         uint32_t aggregation_window_sec = 10,
-                         size_t aggregation_max_keys = 1000)
-        : pending_store_(std::move(pending_store)),
-          factory_(std::move(factory)),
-          enabled_(enabled),
+                         std::shared_ptr<GatewayAuditEventFactory> factory, bool enabled = true,
+                         uint32_t aggregation_window_sec = 10, size_t aggregation_max_keys = 1000)
+        : pending_store_(std::move(pending_store)), factory_(std::move(factory)), enabled_(enabled),
           aggregation_window_(aggregation_window_sec, aggregation_max_keys,
                               [this](GatewayAuditObservation obs, uint32_t count) { emit_observation(obs, count); }) {}
 
@@ -90,8 +86,7 @@ class GatewayAuditProducer final : public IGatewayAuditProducer {
             }
 
             const auto result = pending_store_->append(std::move(record));
-            if (result == AdmissionResult::AcceptedNonDurable ||
-                result == AdmissionResult::AcceptedPendingSync ||
+            if (result == AdmissionResult::AcceptedNonDurable || result == AdmissionResult::AcceptedPendingSync ||
                 result == AdmissionResult::DurablyQueued) {
                 enqueued_count_.fetch_add(1, std::memory_order_relaxed);
                 return result;
@@ -116,8 +111,7 @@ class GatewayAuditProducer final : public IGatewayAuditProducer {
 
 std::shared_ptr<IGatewayAuditProducer> create_gateway_audit_producer(std::shared_ptr<IAuditPendingStore> store,
                                                                      std::shared_ptr<GatewayAuditEventFactory> factory,
-                                                                     bool enabled,
-                                                                     uint32_t aggregation_window_sec,
+                                                                     bool enabled, uint32_t aggregation_window_sec,
                                                                      size_t aggregation_max_keys) {
     return std::make_shared<GatewayAuditProducer>(std::move(store), std::move(factory), enabled, aggregation_window_sec,
                                                   aggregation_max_keys);

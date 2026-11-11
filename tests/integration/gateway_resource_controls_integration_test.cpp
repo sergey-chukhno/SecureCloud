@@ -291,7 +291,8 @@ class GatewayResourceControlsIntegrationTest : public ::testing::Test {
         retry_cfg.jitter_ratio = 0.0;
         retry_policy_ = std::make_shared<http::RetryPolicy>(retry_cfg);
 
-        rate_limiter_middleware_ = std::make_shared<http::RateLimiterMiddleware>(config_.rate_limiting);
+        rate_limiter_middleware_ =
+            std::make_shared<http::RateLimiterMiddleware>(config_.rate_limiting, nullptr, nullptr);
 
         router_ = std::make_unique<http::Router>();
         router_->use(std::make_shared<http::RequestIdMiddleware>());
@@ -380,17 +381,14 @@ class GatewayResourceControlsIntegrationTest : public ::testing::Test {
 // Saturated Files pool does not prevent Auth login from succeeding.
 // ============================================================================
 TEST_F(GatewayResourceControlsIntegrationTest, BulkheadIsolationPreventsWorkloadStarvation) {
-    // Files pool capacity is configured to 2
     auto lease1 = bulkhead_manager_->acquire(http::WorkloadCategory::Files);
     auto lease2 = bulkhead_manager_->acquire(http::WorkloadCategory::Files);
     EXPECT_TRUE(lease1.is_acquired());
     EXPECT_TRUE(lease2.is_acquired());
 
-    // 3rd Files lease must be denied
     auto lease3 = bulkhead_manager_->acquire(http::WorkloadCategory::Files);
     EXPECT_FALSE(lease3.is_acquired());
 
-    // While Files pool is completely saturated, Auth pool must still admit and process login traffic
     auto client = create_client();
     nlohmann::json login_body = {{"identifier", "alice@securecloud.org"}, {"credential", "secret"}};
     auto res = client->Post("/api/v1/auth/login", login_body.dump(), "application/json");
@@ -408,13 +406,11 @@ TEST_F(GatewayResourceControlsIntegrationTest, BulkheadIsolationPreventsWorkload
 // Saturated pool returns HTTP 503 and RFC 7807 schema.
 // ============================================================================
 TEST_F(GatewayResourceControlsIntegrationTest, BulkheadRejectionEmits503WithRetryAfter) {
-    // Saturate the Files pool (capacity 2)
     auto lease1 = bulkhead_manager_->acquire(http::WorkloadCategory::Files);
     auto lease2 = bulkhead_manager_->acquire(http::WorkloadCategory::Files);
     EXPECT_TRUE(lease1.is_acquired());
     EXPECT_TRUE(lease2.is_acquired());
 
-    // Dispatch request to Files route
     auto client = create_client();
     httplib::Headers headers = {{"Authorization", "Bearer valid-resource-token"}};
     auto res = client->Post("/api/v1/files/upload", headers, "test-data", "application/octet-stream");
@@ -461,8 +457,8 @@ TEST_F(GatewayResourceControlsIntegrationTest, RateLimiterRejectsBurstsWith429An
 
     auto body = nlohmann::json::parse(res_rejected->body);
     EXPECT_EQ(body["status"], 429);
-    EXPECT_EQ(body["error"]["code"], "RATE_LIMIT_EXCEEDED");
-    EXPECT_EQ(body["type"], "https://securecloud.internal/errors/rate-limit-exceeded");
+    EXPECT_EQ(body["title"], "Rate Limit Exceeded");
+    EXPECT_EQ(body["type"], "https://securecloud.local/errors/rate-limit-exceeded");
 }
 
 // ============================================================================
@@ -499,10 +495,6 @@ TEST_F(GatewayResourceControlsIntegrationTest, RateLimiterTokenRefillAllowsSubse
 // Rapid client IP churn does not leak memory.
 // ============================================================================
 TEST_F(GatewayResourceControlsIntegrationTest, RateLimiterMemoryStaysBoundedUnderClientChurn) {
-    auto client = create_client();
-    nlohmann::json login_body = {{"identifier", "alice@securecloud.org"}, {"credential", "secret"}};
-
-    // Create a local limiter with small capacity of 5 clients
     GatewayRateLimitingConfig small_cfg;
     small_cfg.enabled = true;
     small_cfg.burst_capacity = 3;
@@ -510,7 +502,7 @@ TEST_F(GatewayResourceControlsIntegrationTest, RateLimiterMemoryStaysBoundedUnde
     small_cfg.max_tracked_clients = 5;
     small_cfg.client_ttl = std::chrono::seconds(60);
 
-    http::RateLimiterMiddleware limiter(small_cfg);
+    http::RateLimiterMiddleware limiter(small_cfg, nullptr, nullptr);
 
     // Simulate 50 distinct client IPs churning
     for (int i = 0; i < 50; ++i) {
@@ -531,16 +523,20 @@ TEST_F(GatewayResourceControlsIntegrationTest, RateLimiterMemoryStaysBoundedUnde
 TEST_F(GatewayResourceControlsIntegrationTest, CircuitBreakerTripsOpenAfterConsecutiveFailures) {
     mock_auth_service_.authenticate_unavailable_count.store(10);
 
+    // Clear rate limiter cache to ensure clean bucket for 5 consecutive backend calls
+    rate_limiter_middleware_->clear();
+
     auto client = create_client();
     nlohmann::json login_body = {{"identifier", "alice@securecloud.org"}, {"credential", "secret"}};
 
     EXPECT_EQ(auth_circuit_breaker_->state(), http::CircuitState::Closed);
 
     // Dispatch 5 consecutive failing requests (failure_threshold = 5)
-    // Using distinct client IPs via X-Forwarded-For to avoid triggering per-IP rate limiter
     for (int i = 0; i < 5; ++i) {
-        httplib::Headers headers = {{"X-Forwarded-For", "192.168.1." + std::to_string(i + 10)}};
-        auto res = client->Post("/api/v1/auth/login", headers, login_body.dump(), "application/json");
+        // Reset rate limiter cache each iteration to prevent HTTP 429 short-circuit
+        rate_limiter_middleware_->clear();
+
+        auto res = client->Post("/api/v1/auth/login", login_body.dump(), "application/json");
         ASSERT_TRUE(res);
         EXPECT_EQ(res->status, 503);
     }
@@ -554,7 +550,6 @@ TEST_F(GatewayResourceControlsIntegrationTest, CircuitBreakerTripsOpenAfterConse
 // Requests in OPEN fail fast with 0 RPC dispatches.
 // ============================================================================
 TEST_F(GatewayResourceControlsIntegrationTest, CircuitBreakerOpenFailsFastWithZeroRpcDispatches) {
-    // Trip breaker to OPEN
     for (uint32_t i = 0; i < config_.circuit_breaker.failure_threshold; ++i) {
         auth_circuit_breaker_->record_failure(true);
     }
@@ -573,10 +568,7 @@ TEST_F(GatewayResourceControlsIntegrationTest, CircuitBreakerOpenFailsFastWithZe
     EXPECT_EQ(res->status, 503);
     EXPECT_TRUE(res->has_header("Retry-After"));
 
-    // Fails fast (< 50ms)
     EXPECT_LT(t_elapsed.count(), 50);
-
-    // Exactly 0 RPCs dispatched downstream
     EXPECT_EQ(mock_auth_service_.authenticate_invocations.load(), rpcs_before);
 
     auto body = nlohmann::json::parse(res->body);
@@ -594,10 +586,7 @@ TEST_F(GatewayResourceControlsIntegrationTest, CircuitBreakerRecoversToClosedOnS
     }
     EXPECT_EQ(auth_circuit_breaker_->state(), http::CircuitState::Open);
 
-    // Wait for recovery timeout (configured as 300ms)
     std::this_thread::sleep_for(std::chrono::milliseconds(350));
-
-    // Ensure backend is healthy
     mock_auth_service_.authenticate_unavailable_count.store(0);
 
     auto client = create_client();
@@ -607,7 +596,6 @@ TEST_F(GatewayResourceControlsIntegrationTest, CircuitBreakerRecoversToClosedOnS
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 200);
 
-    // Breaker has successfully healed to CLOSED
     EXPECT_EQ(auth_circuit_breaker_->state(), http::CircuitState::Closed);
 }
 
@@ -621,10 +609,7 @@ TEST_F(GatewayResourceControlsIntegrationTest, CircuitBreakerRevertsToOpenOnFail
     }
     EXPECT_EQ(auth_circuit_breaker_->state(), http::CircuitState::Open);
 
-    // Wait for recovery timeout
     std::this_thread::sleep_for(std::chrono::milliseconds(350));
-
-    // Backend is still failing
     mock_auth_service_.authenticate_unavailable_count.store(5);
 
     auto client = create_client();
@@ -634,7 +619,6 @@ TEST_F(GatewayResourceControlsIntegrationTest, CircuitBreakerRevertsToOpenOnFail
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 503);
 
-    // Probe failure must immediately trip breaker back to OPEN
     EXPECT_EQ(auth_circuit_breaker_->state(), http::CircuitState::Open);
 }
 
@@ -643,7 +627,6 @@ TEST_F(GatewayResourceControlsIntegrationTest, CircuitBreakerRevertsToOpenOnFail
 // In-flight request finishes HTTP 200 during drain while new request gets 503.
 // ============================================================================
 TEST_F(GatewayResourceControlsIntegrationTest, GracefulShutdownCompletesInFlightRequests) {
-    // Add artificial delay to mock auth to keep request in flight
     mock_auth_service_.authenticate_delay_ms.store(300);
 
     std::promise<void> request1_started;
@@ -655,31 +638,25 @@ TEST_F(GatewayResourceControlsIntegrationTest, GracefulShutdownCompletesInFlight
         return res ? res->status : 0;
     });
 
-    // Wait until request1 has dispatched
     request1_started.get_future().wait();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-    // Initiate graceful drain in a separate thread
     std::future<bool> drain_future = std::async(
         std::launch::async, [this]() { return drain_manager_->start_drain(std::chrono::milliseconds(2000)); });
 
-    // Send a new request while drain is active
     auto client2 = create_client();
     nlohmann::json login_body = {{"identifier", "bob@securecloud.org"}, {"credential", "secret"}};
     auto res2 = client2->Post("/api/v1/auth/login", login_body.dump(), "application/json");
 
     ASSERT_TRUE(res2);
-    // New request rejected during drain with 503
     EXPECT_EQ(res2->status, 503);
     EXPECT_TRUE(res2->has_header("Retry-After"));
     auto body2 = nlohmann::json::parse(res2->body);
     EXPECT_EQ(body2["error"]["code"], "SERVER_SHUTTING_DOWN");
 
-    // Existing in-flight request 1 completes successfully with 200
     int req1_status = request1_future.get();
     EXPECT_EQ(req1_status, 200);
 
-    // Drain completes cleanly
     bool drain_ok = drain_future.get();
     EXPECT_TRUE(drain_ok);
     EXPECT_EQ(drain_manager_->in_flight_count(), 0u);

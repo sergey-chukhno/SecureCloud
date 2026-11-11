@@ -6,7 +6,6 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
-
 #include <memory>
 #include <set>
 
@@ -18,17 +17,16 @@ using ::testing::Return;
 
 class MockAuditIngestionClient : public securecloud::gateway::grpc::IAuditIngestionClient {
   public:
-    MOCK_METHOD(
-        (securecloud::gateway::grpc::Result<securecloud::audit::v1::SubmitAuditEventResponse>),
-        submit_event,
-        (const securecloud::audit::v1::SubmitAuditEventRequest&, securecloud::gateway::grpc::ClientCallContext&),
-        (override));
+    MOCK_METHOD((securecloud::gateway::grpc::Result<securecloud::audit::v1::SubmitAuditEventResponse>), submit_event,
+                (const securecloud::audit::v1::SubmitAuditEventRequest&,
+                 securecloud::gateway::grpc::ClientCallContext&),
+                (override));
 
-    MOCK_METHOD(
-        (securecloud::gateway::grpc::Result<securecloud::audit::v1::BatchSubmitAuditEventsResponse>),
-        batch_submit_events,
-        (const securecloud::audit::v1::BatchSubmitAuditEventsRequest&, securecloud::gateway::grpc::ClientCallContext&),
-        (override));
+    MOCK_METHOD((securecloud::gateway::grpc::Result<securecloud::audit::v1::BatchSubmitAuditEventsResponse>),
+                batch_submit_events,
+                (const securecloud::audit::v1::BatchSubmitAuditEventsRequest&,
+                 securecloud::gateway::grpc::ClientCallContext&),
+                (override));
 };
 
 // Simulate gRPC Audit service outage and verify retries
@@ -61,8 +59,8 @@ TEST(AuditIntegrationTest, HandlesAuditOutageAndRetries) {
 
     // Verify dispatcher attempted delivery and error metrics/retries were accounted for
     const auto stats = store->stats();
-    const uint64_t total_tracked = stats.total_records + stats.claimed_records +
-                                  stats.dropped_records + stats.unrecoverable_records;
+    const uint64_t total_tracked =
+        stats.total_records + stats.claimed_records + stats.dropped_records + stats.unrecoverable_records;
     EXPECT_GE(total_tracked, 1u);
 }
 

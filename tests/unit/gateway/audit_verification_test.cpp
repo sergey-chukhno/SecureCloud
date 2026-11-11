@@ -1,12 +1,11 @@
+#include "audit/audit_producer_metrics.hpp"
 #include "audit/bounded_memory_pending_store.hpp"
 #include "audit/gateway_audit_event_factory.hpp"
 #include "audit/gateway_audit_producer.hpp"
-#include "audit/audit_producer_metrics.hpp"
-
-#include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
+#include <gtest/gtest.h>
 #include <thread>
 #include <vector>
 
@@ -27,8 +26,8 @@ TEST(AuditVerificationUnitTest, RequestPathIsolationUnderStoreLoad) {
     for (int i = 0; i < 100; ++i) {
         producer->record_observation(obs);
     }
-    const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-        std::chrono::steady_clock::now() - start);
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
 
     // 100 admission requests must not block the HTTP request thread
     EXPECT_LT(elapsed.count() / 100, 1000); // Average latency < 1ms

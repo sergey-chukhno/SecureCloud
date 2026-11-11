@@ -2,9 +2,8 @@
 #include "audit/gateway_audit_event_factory.hpp"
 #include "audit/gateway_audit_producer.hpp"
 
-#include <gtest/gtest.h>
-
 #include <chrono>
+#include <gtest/gtest.h>
 #include <memory>
 #include <thread>
 

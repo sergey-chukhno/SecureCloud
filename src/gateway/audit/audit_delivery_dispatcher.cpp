@@ -13,8 +13,7 @@ AuditDeliveryDispatcher::AuditDeliveryDispatcher(
     std::shared_ptr<IAuditPendingStore> pending_store,
     std::shared_ptr<securecloud::gateway::grpc::IAuditIngestionClient> audit_client,
     std::shared_ptr<securecloud::gateway::http::CircuitBreaker> circuit_breaker,
-    std::shared_ptr<AuditProducerMetrics> metrics,
-    AuditDeliveryDispatcherConfig config)
+    std::shared_ptr<AuditProducerMetrics> metrics, AuditDeliveryDispatcherConfig config)
     : pending_store_(std::move(pending_store)), audit_client_(std::move(audit_client)),
       circuit_breaker_(std::move(circuit_breaker)), metrics_(std::move(metrics)), config_(config) {}
 
@@ -97,7 +96,8 @@ bool AuditDeliveryDispatcher::process_next_batch() {
         ::securecloud::audit::v1::AuditEventProto proto_event;
         if (!proto_event.ParseFromArray(rec.proto_bytes.data(), static_cast<int>(rec.proto_bytes.size()))) {
             pending_store_->mark_terminal(rec.event_id, TerminalReason::FormatCorrupted);
-            if (metrics_) metrics_->increment_quarantined("corrupted");
+            if (metrics_)
+                metrics_->increment_quarantined("corrupted");
             continue;
         }
         *request.add_events() = std::move(proto_event);
@@ -117,9 +117,11 @@ bool AuditDeliveryDispatcher::process_next_batch() {
     auto result = audit_client_->batch_submit_events(request, ctx);
 
     if (result) {
-        if (circuit_breaker_) circuit_breaker_->record_success();
+        if (circuit_breaker_)
+            circuit_breaker_->record_success();
 
-        if (metrics_) metrics_->increment_batches("success");
+        if (metrics_)
+            metrics_->increment_batches("success");
 
         const auto& response = result.value();
         if (response.rejected_event_ids_size() > 0) {
@@ -128,7 +130,8 @@ bool AuditDeliveryDispatcher::process_next_batch() {
                 if (auto parsed = securecloud::audit::domain::EventId::from_string(response.rejected_event_ids(i))) {
                     rejected_set.insert(*parsed);
                     pending_store_->mark_terminal(*parsed, TerminalReason::ValidationFailed);
-                    if (metrics_) metrics_->increment_quarantined("validation_failed");
+                    if (metrics_)
+                        metrics_->increment_quarantined("validation_failed");
                 }
             }
 
@@ -141,24 +144,29 @@ bool AuditDeliveryDispatcher::process_next_batch() {
             }
             if (!accepted_ids.empty()) {
                 pending_store_->mark_delivered(accepted_ids);
-                if (metrics_) metrics_->increment_events_delivered(accepted_ids.size());
+                if (metrics_)
+                    metrics_->increment_events_delivered(accepted_ids.size());
             }
         } else {
             pending_store_->mark_delivered(valid_ids);
-            if (metrics_) metrics_->increment_events_delivered(valid_ids.size());
+            if (metrics_)
+                metrics_->increment_events_delivered(valid_ids.size());
         }
     } else {
         const auto grpc_code = result.error().grpc_code;
-        if (circuit_breaker_) circuit_breaker_->record_status(grpc_code);
+        if (circuit_breaker_)
+            circuit_breaker_->record_status(grpc_code);
 
         switch (grpc_code) {
         case ::grpc::StatusCode::INVALID_ARGUMENT:
         case ::grpc::StatusCode::ALREADY_EXISTS:
         case ::grpc::StatusCode::FAILED_PRECONDITION:
-            if (metrics_) metrics_->increment_batches("terminal");
+            if (metrics_)
+                metrics_->increment_batches("terminal");
             for (const auto& id : valid_ids) {
                 pending_store_->mark_terminal(id, TerminalReason::ValidationFailed);
-                if (metrics_) metrics_->increment_quarantined("validation_failed");
+                if (metrics_)
+                    metrics_->increment_quarantined("validation_failed");
             }
             break;
 

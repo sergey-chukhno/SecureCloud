@@ -3,25 +3,22 @@
 #include "http/auth/authenticated_context.hpp"
 #include "http/auth/authentication_middleware.hpp"
 
-#include <httplib.h>
-#include <nlohmann/json.hpp>
-
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <httplib.h>
+#include <nlohmann/json.hpp>
 
 namespace securecloud::gateway::http {
 
 RateLimiterMiddleware::RateLimiterMiddleware(GatewayRateLimitingConfig config,
-                                               std::shared_ptr<audit::IGatewayAuditProducer> audit_producer,
-                                               ClockFn clock_fn)
-    : config_(config),
-      audit_producer_(std::move(audit_producer)),
-      clock_fn_(std::move(clock_fn)) {}
+                                             std::shared_ptr<audit::IGatewayAuditProducer> audit_producer,
+                                             ClockFn clock_fn)
+    : config_(config), audit_producer_(std::move(audit_producer)), clock_fn_(std::move(clock_fn)) {}
 
 RateLimiterMiddleware::RateLimiterMiddleware(const GatewayConfig& config,
-                                               std::shared_ptr<audit::IGatewayAuditProducer> audit_producer,
-                                               ClockFn clock_fn)
+                                             std::shared_ptr<audit::IGatewayAuditProducer> audit_producer,
+                                             ClockFn clock_fn)
     : RateLimiterMiddleware(config.rate_limiting, std::move(audit_producer), std::move(clock_fn)) {}
 
 void RateLimiterMiddleware::process(const httplib::Request& req, httplib::Response& res, const NextHandler& next) {
@@ -62,13 +59,11 @@ void RateLimiterMiddleware::process(const httplib::Request& req, httplib::Respon
             audit_producer_->record_observation(obs);
         }
 
-        nlohmann::json problem = {
-            {"type", "https://securecloud.local/errors/rate-limit-exceeded"},
-            {"title", "Rate Limit Exceeded"},
-            {"status", 429},
-            {"detail", "Too many requests from identity/IP key within the rate limit window."},
-            {"instance", "/requests/" + req_id}
-        };
+        nlohmann::json problem = {{"type", "https://securecloud.local/errors/rate-limit-exceeded"},
+                                  {"title", "Rate Limit Exceeded"},
+                                  {"status", 429},
+                                  {"detail", "Too many requests from identity/IP key within the rate limit window."},
+                                  {"instance", "/requests/" + req_id}};
         res.status = 429;
         res.set_content(problem.dump(), "application/problem+json");
         return;
@@ -93,20 +88,16 @@ RateLimiterMiddleware::AcquireResult RateLimiterMiddleware::acquire(const std::s
         }
 
         lru_list_.push_front(key);
-        ClientEntry entry{
-            .tokens = static_cast<double>(config_.burst_capacity) - 1.0,
-            .last_refill = now_tp,
-            .lru_iter = lru_list_.begin()
-        };
+        ClientEntry entry{.tokens = static_cast<double>(config_.burst_capacity) - 1.0,
+                          .last_refill = now_tp,
+                          .lru_iter = lru_list_.begin()};
         client_map_.emplace(key, entry);
 
-        return AcquireResult{
-            .allowed = true,
-            .remaining = config_.burst_capacity > 0 ? config_.burst_capacity - 1 : 0,
-            .limit = config_.burst_capacity,
-            .retry_after_sec = 0,
-            .reset_sec = static_cast<uint32_t>(epoch_sec + 1)
-        };
+        return AcquireResult{.allowed = true,
+                             .remaining = config_.burst_capacity > 0 ? config_.burst_capacity - 1 : 0,
+                             .limit = config_.burst_capacity,
+                             .retry_after_sec = 0,
+                             .reset_sec = static_cast<uint32_t>(epoch_sec + 1)};
     }
 
     lru_list_.erase(it->second.lru_iter);
@@ -114,7 +105,8 @@ RateLimiterMiddleware::AcquireResult RateLimiterMiddleware::acquire(const std::s
     it->second.lru_iter = lru_list_.begin();
 
     auto& entry = it->second;
-    const auto elapsed_sec = std::chrono::duration_cast<std::chrono::duration<double>>(now_tp - entry.last_refill).count();
+    const auto elapsed_sec =
+        std::chrono::duration_cast<std::chrono::duration<double>>(now_tp - entry.last_refill).count();
     entry.last_refill = now_tp;
 
     entry.tokens = std::min(static_cast<double>(config_.burst_capacity),
@@ -124,25 +116,21 @@ RateLimiterMiddleware::AcquireResult RateLimiterMiddleware::acquire(const std::s
         entry.tokens -= 1.0;
         const uint32_t remaining = static_cast<uint32_t>(std::floor(entry.tokens));
 
-        return AcquireResult{
-            .allowed = true,
-            .remaining = remaining,
-            .limit = config_.burst_capacity,
-            .retry_after_sec = 0,
-            .reset_sec = static_cast<uint32_t>(epoch_sec + 1)
-        };
+        return AcquireResult{.allowed = true,
+                             .remaining = remaining,
+                             .limit = config_.burst_capacity,
+                             .retry_after_sec = 0,
+                             .reset_sec = static_cast<uint32_t>(epoch_sec + 1)};
     }
 
     const double missing_tokens = 1.0 - entry.tokens;
     const uint32_t retry_after = static_cast<uint32_t>(std::ceil(missing_tokens / config_.refill_rate_per_sec));
 
-    return AcquireResult{
-        .allowed = false,
-        .remaining = 0,
-        .limit = config_.burst_capacity,
-        .retry_after_sec = std::max(1u, retry_after),
-        .reset_sec = static_cast<uint32_t>(epoch_sec + retry_after)
-    };
+    return AcquireResult{.allowed = false,
+                         .remaining = 0,
+                         .limit = config_.burst_capacity,
+                         .retry_after_sec = std::max(1u, retry_after),
+                         .reset_sec = static_cast<uint32_t>(epoch_sec + retry_after)};
 }
 
 std::string RateLimiterMiddleware::resolve_client_key(const httplib::Request& req) {

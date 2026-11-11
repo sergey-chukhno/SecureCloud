@@ -78,7 +78,8 @@ void AuditProducerMetrics::increment_quarantined(const std::string& reason) noex
     }
 }
 
-void AuditProducerMetrics::increment_events_lost(bool is_mandatory, [[maybe_unused]] const std::string& reason) noexcept {
+void AuditProducerMetrics::increment_events_lost(bool is_mandatory,
+                                                 [[maybe_unused]] const std::string& reason) noexcept {
     if (is_mandatory) {
         lost_mandatory_full_.fetch_add(1, std::memory_order_relaxed);
     } else {
@@ -109,8 +110,10 @@ std::string AuditProducerMetrics::to_openmetrics_text() const {
 
     ss << "# HELP gateway_audit_pending_events Current count of pending audit events in memory or spool.\n"
        << "# TYPE gateway_audit_pending_events gauge\n"
-       << "gateway_audit_pending_events{class=\"mandatory\"} " << pending_mandatory_.load(std::memory_order_relaxed) << "\n"
-       << "gateway_audit_pending_events{class=\"best_effort\"} " << pending_best_effort_.load(std::memory_order_relaxed) << "\n\n";
+       << "gateway_audit_pending_events{class=\"mandatory\"} " << pending_mandatory_.load(std::memory_order_relaxed)
+       << "\n"
+       << "gateway_audit_pending_events{class=\"best_effort\"} " << pending_best_effort_.load(std::memory_order_relaxed)
+       << "\n\n";
 
     ss << "# HELP gateway_audit_pending_bytes Total bytes of pending audit events.\n"
        << "# TYPE gateway_audit_pending_bytes gauge\n"
@@ -136,10 +139,14 @@ std::string AuditProducerMetrics::to_openmetrics_text() const {
 
     ss << "# HELP gateway_audit_delivery_batches_total Total audit delivery batch attempts.\n"
        << "# TYPE gateway_audit_delivery_batches_total counter\n"
-       << "gateway_audit_delivery_batches_total{outcome=\"success\"} " << batches_success_.load(std::memory_order_relaxed) << "\n"
-       << "gateway_audit_delivery_batches_total{outcome=\"retryable\"} " << batches_retryable_.load(std::memory_order_relaxed) << "\n"
-       << "gateway_audit_delivery_batches_total{outcome=\"terminal\"} " << batches_terminal_.load(std::memory_order_relaxed) << "\n"
-       << "gateway_audit_delivery_batches_total{outcome=\"ambiguous\"} " << batches_ambiguous_.load(std::memory_order_relaxed) << "\n\n";
+       << "gateway_audit_delivery_batches_total{outcome=\"success\"} "
+       << batches_success_.load(std::memory_order_relaxed) << "\n"
+       << "gateway_audit_delivery_batches_total{outcome=\"retryable\"} "
+       << batches_retryable_.load(std::memory_order_relaxed) << "\n"
+       << "gateway_audit_delivery_batches_total{outcome=\"terminal\"} "
+       << batches_terminal_.load(std::memory_order_relaxed) << "\n"
+       << "gateway_audit_delivery_batches_total{outcome=\"ambiguous\"} "
+       << batches_ambiguous_.load(std::memory_order_relaxed) << "\n\n";
 
     ss << "# HELP gateway_audit_events_delivered_total Total audit events acknowledged by upstream Audit Service.\n"
        << "# TYPE gateway_audit_events_delivered_total counter\n"
@@ -147,19 +154,26 @@ std::string AuditProducerMetrics::to_openmetrics_text() const {
 
     ss << "# HELP gateway_audit_delivery_retries_total Total delivery retry attempts.\n"
        << "# TYPE gateway_audit_delivery_retries_total counter\n"
-       << "gateway_audit_delivery_retries_total{reason=\"network\"} " << retries_network_.load(std::memory_order_relaxed) << "\n"
-       << "gateway_audit_delivery_retries_total{reason=\"timeout\"} " << retries_timeout_.load(std::memory_order_relaxed) << "\n"
-       << "gateway_audit_delivery_retries_total{reason=\"server_error\"} " << retries_server_error_.load(std::memory_order_relaxed) << "\n\n";
+       << "gateway_audit_delivery_retries_total{reason=\"network\"} "
+       << retries_network_.load(std::memory_order_relaxed) << "\n"
+       << "gateway_audit_delivery_retries_total{reason=\"timeout\"} "
+       << retries_timeout_.load(std::memory_order_relaxed) << "\n"
+       << "gateway_audit_delivery_retries_total{reason=\"server_error\"} "
+       << retries_server_error_.load(std::memory_order_relaxed) << "\n\n";
 
     ss << "# HELP gateway_audit_events_quarantined_total Total unrecoverable records quarantined.\n"
        << "# TYPE gateway_audit_events_quarantined_total counter\n"
-       << "gateway_audit_events_quarantined_total{reason=\"validation_failed\"} " << quarantined_validation_.load(std::memory_order_relaxed) << "\n"
-       << "gateway_audit_events_quarantined_total{reason=\"corrupted\"} " << quarantined_corrupted_.load(std::memory_order_relaxed) << "\n\n";
+       << "gateway_audit_events_quarantined_total{reason=\"validation_failed\"} "
+       << quarantined_validation_.load(std::memory_order_relaxed) << "\n"
+       << "gateway_audit_events_quarantined_total{reason=\"corrupted\"} "
+       << quarantined_corrupted_.load(std::memory_order_relaxed) << "\n\n";
 
     ss << "# HELP gateway_audit_events_lost_total Total events permanently dropped.\n"
        << "# TYPE gateway_audit_events_lost_total counter\n"
-       << "gateway_audit_events_lost_total{class=\"mandatory\",reason=\"spool_full\"} " << lost_mandatory_full_.load(std::memory_order_relaxed) << "\n"
-       << "gateway_audit_events_lost_total{class=\"best_effort\",reason=\"buffer_evicted\"} " << lost_best_effort_evicted_.load(std::memory_order_relaxed) << "\n\n";
+       << "gateway_audit_events_lost_total{class=\"mandatory\",reason=\"spool_full\"} "
+       << lost_mandatory_full_.load(std::memory_order_relaxed) << "\n"
+       << "gateway_audit_events_lost_total{class=\"best_effort\",reason=\"buffer_evicted\"} "
+       << lost_best_effort_evicted_.load(std::memory_order_relaxed) << "\n\n";
 
     ss << "# HELP gateway_audit_spool_unsynced_events Events written to spool pending fsync.\n"
        << "# TYPE gateway_audit_spool_unsynced_events gauge\n"
@@ -167,11 +181,13 @@ std::string AuditProducerMetrics::to_openmetrics_text() const {
 
     ss << "# HELP gateway_audit_spool_torn_records_total Partial or damaged records encountered during replay.\n"
        << "# TYPE gateway_audit_spool_torn_records_total counter\n"
-       << "gateway_audit_spool_torn_records_total " << spool_torn_records_total_.load(std::memory_order_relaxed) << "\n\n";
+       << "gateway_audit_spool_torn_records_total " << spool_torn_records_total_.load(std::memory_order_relaxed)
+       << "\n\n";
 
     ss << "# HELP gateway_audit_circuit_state State of delivery circuit breaker (0=Closed, 1=HalfOpen, 2=Open).\n"
        << "# TYPE gateway_audit_circuit_state gauge\n"
-       << "gateway_audit_circuit_state " << static_cast<uint32_t>(circuit_state_.load(std::memory_order_relaxed)) << "\n# EOF\n";
+       << "gateway_audit_circuit_state " << static_cast<uint32_t>(circuit_state_.load(std::memory_order_relaxed))
+       << "\n# EOF\n";
 
     return ss.str();
 }
