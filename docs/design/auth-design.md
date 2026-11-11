@@ -664,28 +664,76 @@ The Gateway must never bypass Auth to authenticate a user.
 
 ---
 
-# 4.22 Audit Integration
+# 4.22 Audit Integration & Transactional Outbox (AUDIT-013)
 
-Auth publishes security and operational events through its transactional outbox.
+The Auth Service acts as an authoritative, reliable producer of security audit events for the Centralized Audit Service (`securecloud-audit`).
 
-Examples:
+Because the Auth Service owns the primary PostgreSQL database (`securecloud_auth`), it strictly enforces the **Transactional Outbox Pattern** (`ADR-007` §18–§23) to eliminate dual-write vulnerabilities[cite: 11, 15].
 
-* login success;
-* login failure;
-* MFA success/failure;
-* session creation;
-* session revocation;
-* refresh-token reuse;
-* device registration;
-* device revocation;
-* cryptographic identity change;
-* security-policy violation.
+---
 
-Audit publication is asynchronous.
+## 4.22.1 Dual-Write Elimination & Transaction Categories
 
-An Audit outage must not cause an otherwise valid authentication state transaction to become dependent on synchronous Audit availability, unless a specific security policy explicitly requires otherwise.
+Auth never makes a direct network gRPC call to the Audit Service during a client request or business database transaction[cite: 11, 15]. Instead, security events are written to the local `auth_outbox` table[cite: 11].
 
-No passwords, MFA secrets, private keys, access-token plaintext, refresh-token plaintext, or message/file plaintext are included in audit events.
+```text
+                  AUTH SERVICE DB BOUNDARY
+┌──────────────────────────────────────────────────────────┐
+│                                                          │
+│  State-Mutating Business Transaction (pqxx::work)        │
+│  ┌────────────────────────────────────────────────────┐  │
+│  │ 1. Mutate Business State (sessions, devices, etc.) │  │
+│  │ 2. Stage Audit Event into auth_outbox              │  │
+│  │                     COMMIT                         │  │
+│  └───────────────────────┬────────────────────────────┘  │
+│                          │                               │
+│                          ▼                               │
+│            PostgreSQL: auth_outbox                       │
+│                          ▲                               │
+│                          │ (SELECT ... SKIP LOCKED)      │
+│  ┌───────────────────────┴────────────────────────────┐  │
+│  │ Background AuthOutboxRelay Worker                  │  │
+│  └───────────────────────┬────────────────────────────┘  │
+└──────────────────────────┼───────────────────────────────┘
+                           │ gRPC / mTLS 1.3
+                           ▼
+                  securecloud-audit
+```
+
+Events are classified into two execution categories:
+
+1. **Category A (State-Mutating Operations)**:
+   Inserted into `auth_outbox` inside the active business transaction (`pqxx::work`)[cite: 11]. If the business update succeeds and commits, the audit event is committed atomically[cite: 10, 15]. If the business update rolls back, no audit event is recorded[cite: 15].
+   *Examples*: `auth.login.succeeded`, `auth.session.revoked`, `auth.device.enrolled`, `auth.mfa.challenge_succeeded`, `auth.token.refreshed`.
+
+2. **Category B (Non-State-Mutating & Perimeter Rejections)**:
+   Inserted into `auth_outbox` using an **autonomous transaction** with an immediate commit. This guarantees that failed login attempts or expired token presentations are durably recorded without polluting or rolling back business table states.
+   *Examples*: `auth.login.failed`, `auth.account.disabled_attempt`, `auth.session.expired_attempt`, `auth.mfa.challenge_failed`.
+
+---
+
+## 4.22.2 Asynchronous Outbox Relay & Delivery Contract
+
+An asynchronous background worker (`AuthOutboxRelay`) polls `auth_outbox` using `SELECT ... FOR UPDATE SKIP LOCKED` and batches events to `securecloud.audit.v1.AuditIngestionService` over mTLS 1.3 (`SAN=auth`)[cite: 10, 12].
+
+- **Delivery Semantics**: At-least-once delivery[cite: 10, 12].
+- **Acknowledgement Handling**: Records are marked `PUBLISHED` only when affirmative gRPC response (`OK`) is received from Audit[cite: 15].
+- **Retry & Backoff**: Transient errors (`UNAVAILABLE`, `DEADLINE_EXCEEDED`, `RESOURCE_EXHAUSTED`) retain records in `PENDING` status with exponential backoff and jitter[cite: 15].
+- **Quarantine**: Permanent failures (`INVALID_ARGUMENT`, `ALREADY_EXISTS` payload conflicts) update status to `QUARANTINED` for security review[cite: 10, 12].
+
+---
+
+## 4.22.3 Zero-Secret Invariant & Audit Privacy
+
+Audit payloads staged in `auth_outbox` must comply strictly with `RULES.md` (§5) and `ADR-008`[cite: 10, 11].
+
+Under **no circumstances** may any of the following enter `auth_outbox` or log output[cite: 11]:
+- Plaintext passwords or Argon2id verifiers[cite: 12, 13]
+- Access tokens, refresh tokens, or bearer token strings[cite: 11, 12]
+- MFA TOTP secret keys or plaintext recovery codes[cite: 11, 12]
+- Private cryptographic keys or session keys[cite: 10, 11]
+
+Actor and target identifiers (`user_id`, `device_id`, `session_id`) are populated strictly from verified PostgreSQL domain entities, preserving opaque identity representation across the platform[cite: 10, 12, 13].
 
 ---
 

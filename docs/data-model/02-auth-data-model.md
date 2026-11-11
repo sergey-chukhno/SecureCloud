@@ -748,3 +748,134 @@ The Auth persistence model must preserve the following invariants:
 18. Historical security records remain meaningful after revocation.
 19. Cross-service relationships use opaque identifiers rather than distributed foreign keys.
 20. All authoritative server timestamps are stored in UTC.
+---
+
+# 2.18 `auth_outbox` (Transactional Outbox for Audit)
+
+The `auth_outbox` table implements the producer-side **Transactional Outbox Pattern** (`ADR-007` §18–§23) for the Auth Service.
+
+It guarantees atomic staging of audit events alongside business state transitions in PostgreSQL (`securecloud_auth`), eliminating dual-write anomalies and ensuring asynchronous at-least-once delivery to the Centralized Audit Service.
+
+```text
+auth_outbox
+├── event_id (PK)
+├── aggregate_type
+├── aggregate_id
+├── event_type
+├── severity
+├── payload_json
+├── status
+├── retry_count
+├── created_at
+├── processed_at
+├── last_error
+└── leased_until
+```
+
+### Primary key
+
+```sql
+PRIMARY KEY (event_id)
+```
+
+### Fields & Schema Definition
+
+| Field | PostgreSQL Type | Nullable | Purpose & Semantics |
+| :--- | :--- | :--- | :--- |
+| `event_id` | `UUID` | NOT NULL | Canonical RFC 9562 UUIDv7 generated at event creation. Serves as logical idempotency key. |
+| `aggregate_type` | `VARCHAR(32)` | NOT NULL | Domain aggregate context (e.g. `user`, `session`, `device`, `mfa`, `system`). |
+| `aggregate_id` | `UUID` | NULL | Optional UUID of the affected entity (e.g., `user_id`, `session_id`, `device_id`). |
+| `event_type` | `VARCHAR(64)` | NOT NULL | Canonical hierarchical event string (e.g., `auth.login.succeeded`, `auth.device.revoked`). |
+| `severity` | `VARCHAR(16)` | NOT NULL | Severity classification: `INFO`, `WARNING`, `SECURITY`, `CRITICAL`. |
+| `payload_json` | `JSONB` | NOT NULL | Serialized canonical audit payload (actor, target, correlation ID, bounded metadata). |
+| `status` | `VARCHAR(32)` | NOT NULL | Lifecycle state: `PENDING`, `PUBLISHED`, `FAILED`, `QUARANTINED`. Default `PENDING`. |
+| `retry_count` | `INT` | NOT NULL | Incrementing retry count for transient delivery failures. Default `0`. |
+| `created_at` | `TIMESTAMPTZ` | NOT NULL | Record staging timestamp in UTC (`NOW()`). |
+| `processed_at` | `TIMESTAMPTZ` | NULL | Timestamp when the event was confirmed `PUBLISHED` by Audit Service. |
+| `last_error` | `TEXT` | NULL | Diagnostic message of the last failed delivery attempt. |
+| `leased_until` | `TIMESTAMPTZ` | NULL | Expiration timestamp for multi-worker lock reservation (`SKIP LOCKED`). |
+
+---
+
+### Outbox Lifecycle States
+
+```text
+       Category A / Category B Staging
+                    │
+                    ▼
+                 PENDING ───────── (Leased by Worker via SKIP LOCKED)
+                    │
+       ┌────────────┴────────────┐
+       ▼                         ▼
+   PUBLISHED                QUARANTINED
+(Audit ACK OK)       (Terminal / Invalid Payload)
+```
+
+- **`PENDING`**: Event staged and awaiting background relay to `securecloud-audit`.
+- **`PUBLISHED`**: Successfully delivered and acknowledged by the Audit Service.
+- **`FAILED`**: Max retry threshold exceeded (retained for operational inspection).
+- **`QUARANTINED`**: Payload rejected terminally by Audit Service validation (`INVALID_ARGUMENT`, `ALREADY_EXISTS` conflict). Never automatically retried.
+
+---
+
+### Index Strategy for High-Velocity Polling & Retention
+
+To support lock-free horizontal scaling across multiple Auth instances with zero lock contention, the following partial indexes are defined:
+
+1. **Pending Record Polling Index**:
+   ```sql
+   CREATE INDEX IF NOT EXISTS idx_auth_outbox_pending_polling
+       ON auth_outbox (created_at ASC)
+       WHERE status = 'PENDING';
+   ```
+   *Purpose*: High-speed sequential scan for unclaimed outbox records.
+
+2. **Worker Lease Expiration Recovery Index**:
+   ```sql
+   CREATE INDEX IF NOT EXISTS idx_auth_outbox_leased
+       ON auth_outbox (leased_until)
+       WHERE status = 'PENDING' AND leased_until IS NOT NULL;
+   ```
+   *Purpose*: Fast cleanup and recovery of abandoned leases if an Auth worker process crashes mid-batch.
+
+3. **Background Retention & Purge Index**:
+   ```sql
+   CREATE INDEX IF NOT EXISTS idx_auth_outbox_cleanup
+       ON auth_outbox (processed_at)
+       WHERE status = 'PUBLISHED';
+   ```
+   *Purpose*: Efficient physical deletion of historically published outbox events past the retention window (e.g., 7 days).
+
+---
+
+### Outbox Concurrency & Leasing Model (`SKIP LOCKED`)
+
+Auth background relays use PostgreSQL row-level locks to claim disjoint record batches:
+
+```sql
+UPDATE auth_outbox
+SET leased_until = NOW() + INTERVAL '30 SECONDS',
+    retry_count = retry_count + 1
+WHERE event_id IN (
+    SELECT event_id
+    FROM auth_outbox
+    WHERE status = 'PENDING'
+      AND (leased_until IS NULL OR leased_until < NOW())
+    ORDER BY created_at ASC
+    LIMIT $1
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING event_id, aggregate_type, aggregate_id, event_type, severity, payload_json, status, retry_count, created_at;
+```
+
+---
+
+# 2.19 Auth Outbox Data Invariants
+
+1. Every outbox event is staged using an RFC 9562 UUIDv7 `event_id`.
+2. Category A (state-mutating) outbox events are inserted into `auth_outbox` within the primary `pqxx::work` business transaction.
+3. Category B (non-mutating/rejection) outbox events are inserted via an autonomous transaction committed immediately.
+4. Outbox records **must never contain** passwords, password hashes, access tokens, refresh tokens, MFA secrets, or private keys.
+5. Outbox polling uses `SELECT ... FOR UPDATE SKIP LOCKED` to prevent worker lock contention.
+6. A record marked `PUBLISHED` is preserved until the background retention worker purges it.
+7. Terminal payload rejections are moved to `QUARANTINED` status and are never retried.
