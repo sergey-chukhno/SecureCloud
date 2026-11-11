@@ -3718,6 +3718,7 @@ if(Qt6_FOUND)
         client/double_ratchet_engine_test.cpp
         client/skipped_keys_store_test.cpp
         client/ratchet_session_manager_test.cpp
+        client/e2ee_messaging_integration_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

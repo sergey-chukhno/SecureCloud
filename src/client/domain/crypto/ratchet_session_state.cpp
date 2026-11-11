@@ -288,4 +288,3 @@ RatchetSessionSerializer::deserialize(const securecloud::common::configuration::
 }
 
 } // namespace securecloud::client::domain::crypto
-

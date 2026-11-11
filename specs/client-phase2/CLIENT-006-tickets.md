@@ -27,8 +27,8 @@ With the completion of **Card `CLIENT-005`**, the client generates valid Ed25519
 | **CLIENT-006-T02** | X3DH Key Agreement Engine & Handshake Protocol | Completed | `e96f8ec` |
 | **CLIENT-006-T03** | Double Ratchet State Machine & Key Derivation Chains | Completed | `90c4c42` |
 | **CLIENT-006-T04** | Skipped Message Key Store & Out-of-Order Packet Delivery | Completed | `06133d7` |
-| **CLIENT-006-T05** | Ratchet Session Manager, Multi-Device Fan-out & Secure Session Persistence | Completed | Pending user validation & commit |
-| **CLIENT-006-T06** | End-to-End Messaging Integration & Full Cryptographic Verification Suite | Planned | Wire `MessagingManager`, wire `WorkspaceViewModel`, end-to-end tests |
+| **CLIENT-006-T05** | Ratchet Session Manager, Multi-Device Fan-out & Secure Session Persistence | Completed | `9b5f8f7` |
+| **CLIENT-006-T06** | End-to-End Messaging Integration & Full Cryptographic Verification Suite | Completed | Wire `MessagingManager`, wire `WorkspaceViewModel`, end-to-end tests |
 
 ```text
                                 SECURECLOUD CLIENT (Phase 2 - CLIENT-006)
