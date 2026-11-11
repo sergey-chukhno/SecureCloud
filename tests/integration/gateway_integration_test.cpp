@@ -399,7 +399,7 @@ TEST_F(GatewayIntegrationTest, ExternalHttpReadinessReturnsServingWhenDownstream
 
     common::health::HealthStatusManager gateway_health(config.common.service_name);
     grpc::GrpcChannelManager channel_manager(config);
-    health::GatewayHealthEvaluator health_evaluator(channel_manager, k_evaluator_probe_timeout);
+    health::GatewayHealthEvaluator health_evaluator(channel_manager, nullptr, k_evaluator_probe_timeout);
     gateway_health.set_readiness_evaluator([&health_evaluator] { return health_evaluator.evaluate_readiness(); });
 
     gateway_health.set_live(true);
@@ -430,7 +430,7 @@ TEST_F(GatewayIntegrationTest, ExternalHttpReadinessDegradesWhenDownstreamUnreac
 
     common::health::HealthStatusManager gateway_health(config.common.service_name);
     grpc::GrpcChannelManager channel_manager(config);
-    health::GatewayHealthEvaluator health_evaluator(channel_manager, k_evaluator_probe_timeout);
+    health::GatewayHealthEvaluator health_evaluator(channel_manager, nullptr, k_evaluator_probe_timeout);
     gateway_health.set_readiness_evaluator([&health_evaluator] { return health_evaluator.evaluate_readiness(); });
 
     gateway_health.set_live(true);

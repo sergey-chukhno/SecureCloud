@@ -51,7 +51,7 @@ TEST(AuditDeliveryDispatcherTest, DispatchesAndAcknowledgesEvents) {
 
     AuditDeliveryDispatcherConfig config;
     config.poll_interval_ms = 10;
-    AuditDeliveryDispatcher dispatcher(store, client, nullptr, config);
+    AuditDeliveryDispatcher dispatcher(store, client, nullptr, nullptr, config);
 
     // Build valid serialized event
     ::securecloud::audit::v1::AuditEventProto event;
@@ -84,7 +84,7 @@ TEST(AuditDeliveryDispatcherTest, RetriesOnTransientError) {
 
     AuditDeliveryDispatcherConfig config;
     config.poll_interval_ms = 10;
-    AuditDeliveryDispatcher dispatcher(store, client, nullptr, config);
+    AuditDeliveryDispatcher dispatcher(store, client, nullptr, nullptr, config);
 
     ::securecloud::audit::v1::AuditEventProto event;
     const auto id = securecloud::audit::domain::EventId::generate_v7();
