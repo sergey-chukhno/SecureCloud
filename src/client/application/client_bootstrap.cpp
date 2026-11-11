@@ -1,5 +1,6 @@
 #include "application/client_bootstrap.hpp"
 
+#include "application/managers/ratchet_session_manager.hpp"
 #include "infrastructure/adapters/default_gateway_client.hpp"
 #include "infrastructure/adapters/memory_local_store.hpp"
 #include "infrastructure/adapters/memory_secure_storage.hpp"
@@ -43,6 +44,15 @@ void ClientBootstrap::wire_managers() {
     file_manager_ = std::make_unique<managers::FileManager>(*gateway_, *crypto_provider_);
     emergency_manager_ = std::make_unique<managers::EmergencyManager>(*local_store_, *secure_storage_);
     sync_manager_ = std::make_unique<managers::SyncManager>(*gateway_, config_);
+}
+
+void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& user_id,
+                                                         const domain::DeviceId& device_id) {
+    ratchet_session_manager_ = std::make_unique<managers::RatchetSessionManager>(*gateway_, *secure_storage_,
+                                                                                 *crypto_provider_, user_id, device_id);
+    if (messaging_manager_) {
+        messaging_manager_->set_ratchet_session_manager(ratchet_session_manager_.get());
+    }
 }
 
 } // namespace securecloud::client::application

@@ -31,7 +31,7 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
         QStringLiteral("Online"),
         true,
         false,
-        QStringLiteral("49281 04829 88310 77241 66109 31204"),
+        QStringLiteral("49281 04829 88310 77241 66109 31204 58201 94821 03948 17263 84910 28471"),
         QStringLiteral("Principal Cryptographic Architect · Key rotation policy enforced (Double Ratchet v2)."),
         QStringLiteral("YOU: Architecture blueprint & key schedule approved."),
         QStringLiteral("Yesterday"),
@@ -50,7 +50,7 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
         QStringLiteral("Online"),
         true,
         false,
-        QStringLiteral("81726 39104 55291 00918 44127 98312"),
+        QStringLiteral("81726 39104 55291 00918 44127 98312 40291 83719 02847 16382 91048 57291"),
         QStringLiteral("Incident Response Lead · Hardware security key verified via out-of-band fingerprint."),
         QStringLiteral("Uploaded threats-q4-report.pdf (AES-256-GCM)"),
         QStringLiteral("1 min ago"),
@@ -69,7 +69,7 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
                           QStringLiteral("Busy"),
                           true,
                           false,
-                          QStringLiteral("72019 48201 99182 33410 11294 65018"),
+                          QStringLiteral("72019 48201 99182 33410 11294 65018 39201 84729 10482 73910 48291 60192"),
                           QStringLiteral("Security Operations Engineer · Gateway TLS 1.3 mTLS certificate custodian."),
                           QStringLiteral("Prekey bundle refreshed for workstation node-04."),
                           QStringLiteral("Jan 02"),
@@ -88,7 +88,7 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
                           QStringLiteral("Offline"),
                           false,
                           false,
-                          QStringLiteral("10928 38471 66251 89201 44712 09182"),
+                          QStringLiteral("10928 38471 66251 89201 44712 09182 55910 28471 90284 71209 38471 09284"),
                           QStringLiteral("External Security Auditor · Safety number pending out-of-band verification."),
                           QStringLiteral("Key exchange pending safety number check..."),
                           QStringLiteral("Jan 01"),
@@ -107,7 +107,7 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
         QStringLiteral("Offline"),
         true,
         false,
-        QStringLiteral("55412 90812 31459 77812 00192 84711"),
+        QStringLiteral("55412 90812 31459 77812 00192 84711 60192 84729 10482 73910 48291 38192"),
         QStringLiteral("Distributed Storage Engineer · Chunked AEAD file vault maintainer."),
         QStringLiteral("YOU: All 64 encrypted chunks verified."),
         QStringLiteral("Dec 23"),
@@ -1318,8 +1318,9 @@ bool WorkspaceViewModel::addContact(const QString& handle, const QString& displa
     }
 
     const domain::UserId uid(peerUid.toStdString());
-    const std::string sNum =
-        safetyNumber.isEmpty() ? "12345 67890 12345 67890 12345 67890" : safetyNumber.toStdString();
+    const std::string sNum = safetyNumber.isEmpty()
+                                 ? "10928 38471 66251 89201 44712 09182 55910 28471 90284 71209 38471 09284"
+                                 : safetyNumber.toStdString();
     const auto createRes = app_.bootstrap().contact_manager().create_contact(uid, cleanedName.toStdString(), sNum,
                                                                              roleNote.toStdString(), 1);
 
@@ -1438,7 +1439,8 @@ void WorkspaceViewModel::simulatePeerKeyChange(const QString& userId) {
         if (conv.peerUserId == userId || (userId.isEmpty() && conv.conversationId == selected_conversation_id_)) {
             conv.isVerified = false;
             conv.verificationStatus = QStringLiteral("KeyChanged");
-            conv.safetyNumber = QStringLiteral("99999 88888 77777 66666 55555 44444 (UNVERIFIED ROTATION)");
+            conv.safetyNumber = QStringLiteral(
+                "99999 88888 77777 66666 55555 44444 33333 22222 11111 00000 12345 67890 (UNVERIFIED ROTATION)");
             (void)app_.bootstrap().contact_manager().mark_contact_key_changed(
                 domain::UserId(conv.peerUserId.toStdString()), conv.safetyNumber.toStdString());
             emit selectedConversationChanged();

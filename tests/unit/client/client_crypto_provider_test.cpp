@@ -1,10 +1,14 @@
 #include "application/interfaces/i_crypto_provider.hpp"
 #include "domain/prekey_policy.hpp"
+#include "domain/user_id.hpp"
 #include "infrastructure/adapters/openssl_crypto_provider.hpp"
 #include "infrastructure/adapters/stub_crypto_provider.hpp"
 
 #include <gtest/gtest.h>
 #include <set>
+#include <string>
+#include <string_view>
+#include <vector>
 
 namespace {
 
@@ -12,6 +16,27 @@ using namespace securecloud::client;
 using namespace securecloud::client::domain;
 using namespace securecloud::client::application::interfaces;
 using namespace securecloud::client::infrastructure::adapters;
+
+std::vector<uint8_t> hex_to_bytes(std::string_view hex) {
+    std::vector<uint8_t> bytes;
+    bytes.reserve(hex.size() / 2);
+    for (std::size_t i = 0; i < hex.size(); i += 2) {
+        auto byte = static_cast<uint8_t>(std::stoi(std::string(hex.substr(i, 2)), nullptr, 16));
+        bytes.push_back(byte);
+    }
+    return bytes;
+}
+
+std::string bytes_to_hex(std::span<const uint8_t> bytes) {
+    constexpr char hex_chars[] = "0123456789abcdef";
+    std::string s;
+    s.reserve(bytes.size() * 2);
+    for (uint8_t b : bytes) {
+        s.push_back(hex_chars[(b >> 4) & 0x0f]);
+        s.push_back(hex_chars[b & 0x0f]);
+    }
+    return s;
+}
 
 TEST(OpenSslCryptoProviderTest, IdentityKeyPairGeneration) {
     OpenSslCryptoProvider crypto;
@@ -186,6 +211,220 @@ TEST(OpenSslCryptoProviderTest, GenerateDeviceIdentityAndMessaging) {
     EXPECT_FALSE(crypto.verify_identity_fingerprint(empty_did, identity.fingerprint()).value());
 }
 
+TEST(OpenSslCryptoProviderTest, DhKeyPairGeneration) {
+    OpenSslCryptoProvider crypto;
+
+    auto res1 = crypto.generate_dh_keypair();
+    ASSERT_TRUE(res1.is_ok());
+    const auto& pair1 = res1.value();
+
+    EXPECT_EQ(pair1.public_key.size(), PrekeyPolicy::kX25519PublicKeySize);
+    EXPECT_EQ(pair1.private_key.size(), PrekeyPolicy::kX25519PrivateKeySize);
+    EXPECT_FALSE(pair1.private_key.empty());
+
+    auto res2 = crypto.generate_dh_keypair();
+    ASSERT_TRUE(res2.is_ok());
+    const auto& pair2 = res2.value();
+
+    EXPECT_NE(pair1.public_key, pair2.public_key);
+    EXPECT_NE(pair1.private_key.expose_unredacted_secret(), pair2.private_key.expose_unredacted_secret());
+}
+
+TEST(OpenSslCryptoProviderTest, DiffieHellmanParityAndValidation) {
+    OpenSslCryptoProvider crypto;
+
+    // Alice generates keypair
+    auto alice_res = crypto.generate_dh_keypair();
+    ASSERT_TRUE(alice_res.is_ok());
+    const auto& alice = alice_res.value();
+
+    // Bob generates keypair
+    auto bob_res = crypto.generate_dh_keypair();
+    ASSERT_TRUE(bob_res.is_ok());
+    const auto& bob = bob_res.value();
+
+    // Alice computes shared secret using Bob's public key
+    auto s_alice_res = crypto.diffie_hellman(alice.private_key, bob.public_key);
+    ASSERT_TRUE(s_alice_res.is_ok());
+    const auto& s_alice = s_alice_res.value();
+    EXPECT_EQ(s_alice.size(), PrekeyPolicy::kSharedSecretSize);
+
+    // Bob computes shared secret using Alice's public key
+    auto s_bob_res = crypto.diffie_hellman(bob.private_key, alice.public_key);
+    ASSERT_TRUE(s_bob_res.is_ok());
+    const auto& s_bob = s_bob_res.value();
+    EXPECT_EQ(s_bob.size(), PrekeyPolicy::kSharedSecretSize);
+
+    // Assert parity
+    EXPECT_EQ(s_alice.expose_unredacted_secret(), s_bob.expose_unredacted_secret());
+
+    // Bad key sizes rejected
+    securecloud::common::configuration::SecretString short_priv("too-short");
+    EXPECT_TRUE(crypto.diffie_hellman(short_priv, bob.public_key).is_error());
+
+    std::vector<uint8_t> short_pub(31, 0x01);
+    EXPECT_TRUE(crypto.diffie_hellman(alice.private_key, short_pub).is_error());
+}
+
+TEST(OpenSslCryptoProviderTest, Rfc7748DiffieHellmanVector) {
+    OpenSslCryptoProvider crypto;
+
+    // RFC 7748 Section 6.1 (Curve25519)
+    auto alice_priv_bytes = hex_to_bytes("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
+    auto bob_pub_bytes = hex_to_bytes("de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f");
+    const std::string expected_secret_hex = "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742";
+
+    std::string priv_str(reinterpret_cast<const char*>(alice_priv_bytes.data()), alice_priv_bytes.size());
+    securecloud::common::configuration::SecretString alice_priv(std::move(priv_str));
+
+    auto dh_res = crypto.diffie_hellman(alice_priv, bob_pub_bytes);
+    ASSERT_TRUE(dh_res.is_ok());
+
+    const auto& secret = dh_res.value().expose_unredacted_secret();
+    std::span<const uint8_t> secret_span(reinterpret_cast<const uint8_t*>(secret.data()), secret.size());
+    EXPECT_EQ(bytes_to_hex(secret_span), expected_secret_hex);
+}
+
+TEST(OpenSslCryptoProviderTest, Rfc5869HkdfVectors) {
+    OpenSslCryptoProvider crypto;
+
+    // RFC 5869 Test Case 1 with SHA-256
+    std::vector<uint8_t> ikm_bytes(22, 0x0b);
+    std::string ikm_str(reinterpret_cast<const char*>(ikm_bytes.data()), ikm_bytes.size());
+    securecloud::common::configuration::SecretString ikm(std::move(ikm_str));
+
+    auto salt_bytes = hex_to_bytes("000102030405060708090a0b0c");
+    auto info_bytes = hex_to_bytes("f0f1f2f3f4f5f6f7f8f9");
+    const std::string expected_prk_hex = "077709362c2e32df0ddc3f0dc47bba6390b6c73bb50f9c3122ec844ad7c2b3e5";
+    const std::string expected_okm_hex =
+        "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865";
+
+    // 1. Test hkdf_extract
+    auto prk_res = crypto.hkdf_extract(salt_bytes, ikm);
+    ASSERT_TRUE(prk_res.is_ok());
+    const auto& prk_str = prk_res.value().expose_unredacted_secret();
+    std::span<const uint8_t> prk_span(reinterpret_cast<const uint8_t*>(prk_str.data()), prk_str.size());
+    EXPECT_EQ(bytes_to_hex(prk_span), expected_prk_hex);
+
+    // 2. Test hkdf_expand
+    auto okm_res = crypto.hkdf_expand(prk_res.value(), info_bytes, 42);
+    ASSERT_TRUE(okm_res.is_ok());
+    const auto& okm_str = okm_res.value().expose_unredacted_secret();
+    std::span<const uint8_t> okm_span(reinterpret_cast<const uint8_t*>(okm_str.data()), okm_str.size());
+    EXPECT_EQ(bytes_to_hex(okm_span), expected_okm_hex);
+
+    // 3. Test combined hkdf_extract_and_expand
+    auto combined_res = crypto.hkdf_extract_and_expand(salt_bytes, ikm, info_bytes, 42);
+    ASSERT_TRUE(combined_res.is_ok());
+    const auto& comb_str = combined_res.value().expose_unredacted_secret();
+    std::span<const uint8_t> comb_span(reinterpret_cast<const uint8_t*>(comb_str.data()), comb_str.size());
+    EXPECT_EQ(bytes_to_hex(comb_span), expected_okm_hex);
+}
+
+TEST(OpenSslCryptoProviderTest, Aes256GcmEncryptionDecryptionRoundtrip) {
+    OpenSslCryptoProvider crypto;
+
+    std::vector<uint8_t> key_bytes(32, 0x42);
+    std::string key_str(reinterpret_cast<const char*>(key_bytes.data()), key_bytes.size());
+    securecloud::common::configuration::SecretString key(std::move(key_str));
+
+    std::vector<uint8_t> iv(12, 0x99);
+    const std::string plaintext_str = "Signal Double Ratchet Payload with Forward Secrecy";
+    std::span<const uint8_t> plaintext(reinterpret_cast<const uint8_t*>(plaintext_str.data()), plaintext_str.size());
+    const std::string aad_str = "Header:Seq=1,Prev=0";
+    std::span<const uint8_t> aad(reinterpret_cast<const uint8_t*>(aad_str.data()), aad_str.size());
+
+    // 1. Valid encryption
+    auto enc_res = crypto.encrypt_aes_gcm(key, iv, plaintext, aad);
+    ASSERT_TRUE(enc_res.is_ok());
+    const auto& ct = enc_res.value();
+
+    EXPECT_EQ(ct.ciphertext.size(), plaintext.size());
+    EXPECT_EQ(ct.iv, iv);
+    EXPECT_EQ(ct.auth_tag.size(), PrekeyPolicy::kAeadGcmTagSize);
+    EXPECT_NE(std::string(reinterpret_cast<const char*>(ct.ciphertext.data()), ct.ciphertext.size()), plaintext_str);
+
+    // 2. Valid decryption
+    auto dec_res = crypto.decrypt_aes_gcm(key, ct.iv, ct.ciphertext, ct.auth_tag, aad);
+    ASSERT_TRUE(dec_res.is_ok());
+    EXPECT_EQ(dec_res.value().expose_unredacted_secret(), plaintext_str);
+
+    // 3. Tampered ciphertext rejected
+    auto corrupted_ct = ct.ciphertext;
+    corrupted_ct[0] ^= 0x01;
+    EXPECT_TRUE(crypto.decrypt_aes_gcm(key, ct.iv, corrupted_ct, ct.auth_tag, aad).is_error());
+
+    // 4. Tampered auth tag rejected
+    auto corrupted_tag = ct.auth_tag;
+    corrupted_tag[0] ^= 0x01;
+    EXPECT_TRUE(crypto.decrypt_aes_gcm(key, ct.iv, ct.ciphertext, corrupted_tag, aad).is_error());
+
+    // 5. Tampered AAD rejected
+    const std::string bad_aad_str = "Header:Seq=2,Prev=0";
+    std::span<const uint8_t> bad_aad(reinterpret_cast<const uint8_t*>(bad_aad_str.data()), bad_aad_str.size());
+    EXPECT_TRUE(crypto.decrypt_aes_gcm(key, ct.iv, ct.ciphertext, ct.auth_tag, bad_aad).is_error());
+
+    // 6. Empty plaintext roundtrip works
+    auto empty_enc = crypto.encrypt_aes_gcm(key, iv, {}, aad);
+    ASSERT_TRUE(empty_enc.is_ok());
+    auto empty_dec = crypto.decrypt_aes_gcm(key, iv, empty_enc.value().ciphertext, empty_enc.value().auth_tag, aad);
+    ASSERT_TRUE(empty_dec.is_ok());
+    EXPECT_TRUE(empty_dec.value().empty());
+
+    // 7. Invalid parameters rejected
+    securecloud::common::configuration::SecretString bad_key("short-key");
+    EXPECT_TRUE(crypto.encrypt_aes_gcm(bad_key, iv, plaintext, aad).is_error());
+
+    std::vector<uint8_t> bad_iv(11, 0x01);
+    EXPECT_TRUE(crypto.encrypt_aes_gcm(key, bad_iv, plaintext, aad).is_error());
+}
+
+TEST(OpenSslCryptoProviderTest, MutualSafetyNumberComputation) {
+    OpenSslCryptoProvider crypto;
+
+    UserId user_alice("550e8400-e29b-41d4-a716-446655440000");
+    UserId user_bob("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
+
+    auto alice_id = crypto.generate_identity_keypair();
+    ASSERT_TRUE(alice_id.is_ok());
+
+    auto bob_id = crypto.generate_identity_keypair();
+    ASSERT_TRUE(bob_id.is_ok());
+
+    // Alice calculates safety number with Bob
+    auto sn_alice_res =
+        crypto.compute_safety_number(user_alice, alice_id.value().public_key, user_bob, bob_id.value().public_key);
+    ASSERT_TRUE(sn_alice_res.is_ok());
+    const auto& sn_alice = sn_alice_res.value();
+
+    // Bob calculates safety number with Alice
+    auto sn_bob_res =
+        crypto.compute_safety_number(user_bob, bob_id.value().public_key, user_alice, alice_id.value().public_key);
+    ASSERT_TRUE(sn_bob_res.is_ok());
+    const auto& sn_bob = sn_bob_res.value();
+
+    // Mutual symmetry invariant: SN(Alice, Bob) == SN(Bob, Alice)
+    EXPECT_EQ(sn_alice, sn_bob);
+
+    // Format verification: 12 groups of 5 digits separated by spaces (71 characters)
+    EXPECT_EQ(sn_alice.size(), 71u);
+    for (std::size_t i = 0; i < sn_alice.size(); ++i) {
+        if ((i + 1) % 6 == 0) {
+            EXPECT_EQ(sn_alice[i], ' ');
+        } else {
+            EXPECT_TRUE(std::isdigit(static_cast<unsigned char>(sn_alice[i])));
+        }
+    }
+
+    // Different identity produces different safety number
+    auto charlie_id = crypto.generate_identity_keypair();
+    ASSERT_TRUE(charlie_id.is_ok());
+    auto sn_charlie =
+        crypto.compute_safety_number(user_alice, alice_id.value().public_key, user_bob, charlie_id.value().public_key);
+    ASSERT_TRUE(sn_charlie.is_ok());
+    EXPECT_NE(sn_alice, sn_charlie.value());
+}
+
 TEST(StubCryptoProviderTest, InterfaceComplianceAndFallbacks) {
     StubCryptoProvider stub;
 
@@ -205,6 +444,36 @@ TEST(StubCryptoProviderTest, InterfaceComplianceAndFallbacks) {
     auto fp_res = stub.compute_identity_fingerprint(id_res.value().public_key);
     ASSERT_TRUE(fp_res.is_ok());
     EXPECT_TRUE(CryptoIdentity::is_valid_fingerprint(fp_res.value()));
+
+    // Extended primitives compliance
+    auto dh_key = stub.generate_dh_keypair();
+    ASSERT_TRUE(dh_key.is_ok());
+    EXPECT_EQ(dh_key.value().public_key.size(), PrekeyPolicy::kX25519PublicKeySize);
+
+    auto dh_res = stub.diffie_hellman(dh_key.value().private_key, dh_key.value().public_key);
+    ASSERT_TRUE(dh_res.is_ok());
+    EXPECT_EQ(dh_res.value().size(), PrekeyPolicy::kSharedSecretSize);
+
+    std::vector<uint8_t> salt(16, 0x01);
+    auto hkdf_res = stub.hkdf_extract_and_expand(salt, dh_res.value(), {}, 32);
+    ASSERT_TRUE(hkdf_res.is_ok());
+    EXPECT_EQ(hkdf_res.value().size(), 32u);
+
+    std::vector<uint8_t> iv(12, 0x02);
+    std::string pt = "test";
+    std::span<const uint8_t> pt_span(reinterpret_cast<const uint8_t*>(pt.data()), pt.size());
+    auto enc = stub.encrypt_aes_gcm(hkdf_res.value(), iv, pt_span);
+    ASSERT_TRUE(enc.is_ok());
+    auto dec = stub.decrypt_aes_gcm(hkdf_res.value(), iv, enc.value().ciphertext, enc.value().auth_tag);
+    ASSERT_TRUE(dec.is_ok());
+    EXPECT_EQ(dec.value().expose_unredacted_secret(), pt);
+
+    UserId u1("user1");
+    UserId u2("user2");
+    std::vector<uint8_t> id_bytes(32, 0x11);
+    auto sn = stub.compute_safety_number(u1, id_bytes, u2, id_bytes);
+    ASSERT_TRUE(sn.is_ok());
+    EXPECT_EQ(sn.value().size(), 71u);
 }
 
 } // namespace

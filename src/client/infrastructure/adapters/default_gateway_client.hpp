@@ -43,6 +43,8 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     void set_simulated_inventory_status(domain::PrekeyInventoryStatus status);
     void set_simulated_registration_status(domain::DeviceAuthorizationStatus status, std::string pairing_code = "");
     void set_simulated_directory(std::vector<application::interfaces::DeviceCryptoDirectoryEntry> directory);
+    void set_simulated_user_directory(const domain::UserId& user_id,
+                                      std::vector<application::interfaces::DeviceCryptoDirectoryEntry> directory);
     void set_simulated_failure(bool fail, std::string error_message = "Simulated network failure");
 
   private:
@@ -57,6 +59,8 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     std::optional<domain::DeviceAuthorizationStatus> simulated_reg_status_;
     std::string simulated_pairing_code_;
     std::vector<application::interfaces::DeviceCryptoDirectoryEntry> simulated_directory_;
+    std::unordered_map<domain::UserId, std::vector<application::interfaces::DeviceCryptoDirectoryEntry>>
+        simulated_user_directories_;
 };
 
 } // namespace securecloud::client::infrastructure::adapters

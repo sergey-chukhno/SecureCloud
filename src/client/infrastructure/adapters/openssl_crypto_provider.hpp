@@ -37,6 +37,37 @@ class OpenSslCryptoProvider final : public application::interfaces::ICryptoProvi
 
     application::ClientResult<bool> verify_identity_fingerprint(const domain::DeviceId& device,
                                                                 std::string_view fingerprint) override;
+
+    application::ClientResult<application::interfaces::DhKeyPair> generate_dh_keypair() override;
+
+    application::ClientResult<securecloud::common::configuration::SecretString>
+    diffie_hellman(const securecloud::common::configuration::SecretString& our_private_key,
+                   std::span<const uint8_t> peer_public_key) override;
+
+    application::ClientResult<securecloud::common::configuration::SecretString>
+    hkdf_extract(std::span<const uint8_t> salt, const securecloud::common::configuration::SecretString& ikm) override;
+
+    application::ClientResult<securecloud::common::configuration::SecretString>
+    hkdf_expand(const securecloud::common::configuration::SecretString& prk, std::span<const uint8_t> info,
+                std::size_t length) override;
+
+    application::ClientResult<securecloud::common::configuration::SecretString>
+    hkdf_extract_and_expand(std::span<const uint8_t> salt, const securecloud::common::configuration::SecretString& ikm,
+                            std::span<const uint8_t> info, std::size_t length) override;
+
+    application::ClientResult<application::interfaces::AeadCiphertext>
+    encrypt_aes_gcm(const securecloud::common::configuration::SecretString& key, std::span<const uint8_t> iv,
+                    std::span<const uint8_t> plaintext, std::span<const uint8_t> associated_data = {}) override;
+
+    application::ClientResult<securecloud::common::configuration::SecretString>
+    decrypt_aes_gcm(const securecloud::common::configuration::SecretString& key, std::span<const uint8_t> iv,
+                    std::span<const uint8_t> ciphertext, std::span<const uint8_t> auth_tag,
+                    std::span<const uint8_t> associated_data = {}) override;
+
+    application::ClientResult<std::string> compute_safety_number(const domain::UserId& local_user_id,
+                                                                 std::span<const uint8_t> local_identity_key,
+                                                                 const domain::UserId& peer_user_id,
+                                                                 std::span<const uint8_t> peer_identity_key) override;
 };
 
 } // namespace securecloud::client::infrastructure::adapters

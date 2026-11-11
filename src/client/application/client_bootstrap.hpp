@@ -12,8 +12,14 @@
 #include "application/managers/file_manager.hpp"
 #include "application/managers/messaging_manager.hpp"
 #include "application/managers/sync_manager.hpp"
+#include "domain/device_id.hpp"
+#include "domain/user_id.hpp"
 
 #include <memory>
+
+namespace securecloud::client::application::managers {
+class RatchetSessionManager;
+} // namespace securecloud::client::application::managers
 
 namespace securecloud::client::application {
 
@@ -47,6 +53,11 @@ class ClientBootstrap {
     [[nodiscard]] managers::FileManager& file_manager() noexcept { return *file_manager_; }
     [[nodiscard]] managers::EmergencyManager& emergency_manager() noexcept { return *emergency_manager_; }
     [[nodiscard]] managers::SyncManager& sync_manager() noexcept { return *sync_manager_; }
+    [[nodiscard]] managers::RatchetSessionManager* ratchet_session_manager() noexcept {
+        return ratchet_session_manager_.get();
+    }
+
+    void initialize_ratchet_session_manager(const domain::UserId& user_id, const domain::DeviceId& device_id);
 
   private:
     void wire_managers();
@@ -62,6 +73,7 @@ class ClientBootstrap {
     // Managers (instantiated second, destroyed first)
     std::unique_ptr<managers::AuthManager> auth_manager_;
     std::unique_ptr<managers::MessagingManager> messaging_manager_;
+    std::unique_ptr<managers::RatchetSessionManager> ratchet_session_manager_;
     std::unique_ptr<managers::ContactManager> contact_manager_;
     std::unique_ptr<managers::DeviceManager> device_manager_;
     std::unique_ptr<managers::FileManager> file_manager_;

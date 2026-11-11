@@ -16,16 +16,27 @@
 #include <string_view>
 #include <vector>
 
+namespace securecloud::client::domain::crypto {
+struct PerDeviceDeliveryPayload;
+struct EncryptedMessageEnvelope;
+} // namespace securecloud::client::domain::crypto
+
 namespace securecloud::client::application::managers {
+
+class RatchetSessionManager;
 
 class MessagingManager {
   public:
     MessagingManager(interfaces::IGatewayClient& gateway, interfaces::ILocalStore& local_store,
-                     interfaces::ICryptoProvider& crypto_provider);
+                     interfaces::ICryptoProvider& crypto_provider,
+                     RatchetSessionManager* ratchet_session_manager = nullptr);
     ~MessagingManager() = default;
 
     MessagingManager(const MessagingManager&) = delete;
     MessagingManager& operator=(const MessagingManager&) = delete;
+
+    void set_ratchet_session_manager(RatchetSessionManager* ratchet_session_manager) noexcept;
+    [[nodiscard]] RatchetSessionManager* ratchet_session_manager() noexcept;
 
     // Direct and Group Conversations
     ClientResult<domain::Conversation> open_direct_conversation(const domain::UserId& local_user,
@@ -70,10 +81,26 @@ class MessagingManager {
     ClientResult<std::vector<domain::Message>> get_conversation_messages(const domain::ConversationId& conversation_id,
                                                                          std::size_t limit = 50);
 
+    // Inbound Message Decryption & Processing (Double Ratchet)
+    ClientResult<domain::Message> process_inbound_message(const domain::ConversationId& conversation_id,
+                                                          const domain::UserId& sender_user_id,
+                                                          const domain::DeviceId& sender_device_id,
+                                                          const domain::crypto::PerDeviceDeliveryPayload& payload,
+                                                          int32_t priority = 0,
+                                                          const std::string& sender_display_name = "");
+
+    ClientResult<domain::Message> process_inbound_message(const domain::ConversationId& conversation_id,
+                                                          const domain::UserId& sender_user_id,
+                                                          const domain::DeviceId& sender_device_id,
+                                                          const domain::crypto::EncryptedMessageEnvelope& envelope,
+                                                          int32_t priority = 0,
+                                                          const std::string& sender_display_name = "");
+
   private:
     interfaces::IGatewayClient& gateway_;
     interfaces::ILocalStore& local_store_;
     interfaces::ICryptoProvider& crypto_provider_;
+    RatchetSessionManager* ratchet_session_manager_{nullptr};
 };
 
 } // namespace securecloud::client::application::managers
