@@ -12,6 +12,11 @@ if(Qt6_FOUND)
         domain/one_time_prekey_record.cpp
         domain/prekey_inventory_status.cpp
         domain/device_private_bundle.cpp
+        domain/device_trust_level.cpp
+        domain/device_platform_info.cpp
+        domain/hardware_attestation_record.cpp
+        domain/short_authentication_string.cpp
+        domain/pairing_challenge_payload.cpp
         domain/device.cpp
         domain/user.cpp
         domain/contact.cpp

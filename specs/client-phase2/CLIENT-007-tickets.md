@@ -28,7 +28,7 @@ When a device is lost, compromised, or decommissioned, the **Device Revocation P
 
 | Ticket | Description | Status | Target Scope |
 |---|---|---|---|
-| **CLIENT-007-T01** | Multi-Device Trust & Device Pairing Domain Models | Ready for Implementation | Domain models: `DeviceTrustLevel`, `DevicePlatformInfo`, `PairingChallengePayload`, `ShortAuthenticationString`, `HardwareAttestationRecord`, URI/QR serialization |
+| **CLIENT-007-T01** | Multi-Device Trust & Device Pairing Domain Models | Completed | Domain models: `DeviceTrustLevel`, `DevicePlatformInfo`, `PairingChallengePayload`, `ShortAuthenticationString`, `HardwareAttestationRecord`, URI/QR serialization |
 | **CLIENT-007-T02** | Authenticated Device Pairing Protocol & Ephemeral Handshake Engine | Ready for Implementation | `DevicePairingCoordinator`: Out-of-band QR/SAS protocol, primary/companion roles, Gateway pairing challenge & MFA authorization |
 | **CLIENT-007-T03** | Device Revocation & Cryptographic Session Purge Pipeline | Ready for Implementation | Remote revocation via Gateway, local self-wipe, `RatchetSessionManager` session termination & fan-out recipient exclusion |
 | **CLIENT-007-T04** | Out-of-Band QR Code Generation, Safety Number Scanner & Identity Verification Engine | Ready for Implementation | `SafetyNumberEngine`: 60-digit SAS derivation, QR code payload generation/parsing, identity key change detection (`KeyChanged` alert) |
