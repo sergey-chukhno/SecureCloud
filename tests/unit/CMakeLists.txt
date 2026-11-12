@@ -3957,3 +3957,21 @@ target_link_libraries(securecloud_auth_outbox_relay_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_auth_outbox_relay_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Observability, Lock-Free Metrics & Zero-PII Diagnostics Test Suite (AUDIT-013-T06)
+add_executable(securecloud_auth_outbox_metrics_test
+        auth/auth_outbox_metrics_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_metrics_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_metrics_test ${SECURECLOUD_TEST_PROPERTIES})

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "auth/domain/audit_event.hpp"
+#include "auth/audit/auth_outbox_metrics.hpp"
 #include "auth/repository/auth_outbox_repository.hpp"
 
 #include <memory>
@@ -74,7 +75,8 @@ class OutboxAuditEventPublisher final : public IAuditEventPublisher {
   public:
     explicit OutboxAuditEventPublisher(std::shared_ptr<repository::IAuthOutboxRepository> outbox_repo,
                                        std::string producer_instance = "auth-1",
-                                       std::shared_ptr<IAuditEventSink> fallback_sink = nullptr);
+                                       std::shared_ptr<IAuditEventSink> fallback_sink = nullptr,
+                                       audit::AuthOutboxMetrics* metrics = nullptr);
     ~OutboxAuditEventPublisher() override = default;
 
     OutboxAuditEventPublisher(const OutboxAuditEventPublisher&) = delete;
@@ -89,6 +91,7 @@ class OutboxAuditEventPublisher final : public IAuditEventPublisher {
     std::shared_ptr<repository::IAuthOutboxRepository> outbox_repo_;
     std::string producer_instance_;
     std::shared_ptr<IAuditEventSink> fallback_sink_;
+    audit::AuthOutboxMetrics* metrics_;
 };
 
 } // namespace securecloud::auth::service

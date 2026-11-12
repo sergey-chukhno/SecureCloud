@@ -35,6 +35,8 @@ add_library(securecloud_auth_config STATIC
         service/auth_service_impl.cpp
         audit/auth_audit_mapper.cpp
         audit/auth_audit_client.cpp
+        audit/auth_outbox_metrics.cpp
+        audit/auth_outbox_diagnostics.cpp
         audit/auth_outbox_relay.cpp
 )
 

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <nlohmann/json.hpp>
 #include <random>
 #include <stdexcept>
 #include <unordered_set>
@@ -16,6 +17,7 @@ namespace securecloud::auth::audit {
 namespace {
 
 constexpr size_t kMaxAuditBatchSize = 100;
+constexpr uint32_t kCircuitTripFailureThreshold = 3;
 
 [[nodiscard]] std::string format_rpc_error(const AuditBatchSubmitResult& result) {
     if (!result.status.error_message().empty()) {
@@ -25,16 +27,34 @@ constexpr size_t kMaxAuditBatchSize = 100;
     return "gRPC error code " + std::to_string(static_cast<int>(result.status.error_code()));
 }
 
+[[nodiscard]] std::string extract_correlation_id_safe(const domain::AuthOutboxEntity& entity) noexcept {
+    try {
+        const auto j = nlohmann::json::parse(entity.payload_json);
+        if (j.is_object() && j.contains("correlation_id") && j["correlation_id"].is_string()) {
+            const std::string corr = j["correlation_id"].get<std::string>();
+            if (!corr.empty()) {
+                return corr;
+            }
+        }
+    } catch (...) {
+    }
+    return entity.event_id.to_string();
+}
+
 } // namespace
 
 AuthOutboxRelay::AuthOutboxRelay(std::shared_ptr<repository::IAuthOutboxRepository> repository,
                                  std::shared_ptr<IAuthAuditClient> audit_client,
                                  AuthOutboxRelayConfig config,
-                                 std::string producer_instance)
+                                 std::string producer_instance,
+                                 AuthOutboxMetrics* metrics,
+                                 AuthOutboxDiagnostics* diagnostics)
     : repository_(std::move(repository)),
       audit_client_(std::move(audit_client)),
       config_(config),
-      producer_instance_(producer_instance.empty() ? "auth" : std::move(producer_instance)) {
+      producer_instance_(producer_instance.empty() ? "auth" : std::move(producer_instance)),
+      metrics_(metrics != nullptr ? metrics : &AuthOutboxMetrics::instance()),
+      diagnostics_(diagnostics != nullptr ? diagnostics : &AuthOutboxDiagnostics::instance()) {
     if (!repository_) {
         throw std::invalid_argument("AuthOutboxRelay repository must not be null");
     }
@@ -134,23 +154,41 @@ size_t AuthOutboxRelay::poll_and_dispatch() {
     try {
         leased_events = repository_->fetch_and_lease_pending_batch(config_.batch_size, config_.lease_duration);
     } catch (const std::exception& ex) {
-        std::cerr << "[SecureCloud] [auth-outbox-relay] Failed to fetch and lease batch: " << ex.what() << "\n";
         ++consecutive_failures_;
+        diagnostics_->log_circuit_trip(consecutive_failures_, compute_backoff_delay(consecutive_failures_), "",
+                                       ex.what());
         return 0;
     } catch (...) {
-        std::cerr << "[SecureCloud] [auth-outbox-relay] Unknown error fetching outbox batch\n";
         ++consecutive_failures_;
+        diagnostics_->log_circuit_trip(consecutive_failures_, compute_backoff_delay(consecutive_failures_), "",
+                                       "Unknown repository error");
         return 0;
     }
 
     if (leased_events.empty()) {
+        metrics_->set_oldest_pending_age_seconds(0.0);
+        try {
+            const size_t remaining = repository_->count_pending();
+            metrics_->set_pending_events(static_cast<int64_t>(remaining));
+        } catch (...) {
+        }
         return 0;
     }
+
+    // Update oldest pending event age gauge (batch is ordered by created_at ASC)
+    const auto now_sys = std::chrono::system_clock::now();
+    const double oldest_age_sec =
+        std::max(0.0, std::chrono::duration<double>(now_sys - leased_events.front().created_at).count());
+    metrics_->set_oldest_pending_age_seconds(oldest_age_sec);
+
+    const std::string batch_corr_id = extract_correlation_id_safe(leased_events.front());
 
     std::vector<domain::AuthOutboxEntity> valid_entities;
     std::vector<::securecloud::audit::v1::AuditEventProto> proto_batch;
     valid_entities.reserve(leased_events.size());
     proto_batch.reserve(leased_events.size());
+
+    size_t local_quarantined_count = 0;
 
     // Translate leased records to canonical AuditEventProto; quarantine poison pills immediately.
     for (auto& entity : leased_events) {
@@ -158,18 +196,40 @@ size_t AuthOutboxRelay::poll_and_dispatch() {
             auto proto = AuthAuditMapper::to_proto(entity, producer_instance_);
             proto_batch.push_back(std::move(proto));
             valid_entities.push_back(std::move(entity));
-        } catch (const std::exception& ex) {
+        } catch (const std::runtime_error& ex) {
+            const std::string id_str = entity.event_id.to_string();
+            const std::string corr_id = extract_correlation_id_safe(entity);
             try {
-                repository_->mark_quarantined(entity.event_id, ex.what());
-            } catch (const std::exception& repo_ex) {
-                std::cerr << "[SecureCloud] [auth-outbox-relay] Failed to quarantine malformed event "
-                          << entity.event_id.to_string() << ": " << repo_ex.what() << "\n";
+                if (repository_->mark_quarantined(entity.event_id, ex.what())) {
+                    ++local_quarantined_count;
+                    metrics_->record_quarantined(QuarantineReason::MalformedPayload, 1);
+                    metrics_->decrement_pending_events(1);
+                    diagnostics_->log_quarantine_action(id_str, corr_id, QuarantineReason::MalformedPayload, ex.what());
+                }
+            } catch (...) {
+            }
+        } catch (const std::exception& ex) {
+            const std::string id_str = entity.event_id.to_string();
+            const std::string corr_id = extract_correlation_id_safe(entity);
+            try {
+                if (repository_->mark_quarantined(entity.event_id, ex.what())) {
+                    ++local_quarantined_count;
+                    metrics_->record_quarantined(QuarantineReason::SchemaValidation, 1);
+                    metrics_->decrement_pending_events(1);
+                    diagnostics_->log_quarantine_action(id_str, corr_id, QuarantineReason::SchemaValidation, ex.what());
+                }
+            } catch (...) {
             }
         }
     }
 
     if (proto_batch.empty()) {
         consecutive_failures_ = 0;
+        if (local_quarantined_count > 0) {
+            metrics_->record_delivery_batch(BatchOutcome::Rejected, 1);
+            diagnostics_->log_batch_outcome(BatchOutcome::Rejected, leased_events.size(), 0, local_quarantined_count,
+                                            batch_corr_id, "All events quarantined locally during validation");
+        }
         return leased_events.size();
     }
 
@@ -193,22 +253,56 @@ size_t AuthOutboxRelay::poll_and_dispatch() {
             rejected_ids.insert(rejected_id);
         }
 
-        for (const auto& entity : valid_entities) {
+        size_t delivered_count = 0;
+        size_t remote_rejected_count = 0;
+
+        for (size_t i = 0; i < valid_entities.size(); ++i) {
+            const auto& entity = valid_entities[i];
             const std::string id_str = entity.event_id.to_string();
+            const std::string& corr_id = proto_batch[i].correlation_id();
+
             try {
                 if (rejected_ids.contains(id_str)) {
-                    repository_->mark_quarantined(entity.event_id, "Permanently rejected by AuditIngestionService");
+                    if (repository_->mark_quarantined(entity.event_id, "Permanently rejected by AuditIngestionService")) {
+                        ++remote_rejected_count;
+                        metrics_->record_quarantined(QuarantineReason::RemoteRejected, 1);
+                        metrics_->decrement_pending_events(1);
+                        diagnostics_->log_quarantine_action(id_str, corr_id, QuarantineReason::RemoteRejected,
+                                                            "Permanently rejected by AuditIngestionService");
+                    }
                 } else {
-                    repository_->mark_published(entity.event_id);
+                    if (repository_->mark_published(entity.event_id)) {
+                        ++delivered_count;
+                    }
                 }
             } catch (const std::exception& ex) {
                 std::cerr << "[SecureCloud] [auth-outbox-relay] Failed to update acknowledgement state for event "
                           << id_str << ": " << ex.what() << "\n";
             }
         }
+
+        if (delivered_count > 0) {
+            metrics_->record_events_delivered(delivered_count);
+            metrics_->decrement_pending_events(static_cast<int64_t>(delivered_count));
+        }
+
+        const size_t total_rejected = local_quarantined_count + remote_rejected_count;
+        const BatchOutcome outcome = (total_rejected > 0) ? BatchOutcome::Rejected : BatchOutcome::Success;
+        metrics_->record_delivery_batch(outcome, 1);
+        diagnostics_->log_batch_outcome(outcome, leased_events.size(), delivered_count, total_rejected, batch_corr_id);
     } else {
         ++consecutive_failures_;
         const std::string error_detail = format_rpc_error(submit_result);
+
+        metrics_->record_delivery_batch(BatchOutcome::Retryable, 1);
+        metrics_->record_retry(valid_entities.size());
+        diagnostics_->log_batch_outcome(BatchOutcome::Retryable, leased_events.size(), 0, local_quarantined_count,
+                                        batch_corr_id, error_detail);
+
+        if (consecutive_failures_ >= kCircuitTripFailureThreshold) {
+            diagnostics_->log_circuit_trip(consecutive_failures_, compute_backoff_delay(consecutive_failures_),
+                                           batch_corr_id, error_detail);
+        }
 
         // Transient / ambiguous failure: retain in PENDING, clear lease, record last_error for retry
         for (const auto& entity : valid_entities) {
@@ -221,6 +315,14 @@ size_t AuthOutboxRelay::poll_and_dispatch() {
         }
     }
 
+    try {
+        const size_t db_pending = repository_->count_pending();
+        if (db_pending > 0) {
+            metrics_->set_pending_events(static_cast<int64_t>(db_pending));
+        }
+    } catch (...) {
+    }
+
     return leased_events.size();
 }
 
@@ -231,7 +333,12 @@ size_t AuthOutboxRelay::purge_old_published_records() {
 
     try {
         const auto cutoff = std::chrono::system_clock::now() - config_.published_retention;
-        return repository_->purge_published_older_than(cutoff, config_.purge_batch_size);
+        const size_t purged = repository_->purge_published_older_than(cutoff, config_.purge_batch_size);
+        if (purged > 0) {
+            metrics_->record_purged(purged);
+            diagnostics_->log_retention_purge(purged, config_.published_retention);
+        }
+        return purged;
     } catch (const std::exception& ex) {
         std::cerr << "[SecureCloud] [auth-outbox-relay] Failed to purge old published records: " << ex.what() << "\n";
         return 0;
