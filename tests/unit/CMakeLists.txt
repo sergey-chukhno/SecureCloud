@@ -3721,6 +3721,7 @@ if(Qt6_FOUND)
         client/e2ee_messaging_integration_test.cpp
         client/device_domain_models_test.cpp
         client/device_pairing_coordinator_test.cpp
+        client/device_revocation_pipeline_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

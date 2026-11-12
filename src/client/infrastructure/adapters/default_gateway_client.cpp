@@ -283,6 +283,60 @@ DefaultGatewayClient::list_user_devices(const domain::UserId& user_id) {
     return application::ClientResult<std::vector<domain::Device>>::ok({});
 }
 
+application::ClientResult<void>
+DefaultGatewayClient::revoke_device(const domain::DeviceId& device_id, std::string_view mfa_token) {
+    if (simulate_failure_) {
+        return application::ClientResult<void>::error(application::ClientError::network(failure_message_));
+    }
+    if (device_id.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Device ID cannot be empty to revoke device"));
+    }
+
+    if (require_mfa_for_revocation_) {
+        if (mfa_token.empty()) {
+            return application::ClientResult<void>::error(
+                application::ClientError(application::ClientErrorCode::AuthenticationRequired,
+                                         application::ClientErrorCategory::Authentication,
+                                         "MFA verification required to revoke device"));
+        }
+        if (mfa_token == "invalid" || mfa_token == "bad_token") {
+            return application::ClientResult<void>::error(
+                application::ClientError(application::ClientErrorCode::InvalidCredentials,
+                                         application::ClientErrorCategory::Authentication,
+                                         "Invalid MFA verification token"));
+        }
+    }
+
+    // 1. Mark status in simulated_user_devices_
+    for (auto& [uid, devices] : simulated_user_devices_) {
+        for (auto& dev : devices) {
+            if (dev.device_id() == device_id) {
+                dev.set_status(domain::DeviceAuthorizationStatus::Revoked);
+                dev.set_trust_level(domain::DeviceTrustLevel::Revoked);
+            }
+        }
+    }
+
+    // 2. Mark status in simulated_directory_
+    for (auto& entry : simulated_directory_) {
+        if (entry.device_id == device_id) {
+            entry.status = domain::DeviceAuthorizationStatus::Revoked;
+        }
+    }
+
+    // 3. Mark status in simulated_user_directories_
+    for (auto& [uid, dir] : simulated_user_directories_) {
+        for (auto& entry : dir) {
+            if (entry.device_id == device_id) {
+                entry.status = domain::DeviceAuthorizationStatus::Revoked;
+            }
+        }
+    }
+
+    return application::ClientResult<void>::ok();
+}
+
 void DefaultGatewayClient::set_simulated_pairing_result(application::interfaces::PairingInitiationResult result) {
     simulated_pairing_result_ = std::move(result);
 }
@@ -294,6 +348,10 @@ void DefaultGatewayClient::set_simulated_user_devices(const domain::UserId& user
 
 void DefaultGatewayClient::set_simulated_authorization_mfa_requirement(bool require_mfa) {
     require_mfa_for_authorization_ = require_mfa;
+}
+
+void DefaultGatewayClient::set_simulated_revocation_mfa_requirement(bool require_mfa) {
+    require_mfa_for_revocation_ = require_mfa;
 }
 
 } // namespace securecloud::client::infrastructure::adapters

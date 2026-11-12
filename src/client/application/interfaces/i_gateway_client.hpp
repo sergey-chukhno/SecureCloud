@@ -85,6 +85,9 @@ class IGatewayClient {
 
     virtual ClientResult<std::vector<domain::Device>>
     list_user_devices(const domain::UserId& user_id) = 0;
+
+    virtual ClientResult<void>
+    revoke_device(const domain::DeviceId& device_id, std::string_view mfa_token = "") = 0;
 };
 
 } // namespace securecloud::client::application::interfaces

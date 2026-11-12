@@ -277,6 +277,10 @@ class MockGatewayClient final : public IGatewayClient {
     ClientResult<std::vector<Device>> list_user_devices(const UserId& /*user_id*/) override {
         return ClientResult<std::vector<Device>>::ok({});
     }
+
+    ClientResult<void> revoke_device(const DeviceId& /*device_id*/, std::string_view /*mfa_token*/) override {
+        return ClientResult<void>::ok();
+    }
 };
 
 TEST(ApplicationInterfacesTest, InterfacePolymorphismAndContracts) {

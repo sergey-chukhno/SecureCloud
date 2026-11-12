@@ -49,6 +49,9 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     application::ClientResult<std::vector<domain::Device>>
     list_user_devices(const domain::UserId& user_id) override;
 
+    application::ClientResult<void>
+    revoke_device(const domain::DeviceId& device_id, std::string_view mfa_token = "") override;
+
     // Test Hooks for deterministic simulation
     void set_simulated_inventory_status(domain::PrekeyInventoryStatus status);
     void set_simulated_registration_status(domain::DeviceAuthorizationStatus status, std::string pairing_code = "");
@@ -58,6 +61,7 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     void set_simulated_pairing_result(application::interfaces::PairingInitiationResult result);
     void set_simulated_user_devices(const domain::UserId& user_id, std::vector<domain::Device> devices);
     void set_simulated_authorization_mfa_requirement(bool require_mfa);
+    void set_simulated_revocation_mfa_requirement(bool require_mfa);
     void set_simulated_failure(bool fail, std::string error_message = "Simulated network failure");
 
   private:
@@ -78,6 +82,7 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     std::optional<application::interfaces::PairingInitiationResult> simulated_pairing_result_;
     std::unordered_map<domain::UserId, std::vector<domain::Device>> simulated_user_devices_;
     bool require_mfa_for_authorization_{true};
+    bool require_mfa_for_revocation_{false};
 };
 
 } // namespace securecloud::client::infrastructure::adapters

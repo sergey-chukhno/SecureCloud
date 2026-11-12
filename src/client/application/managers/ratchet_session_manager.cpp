@@ -377,6 +377,28 @@ ClientResult<void> RatchetSessionManager::terminate_session(const domain::UserId
     return persist_session_index();
 }
 
+ClientResult<void> RatchetSessionManager::purge_device_sessions(const domain::DeviceId& device_id) {
+    if (device_id.empty()) {
+        return ClientResult<void>::error(ClientError::validation("Device ID cannot be empty to purge sessions"));
+    }
+
+    std::vector<domain::UserId> matched_users;
+    for (const auto& [k, _] : sessions_) {
+        if (k.device_id == device_id) {
+            matched_users.push_back(k.user_id);
+        }
+    }
+
+    for (const auto& uid : matched_users) {
+        auto res = terminate_session(uid, device_id);
+        if (!res.is_ok()) {
+            return res;
+        }
+    }
+
+    return ClientResult<void>::ok();
+}
+
 bool RatchetSessionManager::has_session(const domain::UserId& peer_user_id,
                                         const domain::DeviceId& peer_device_id) const {
     domain::crypto::PeerDeviceKey key{.user_id = peer_user_id, .device_id = peer_device_id};

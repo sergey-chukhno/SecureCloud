@@ -1,5 +1,6 @@
 #include "application/managers/device_manager.hpp"
 
+#include "application/managers/ratchet_session_manager.hpp"
 #include "domain/prekey_policy.hpp"
 #include "infrastructure/adapters/key_storage_helper.hpp"
 
@@ -206,15 +207,35 @@ ClientResult<std::vector<domain::Device>> DeviceManager::list_devices() {
     return ClientResult<std::vector<domain::Device>>::ok(std::move(devices));
 }
 
-ClientResult<void> DeviceManager::revoke_device(const domain::DeviceId& device_id) {
+ClientResult<void> DeviceManager::revoke_device(const domain::DeviceId& device_id, std::string_view mfa_token) {
     if (device_id.empty()) {
         return ClientResult<void>::error(ClientError::validation("Device ID cannot be empty"));
     }
 
+    // 1. Local Device Self-Wipe
     if (local_device_.has_value() && local_device_->device_id() == device_id) {
         infrastructure::adapters::KeyStorageHelper::wipe_device_keys(secure_storage_, device_id);
         secure_storage_.delete_secret(kLocalDeviceIdKey);
         local_device_.reset();
+
+        if (ratchet_session_manager_ != nullptr) {
+            ratchet_session_manager_->purge_device_sessions(device_id);
+        }
+        return ClientResult<void>::ok();
+    }
+
+    // 2. Remote Companion Device Revocation via Gateway
+    auto gate_res = gateway_.revoke_device(device_id, mfa_token);
+    if (!gate_res.is_ok()) {
+        return gate_res;
+    }
+
+    // 3. Purge cryptographic sessions for that companion device
+    if (ratchet_session_manager_ != nullptr) {
+        auto purge_res = ratchet_session_manager_->purge_device_sessions(device_id);
+        if (!purge_res.is_ok()) {
+            return purge_res;
+        }
     }
 
     return ClientResult<void>::ok();
