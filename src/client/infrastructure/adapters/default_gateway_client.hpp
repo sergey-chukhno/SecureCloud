@@ -39,12 +39,28 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     get_device_crypto_directory(const domain::UserId& user_id,
                                 const std::vector<domain::DeviceId>& device_ids = {}) override;
 
+    application::ClientResult<application::interfaces::PairingInitiationResult>
+    initiate_device_pairing(const domain::DeviceId& device_id) override;
+
+    application::ClientResult<void> authorize_device_pairing(const domain::DeviceId& device_id,
+                                                             std::string_view pairing_code,
+                                                             std::string_view mfa_token) override;
+
+    application::ClientResult<std::vector<domain::Device>> list_user_devices(const domain::UserId& user_id) override;
+
+    application::ClientResult<void> revoke_device(const domain::DeviceId& device_id,
+                                                  std::string_view mfa_token = "") override;
+
     // Test Hooks for deterministic simulation
     void set_simulated_inventory_status(domain::PrekeyInventoryStatus status);
     void set_simulated_registration_status(domain::DeviceAuthorizationStatus status, std::string pairing_code = "");
     void set_simulated_directory(std::vector<application::interfaces::DeviceCryptoDirectoryEntry> directory);
     void set_simulated_user_directory(const domain::UserId& user_id,
                                       std::vector<application::interfaces::DeviceCryptoDirectoryEntry> directory);
+    void set_simulated_pairing_result(application::interfaces::PairingInitiationResult result);
+    void set_simulated_user_devices(const domain::UserId& user_id, std::vector<domain::Device> devices);
+    void set_simulated_authorization_mfa_requirement(bool require_mfa);
+    void set_simulated_revocation_mfa_requirement(bool require_mfa);
     void set_simulated_failure(bool fail, std::string error_message = "Simulated network failure");
 
   private:
@@ -61,6 +77,11 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     std::vector<application::interfaces::DeviceCryptoDirectoryEntry> simulated_directory_;
     std::unordered_map<domain::UserId, std::vector<application::interfaces::DeviceCryptoDirectoryEntry>>
         simulated_user_directories_;
+
+    std::optional<application::interfaces::PairingInitiationResult> simulated_pairing_result_;
+    std::unordered_map<domain::UserId, std::vector<domain::Device>> simulated_user_devices_;
+    bool require_mfa_for_authorization_{true};
+    bool require_mfa_for_revocation_{false};
 };
 
 } // namespace securecloud::client::infrastructure::adapters

@@ -3719,6 +3719,12 @@ if(Qt6_FOUND)
         client/skipped_keys_store_test.cpp
         client/ratchet_session_manager_test.cpp
         client/e2ee_messaging_integration_test.cpp
+        client/device_domain_models_test.cpp
+        client/device_pairing_coordinator_test.cpp
+        client/device_revocation_pipeline_test.cpp
+        client/safety_number_engine_test.cpp
+        client/workspace_view_model_devices_test.cpp
+        client/multi_device_trust_integration_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

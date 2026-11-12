@@ -260,6 +260,27 @@ class MockGatewayClient final : public IGatewayClient {
     get_device_crypto_directory(const UserId& /*user_id*/, const std::vector<DeviceId>& /*device_ids*/) override {
         return ClientResult<std::vector<DeviceCryptoDirectoryEntry>>::ok({});
     }
+
+    ClientResult<PairingInitiationResult> initiate_device_pairing(const DeviceId& device_id) override {
+        PairingInitiationResult res;
+        res.device_id = device_id;
+        res.pairing_code = "948201";
+        res.expires_at = std::chrono::system_clock::now() + std::chrono::minutes(10);
+        return ClientResult<PairingInitiationResult>::ok(std::move(res));
+    }
+
+    ClientResult<void> authorize_device_pairing(const DeviceId& /*device_id*/, std::string_view /*pairing_code*/,
+                                                std::string_view /*mfa_token*/) override {
+        return ClientResult<void>::ok();
+    }
+
+    ClientResult<std::vector<Device>> list_user_devices(const UserId& /*user_id*/) override {
+        return ClientResult<std::vector<Device>>::ok({});
+    }
+
+    ClientResult<void> revoke_device(const DeviceId& /*device_id*/, std::string_view /*mfa_token*/) override {
+        return ClientResult<void>::ok();
+    }
 };
 
 TEST(ApplicationInterfacesTest, InterfacePolymorphismAndContracts) {

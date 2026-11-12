@@ -664,7 +664,179 @@ M6 implements Audit ingestion.
 required audit events survive temporary Audit unavailability via the
 Files outbox.
 
-## 7. Cross-backlog review results
+## 7. Client Desktop Application (Native C++20 / Qt6)
+
+### Overview & The 4 Phases of Client Development
+
+The SecureCloud Native Desktop Client roadmap spans **16 milestone cards structured into 4 cohesive phases (4 cards per phase)**:
+
+| Phase | Focus & Milestones | Cards | Status |
+|:---|:---|:---|:---|
+| **Phase 1** | **Foundation & Presentation Shell** | `CLIENT-001` → `CLIENT-004` | **100% Completed** (merged into `main`) |
+| **Phase 2** | **Cryptographic Identity, Session Ratchets & Multi-Device Trust** | `CLIENT-005` → `CLIENT-008` | **In Progress** (`005`, `006` completed; `007` ready; `008` planned) |
+| **Phase 3** | **Production Messaging Engine, Real-Time Streaming & File Vault** | `CLIENT-009` → `CLIENT-012` | **Roadmap-Planned** |
+| **Phase 4** | **Emergency Defense, User Settings, Diagnostics & Release Packaging** | `CLIENT-013` → `CLIENT-016` | **Roadmap-Planned** (includes official CPU/RAM benchmarking & impact audit in `CLIENT-015`) |
+
+---
+
+### Phase 1: Foundation & Presentation Shell (`CLIENT-001` — `CLIENT-004`) [COMPLETED]
+
+| Card ID | Title | Status | Primary Focus |
+|:---|:---|:---|:---|
+| **CLIENT-001** | Client Application Foundation & Layered Architecture | Completed | C++20/Qt6 4-layer architecture (`UI -> Application -> Domain <- Infrastructure`), CMake, domain skeletons, test harness |
+| **CLIENT-002** | UI Design System, Theme Engine & Reusable Controls | Completed | Dark/Light semantic palettes, 8 reusable `SC*` controls, navigation shell |
+| **CLIENT-003** | Auth Flow, 4-Zone Shell, Files Vault & Settings Center | Completed | Login/MFA challenge, 4-zone workspace shell, Encrypted Files Vault, Settings Trust Center |
+| **CLIENT-004** | Contacts, Conversations & Messaging UI | Completed | Direct/Group conversations, delivery lifecycle, Contact CRUD, ADR-007/008 UI bindings |
+
+---
+
+### Phase 2: Cryptographic Identity, Session Ratchets & Multi-Device Trust (`CLIENT-005` — `CLIENT-008`) [IN PROGRESS]
+
+| Card ID | Title | Status | Primary Focus |
+|:---|:---|:---|:---|
+| **CLIENT-005** | Device Registration & Cryptographic Identity Lifecycle | Completed | Ed25519/X25519 keypairs, X3DH prekeys, Auth registration via Gateway, `SecretString` zeroization |
+| **CLIENT-006** | Signal Double Ratchet Session Management & E2EE | Completed | Full Double Ratchet state machine, HKDF chains, out-of-order skipped key store, AES-256-GCM |
+| **CLIENT-007** | Device Management, Multi-Device Trust & Hardware Security | Specified (`specs/client-phase2/`) | Companion device pairing (QR/SAS), remote revocation, Double Ratchet purge, hardware MFA |
+| **CLIENT-008** | Contact Management & Peer Identity Verification | Planned | Peer contact directory sync, 60-digit safety numbers, automated identity key change alerts |
+
+---
+
+### Phase 3: Production Messaging Engine, Real-Time Streaming & File Vault (`CLIENT-009` — `CLIENT-012`) [ROADMAP]
+
+#### CLIENT-009 --- Direct & Group Messaging Engine
+
+**Labels:** Client, Feature, Messaging, E2EE, Phase 3\
+**Owner:** Sergey\
+**Dependencies:** CLIENT-006, CLIENT-007, CLIENT-008
+
+Implement production 1:1 direct and multi-party group messaging with durable encrypted persistence:
+- **Direct Messaging Pipeline:** Wire `MessagingManager` to `RatchetSessionManager` for automatic X3DH session initiation, ratchet stepping, and AEAD encryption/decryption.
+- **Multi-Device & Group Fan-Out:** Implement pairwise multi-recipient fan-out per participant device (ADR-008 §4, §14) and integrate Sender Keys state machine for high-occupancy groups.
+- **Encrypted Local Persistence (`ILocalStore`):** Implement SQLCipher encrypted SQLite database adapter, securing conversations, messages, participant lists, and delivery states with keys derived from the user passphrase/OS keychain.
+- **Group Lifecycle:** Group creation, member addition/removal, role permissions (Admin, Member), and participant key updates.
+
+**Acceptance:** Direct and group messages encrypt and decrypt flawlessly across multiple endpoints; all message entities persist securely in SQLCipher; zero unencrypted plaintext on disk.
+
+#### CLIENT-010 --- Real-Time Delivery & Read Receipts
+
+**Labels:** Client, Feature, Real-Time, Gateway, Phase 3\
+**Owner:** Sergey\
+**Dependencies:** CLIENT-004, CLIENT-009
+
+Establish the real-time event pipeline and delivery acknowledgement state machine:
+- **Gateway Push Stream:** Bidirectional WebSocket / gRPC streaming client connecting to the Gateway event dispatcher for incoming messages, delivery receipts, and presence updates.
+- **Delivery State Lifecycle:** Model state transitions (`Pending -> Sent -> Delivered -> Read -> Failed`) with monotonic server sequence tracking (ADR-007 §4).
+- **Asynchronous Acknowledgements:** Ephemeral signed delivery receipts dispatched per device upon payload reception and decryption.
+- **Read Receipt Policy:** Configurable read receipt toggle in Settings (enabling or suppressing outbound read receipts for privacy).
+- **Idempotency & Retry Engine:** Message retry queue with exponential backoff and unique `ClientMessageId` to ensure exactly-once delivery semantics (ADR-007 §3).
+
+**Acceptance:** UI displays live message delivery ticks (Sent, Delivered, Read) in real time without polling; idempotent retry guarantees zero duplicate messages during intermittent network drops.
+
+#### CLIENT-011 --- Encrypted File Transfer & Streaming
+
+**Labels:** Client, Feature, Files, E2EE, Phase 3\
+**Owner:** Sergey\
+**Dependencies:** CLIENT-006, CLIENT-009, FILE-001 → FILE-010
+
+Implement end-to-end encrypted file attachments and resumable chunked transfers:
+- **Local AEAD Chunking:** Chunk large files into 1MB blocks, encrypting each block with AES-256-GCM using an ephemeral symmetric file key transmitted via pairwise Double Ratchet envelope (ADR-008 §9).
+- **Resumable Gateway Pipeline:** Integrate with Gateway `/api/v1/files/transfers` for chunked uploads and streaming downloads against MinIO object storage.
+- **Integrity Attestation:** Calculate and verify SHA-256 rolling digest and AEAD authentication tags across all chunks before local file assembly.
+- **UI Vault & Progress Bindings:** Native OS file picker dialogs, inline chat progress bars (`0..100%`), pause/resume controls, and ledger management in the Files Vault zone.
+
+**Acceptance:** Upload and download of multi-megabyte files (e.g. >100MB) succeed with verified SHA-256 integrity, pause/resume capability, and real-time UI progress feedback.
+
+#### CLIENT-012 --- Offline Operation & Catch-Up Sync
+
+**Labels:** Client, Feature, Resilience, Sync, Phase 3\
+**Owner:** Sergey\
+**Dependencies:** CLIENT-009, CLIENT-010
+
+Enable offline message drafting, persistent queued operations, and catch-up synchronization:
+- **Durable Offline Outbox:** Queue outbound messages, file transfer metadata, and read receipts in encrypted SQLCipher storage when the network is unreachable.
+- **Connectivity Observer:** Monitor network interface state and Gateway reachability, automatically transitioning between `Online`, `Offline`, and `Syncing` states.
+- **Catch-Up Synchronization Protocol:** On reconnect, query Gateway with the latest client sequence cursor (`GET /api/v1/sync?cursor=<cursor>`), receiving missed incoming events.
+- **Reconciliation State Machine:** Merge missed messages, deduplicate re-delivered packets, and resolve concurrent contact/conversation updates without data loss.
+
+**Acceptance:** Users can compose messages offline; upon network reconnection, queued operations flush automatically in correct order and remote updates merge cleanly.
+
+---
+
+### Phase 4: Emergency Defense, User Settings, Diagnostics & Release Packaging (`CLIENT-013` — `CLIENT-016`) [ROADMAP]
+
+#### CLIENT-013 --- Emergency Panic & Data Wipe
+
+**Labels:** Client, Security, Privacy, Emergency, Phase 4\
+**Owner:** Sergey\
+**Dependencies:** CLIENT-003, CLIENT-005, CLIENT-009
+
+Implement forensic-grade data destruction and emergency broadcast workflows:
+- **Panic Triggers:** Dual trigger mechanisms: global hotkey (`Cmd+Shift+E` / `Ctrl+Shift+E`), UI panic button, or login duress PIN.
+- **Cryptographic Destruction Sequence:**
+  1. Immediate volatile memory zeroization (`SecretString::wipe`, OpenSSL context clearing).
+  2. Wiping private identity keys, prekeys, and ratchet sessions from OS Keychain/Secure Storage.
+  3. Secure shredding (multi-pass overwrite and unlink) of local SQLCipher database files, cached attachments, and log files.
+  4. Application reset to unconfigured initial state or launch of a clean decoy screen.
+- **Emergency Broadcast Workflow:** Optional high-priority emergency alert transmission with operator acknowledgement prior to local data destruction (ADR-007, Detailed Design §2.5).
+
+**Acceptance:** Emergency panic trigger completely wipes all cryptographic keys and local databases within <500ms; disk sectors are sanitized against forensic recovery.
+
+#### CLIENT-014 --- Settings & User Profile Management
+
+**Labels:** Client, Feature, Settings, UI, Phase 4\
+**Owner:** Sergey\
+**Dependencies:** CLIENT-003, CLIENT-007
+
+Deliver full user preference customization, profile editing, and identity backup:
+- **Profile Configuration:** Display name, bio/status, avatar image encryption and upload, and public handle discovery.
+- **Visual & Accessibility Settings:** Runtime switching between Dark and Light palettes, dynamic font scaling, and high-contrast accessibility mode.
+- **Network & Proxy Controls:** Custom Gateway host/port, HTTP/SOCKS5 proxy configuration, and TLS certificate fingerprint inspection.
+- **Security & Privacy Policies:** Disappearing message timers (e.g. 1 hour, 24 hours, 7 days), read receipt suppression toggle, and hardware key enforcement.
+- **Cryptographic Recovery Phrase:** Endpoint-only BIP-39 mnemonic phrase generation and verification for device disaster recovery (never transmitted to backend).
+
+**Acceptance:** User settings persist locally in encrypted storage; permitted public profile fields sync to Auth; theme and appearance apply instantly without application restart.
+
+#### CLIENT-015 --- Client Diagnostics, Audit, Telemetry & Performance Benchmarking
+
+**Labels:** Client, Observability, Audit, Diagnostics, Performance, Phase 4\
+**Owner:** Sergey\
+**Dependencies:** CLIENT-001, CLIENT-010, CLIENT-014
+
+Implement local audit logging, real-time diagnostics, cryptographic self-testing, and the official client performance profiling suite (measuring CPU, RAM, startup latency, and battery/power impact):
+- **Local Secure Audit Trail:** Record security-critical events (device pairing, prekey rotation, failed decrypts, revocation) in an append-only, tamper-evident hash chain stored locally.
+- **Cryptographic Self-Test Suite:** Startup self-test verifying OpenSSL 3.x EVP primitives (Ed25519, X25519, AES-256-GCM, HKDF), OS entropy source quality, and Keychain read/write access.
+- **Live Resource Diagnostics & Telemetry:** Real-time metrics surfacing stream latency, message processing time, active Double Ratchet session count, resident set size (RSS), and thread pool activity.
+- **Official Client Performance Benchmarking Harness (CPU, RAM, Startup & System Impact):**
+  - **Memory Footprint (Resident Set Size — RSS):** Baseline idle RAM $< 80$ MB; sustained loaded state (50 active conversations, 5,000 cached SQLCipher messages) $< 150$ MB; peak chunked file streaming strictly bounded with $< 32$ MB buffer overhead; verified zero heap memory leaks via sanitizers / leak tools.
+  - **CPU & Energy Impact:** Idle state $< 1\%$ CPU utilization; active scrolling & message rendering $< 5\%$ CPU utilization maintaining consistent 60 fps (zero UI main-thread jank); burst Double Ratchet decryption executing asynchronously in worker threads.
+  - **Startup Latency:** Cold application launch to interactive 4-zone workspace shell $< 1.5$ seconds.
+  - **Cryptographic Throughput (ADR-010 §17):** Pairwise Double Ratchet ratchet step + AES-256-GCM message encryption $< 2$ ms per message; burst throughput $> 500$ messages/s in local benchmarks.
+- **Sanitized Diagnostic Exporter:** One-click bug report bundler generating an encrypted diagnostic archive with all PII, plaintext, and private keys strictly redacted.
+- **Official Performance & Impact Report:** Compile an authoritative validation report (`docs/final-reports/client-performance-benchmark-report.md`) detailing official measurements across macOS, Windows, and Linux.
+
+**Acceptance:** Cryptographic self-tests execute on boot with fail-closed protection; automated benchmark harness validates CPU, RAM, and startup thresholds; diagnostics view displays live performance metrics; log exporter scrubs all sensitive material; official client performance benchmark report is compiled and signed off.
+
+#### CLIENT-016 --- Packaging, Distribution & Auto-Update
+
+**Labels:** Client, Release, Packaging, Distribution, Phase 4\
+**Owner:** Sergey\
+**Dependencies:** CLIENT-001 → CLIENT-015
+
+Establish cross-platform packaging, code-signing, and secure automated updates:
+- **Multi-Platform Installers:**
+  - **macOS:** Universal `.dmg` bundle, hardened runtime entitlements (Keychain, Camera for QR), and Apple Notarization pipeline.
+  - **Windows:** MSI / MSIX installer package with Authenticode code-signing and DPAPI hardware access.
+  - **Linux:** AppImage and Debian `.deb` packages with Secret Service daemon integration.
+- **Secure Auto-Update Pipeline:**
+  - Background update checker querying signed update manifests from release servers.
+  - Cryptographic verification of update binary via Ed25519 signature and SHA-256 checksum before execution.
+  - Atomic in-place binary replacement with automatic rollback on launch failure.
+
+**Acceptance:** Automated build scripts generate signed, notarized installers for macOS, Windows, and Linux; client verifies update signatures and executes atomic in-place updates cleanly.
+
+---
+
+## 8. Cross-backlog review results
 
 ### Must fix before implementation
 
@@ -684,55 +856,42 @@ Files outbox.
     specifies configuration; concrete baseline values come from
     `error-handling-and-retry.md` and the Files design/data model.
 
-## 8. Implementation readiness
+## 9. Implementation readiness
 
-The 46-card backlog is sufficient to begin implementation.
+The 62-card backlog (46 backend platform cards + 16 desktop client cards) is sufficient to guide implementation across all phases.
 
-**Ready now:** - SC-001 → SC-016 - AUTH-001 → AUTH-010 - GW-001 →
-GW-009 - FILE-001 → FILE-009
+**Backend Platform:**
+- **Ready now:** SC-001 → SC-016, AUTH-001 → AUTH-010, GW-001 → GW-009, FILE-001 → FILE-009
+- **Ready after stated dependency corrections:** GW-010, FILE-010
+- **Not yet designed intentionally:** M3 Secure Messaging, M4 Offline Messaging, M6 Auditable Platform, M7 Resilient Platform, M8 Validated MVP (deferred so backend planning does not block implementation).
 
-**Ready after the stated dependency corrections:** - GW-010 - FILE-010
+**Desktop Client Application:**
+- **Completed:** CLIENT-001 → CLIENT-006 (Layered Qt6 Architecture, Design System, Workspace & Settings Trust Center, Contacts/Conversations UI, Device Registration & Prekey Lifecycle, Signal Double Ratchet Session Management & E2EE).
+- **Ready now:** CLIENT-007 (Device Management, Multi-Device Trust & Hardware Security / Attestation — fully specified in `specs/client-phase2/CLIENT-007-tickets.md`).
+- **Roadmap-Aligned & Planned:** CLIENT-008 → CLIENT-016 (Contact Verification, Direct/Group Messaging Engine, Real-Time Delivery & Read Receipts, Encrypted File Transfer & Streaming, Offline Catch-Up Sync, Emergency Panic & Data Wipe, Settings & Profile Management, Diagnostics & Telemetry, Multi-Platform Packaging & Auto-Update).
 
-**Not yet designed intentionally:** - M3 Secure Messaging - M4 Offline
-Messaging - M6 Auditable Platform - M7 Resilient Platform - M8 Validated
-MVP
-
-These are deliberately deferred so planning does not become a blocker to
-implementation.
-
-## 9. Antigravity workflow
+## 10. Antigravity workflow
 
 For each selected card:
 
 1.  Read `.antigravity/RULES.md`.
-2.  Read the relevant architecture/design/data-model/API/implementation
-    documents.
-3.  Read this card in `docs/planning/initial-backlog.md`.
+2.  Read the relevant architecture/design/data-model/API/implementation documents.
+3.  Read this card in `docs/planning/initial-backlog.md` or its corresponding phase ticket specification in `specs/`.
 4.  Inspect the current repository state.
-5.  Decompose the card into concrete implementation
-    tickets/files/tests/dependencies.
+5.  Decompose the card into concrete implementation tickets/files/tests/dependencies.
 6.  Do not redesign approved architecture.
-7.  Do not write implementation code until the decomposition is reviewed
-    and approved.
+7.  Do not write implementation code until the decomposition is reviewed and approved.
 8.  After approval, implement and test.
-9.  Move the Trello card through
-    `IN PROGRESS → CODE REVIEW → TESTING / INTEGRATION → DONE`.
+9.  Move the Trello card through `IN PROGRESS → CODE REVIEW → TESTING / INTEGRATION → DONE`.
 
-## 10. Definition of Ready
+## 11. Definition of Ready
 
-A card is ready when its objective, dependencies, owner, relevant
-references, security constraints, tests, and acceptance criteria are
-sufficiently clear for Antigravity to produce an implementation
-decomposition without inventing architecture.
+A card is ready when its objective, dependencies, owner, relevant references, security constraints, tests, and acceptance criteria are sufficiently clear for Antigravity to produce an implementation decomposition without inventing architecture.
 
-## 11. Definition of Done
+## 12. Definition of Done
 
-A card is done when implementation, required tests, relevant
-failure/security cases, formatting/static analysis,
-architecture-boundary checks, documentation/contract updates where
-necessary, CI, code review, and acceptance criteria are complete.
+A card is done when implementation, required tests, relevant failure/security cases, formatting/static analysis, architecture-boundary checks, documentation/contract updates where necessary, CI, code review, and acceptance criteria are complete.
 
-## 12. Guiding principle
+## 13. Guiding principle
 
-> **Plan enough to implement safely; then implement. Do not design the
-> entire future backlog before starting work.**
+> **Plan enough to implement safely; then implement. Do not design the entire future backlog before starting work.**

@@ -31,6 +31,12 @@ struct PrekeyUpdateResult {
     std::chrono::system_clock::time_point updated_at{std::chrono::system_clock::now()};
 };
 
+struct PairingInitiationResult {
+    domain::DeviceId device_id;
+    std::string pairing_code;
+    std::chrono::system_clock::time_point expires_at{std::chrono::system_clock::now() + std::chrono::minutes(10)};
+};
+
 struct DeviceCryptoDirectoryEntry {
     domain::DeviceId device_id;
     std::vector<uint8_t> identity_key;
@@ -69,6 +75,15 @@ class IGatewayClient {
     virtual ClientResult<std::vector<DeviceCryptoDirectoryEntry>>
     get_device_crypto_directory(const domain::UserId& user_id,
                                 const std::vector<domain::DeviceId>& device_ids = {}) = 0;
+
+    virtual ClientResult<PairingInitiationResult> initiate_device_pairing(const domain::DeviceId& device_id) = 0;
+
+    virtual ClientResult<void> authorize_device_pairing(const domain::DeviceId& device_id,
+                                                        std::string_view pairing_code, std::string_view mfa_token) = 0;
+
+    virtual ClientResult<std::vector<domain::Device>> list_user_devices(const domain::UserId& user_id) = 0;
+
+    virtual ClientResult<void> revoke_device(const domain::DeviceId& device_id, std::string_view mfa_token = "") = 0;
 };
 
 } // namespace securecloud::client::application::interfaces

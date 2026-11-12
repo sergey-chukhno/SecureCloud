@@ -15,6 +15,8 @@
 
 namespace securecloud::client::application::managers {
 
+class RatchetSessionManager;
+
 class DeviceManager {
   public:
     DeviceManager(interfaces::IGatewayClient& gateway, interfaces::ISecureStorage& secure_storage,
@@ -41,7 +43,11 @@ class DeviceManager {
 
     ClientResult<std::vector<domain::Device>> list_devices();
 
-    ClientResult<void> revoke_device(const domain::DeviceId& device_id);
+    ClientResult<void> revoke_device(const domain::DeviceId& device_id, std::string_view mfa_token = "");
+
+    void set_ratchet_session_manager(RatchetSessionManager* session_manager) noexcept {
+        ratchet_session_manager_ = session_manager;
+    }
 
     [[nodiscard]] interfaces::ISecureStorage& secure_storage() noexcept { return secure_storage_; }
     [[nodiscard]] interfaces::ICryptoProvider& crypto_provider() noexcept { return crypto_provider_; }
@@ -54,6 +60,7 @@ class DeviceManager {
     PrekeyLifecycleCoordinator coordinator_;
 
     std::optional<domain::Device> local_device_;
+    RatchetSessionManager* ratchet_session_manager_{nullptr};
 };
 
 } // namespace securecloud::client::application::managers

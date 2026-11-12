@@ -12,6 +12,11 @@ if(Qt6_FOUND)
         domain/one_time_prekey_record.cpp
         domain/prekey_inventory_status.cpp
         domain/device_private_bundle.cpp
+        domain/device_trust_level.cpp
+        domain/device_platform_info.cpp
+        domain/hardware_attestation_record.cpp
+        domain/short_authentication_string.cpp
+        domain/pairing_challenge_payload.cpp
         domain/device.cpp
         domain/user.cpp
         domain/contact.cpp
@@ -44,6 +49,7 @@ if(Qt6_FOUND)
         infrastructure/adapters/stub_crypto_provider.cpp
         infrastructure/adapters/openssl_crypto_provider.cpp
         infrastructure/adapters/key_storage_helper.cpp
+        infrastructure/adapters/simulated_hardware_authenticator.cpp
     )
     add_library(securecloud::client_infra ALIAS securecloud_client_infra)
     target_include_directories(securecloud_client_infra PUBLIC
@@ -69,6 +75,8 @@ if(Qt6_FOUND)
         application/managers/messaging_manager.cpp
         application/managers/contact_manager.cpp
         application/managers/device_manager.cpp
+        application/managers/device_pairing_coordinator.cpp
+        application/managers/safety_number_engine.cpp
         application/managers/prekey_lifecycle_coordinator.cpp
         application/managers/ratchet_session_manager.cpp
         application/managers/file_manager.cpp
