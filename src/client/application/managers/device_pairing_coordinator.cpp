@@ -75,9 +75,25 @@ DevicePairingCoordinator::initiate_companion_pairing(const domain::UserId& user_
 
     std::string qr_uri = payload.to_uri();
 
-    // 7. Compute expected SAS from companion perspective
-    auto sas = domain::ShortAuthenticationString::from_handshake_material(
-        id_res.value().public_key, dh_res.value().public_key, init_val.pairing_code);
+    // 7. Compute expected SAS from companion perspective:
+    // If an authorized primary device exists in the directory, use its public identity key.
+    // Otherwise fallback to companion identity key for standalone onboarding.
+    std::vector<uint8_t> primary_pk;
+    auto dir_res = gateway_.get_device_crypto_directory(user_id);
+    if (dir_res.is_ok() && !dir_res.value().empty()) {
+        for (const auto& entry : dir_res.value()) {
+            if (entry.status == domain::DeviceAuthorizationStatus::Authorized) {
+                primary_pk = entry.identity_key;
+                break;
+            }
+        }
+    }
+    if (primary_pk.empty()) {
+        primary_pk = id_res.value().public_key;
+    }
+
+    auto sas = domain::ShortAuthenticationString::from_handshake_material(primary_pk, dh_res.value().public_key,
+                                                                          init_val.pairing_code);
 
     CompanionPairingSession session{user_id,           comp_id, std::move(dname), std::move(payload), std::move(sas),
                                     std::move(qr_uri), false};

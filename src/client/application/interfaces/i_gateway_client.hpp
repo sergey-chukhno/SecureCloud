@@ -76,18 +76,14 @@ class IGatewayClient {
     get_device_crypto_directory(const domain::UserId& user_id,
                                 const std::vector<domain::DeviceId>& device_ids = {}) = 0;
 
-    virtual ClientResult<PairingInitiationResult>
-    initiate_device_pairing(const domain::DeviceId& device_id) = 0;
+    virtual ClientResult<PairingInitiationResult> initiate_device_pairing(const domain::DeviceId& device_id) = 0;
 
-    virtual ClientResult<void>
-    authorize_device_pairing(const domain::DeviceId& device_id, std::string_view pairing_code,
-                             std::string_view mfa_token) = 0;
+    virtual ClientResult<void> authorize_device_pairing(const domain::DeviceId& device_id,
+                                                        std::string_view pairing_code, std::string_view mfa_token) = 0;
 
-    virtual ClientResult<std::vector<domain::Device>>
-    list_user_devices(const domain::UserId& user_id) = 0;
+    virtual ClientResult<std::vector<domain::Device>> list_user_devices(const domain::UserId& user_id) = 0;
 
-    virtual ClientResult<void>
-    revoke_device(const domain::DeviceId& device_id, std::string_view mfa_token = "") = 0;
+    virtual ClientResult<void> revoke_device(const domain::DeviceId& device_id, std::string_view mfa_token = "") = 0;
 };
 
 } // namespace securecloud::client::application::interfaces

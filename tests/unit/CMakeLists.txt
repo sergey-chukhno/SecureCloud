@@ -3724,6 +3724,7 @@ if(Qt6_FOUND)
         client/device_revocation_pipeline_test.cpp
         client/safety_number_engine_test.cpp
         client/workspace_view_model_devices_test.cpp
+        client/multi_device_trust_integration_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

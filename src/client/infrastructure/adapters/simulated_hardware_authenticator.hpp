@@ -32,4 +32,3 @@ class SimulatedHardwareAuthenticator final : public application::interfaces::IHa
 };
 
 } // namespace securecloud::client::infrastructure::adapters
-

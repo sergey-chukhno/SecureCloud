@@ -23,4 +23,3 @@ class IHardwareAuthenticator {
 };
 
 } // namespace securecloud::client::application::interfaces
-

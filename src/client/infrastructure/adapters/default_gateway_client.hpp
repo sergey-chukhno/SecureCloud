@@ -42,15 +42,14 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     application::ClientResult<application::interfaces::PairingInitiationResult>
     initiate_device_pairing(const domain::DeviceId& device_id) override;
 
-    application::ClientResult<void>
-    authorize_device_pairing(const domain::DeviceId& device_id, std::string_view pairing_code,
-                             std::string_view mfa_token) override;
+    application::ClientResult<void> authorize_device_pairing(const domain::DeviceId& device_id,
+                                                             std::string_view pairing_code,
+                                                             std::string_view mfa_token) override;
 
-    application::ClientResult<std::vector<domain::Device>>
-    list_user_devices(const domain::UserId& user_id) override;
+    application::ClientResult<std::vector<domain::Device>> list_user_devices(const domain::UserId& user_id) override;
 
-    application::ClientResult<void>
-    revoke_device(const domain::DeviceId& device_id, std::string_view mfa_token = "") override;
+    application::ClientResult<void> revoke_device(const domain::DeviceId& device_id,
+                                                  std::string_view mfa_token = "") override;
 
     // Test Hooks for deterministic simulation
     void set_simulated_inventory_status(domain::PrekeyInventoryStatus status);

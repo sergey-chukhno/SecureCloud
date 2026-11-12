@@ -221,9 +221,9 @@ DefaultGatewayClient::initiate_device_pairing(const domain::DeviceId& device_id)
     return application::ClientResult<application::interfaces::PairingInitiationResult>::ok(std::move(res));
 }
 
-application::ClientResult<void>
-DefaultGatewayClient::authorize_device_pairing(const domain::DeviceId& device_id, std::string_view pairing_code,
-                                              std::string_view mfa_token) {
+application::ClientResult<void> DefaultGatewayClient::authorize_device_pairing(const domain::DeviceId& device_id,
+                                                                               std::string_view pairing_code,
+                                                                               std::string_view mfa_token) {
     if (simulate_failure_) {
         return application::ClientResult<void>::error(application::ClientError::network(failure_message_));
     }
@@ -238,16 +238,14 @@ DefaultGatewayClient::authorize_device_pairing(const domain::DeviceId& device_id
 
     if (require_mfa_for_authorization_) {
         if (mfa_token.empty()) {
-            return application::ClientResult<void>::error(
-                application::ClientError(application::ClientErrorCode::AuthenticationRequired,
-                                         application::ClientErrorCategory::Authentication,
-                                         "MFA verification required to authorize device pairing"));
+            return application::ClientResult<void>::error(application::ClientError(
+                application::ClientErrorCode::AuthenticationRequired, application::ClientErrorCategory::Authentication,
+                "MFA verification required to authorize device pairing"));
         }
         if (mfa_token == "invalid" || mfa_token == "bad_token") {
-            return application::ClientResult<void>::error(
-                application::ClientError(application::ClientErrorCode::InvalidCredentials,
-                                         application::ClientErrorCategory::Authentication,
-                                         "Invalid MFA verification token"));
+            return application::ClientResult<void>::error(application::ClientError(
+                application::ClientErrorCode::InvalidCredentials, application::ClientErrorCategory::Authentication,
+                "Invalid MFA verification token"));
         }
     }
 
@@ -283,8 +281,8 @@ DefaultGatewayClient::list_user_devices(const domain::UserId& user_id) {
     return application::ClientResult<std::vector<domain::Device>>::ok({});
 }
 
-application::ClientResult<void>
-DefaultGatewayClient::revoke_device(const domain::DeviceId& device_id, std::string_view mfa_token) {
+application::ClientResult<void> DefaultGatewayClient::revoke_device(const domain::DeviceId& device_id,
+                                                                    std::string_view mfa_token) {
     if (simulate_failure_) {
         return application::ClientResult<void>::error(application::ClientError::network(failure_message_));
     }
@@ -295,16 +293,14 @@ DefaultGatewayClient::revoke_device(const domain::DeviceId& device_id, std::stri
 
     if (require_mfa_for_revocation_) {
         if (mfa_token.empty()) {
-            return application::ClientResult<void>::error(
-                application::ClientError(application::ClientErrorCode::AuthenticationRequired,
-                                         application::ClientErrorCategory::Authentication,
-                                         "MFA verification required to revoke device"));
+            return application::ClientResult<void>::error(application::ClientError(
+                application::ClientErrorCode::AuthenticationRequired, application::ClientErrorCategory::Authentication,
+                "MFA verification required to revoke device"));
         }
         if (mfa_token == "invalid" || mfa_token == "bad_token") {
-            return application::ClientResult<void>::error(
-                application::ClientError(application::ClientErrorCode::InvalidCredentials,
-                                         application::ClientErrorCategory::Authentication,
-                                         "Invalid MFA verification token"));
+            return application::ClientResult<void>::error(application::ClientError(
+                application::ClientErrorCode::InvalidCredentials, application::ClientErrorCategory::Authentication,
+                "Invalid MFA verification token"));
         }
     }
 
@@ -342,7 +338,7 @@ void DefaultGatewayClient::set_simulated_pairing_result(application::interfaces:
 }
 
 void DefaultGatewayClient::set_simulated_user_devices(const domain::UserId& user_id,
-                                                     std::vector<domain::Device> devices) {
+                                                      std::vector<domain::Device> devices) {
     simulated_user_devices_[user_id] = std::move(devices);
 }
 
