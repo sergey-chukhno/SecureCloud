@@ -19,11 +19,13 @@ namespace securecloud::messaging::util {
  * 1. Safe structured audit logging formatters that log only routing metadata and byte counts.
  * 2. Error message sanitization preventing sensitive payload or key leakage in gRPC/HTTP errors.
  * 3. Individual target and envelope summary formatters.
+ * 4. Strict validation of outbound audit metadata payloads (AUDIT-014).
  */
 class ZeroPlaintextGuard {
   public:
     static constexpr std::string_view kRedactedPlaceholder = "[REDACTED]";
     static constexpr size_t kMaxSanitizedErrorLength = 512;
+    static constexpr size_t kMaxAuditPayloadBytes = 8192;
 
     /**
      * @brief Formats a safe audit log string for a message submission command.
@@ -52,6 +54,21 @@ class ZeroPlaintextGuard {
      * @brief Safe summary of an individual per-device envelope.
      */
     [[nodiscard]] static std::string summarize_envelope(const domain::PerDeviceEnvelope& env);
+
+    /**
+     * @brief Validates an outbound audit metadata JSON payload against Zero-Plaintext and
+     *        Zero-Secret invariants (ADR-008 / AUDIT-014).
+     *
+     * Throws std::logic_error if the payload is not a valid JSON object, exceeds size bounds,
+     * contains raw binary/control bytes, or includes forbidden cryptographic/secret keys or values.
+     */
+    static void validate_audit_payload(std::string_view payload_json);
+
+    /**
+     * @brief Non-throwing variant of validate_audit_payload().
+     */
+    [[nodiscard]] static bool is_safe_audit_payload(std::string_view payload_json,
+                                                    std::string* violation_reason = nullptr) noexcept;
 };
 
 } // namespace securecloud::messaging::util

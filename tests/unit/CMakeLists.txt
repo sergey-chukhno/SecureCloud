@@ -3993,3 +3993,18 @@ target_link_libraries(securecloud_auth_outbox_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_auth_outbox_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Audit Event Domain & Zero-Plaintext Guard Unit Test Suite (AUDIT-014-T01)
+add_executable(securecloud_messaging_audit_event_test
+        messaging/audit_event_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_audit_event_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud::compiler_flags
+        OpenSSL::Crypto
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_audit_event_test ${SECURECLOUD_TEST_PROPERTIES})

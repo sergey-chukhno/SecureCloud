@@ -19,6 +19,8 @@ add_library(securecloud_messaging_config STATIC
     domain/conversation_lifecycle.cpp
     domain/message_bucket.cpp
     domain/submission_fingerprint.cpp
+    domain/audit_event.cpp
+    domain/audit_event_id.cpp
     service/submission_validator.cpp
     service/in_memory_sequence_allocator.cpp
     service/conversation_sequence_allocator.cpp

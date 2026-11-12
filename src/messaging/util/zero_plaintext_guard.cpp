@@ -3,9 +3,135 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <nlohmann/json.hpp>
 #include <sstream>
+#include <stdexcept>
 
 namespace securecloud::messaging::util {
+
+namespace {
+
+[[nodiscard]] std::string to_lower_ascii(std::string_view input) {
+    std::string out;
+    out.reserve(input.size());
+    for (unsigned char ch : input) {
+        out.push_back(static_cast<char>(std::tolower(ch)));
+    }
+    return out;
+}
+
+[[nodiscard]] bool is_forbidden_audit_key(std::string_view key) {
+    if (key.empty()) {
+        return true;
+    }
+    const std::string lower = to_lower_ascii(key);
+
+    if (lower == "iv" || lower.starts_with("iv_") || lower.ends_with("_iv")) {
+        return true;
+    }
+    if (lower == "key" || lower.ends_with("_key") || lower.ends_with("_keys")) {
+        return true;
+    }
+
+    static constexpr std::array<std::string_view, 17> kForbiddenKeySubstrings = {
+        "ciphertext",    "ciphertext_blob", "ephemeral_public_key",
+        "prekey",        "ratchet",         "secret",
+        "private_key",   "token",           "plaintext",
+        "password",      "passwd",          "auth_tag",
+        "shared_secret", "session_key",     "signing_key",
+        "credential",    "authorization",
+    };
+
+    for (std::string_view pattern : kForbiddenKeySubstrings) {
+        if (lower.find(pattern) != std::string::npos) {
+            return true;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] bool contains_long_encoded_blob(std::string_view value) noexcept {
+    // Reject contiguous base64/hex payloads >= 128 chars indicative of encoded ciphertext or raw keys
+    constexpr std::size_t kMaxContiguousEncodedRun = 128;
+    std::size_t run = 0;
+    for (unsigned char ch : value) {
+        const bool is_encoded_char =
+            std::isalnum(ch) != 0 || ch == '+' || ch == '/' || ch == '=' || ch == '-' || ch == '_';
+        if (is_encoded_char) {
+            ++run;
+            if (run >= kMaxContiguousEncodedRun) {
+                return true;
+            }
+        } else {
+            run = 0;
+        }
+    }
+    return false;
+}
+
+[[nodiscard]] bool is_forbidden_audit_value(std::string_view value) {
+    for (unsigned char ch : value) {
+        if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r') {
+            return true;
+        }
+        if (ch == 0x7F) {
+            return true;
+        }
+    }
+
+    if (contains_long_encoded_blob(value)) {
+        return true;
+    }
+
+    const std::string lower = to_lower_ascii(value);
+    if (lower.find("-----begin ") != std::string::npos || lower.find("bearer ") != std::string::npos ||
+        lower.find("$argon2") != std::string::npos || lower.find("$2a$") != std::string::npos ||
+        lower.find("$2b$") != std::string::npos || lower.find("$2y$") != std::string::npos) {
+        return true;
+    }
+
+    if (value.starts_with("eyJ") && std::count(value.begin(), value.end(), '.') == 2) {
+        return true;
+    }
+
+    return false;
+}
+
+bool inspect_json_node(const nlohmann::json& node, std::string& violation) {
+    if (node.is_object()) {
+        for (const auto& [k, v] : node.items()) {
+            if (is_forbidden_audit_key(k)) {
+                violation = "Forbidden sensitive key in audit payload: '" + k + "'";
+                return false;
+            }
+            if (!inspect_json_node(v, violation)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    if (node.is_array()) {
+        for (const auto& elem : node) {
+            if (!inspect_json_node(elem, violation)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    if (node.is_string()) {
+        const std::string& str_val = node.get_ref<const std::string&>();
+        if (is_forbidden_audit_value(str_val)) {
+            violation = "Forbidden binary, secret, or encoded cryptographic blob in audit payload value";
+            return false;
+        }
+    }
+
+    return true;
+}
+
+} // namespace
 
 std::string ZeroPlaintextGuard::format_safe_submission_log(const domain::MessageSubmissionCommand& cmd) {
     std::ostringstream oss;
@@ -104,6 +230,61 @@ std::string ZeroPlaintextGuard::sanitize_error_message(std::string_view raw_erro
     }
 
     return sanitized;
+}
+
+bool ZeroPlaintextGuard::is_safe_audit_payload(std::string_view payload_json, std::string* violation_reason) noexcept {
+    try {
+        if (payload_json.empty()) {
+            if (violation_reason != nullptr) {
+                *violation_reason = "Audit payload_json must not be empty";
+            }
+            return false;
+        }
+        if (payload_json.size() > kMaxAuditPayloadBytes) {
+            if (violation_reason != nullptr) {
+                *violation_reason = "Audit payload_json exceeds maximum allowed size";
+            }
+            return false;
+        }
+
+        for (unsigned char ch : payload_json) {
+            if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r') {
+                if (violation_reason != nullptr) {
+                    *violation_reason = "Raw binary control bytes detected in audit payload_json";
+                }
+                return false;
+            }
+        }
+
+        const nlohmann::json parsed = nlohmann::json::parse(payload_json);
+        if (!parsed.is_object()) {
+            if (violation_reason != nullptr) {
+                *violation_reason = "Audit payload_json must be a JSON object";
+            }
+            return false;
+        }
+
+        std::string violation;
+        if (!inspect_json_node(parsed, violation)) {
+            if (violation_reason != nullptr) {
+                *violation_reason = std::move(violation);
+            }
+            return false;
+        }
+        return true;
+    } catch (const std::exception& ex) {
+        if (violation_reason != nullptr) {
+            *violation_reason = std::string("Invalid JSON in audit payload: ") + ex.what();
+        }
+        return false;
+    }
+}
+
+void ZeroPlaintextGuard::validate_audit_payload(std::string_view payload_json) {
+    std::string violation;
+    if (!is_safe_audit_payload(payload_json, &violation)) {
+        throw std::logic_error("ZeroPlaintextGuard audit violation: " + violation);
+    }
 }
 
 } // namespace securecloud::messaging::util
