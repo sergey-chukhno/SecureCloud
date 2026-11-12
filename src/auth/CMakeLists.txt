@@ -33,6 +33,8 @@ add_library(securecloud_auth_config STATIC
         service/outbox_event_mapper.cpp
         service/outbox_relay_worker.cpp
         service/auth_service_impl.cpp
+        audit/auth_audit_mapper.cpp
+        audit/auth_audit_client.cpp
 )
 
 add_library(securecloud::auth_config ALIAS securecloud_auth_config)
