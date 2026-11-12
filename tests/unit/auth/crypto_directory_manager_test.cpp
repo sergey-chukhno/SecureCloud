@@ -663,9 +663,7 @@ TEST_F(CryptoDirectoryManagerTest, UpdateCryptoPrekeysReplenishesOneTimePrekeysA
     };
     EXPECT_CALL(*device_repo_, find_by_id(device_id_)).WillOnce(Return(active_dev));
     EXPECT_CALL(*public_key_repo_, store_one_time_prekeys(device_id_, bundle_.one_time_prekeys)).Times(1);
-    EXPECT_CALL(*public_key_repo_, count_active_one_time_prekeys(device_id_))
-        .WillOnce(Return(5))  // For audit event
-        .WillOnce(Return(5)); // For final result
+    EXPECT_CALL(*public_key_repo_, count_active_one_time_prekeys(device_id_)).WillOnce(Return(5));
 
     AuditEvent published_event;
     EXPECT_CALL(*audit_publisher_, publish(_)).WillOnce(SaveArg<0>(&published_event));
@@ -715,7 +713,7 @@ TEST_F(CryptoDirectoryManagerTest, UpdateCryptoPrekeysCombinedRotationAndRepleni
     EXPECT_CALL(*public_key_repo_, find_active_signed_prekey(device_id_)).WillOnce(Return(std::nullopt));
     EXPECT_CALL(*public_key_repo_, store_public_key(_)).Times(1);
     EXPECT_CALL(*public_key_repo_, store_one_time_prekeys(device_id_, bundle_.one_time_prekeys)).Times(1);
-    EXPECT_CALL(*public_key_repo_, count_active_one_time_prekeys(device_id_)).WillOnce(Return(8)).WillOnce(Return(8));
+    EXPECT_CALL(*public_key_repo_, count_active_one_time_prekeys(device_id_)).WillOnce(Return(8));
 
     // Both signed_prekey_rotated and prekeys_updated should be emitted
     EXPECT_CALL(*audit_publisher_, publish(_)).Times(2);
