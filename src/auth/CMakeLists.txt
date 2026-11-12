@@ -10,6 +10,7 @@ add_library(securecloud_auth_config STATIC
         repository/refresh_token_repository.cpp
         repository/device_public_key_repository.cpp
         repository/mfa_repository.cpp
+        repository/auth_outbox_repository.cpp
         crypto/argon2id_hasher.cpp
         crypto/token_crypto.cpp
         crypto/base32.cpp
