@@ -17,8 +17,14 @@
 
 #include <memory>
 
+namespace securecloud::client::application::interfaces {
+class IHardwareAuthenticator;
+} // namespace securecloud::client::application::interfaces
+
 namespace securecloud::client::application::managers {
 class RatchetSessionManager;
+class DevicePairingCoordinator;
+class SafetyNumberEngine;
 } // namespace securecloud::client::application::managers
 
 namespace securecloud::client::application {
@@ -50,6 +56,13 @@ class ClientBootstrap {
     [[nodiscard]] managers::MessagingManager& messaging_manager() noexcept { return *messaging_manager_; }
     [[nodiscard]] managers::ContactManager& contact_manager() noexcept { return *contact_manager_; }
     [[nodiscard]] managers::DeviceManager& device_manager() noexcept { return *device_manager_; }
+    [[nodiscard]] managers::DevicePairingCoordinator& device_pairing_coordinator() noexcept {
+        return *device_pairing_coordinator_;
+    }
+    [[nodiscard]] managers::SafetyNumberEngine& safety_number_engine() noexcept { return *safety_number_engine_; }
+    [[nodiscard]] interfaces::IHardwareAuthenticator& hardware_authenticator() noexcept {
+        return *hardware_authenticator_;
+    }
     [[nodiscard]] managers::FileManager& file_manager() noexcept { return *file_manager_; }
     [[nodiscard]] managers::EmergencyManager& emergency_manager() noexcept { return *emergency_manager_; }
     [[nodiscard]] managers::SyncManager& sync_manager() noexcept { return *sync_manager_; }
@@ -69,6 +82,7 @@ class ClientBootstrap {
     std::unique_ptr<interfaces::ILocalStore> local_store_;
     std::unique_ptr<interfaces::ISecureStorage> secure_storage_;
     std::unique_ptr<interfaces::ICryptoProvider> crypto_provider_;
+    std::unique_ptr<interfaces::IHardwareAuthenticator> hardware_authenticator_;
 
     // Managers (instantiated second, destroyed first)
     std::unique_ptr<managers::AuthManager> auth_manager_;
@@ -76,6 +90,8 @@ class ClientBootstrap {
     std::unique_ptr<managers::RatchetSessionManager> ratchet_session_manager_;
     std::unique_ptr<managers::ContactManager> contact_manager_;
     std::unique_ptr<managers::DeviceManager> device_manager_;
+    std::unique_ptr<managers::DevicePairingCoordinator> device_pairing_coordinator_;
+    std::unique_ptr<managers::SafetyNumberEngine> safety_number_engine_;
     std::unique_ptr<managers::FileManager> file_manager_;
     std::unique_ptr<managers::EmergencyManager> emergency_manager_;
     std::unique_ptr<managers::SyncManager> sync_manager_;

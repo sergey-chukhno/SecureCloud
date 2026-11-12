@@ -32,7 +32,7 @@ When a device is lost, compromised, or decommissioned, the **Device Revocation P
 | **CLIENT-007-T02** | Authenticated Device Pairing Protocol & Ephemeral Handshake Engine | Completed | `DevicePairingCoordinator`: Out-of-band QR/SAS protocol, primary/companion roles, Gateway pairing challenge & MFA authorization |
 | **CLIENT-007-T03** | Device Revocation & Cryptographic Session Purge Pipeline | Completed | Remote revocation via Gateway, local self-wipe, `RatchetSessionManager` session termination & fan-out recipient exclusion |
 | **CLIENT-007-T04** | Out-of-Band QR Code Generation, Safety Number Scanner & Identity Verification Engine | Completed | `SafetyNumberEngine`: 60-digit SAS derivation, QR code payload generation/parsing, identity key change detection (`KeyChanged` alert) |
-| **CLIENT-007-T05** | Settings Trust Center & ViewModel Integration | Ready for Implementation | Wire `DeviceManager` & `RatchetSessionManager` into `WorkspaceViewModel`: live device list, approve/revoke invokables, hardware FIDO2 policy |
+| **CLIENT-007-T05** | Settings Trust Center & ViewModel Integration | Completed | Wire `DeviceManager` & `RatchetSessionManager` into `WorkspaceViewModel`: live device list, approve/revoke invokables, hardware FIDO2 policy |
 | **CLIENT-007-T06** | Device Management Integration Suite & Comprehensive Verification | Ready for Implementation | Multi-device pairing tests, revocation & fan-out exclusion tests, safety number verification tests, 100% pass, walkthrough report |
 
 ```text

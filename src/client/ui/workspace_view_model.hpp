@@ -154,6 +154,7 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] bool hardwareKeyEnforced() const noexcept { return hardware_key_enforced_; }
     void setHardwareKeyEnforced(bool enforced);
     [[nodiscard]] QString totpEnrollmentSecret() const { return totp_enrollment_secret_; }
+    [[nodiscard]] Q_INVOKABLE QVariantMap hardwareAttestationInfo() const;
 
     // Existing Invokables
     Q_INVOKABLE void selectConversation(const QString& conversationId);

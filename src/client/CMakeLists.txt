@@ -49,6 +49,7 @@ if(Qt6_FOUND)
         infrastructure/adapters/stub_crypto_provider.cpp
         infrastructure/adapters/openssl_crypto_provider.cpp
         infrastructure/adapters/key_storage_helper.cpp
+        infrastructure/adapters/simulated_hardware_authenticator.cpp
     )
     add_library(securecloud::client_infra ALIAS securecloud_client_infra)
     target_include_directories(securecloud_client_infra PUBLIC
