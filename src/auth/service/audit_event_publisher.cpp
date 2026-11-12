@@ -93,13 +93,12 @@ void AuditEventPublisher::publish(const domain::AuditEvent& event) noexcept {
 }
 
 OutboxAuditEventPublisher::OutboxAuditEventPublisher(std::shared_ptr<repository::IAuthOutboxRepository> outbox_repo,
-                                                         std::string producer_instance,
-                                                         std::shared_ptr<IAuditEventSink> fallback_sink,
-                                                         audit::AuthOutboxMetrics* metrics)
-        : outbox_repo_(std::move(outbox_repo)),
-          producer_instance_(std::move(producer_instance)),
-          fallback_sink_(std::move(fallback_sink)),
-          metrics_(metrics != nullptr ? metrics : &audit::AuthOutboxMetrics::instance()) {
+                                                     std::string producer_instance,
+                                                     std::shared_ptr<IAuditEventSink> fallback_sink,
+                                                     audit::AuthOutboxMetrics* metrics)
+    : outbox_repo_(std::move(outbox_repo)), producer_instance_(std::move(producer_instance)),
+      fallback_sink_(std::move(fallback_sink)),
+      metrics_(metrics != nullptr ? metrics : &audit::AuthOutboxMetrics::instance()) {
     if (!outbox_repo_) {
         throw std::invalid_argument("OutboxAuditEventPublisher requires non-null IAuthOutboxRepository");
     }
@@ -108,14 +107,14 @@ OutboxAuditEventPublisher::OutboxAuditEventPublisher(std::shared_ptr<repository:
     }
 }
 
-    void OutboxAuditEventPublisher::publish_in_tx(const domain::AuditEvent& event, pqxx::transaction_base& tx) {
+void OutboxAuditEventPublisher::publish_in_tx(const domain::AuditEvent& event, pqxx::transaction_base& tx) {
     domain::AuthOutboxEntity entity = build_outbox_entity(event, producer_instance_);
     outbox_repo_->stage_event(entity, tx);
     metrics_->record_event_staged(audit::StagingCategory::Transactional, 1);
     metrics_->increment_pending_events(1);
 }
 
-    void OutboxAuditEventPublisher::publish(const domain::AuditEvent& event) noexcept {
+void OutboxAuditEventPublisher::publish(const domain::AuditEvent& event) noexcept {
     try {
         domain::AuthOutboxEntity entity = build_outbox_entity(event, producer_instance_);
         outbox_repo_->stage_event(entity);

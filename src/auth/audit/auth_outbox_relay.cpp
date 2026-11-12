@@ -44,14 +44,10 @@ constexpr uint32_t kCircuitTripFailureThreshold = 3;
 } // namespace
 
 AuthOutboxRelay::AuthOutboxRelay(std::shared_ptr<repository::IAuthOutboxRepository> repository,
-                                 std::shared_ptr<IAuthAuditClient> audit_client,
-                                 AuthOutboxRelayConfig config,
-                                 std::string producer_instance,
-                                 AuthOutboxMetrics* metrics,
+                                 std::shared_ptr<IAuthAuditClient> audit_client, AuthOutboxRelayConfig config,
+                                 std::string producer_instance, AuthOutboxMetrics* metrics,
                                  AuthOutboxDiagnostics* diagnostics)
-    : repository_(std::move(repository)),
-      audit_client_(std::move(audit_client)),
-      config_(config),
+    : repository_(std::move(repository)), audit_client_(std::move(audit_client)), config_(config),
       producer_instance_(producer_instance.empty() ? "auth" : std::move(producer_instance)),
       metrics_(metrics != nullptr ? metrics : &AuthOutboxMetrics::instance()),
       diagnostics_(diagnostics != nullptr ? diagnostics : &AuthOutboxDiagnostics::instance()) {
@@ -263,7 +259,8 @@ size_t AuthOutboxRelay::poll_and_dispatch() {
 
             try {
                 if (rejected_ids.contains(id_str)) {
-                    if (repository_->mark_quarantined(entity.event_id, "Permanently rejected by AuditIngestionService")) {
+                    if (repository_->mark_quarantined(entity.event_id,
+                                                      "Permanently rejected by AuditIngestionService")) {
                         ++remote_rejected_count;
                         metrics_->record_quarantined(QuarantineReason::RemoteRejected, 1);
                         metrics_->decrement_pending_events(1);

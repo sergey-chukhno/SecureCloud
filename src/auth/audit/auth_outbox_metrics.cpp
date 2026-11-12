@@ -172,8 +172,8 @@ std::string AuthOutboxMetrics::to_prometheus_text() const {
     ss << "# TYPE auth_outbox_quarantined_total counter\n";
     for (size_t r = 0; r < static_cast<size_t>(QuarantineReason::Count); ++r) {
         const uint64_t val = quarantined_total_[r].load(std::memory_order_relaxed);
-        ss << "auth_outbox_quarantined_total{reason=\"" << to_string(static_cast<QuarantineReason>(r)) << "\"} "
-           << val << "\n";
+        ss << "auth_outbox_quarantined_total{reason=\"" << to_string(static_cast<QuarantineReason>(r)) << "\"} " << val
+           << "\n";
     }
 
     // 7. auth_outbox_purged_total

@@ -22,8 +22,8 @@ constexpr std::size_t kMaxMetadataEntries = 50;
 constexpr std::size_t kMaxMetadataKeyLength = 64;
 constexpr std::size_t kMaxMetadataValueLength = 1024;
 
-constexpr int64_t kMaxFutureSkewMs = 300LL * 1000LL;                       // 5 minutes
-constexpr int64_t kMaxPastAgeMs = 24LL * 1095LL * 60LL * 60LL * 1000LL;    // 36 months (1,095 days)
+constexpr int64_t kMaxFutureSkewMs = 300LL * 1000LL;                    // 5 minutes
+constexpr int64_t kMaxPastAgeMs = 24LL * 1095LL * 60LL * 60LL * 1000LL; // 36 months (1,095 days)
 
 [[nodiscard]] std::string to_lower_ascii(std::string_view input) {
     std::string out;
@@ -163,11 +163,11 @@ bool AuthAuditMapper::is_sensitive_metadata_key(std::string_view key) noexcept {
     }
 
     static constexpr std::array<std::string_view, 25> kForbiddenSubstrings = {
-        "password",      "passwd",        "pwd",           "secret",        "token",
-        "credential",    "private_key",   "signing_key",   "master_key",    "encryption_key",
-        "session_key",   "symmetric_key", "api_key",       "apikey",        "recovery_code",
-        "backup_code",   "passphrase",    "mnemonic",      "seed",          "authorization",
-        "cookie",        "password_hash", "secret_hash",   "salt",          "plaintext",
+        "password",    "passwd",        "pwd",         "secret",     "token",
+        "credential",  "private_key",   "signing_key", "master_key", "encryption_key",
+        "session_key", "symmetric_key", "api_key",     "apikey",     "recovery_code",
+        "backup_code", "passphrase",    "mnemonic",    "seed",       "authorization",
+        "cookie",      "password_hash", "secret_hash", "salt",       "plaintext",
     };
 
     for (std::string_view pattern : kForbiddenSubstrings) {
@@ -178,17 +178,61 @@ bool AuthAuditMapper::is_sensitive_metadata_key(std::string_view key) noexcept {
     return false;
 }
 
+[[nodiscard]] bool contains_embedded_jwt(std::string_view value) noexcept {
+    std::size_t pos = 0;
+    while ((pos = value.find("eyJ", pos)) != std::string_view::npos) {
+        std::size_t end = pos;
+        int dots = 0;
+        while (end < value.size()) {
+            const unsigned char ch = static_cast<unsigned char>(value[end]);
+            const bool is_b64url = std::isalnum(ch) != 0 || ch == '-' || ch == '_' || ch == '=';
+            if (ch == '.') {
+                ++dots;
+                ++end;
+            } else if (is_b64url) {
+                ++end;
+            } else {
+                break;
+            }
+        }
+        if (dots == 2 && (end - pos) >= 20) {
+            return true;
+        }
+        pos += 3;
+    }
+    return false;
+}
+
+[[nodiscard]] bool contains_sensitive_assignment(std::string_view lower) noexcept {
+    static constexpr std::array<std::string_view, 14> kSensitiveKeys = {
+        "password", "passwd",      "pwd",       "secret",        "token",         "refresh_token", "access_token",
+        "api_key",  "private_key", "totp_code", "recovery_code", "authorization", "cookie",        "passphrase",
+    };
+
+    for (std::string_view key : kSensitiveKeys) {
+        std::size_t pos = 0;
+        while ((pos = lower.find(key, pos)) != std::string_view::npos) {
+            std::size_t after = pos + key.size();
+            while (after < lower.size() && (lower[after] == ' ' || lower[after] == '\t')) {
+                ++after;
+            }
+            if (after < lower.size() && (lower[after] == '=' || lower[after] == ':')) {
+                return true;
+            }
+            pos += key.size();
+        }
+    }
+    return false;
+}
+
 std::string AuthAuditMapper::sanitize_metadata_value(std::string_view value) {
     const std::string lower = to_lower_ascii(value);
 
-    // Detect Bearer headers, PEM private keys, password hashes, or compact JWTs
-    if (lower.starts_with("bearer ") || lower.find("-----begin ") != std::string::npos ||
-        lower.starts_with("$argon2") || lower.starts_with("$2a$") || lower.starts_with("$2b$") ||
-        lower.starts_with("$2y$")) {
-        return "[REDACTED]";
-    }
-
-    if (value.starts_with("eyJ") && std::count(value.begin(), value.end(), '.') == 2) {
+    // Detect Bearer headers, PEM private keys, password hashes, credential assignments, or embedded JWTs
+    if (lower.find("bearer ") != std::string::npos || lower.find("-----begin ") != std::string::npos ||
+        lower.find("$argon2") != std::string::npos || lower.find("$2a$") != std::string::npos ||
+        lower.find("$2b$") != std::string::npos || lower.find("$2y$") != std::string::npos ||
+        contains_sensitive_assignment(lower) || contains_embedded_jwt(value)) {
         return "[REDACTED]";
     }
 
@@ -202,8 +246,8 @@ std::string AuthAuditMapper::sanitize_metadata_value(std::string_view value) {
     return to_proto(entity, default_producer_instance_);
 }
 
-::securecloud::audit::v1::AuditEventProto
-AuthAuditMapper::to_proto(const domain::AuthOutboxEntity& entity, std::string_view default_producer_instance) {
+::securecloud::audit::v1::AuditEventProto AuthAuditMapper::to_proto(const domain::AuthOutboxEntity& entity,
+                                                                    std::string_view default_producer_instance) {
     nlohmann::json j;
     try {
         j = nlohmann::json::parse(entity.payload_json);
@@ -226,11 +270,10 @@ AuthAuditMapper::to_proto(const domain::AuthOutboxEntity& entity, std::string_vi
         throw std::invalid_argument("Audit event missing integer occurred_at_ms");
     }
     const int64_t occurred_at_ms = j["occurred_at_ms"].get<int64_t>();
-    const int64_t now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-                               std::chrono::system_clock::now().time_since_epoch())
-                               .count();
-    if (occurred_at_ms <= 0 || occurred_at_ms > now_ms + kMaxFutureSkewMs ||
-        occurred_at_ms < now_ms - kMaxPastAgeMs) {
+    const int64_t now_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    if (occurred_at_ms <= 0 || occurred_at_ms > now_ms + kMaxFutureSkewMs || occurred_at_ms < now_ms - kMaxPastAgeMs) {
         throw std::invalid_argument("Audit occurred_at_ms outside acceptable clock-skew bounds");
     }
 

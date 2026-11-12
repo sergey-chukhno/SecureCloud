@@ -60,9 +60,9 @@ class MockAuditIngestionStub : public ::securecloud::audit::v1::AuditIngestionSe
 ::securecloud::audit::v1::AuditEventProto make_proto_event() {
     ::securecloud::audit::v1::AuditEventProto ev;
     ev.set_event_id(domain::Uuid::generate_v7().to_string());
-    ev.set_occurred_at_ms(std::chrono::duration_cast<std::chrono::milliseconds>(
-                              std::chrono::system_clock::now().time_since_epoch())
-                              .count());
+    ev.set_occurred_at_ms(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
     ev.set_event_type("auth.login.succeeded");
     ev.set_severity(::securecloud::audit::v1::SEVERITY_INFO);
     ev.set_producer_service(::securecloud::audit::v1::PRODUCER_SERVICE_AUTH);
@@ -125,15 +125,15 @@ TEST(AuthAuditClientTest, SubmitBatch_EnforcesTimeoutDeadlineAndMapsPartialRejec
 
     const auto before_call = std::chrono::system_clock::now();
     EXPECT_CALL(*stub, BatchSubmitAuditEvents(_, _, _))
-        .WillOnce(DoAll(Invoke([&](grpc::ClientContext* ctx,
-                                   const ::securecloud::audit::v1::BatchSubmitAuditEventsRequest& req,
-                                   ::securecloud::audit::v1::BatchSubmitAuditEventsResponse*) {
-                            EXPECT_EQ(req.events_size(), 2);
-                            const auto deadline = ctx->deadline();
-                            EXPECT_GE(deadline, before_call + std::chrono::milliseconds(1000));
-                            EXPECT_LE(deadline, before_call + std::chrono::milliseconds(2500));
-                        }),
-                        SetArgPointee<2>(mock_resp), Return(grpc::Status::OK)));
+        .WillOnce(DoAll(
+            Invoke([&](grpc::ClientContext* ctx, const ::securecloud::audit::v1::BatchSubmitAuditEventsRequest& req,
+                       ::securecloud::audit::v1::BatchSubmitAuditEventsResponse*) {
+                EXPECT_EQ(req.events_size(), 2);
+                const auto deadline = ctx->deadline();
+                EXPECT_GE(deadline, before_call + std::chrono::milliseconds(1000));
+                EXPECT_LE(deadline, before_call + std::chrono::milliseconds(2500));
+            }),
+            SetArgPointee<2>(mock_resp), Return(grpc::Status::OK)));
 
     AuthAuditClient client(cfg, stub);
     const auto result = client.submit_batch({ev1, ev2});
@@ -173,9 +173,10 @@ TEST(AuthAuditClientTest, MtlsEndToEnd_VerifiesAuditPeerSanAndDeliversBatch) {
 
     class FakeAuditIngestionService final : public ::securecloud::audit::v1::AuditIngestionService::Service {
       public:
-        grpc::Status BatchSubmitAuditEvents(
-            grpc::ServerContext* context, const ::securecloud::audit::v1::BatchSubmitAuditEventsRequest* request,
-            ::securecloud::audit::v1::BatchSubmitAuditEventsResponse* response) override {
+        grpc::Status
+        BatchSubmitAuditEvents(grpc::ServerContext* context,
+                               const ::securecloud::audit::v1::BatchSubmitAuditEventsRequest* request,
+                               ::securecloud::audit::v1::BatchSubmitAuditEventsResponse* response) override {
             if (!common::security::verify_peer_service_identity(*context->auth_context(), "auth")) {
                 return grpc::Status(grpc::StatusCode::PERMISSION_DENIED, "Expected auth peer SAN");
             }

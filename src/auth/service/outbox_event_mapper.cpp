@@ -1,5 +1,7 @@
 #include "auth/service/outbox_event_mapper.hpp"
 
+#include "auth/audit/auth_audit_mapper.hpp"
+
 #include <chrono>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
@@ -120,8 +122,16 @@ domain::AuthOutboxEntity OutboxEventMapper::to_outbox_entity(const domain::Audit
     const domain::OutboxSeverity outbox_sev = map_event_type_to_severity(event.event_type);
     const std::string sev_str(domain::to_string(outbox_sev));
 
+    const std::string safe_credential_id =
+        event.credential_identifier.empty()
+            ? std::string{}
+            : audit::AuthAuditMapper::sanitize_metadata_value(event.credential_identifier);
+    const std::string safe_failure_reason = event.failure_reason.empty()
+                                                ? std::string{}
+                                                : audit::AuthAuditMapper::sanitize_metadata_value(event.failure_reason);
+
     std::string actor_type_str = "SYSTEM";
-    std::string actor_id_str = event.credential_identifier.empty() ? "anonymous" : event.credential_identifier;
+    std::string actor_id_str = safe_credential_id.empty() ? "anonymous" : safe_credential_id;
     if (event.user_id.has_value()) {
         actor_type_str = "USER";
         actor_id_str = event.user_id->to_string();
@@ -131,7 +141,7 @@ domain::AuthOutboxEntity OutboxEventMapper::to_outbox_entity(const domain::Audit
     }
 
     std::string target_type_str = "USER";
-    std::string target_id_str = event.credential_identifier;
+    std::string target_id_str = safe_credential_id;
     std::string aggregate_type_str = "AUTH";
     std::optional<domain::Uuid> aggregate_id = std::nullopt;
 
@@ -159,8 +169,8 @@ domain::AuthOutboxEntity OutboxEventMapper::to_outbox_entity(const domain::Audit
 
     nlohmann::json metadata = nlohmann::json::object();
     metadata["client_ip"] = event.client_ip;
-    if (!event.credential_identifier.empty()) {
-        metadata["credential_identifier"] = event.credential_identifier;
+    if (!safe_credential_id.empty()) {
+        metadata["credential_identifier"] = safe_credential_id;
     }
     if (event.user_id.has_value()) {
         metadata["user_id"] = event.user_id->to_string();
@@ -171,8 +181,8 @@ domain::AuthOutboxEntity OutboxEventMapper::to_outbox_entity(const domain::Audit
     if (event.session_id.has_value()) {
         metadata["session_id"] = event.session_id->to_string();
     }
-    if (!event.failure_reason.empty()) {
-        metadata["failure_reason"] = event.failure_reason;
+    if (!safe_failure_reason.empty()) {
+        metadata["failure_reason"] = safe_failure_reason;
     }
 
     const std::string correlation_id = event.session_id.has_value() ? event.session_id->to_string() : eid.to_string();

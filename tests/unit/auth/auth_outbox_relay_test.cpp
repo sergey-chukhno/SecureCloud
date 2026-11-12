@@ -227,10 +227,9 @@ TEST(AuthOutboxRelayTest, PurgeOldPublishedRecords_UsesConfiguredRetentionAndBat
     cfg.purge_batch_size = 500;
 
     const auto expected_cutoff = std::chrono::system_clock::now() - cfg.published_retention;
-    EXPECT_CALL(*repo, purge_published_older_than(
-                           AllOf(Ge(expected_cutoff - std::chrono::seconds(5)),
-                                 Le(expected_cutoff + std::chrono::seconds(5))),
-                           500u))
+    EXPECT_CALL(*repo, purge_published_older_than(AllOf(Ge(expected_cutoff - std::chrono::seconds(5)),
+                                                        Le(expected_cutoff + std::chrono::seconds(5))),
+                                                  500u))
         .WillOnce(Return(42u));
 
     AuthOutboxRelay relay(repo, client, cfg);

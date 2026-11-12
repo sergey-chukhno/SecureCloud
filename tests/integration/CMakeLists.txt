@@ -1281,3 +1281,23 @@ target_link_libraries(securecloud_gateway_audit_integration_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_gateway_audit_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Transactional Outbox Integration Test Suite (AUDIT-013-T07)
+add_executable(securecloud_auth_outbox_transaction_test
+        auth_outbox_transaction_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_transaction_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud_proto
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_auth_outbox_transaction_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_auth_outbox_transaction_test ${SECURECLOUD_TEST_PROPERTIES})

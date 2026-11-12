@@ -14,11 +14,8 @@ namespace {
 constexpr uint16_t k_default_auth_port = 50052;
 constexpr uint16_t k_default_postgres_port = 5432;
 
-std::optional<uint64_t> parse_u64_bounded(std::string_view key,
-                                          std::string_view raw,
-                                          uint64_t min_val,
-                                          uint64_t max_val,
-                                          common::configuration::ValidationResult& out_errors) {
+std::optional<uint64_t> parse_u64_bounded(std::string_view key, std::string_view raw, uint64_t min_val,
+                                          uint64_t max_val, common::configuration::ValidationResult& out_errors) {
     uint64_t parsed = 0;
     const auto* begin = raw.data();
     const auto* end = raw.data() + raw.size();
@@ -35,8 +32,7 @@ std::optional<uint64_t> parse_u64_bounded(std::string_view key,
     return parsed;
 }
 
-std::optional<bool> parse_bool_flag(std::string_view key,
-                                    std::string_view raw,
+std::optional<bool> parse_bool_flag(std::string_view key, std::string_view raw,
                                     common::configuration::ValidationResult& out_errors) {
     if (raw == "true" || raw == "TRUE" || raw == "1" || raw == "yes" || raw == "YES") {
         return true;
@@ -128,8 +124,8 @@ AuthConfig AuthConfig::load(const common::configuration::ConfigurationSource& so
         audit_ep = source.get("SECURECLOUD_AUDIT_ENDPOINT");
     }
     if (audit_ep.has_value() && !audit_ep->empty()) {
-        auto parsed =
-            common::configuration::ConfigParser::parse_string("SECURECLOUD_AUTH_AUDIT_ENDPOINT", *audit_ep, out_errors, false);
+        auto parsed = common::configuration::ConfigParser::parse_string("SECURECLOUD_AUTH_AUDIT_ENDPOINT", *audit_ep,
+                                                                        out_errors, false);
         if (parsed.has_value()) {
             config.audit_endpoint = *parsed;
         }
@@ -137,15 +133,15 @@ AuthConfig AuthConfig::load(const common::configuration::ConfigurationSource& so
 
     if (auto audit_timeout = source.get("SECURECLOUD_AUTH_AUDIT_TIMEOUT_MS");
         audit_timeout.has_value() && !audit_timeout->empty()) {
-        if (auto parsed = parse_u64_bounded("SECURECLOUD_AUTH_AUDIT_TIMEOUT_MS", *audit_timeout, 50, 60000, out_errors)) {
+        if (auto parsed =
+                parse_u64_bounded("SECURECLOUD_AUTH_AUDIT_TIMEOUT_MS", *audit_timeout, 50, 60000, out_errors)) {
             config.audit_timeout = std::chrono::milliseconds(static_cast<int64_t>(*parsed));
         }
     }
 
-    if (auto peer_san = source.get("SECURECLOUD_AUTH_AUDIT_PEER_SAN");
-        peer_san.has_value() && !peer_san->empty()) {
-        auto parsed =
-            common::configuration::ConfigParser::parse_string("SECURECLOUD_AUTH_AUDIT_PEER_SAN", *peer_san, out_errors, false);
+    if (auto peer_san = source.get("SECURECLOUD_AUTH_AUDIT_PEER_SAN"); peer_san.has_value() && !peer_san->empty()) {
+        auto parsed = common::configuration::ConfigParser::parse_string("SECURECLOUD_AUTH_AUDIT_PEER_SAN", *peer_san,
+                                                                        out_errors, false);
         if (parsed.has_value()) {
             config.audit_expected_peer_san = *parsed;
         }
@@ -153,13 +149,13 @@ AuthConfig AuthConfig::load(const common::configuration::ConfigurationSource& so
 
     if (auto poll_ms = source.get("SECURECLOUD_AUTH_OUTBOX_POLL_INTERVAL_MS");
         poll_ms.has_value() && !poll_ms->empty()) {
-        if (auto parsed = parse_u64_bounded("SECURECLOUD_AUTH_OUTBOX_POLL_INTERVAL_MS", *poll_ms, 10, 60000, out_errors)) {
+        if (auto parsed =
+                parse_u64_bounded("SECURECLOUD_AUTH_OUTBOX_POLL_INTERVAL_MS", *poll_ms, 10, 60000, out_errors)) {
             config.outbox_relay.poll_interval = std::chrono::milliseconds(static_cast<int64_t>(*parsed));
         }
     }
 
-    if (auto batch_sz = source.get("SECURECLOUD_AUTH_OUTBOX_BATCH_SIZE");
-        batch_sz.has_value() && !batch_sz->empty()) {
+    if (auto batch_sz = source.get("SECURECLOUD_AUTH_OUTBOX_BATCH_SIZE"); batch_sz.has_value() && !batch_sz->empty()) {
         if (auto parsed = parse_u64_bounded("SECURECLOUD_AUTH_OUTBOX_BATCH_SIZE", *batch_sz, 1, 100, out_errors)) {
             config.outbox_relay.batch_size = static_cast<size_t>(*parsed);
         }
@@ -180,8 +176,7 @@ AuthConfig AuthConfig::load(const common::configuration::ConfigurationSource& so
         }
     }
 
-    if (auto max_bo = source.get("SECURECLOUD_AUTH_OUTBOX_MAX_BACKOFF_MS");
-        max_bo.has_value() && !max_bo->empty()) {
+    if (auto max_bo = source.get("SECURECLOUD_AUTH_OUTBOX_MAX_BACKOFF_MS"); max_bo.has_value() && !max_bo->empty()) {
         if (auto parsed =
                 parse_u64_bounded("SECURECLOUD_AUTH_OUTBOX_MAX_BACKOFF_MS", *max_bo, 50, 300000, out_errors)) {
             config.outbox_relay.max_backoff = std::chrono::milliseconds(static_cast<int64_t>(*parsed));

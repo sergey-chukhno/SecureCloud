@@ -30,23 +30,15 @@ class AuthOutboxDiagnostics {
     [[nodiscard]] static std::string scrub_sensitive_data(std::string_view raw) noexcept;
 
     /// Logs a batch dispatch outcome with correlation ID and scrubbed detail.
-    void log_batch_outcome(BatchOutcome outcome,
-                           size_t batch_size,
-                           size_t accepted_count,
-                           size_t rejected_count,
-                           std::string_view correlation_id,
-                           std::string_view detail = "") noexcept;
+    void log_batch_outcome(BatchOutcome outcome, size_t batch_size, size_t accepted_count, size_t rejected_count,
+                           std::string_view correlation_id, std::string_view detail = "") noexcept;
 
     /// Logs a circuit-trip / consecutive failure backoff escalation event.
-    void log_circuit_trip(uint32_t consecutive_failures,
-                          std::chrono::milliseconds backoff_delay,
-                          std::string_view correlation_id,
-                          std::string_view detail) noexcept;
+    void log_circuit_trip(uint32_t consecutive_failures, std::chrono::milliseconds backoff_delay,
+                          std::string_view correlation_id, std::string_view detail) noexcept;
 
     /// Logs a permanent quarantine action on a poison-pill or rejected outbox event.
-    void log_quarantine_action(std::string_view event_id,
-                               std::string_view correlation_id,
-                               QuarantineReason reason,
+    void log_quarantine_action(std::string_view event_id, std::string_view correlation_id, QuarantineReason reason,
                                std::string_view detail) noexcept;
 
     /// Logs a bounded retention purge execution.

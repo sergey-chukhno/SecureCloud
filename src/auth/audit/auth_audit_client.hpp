@@ -31,7 +31,8 @@ struct AuditBatchSubmitResult {
 class IAuthAuditClient {
   public:
     virtual ~IAuthAuditClient() = default;
-    virtual AuditBatchSubmitResult submit_batch(const std::vector<::securecloud::audit::v1::AuditEventProto>& events) = 0;
+    virtual AuditBatchSubmitResult
+    submit_batch(const std::vector<::securecloud::audit::v1::AuditEventProto>& events) = 0;
 };
 
 /// mTLS-authenticated gRPC client for AuditIngestionService with strict deadline enforcement

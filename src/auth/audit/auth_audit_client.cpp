@@ -41,9 +41,8 @@ AuthAuditClient::AuthAuditClient(AuthAuditClientConfig config) : config_(std::mo
     stub_ = ::securecloud::audit::v1::AuditIngestionService::NewStub(channel_);
 }
 
-AuthAuditClient::AuthAuditClient(
-    AuthAuditClientConfig config,
-    std::shared_ptr<::securecloud::audit::v1::AuditIngestionService::StubInterface> stub)
+AuthAuditClient::AuthAuditClient(AuthAuditClientConfig config,
+                                 std::shared_ptr<::securecloud::audit::v1::AuditIngestionService::StubInterface> stub)
     : config_(std::move(config)), stub_(std::move(stub)) {
     if (config_.timeout.count() <= 0) {
         throw std::invalid_argument("AuthAuditClient timeout must be positive");
@@ -76,8 +75,8 @@ AuthAuditClient::submit_batch(const std::vector<::securecloud::audit::v1::AuditE
     if (const auto auth_ctx = context.auth_context(); auth_ctx && auth_ctx->IsPeerAuthenticated()) {
         if (!is_authorized_audit_peer(*auth_ctx, config_.expected_peer_san)) {
             result.rpc_success = false;
-            result.status = grpc::Status(grpc::StatusCode::UNAUTHENTICATED,
-                                         "Peer SAN DNS identity does not match Audit Service");
+            result.status =
+                grpc::Status(grpc::StatusCode::UNAUTHENTICATED, "Peer SAN DNS identity does not match Audit Service");
             return result;
         }
     }

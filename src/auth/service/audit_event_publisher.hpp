@@ -1,7 +1,7 @@
 #pragma once
 
-#include "auth/domain/audit_event.hpp"
 #include "auth/audit/auth_outbox_metrics.hpp"
+#include "auth/domain/audit_event.hpp"
 #include "auth/repository/auth_outbox_repository.hpp"
 
 #include <memory>

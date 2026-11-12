@@ -22,10 +22,8 @@ namespace securecloud::auth::audit {
 class AuthOutboxRelay {
   public:
     AuthOutboxRelay(std::shared_ptr<repository::IAuthOutboxRepository> repository,
-                    std::shared_ptr<IAuthAuditClient> audit_client,
-                    AuthOutboxRelayConfig config = {},
-                    std::string producer_instance = "auth",
-                    AuthOutboxMetrics* metrics = nullptr,
+                    std::shared_ptr<IAuthAuditClient> audit_client, AuthOutboxRelayConfig config = {},
+                    std::string producer_instance = "auth", AuthOutboxMetrics* metrics = nullptr,
                     AuthOutboxDiagnostics* diagnostics = nullptr);
     ~AuthOutboxRelay();
 

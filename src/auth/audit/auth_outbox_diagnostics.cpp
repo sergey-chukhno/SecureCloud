@@ -72,12 +72,11 @@ std::string AuthOutboxDiagnostics::scrub_sensitive_data(std::string_view raw) no
         const std::string lower = to_lower_ascii(raw);
 
         static constexpr std::array<std::string_view, 28> kForbiddenTerms = {
-            "password",      "passwd",       "pwd",           "secret",        "token",
-            "credential",    "private_key",  "signing_key",   "master_key",    "encryption_key",
-            "session_key",   "api_key",      "apikey",        "recovery_code", "backup_code",
-            "passphrase",    "mnemonic",     "seed",          "authorization", "cookie",
-            "bearer ",       "-----begin ",  "$argon2",       "$2a$",          "$2b$",
-            "$2y$",          "totp",         "otp_code",
+            "password",      "passwd",        "pwd",         "secret",         "token",       "credential",
+            "private_key",   "signing_key",   "master_key",  "encryption_key", "session_key", "api_key",
+            "apikey",        "recovery_code", "backup_code", "passphrase",     "mnemonic",    "seed",
+            "authorization", "cookie",        "bearer ",     "-----begin ",    "$argon2",     "$2a$",
+            "$2b$",          "$2y$",          "totp",        "otp_code",
         };
 
         for (std::string_view term : kForbiddenTerms) {
@@ -136,11 +135,8 @@ std::ostream& AuthOutboxDiagnostics::stream_unlocked() noexcept {
     return output_stream_ != nullptr ? *output_stream_ : std::cout;
 }
 
-void AuthOutboxDiagnostics::log_batch_outcome(BatchOutcome outcome,
-                                              size_t batch_size,
-                                              size_t accepted_count,
-                                              size_t rejected_count,
-                                              std::string_view correlation_id,
+void AuthOutboxDiagnostics::log_batch_outcome(BatchOutcome outcome, size_t batch_size, size_t accepted_count,
+                                              size_t rejected_count, std::string_view correlation_id,
                                               std::string_view detail) noexcept {
     try {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -169,10 +165,8 @@ void AuthOutboxDiagnostics::log_batch_outcome(BatchOutcome outcome,
     }
 }
 
-void AuthOutboxDiagnostics::log_circuit_trip(uint32_t consecutive_failures,
-                                             std::chrono::milliseconds backoff_delay,
-                                             std::string_view correlation_id,
-                                             std::string_view detail) noexcept {
+void AuthOutboxDiagnostics::log_circuit_trip(uint32_t consecutive_failures, std::chrono::milliseconds backoff_delay,
+                                             std::string_view correlation_id, std::string_view detail) noexcept {
     try {
         std::lock_guard<std::mutex> lock(mutex_);
         if (!should_log("circuit_trip")) {
@@ -197,10 +191,8 @@ void AuthOutboxDiagnostics::log_circuit_trip(uint32_t consecutive_failures,
     }
 }
 
-void AuthOutboxDiagnostics::log_quarantine_action(std::string_view event_id,
-                                                  std::string_view correlation_id,
-                                                  QuarantineReason reason,
-                                                  std::string_view detail) noexcept {
+void AuthOutboxDiagnostics::log_quarantine_action(std::string_view event_id, std::string_view correlation_id,
+                                                  QuarantineReason reason, std::string_view detail) noexcept {
     try {
         std::lock_guard<std::mutex> lock(mutex_);
         const std::string category = "quarantine:" + std::string(to_string(reason));
