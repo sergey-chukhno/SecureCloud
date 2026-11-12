@@ -10,11 +10,14 @@ namespace securecloud::client::domain {
 namespace {
 
 // 64 cross-platform universally recognized emojis without skin-tones or vendor ambiguities
+// clang-format off
 constexpr std::array<std::string_view, ShortAuthenticationString::kDictionarySize> kEmojiDictionary = {
-    "🚀", "🛡️",  "🔑", "⚡", "🌟", "🔥", "💎", "🎯", "⚓", "🪐", "🍀", "🌊", "🔔", "🎸", "🏆", "🧭",
+    "🚀", "🛡️", "🔑", "⚡", "🌟", "🔥", "💎", "🎯", "⚓", "🪐", "🍀", "🌊", "🔔", "🎸", "🏆", "🧭",
     "🎨", "📚", "🔮", "💡", "📡", "🧩", "🦄", "🦅", "🦁", "🐬", "🌸", "🍁", "🍄", "🌴", "🌲", "🍎",
-    "☕", "🚗", "✈️",  "⛵", "🏰", "🏔️",  "🌈", "☀️",  "🌙", "⭐", "🔒", "🔓", "🔍", "⚙️",  "🔧", "📦",
-    "🏷️",  "📷", "🎙️",  "🎧", "🕹️",  "⏰", "⌛", "🎁", "🎈", "🎉", "💌", "📬", "📜", "🪙", "👑", "🕊️"};
+    "☕", "🚗", "✈️", "⛵", "🏰", "🏔️", "🌈", "☀️", "🌙", "⭐", "🔒", "🔓", "🔍", "⚙️", "🔧", "📦",
+    "🏷️", "📷", "🎙️", "🎧", "🕹️", "⏰", "⌛", "🎁", "🎈", "🎉", "💌", "📬", "📜", "🪙", "👑", "🕊️"
+};
+// clang-format on
 
 } // namespace
 
