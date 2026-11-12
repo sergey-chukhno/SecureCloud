@@ -397,8 +397,8 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
         pqxx::work tx(*conn);
 
         mfa_repository_->complete_challenge(challenge_id, now, tx);
-        session_repository_->update_authentication_level(challenge.session_id,
-                                                         domain::AuthenticationLevel::MfaVerified, tx);
+        session_repository_->update_authentication_level(challenge.session_id, domain::AuthenticationLevel::MfaVerified,
+                                                         tx);
         session_repository_->touch_session_activity(challenge.session_id, now, tx);
 
         if (is_recovery) {

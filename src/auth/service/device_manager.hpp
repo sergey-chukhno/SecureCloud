@@ -112,8 +112,7 @@ class DeviceManager : public IDeviceManager {
                   std::shared_ptr<repository::IDevicePublicKeyRepository> public_key_repo,
                   std::shared_ptr<ISessionManager> session_manager,
                   std::shared_ptr<IAuditEventPublisher> audit_publisher,
-                  std::chrono::seconds pairing_ttl = kDefaultPairingTtl,
-                  db::PostgresConnectionPool* pool = nullptr);
+                  std::chrono::seconds pairing_ttl = kDefaultPairingTtl, db::PostgresConnectionPool* pool = nullptr);
 
     DeviceEnrollmentResult enroll_device(const domain::Uuid& user_id, std::span<const uint8_t> identity_key,
                                          std::span<const uint8_t> signed_prekey, std::span<const uint8_t> signature,

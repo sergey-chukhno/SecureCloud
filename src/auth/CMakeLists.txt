@@ -30,6 +30,8 @@ add_library(securecloud_auth_config STATIC
         service/crypto_directory_manager.cpp
         service/prekey_manager.cpp
         service/audit_event_publisher.cpp
+        service/outbox_event_mapper.cpp
+        service/outbox_relay_worker.cpp
         service/auth_service_impl.cpp
 )
 

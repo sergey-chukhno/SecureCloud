@@ -245,7 +245,9 @@ TEST_F(MfaManagerTest, InitiateEnrollment_Success_StoresPendingConfigAndReturnsU
 
     MfaConfigurationEntity stored_config;
     EXPECT_CALL(*mfa_repository_, store_mfa_configuration(_)).WillOnce(DoAll(SaveArg<0>(&stored_config), Return()));
-    EXPECT_CALL(*audit_publisher_, publish(_)).Times(1);
+
+    domain::AuditEvent emitted_event;
+    EXPECT_CALL(*audit_publisher_, publish(_)).WillOnce(SaveArg<0>(&emitted_event));
 
     auto result = mfa_manager_->initiate_enrollment(user_id_, "SecureCloud");
 
@@ -255,6 +257,20 @@ TEST_F(MfaManagerTest, InitiateEnrollment_Success_StoresPendingConfigAndReturnsU
     EXPECT_EQ(stored_config.status, MfaStatus::Pending);
     EXPECT_EQ(stored_config.user_id, user_id_);
     EXPECT_EQ(stored_config.factor_type, MfaFactorType::Totp);
+
+    EXPECT_EQ(emitted_event.event_type, domain::AuditEventType::MfaEnrollmentInitiated);
+    EXPECT_EQ(emitted_event.user_id, user_id_);
+    const std::string audit_json = emitted_event.to_json();
+    EXPECT_EQ(audit_json.find("otpauth://"), std::string::npos);
+    const auto secret_pos = result.otpauth_uri.find("secret=");
+    if (secret_pos != std::string::npos) {
+        const auto val_start = secret_pos + 7;
+        const auto val_end = result.otpauth_uri.find('&', val_start);
+        const std::string secret_param = result.otpauth_uri.substr(
+            val_start, val_end == std::string::npos ? std::string::npos : val_end - val_start);
+        ASSERT_FALSE(secret_param.empty());
+        EXPECT_EQ(audit_json.find(secret_param), std::string::npos);
+    }
 }
 
 TEST_F(MfaManagerTest, InitiateEnrollment_AlreadyEnabled_ThrowsException) {
@@ -281,7 +297,9 @@ TEST_F(MfaManagerTest, ConfirmEnrollment_Success_ActivatesConfigAndReturnsRecove
 
     EXPECT_CALL(*mfa_repository_, find_mfa_config_by_user_id(user_id_)).WillOnce(Return(pending_config));
     EXPECT_CALL(*mfa_repository_, enable_mfa(pending_config.mfa_configuration_id, _, 1)).Times(1);
-    EXPECT_CALL(*audit_publisher_, publish(_)).Times(1);
+
+    domain::AuditEvent emitted_event;
+    EXPECT_CALL(*audit_publisher_, publish(_)).WillOnce(SaveArg<0>(&emitted_event));
 
     const auto now = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
@@ -292,6 +310,13 @@ TEST_F(MfaManagerTest, ConfirmEnrollment_Success_ActivatesConfigAndReturnsRecove
     EXPECT_TRUE(confirm_res.is_success());
     EXPECT_EQ(confirm_res.status, MfaEnrollmentStatus::Success);
     EXPECT_EQ(confirm_res.recovery_codes.size(), 8u);
+
+    EXPECT_EQ(emitted_event.event_type, domain::AuditEventType::MfaEnrollmentConfirmed);
+    EXPECT_EQ(emitted_event.user_id, user_id_);
+    const std::string audit_json = emitted_event.to_json();
+    for (const auto& code : confirm_res.recovery_codes) {
+        EXPECT_EQ(audit_json.find(code), std::string::npos);
+    }
 }
 
 TEST_F(MfaManagerTest, ConfirmEnrollment_InvalidCode_RejectsAndRemainsPending) {
@@ -541,13 +566,17 @@ TEST_F(MfaManagerTest, DisableMfa_ValidCode_DisablesConfiguration) {
 
     EXPECT_CALL(*mfa_repository_, find_mfa_config_by_user_id(user_id_)).WillRepeatedly(Return(active_config));
     EXPECT_CALL(*mfa_repository_, disable_mfa(active_config.mfa_configuration_id, _, 2)).Times(1);
-    EXPECT_CALL(*audit_publisher_, publish(_)).Times(1);
+
+    domain::AuditEvent emitted_event;
+    EXPECT_CALL(*audit_publisher_, publish(_)).WillOnce(SaveArg<0>(&emitted_event));
 
     const auto now = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count());
     const std::string valid_code = totp_engine_->compute_code(secret, now);
 
     EXPECT_TRUE(mfa_manager_->disable_mfa(user_id_, valid_code));
+    EXPECT_EQ(emitted_event.event_type, domain::AuditEventType::MfaDisabled);
+    EXPECT_EQ(emitted_event.user_id, user_id_);
 }
 
 TEST_F(MfaManagerTest, DisableMfa_InvalidCode_Fails) {

@@ -3866,3 +3866,38 @@ target_link_libraries(securecloud_gateway_audit_verification_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_gateway_audit_verification_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Event Mapper Unit Test Suite (AUDIT-013-T03)
+add_executable(securecloud_auth_outbox_event_mapper_test
+        auth/outbox_event_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_event_mapper_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_event_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Relay Worker Unit Test Suite (AUDIT-013-T03)
+add_executable(securecloud_auth_outbox_relay_worker_test
+        auth/outbox_relay_worker_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_relay_worker_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_relay_worker_test ${SECURECLOUD_TEST_PROPERTIES})

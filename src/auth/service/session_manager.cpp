@@ -213,10 +213,9 @@ domain::SessionRevocationResult SessionManager::revoke_session(const domain::Uui
             pqxx::work tx(*conn);
             revoked = session_repo_->revoke_session_atomic(session_id, now, tx);
             if (revoked && audit_publisher_) {
-                audit_publisher_->publish_in_tx(
-                    domain::AuditEvent::session_revoked(session_id, session_opt->user_id, session_opt->device_id,
-                                                        reason),
-                    tx);
+                audit_publisher_->publish_in_tx(domain::AuditEvent::session_revoked(session_id, session_opt->user_id,
+                                                                                    session_opt->device_id, reason),
+                                                tx);
             }
             tx.commit();
         } else {

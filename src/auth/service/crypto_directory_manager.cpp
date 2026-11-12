@@ -266,10 +266,10 @@ UpdateCryptoPrekeysResult CryptoDirectoryManager::update_crypto_prekeys(
                 total_active_otk = public_key_repo_->count_active_one_time_prekeys(target_device_id, tx);
 
                 if (audit_publisher_) {
-                    audit_publisher_->publish_in_tx(
-                        domain::AuditEvent::prekeys_updated(target_dev.user_id, target_device_id, total_active_otk,
-                                                            client_ip),
-                        tx);
+                    audit_publisher_->publish_in_tx(domain::AuditEvent::prekeys_updated(target_dev.user_id,
+                                                                                        target_device_id,
+                                                                                        total_active_otk, client_ip),
+                                                    tx);
                 }
             } else {
                 total_active_otk = public_key_repo_->count_active_one_time_prekeys(target_device_id, tx);

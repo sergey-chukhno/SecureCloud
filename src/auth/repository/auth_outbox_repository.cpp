@@ -31,39 +31,34 @@ constexpr std::string_view kFetchAndLeaseBatchSql =
     "          payload_json::text, status, retry_count, created_at, "
     "          processed_at, last_error, leased_until;";
 
-constexpr std::string_view kMarkPublishedSql =
-    "UPDATE auth_outbox "
-    "SET status = 'PUBLISHED', "
-    "    processed_at = NOW(), "
-    "    leased_until = NULL, "
-    "    last_error = NULL "
-    "WHERE event_id = $1 AND status = 'PENDING';";
+constexpr std::string_view kMarkPublishedSql = "UPDATE auth_outbox "
+                                               "SET status = 'PUBLISHED', "
+                                               "    processed_at = NOW(), "
+                                               "    leased_until = NULL, "
+                                               "    last_error = NULL "
+                                               "WHERE event_id = $1 AND status = 'PENDING';";
 
-constexpr std::string_view kMarkFailedSql =
-    "UPDATE auth_outbox "
-    "SET last_error = $2, "
-    "    leased_until = NULL "
-    "WHERE event_id = $1 AND status = 'PENDING';";
+constexpr std::string_view kMarkFailedSql = "UPDATE auth_outbox "
+                                            "SET last_error = $2, "
+                                            "    leased_until = NULL "
+                                            "WHERE event_id = $1 AND status = 'PENDING';";
 
-constexpr std::string_view kMarkQuarantinedSql =
-    "UPDATE auth_outbox "
-    "SET status = 'QUARANTINED', "
-    "    processed_at = NOW(), "
-    "    last_error = $2, "
-    "    leased_until = NULL "
-    "WHERE event_id = $1 AND status IN ('PENDING', 'FAILED');";
+constexpr std::string_view kMarkQuarantinedSql = "UPDATE auth_outbox "
+                                                 "SET status = 'QUARANTINED', "
+                                                 "    processed_at = NOW(), "
+                                                 "    last_error = $2, "
+                                                 "    leased_until = NULL "
+                                                 "WHERE event_id = $1 AND status IN ('PENDING', 'FAILED');";
 
-constexpr std::string_view kPurgePublishedSql =
-    "DELETE FROM auth_outbox "
-    "WHERE event_id IN ("
-    "    SELECT event_id "
-    "    FROM auth_outbox "
-    "    WHERE status = 'PUBLISHED' AND processed_at < $1 "
-    "    LIMIT $2"
-    ");";
+constexpr std::string_view kPurgePublishedSql = "DELETE FROM auth_outbox "
+                                                "WHERE event_id IN ("
+                                                "    SELECT event_id "
+                                                "    FROM auth_outbox "
+                                                "    WHERE status = 'PUBLISHED' AND processed_at < $1 "
+                                                "    LIMIT $2"
+                                                ");";
 
-constexpr std::string_view kCountPendingSql =
-    "SELECT COUNT(*) FROM auth_outbox WHERE status = 'PENDING';";
+constexpr std::string_view kCountPendingSql = "SELECT COUNT(*) FROM auth_outbox WHERE status = 'PENDING';";
 
 domain::AuthOutboxEntity outbox_entity_from_row(const pqxx::row& row) {
     domain::AuthOutboxEntity entity;
@@ -161,8 +156,9 @@ PostgresAuthOutboxRepository::fetch_and_lease_pending_batch(std::size_t limit, s
         auto conn = pool_.acquire();
         pqxx::work tx(*conn);
 
-        auto res = db::exec_sql(tx, kFetchAndLeaseBatchSql,
-                                pqxx::params{static_cast<int64_t>(limit), static_cast<int64_t>(lease_duration.count())});
+        auto res =
+            db::exec_sql(tx, kFetchAndLeaseBatchSql,
+                         pqxx::params{static_cast<int64_t>(limit), static_cast<int64_t>(lease_duration.count())});
 
         std::vector<domain::AuthOutboxEntity> entities;
         entities.reserve(static_cast<std::size_t>(res.size()));
@@ -224,9 +220,8 @@ std::size_t PostgresAuthOutboxRepository::purge_published_older_than(std::chrono
     try {
         auto conn = pool_.acquire();
         pqxx::work tx(*conn);
-        auto res = db::exec_sql(
-            tx, kPurgePublishedSql,
-            pqxx::params{domain::to_iso8601(cutoff), static_cast<int64_t>(batch_size)});
+        auto res = db::exec_sql(tx, kPurgePublishedSql,
+                                pqxx::params{domain::to_iso8601(cutoff), static_cast<int64_t>(batch_size)});
         tx.commit();
         return static_cast<std::size_t>(res.affected_rows());
     } catch (const pqxx::sql_error& ex) {

@@ -1,4 +1,5 @@
 #include "auth/service/outbox_relay_worker.hpp"
+
 #include "auth/service/outbox_event_mapper.hpp"
 
 #include <algorithm>
@@ -112,8 +113,7 @@ std::size_t OutboxRelayWorker::drain_once() {
             valid_entities.push_back(entity);
         } catch (const std::exception& ex) {
             // Payload JSON corrompu : quarantaine immédiate pour ne pas bloquer le batch
-            outbox_repo_->mark_quarantined(entity.event_id,
-                                           std::string("Corrupted outbox payload_json: ") + ex.what());
+            outbox_repo_->mark_quarantined(entity.event_id, std::string("Corrupted outbox payload_json: ") + ex.what());
             metrics_.events_quarantined.fetch_add(1, std::memory_order_relaxed);
         }
     }
@@ -157,7 +157,8 @@ std::size_t OutboxRelayWorker::drain_once() {
     for (const auto& entity : valid_entities) {
         const std::string id_str = entity.event_id.to_string();
         if (rejected_ids.contains(id_str)) {
-            outbox_repo_->mark_quarantined(entity.event_id, "Rejected by AuditIngestionService schema/policy validation");
+            outbox_repo_->mark_quarantined(entity.event_id,
+                                           "Rejected by AuditIngestionService schema/policy validation");
             metrics_.events_quarantined.fetch_add(1, std::memory_order_relaxed);
         } else {
             outbox_repo_->mark_published(entity.event_id);

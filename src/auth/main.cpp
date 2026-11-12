@@ -149,9 +149,9 @@ int run_service() {
         token_mgr = std::make_shared<securecloud::auth::service::TokenManager>(
             token_signer, refresh_token_repo, session_repo, device_repo, audit_publisher,
             securecloud::auth::service::TokenManagerConfig{}, pool.get());
-        mfa_mgr = std::make_shared<securecloud::auth::service::MfaManager>(
-            mfa_repo, session_repo, user_repo, authenticator, totp_engine, secret_protector, audit_publisher,
-            pool.get());
+        mfa_mgr = std::make_shared<securecloud::auth::service::MfaManager>(mfa_repo, session_repo, user_repo,
+                                                                           authenticator, totp_engine, secret_protector,
+                                                                           audit_publisher, pool.get());
         device_mgr = std::make_shared<securecloud::auth::service::DeviceManager>(
             device_repo, public_key_repo, session_mgr, audit_publisher,
             securecloud::auth::service::DeviceManager::kDefaultPairingTtl, pool.get());

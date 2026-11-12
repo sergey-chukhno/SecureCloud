@@ -155,13 +155,13 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
 
         if (audit_publisher_) {
             if (initial_status == domain::DeviceStatus::PendingAuthorization) {
-                audit_publisher_->publish_in_tx(domain::AuditEvent::device_enrolled(user_id, device_id, false, client_ip),
-                                                tx);
+                audit_publisher_->publish_in_tx(
+                    domain::AuditEvent::device_enrolled(user_id, device_id, false, client_ip), tx);
                 audit_publisher_->publish_in_tx(
                     domain::AuditEvent::device_pairing_initiated(user_id, device_id, client_ip), tx);
             } else {
-                audit_publisher_->publish_in_tx(domain::AuditEvent::device_enrolled(user_id, device_id, true, client_ip),
-                                                tx);
+                audit_publisher_->publish_in_tx(
+                    domain::AuditEvent::device_enrolled(user_id, device_id, true, client_ip), tx);
                 audit_publisher_->publish_in_tx(domain::AuditEvent::device_authorized(user_id, device_id, client_ip),
                                                 tx);
             }
@@ -319,8 +319,8 @@ DeviceAuthorizationResult DeviceManager::authorize_device(const domain::Uuid& us
                 pqxx::work tx(*conn);
                 device_repo_->authorize_device(device_id, now, tx);
                 if (audit_publisher_) {
-                    audit_publisher_->publish_in_tx(domain::AuditEvent::device_authorized(user_id, device_id, client_ip),
-                                                    tx);
+                    audit_publisher_->publish_in_tx(
+                        domain::AuditEvent::device_authorized(user_id, device_id, client_ip), tx);
                 }
                 tx.commit();
             } else {
@@ -484,7 +484,8 @@ DeviceRevocationResult DeviceManager::revoke_device(const domain::Uuid& user_id,
         pqxx::work tx(*conn);
 
         device_repo_->revoke_device(device_id, effective_reason, now, tx);
-        const auto session_rev_res = session_manager_->revoke_all_device_sessions_in_tx(device_id, effective_reason, tx);
+        const auto session_rev_res =
+            session_manager_->revoke_all_device_sessions_in_tx(device_id, effective_reason, tx);
         if (!session_rev_res.is_success()) {
             throw std::runtime_error("Failed to revoke device sessions atomically: " +
                                      session_rev_res.diagnostic_message);
