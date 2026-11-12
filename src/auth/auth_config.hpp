@@ -10,29 +10,30 @@
 #include <string>
 
 namespace securecloud::auth::db {
-class PostgresConnectionPool;
+    class PostgresConnectionPool;
 }
 
 namespace securecloud::auth {
 
-/// Typed configuration model for Auth service.
-/// Holds common service settings and PostgreSQL connection configuration.
-/// Strictly excludes Files/Messaging/Audit credentials.
-struct AuthConfig {
-    common::configuration::CommonServiceConfig common;
+    /// Typed configuration model for Auth service.
+    /// Holds common service settings, PostgreSQL connection configuration, and producer instance identity.
+    /// Strictly excludes Files/Messaging/Audit credentials.
+    struct AuthConfig {
+        common::configuration::CommonServiceConfig common;
 
-    std::string db_host{"postgres"};
-    uint16_t db_port{5432};
-    std::string db_name{"securecloud_auth"};
-    std::string db_user{"auth_user"};
-    common::configuration::SecretString db_password;
+        std::string db_host{"postgres"};
+        uint16_t db_port{5432};
+        std::string db_name{"securecloud_auth"};
+        std::string db_user{"auth_user"};
+        common::configuration::SecretString db_password;
+        std::string producer_instance{"auth-1"};
 
-    /// Loads and validates Auth configuration. Fails closed if db_password is missing or empty.
-    static AuthConfig load(const common::configuration::ConfigurationSource& source,
-                           common::configuration::ValidationResult& out_errors);
+        /// Loads and validates Auth configuration. Fails closed if db_password is missing or empty.
+        static AuthConfig load(const common::configuration::ConfigurationSource& source,
+                               common::configuration::ValidationResult& out_errors);
 
-    /// Creates and configures a shared PostgreSQL connection pool from current settings.
-    [[nodiscard]] std::shared_ptr<db::PostgresConnectionPool> create_database_pool() const;
-};
+        /// Creates and configures a shared PostgreSQL connection pool from current settings.
+        [[nodiscard]] std::shared_ptr<db::PostgresConnectionPool> create_database_pool() const;
+    };
 
 } // namespace securecloud::auth

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cctype>
 #include <openssl/rand.h>
+#include <pqxx/pqxx>
 #include <stdexcept>
 
 namespace securecloud::auth::service {
@@ -21,10 +22,11 @@ constexpr std::size_t kPairingCodeLength = 8;
 DeviceManager::DeviceManager(std::shared_ptr<repository::IDeviceRepository> device_repo,
                              std::shared_ptr<repository::IDevicePublicKeyRepository> public_key_repo,
                              std::shared_ptr<ISessionManager> session_manager,
-                             std::shared_ptr<IAuditEventPublisher> audit_publisher, std::chrono::seconds pairing_ttl)
+                             std::shared_ptr<IAuditEventPublisher> audit_publisher, std::chrono::seconds pairing_ttl,
+                             db::PostgresConnectionPool* pool)
     : device_repo_(std::move(device_repo)), public_key_repo_(std::move(public_key_repo)),
       session_manager_(std::move(session_manager)), audit_publisher_(std::move(audit_publisher)),
-      pairing_ttl_(pairing_ttl) {
+      pairing_ttl_(pairing_ttl), pool_(pool) {
     if (!device_repo_) {
         throw std::invalid_argument("DeviceManager requires non-null IDeviceRepository");
     }
@@ -89,7 +91,6 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
 
     const auto device_id = domain::Uuid::generate_v7();
 
-    // 3. Persist Device Entity
     domain::DeviceEntity device{
         .device_id = device_id,
         .user_id = user_id,
@@ -101,9 +102,7 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
         .created_at = now,
         .updated_at = now,
     };
-    device_repo_->register_device(device);
 
-    // 4. Persist Public Key Directory
     domain::DevicePublicKeyEntity id_key_entity{
         .key_id = domain::Uuid::generate_v7(),
         .device_id = device_id,
@@ -114,7 +113,6 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
         .revoked_at = std::nullopt,
         .replaced_by_key_id = std::nullopt,
     };
-    public_key_repo_->store_public_key(id_key_entity);
 
     domain::DevicePublicKeyEntity spk_entity{
         .key_id = domain::Uuid::generate_v7(),
@@ -127,10 +125,11 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
         .replaced_by_key_id = std::nullopt,
         .signature = std::vector<uint8_t>(signature.begin(), signature.end()),
     };
-    public_key_repo_->store_public_key(spk_entity);
 
+    std::vector<domain::DevicePublicKeyEntity> otk_entities;
+    otk_entities.reserve(one_time_prekeys.size());
     for (const auto& otk : one_time_prekeys) {
-        domain::DevicePublicKeyEntity otk_entity{
+        otk_entities.push_back(domain::DevicePublicKeyEntity{
             .key_id = domain::Uuid::generate_v7(),
             .device_id = device_id,
             .key_type = domain::KeyType::OneTimePrekey,
@@ -139,11 +138,56 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
             .created_at = now,
             .revoked_at = std::nullopt,
             .replaced_by_key_id = std::nullopt,
-        };
-        public_key_repo_->store_public_key(otk_entity);
+        });
     }
 
-    // 5. Handle Pending vs Active Return
+    // 3. Category A: Persist Device, Public Keys, and Outbox Audit Events atomically
+    if (pool_ != nullptr) {
+        auto conn = pool_->acquire();
+        pqxx::work tx(*conn);
+
+        device_repo_->register_device(device, tx);
+        public_key_repo_->store_public_key(id_key_entity, tx);
+        public_key_repo_->store_public_key(spk_entity, tx);
+        for (const auto& otk_entity : otk_entities) {
+            public_key_repo_->store_public_key(otk_entity, tx);
+        }
+
+        if (audit_publisher_) {
+            if (initial_status == domain::DeviceStatus::PendingAuthorization) {
+                audit_publisher_->publish_in_tx(domain::AuditEvent::device_enrolled(user_id, device_id, false, client_ip),
+                                                tx);
+                audit_publisher_->publish_in_tx(
+                    domain::AuditEvent::device_pairing_initiated(user_id, device_id, client_ip), tx);
+            } else {
+                audit_publisher_->publish_in_tx(domain::AuditEvent::device_enrolled(user_id, device_id, true, client_ip),
+                                                tx);
+                audit_publisher_->publish_in_tx(domain::AuditEvent::device_authorized(user_id, device_id, client_ip),
+                                                tx);
+            }
+        }
+
+        tx.commit();
+    } else {
+        device_repo_->register_device(device);
+        public_key_repo_->store_public_key(id_key_entity);
+        public_key_repo_->store_public_key(spk_entity);
+        for (const auto& otk_entity : otk_entities) {
+            public_key_repo_->store_public_key(otk_entity);
+        }
+
+        if (audit_publisher_) {
+            if (initial_status == domain::DeviceStatus::PendingAuthorization) {
+                audit_publisher_->publish(domain::AuditEvent::device_enrolled(user_id, device_id, false, client_ip));
+                audit_publisher_->publish(domain::AuditEvent::device_pairing_initiated(user_id, device_id, client_ip));
+            } else {
+                audit_publisher_->publish(domain::AuditEvent::device_enrolled(user_id, device_id, true, client_ip));
+                audit_publisher_->publish(domain::AuditEvent::device_authorized(user_id, device_id, client_ip));
+            }
+        }
+    }
+
+    // 4. Handle Pending vs Active Return
     if (initial_status == domain::DeviceStatus::PendingAuthorization) {
         const std::string raw_code = generate_pairing_code_internal();
         const std::string formatted_code = raw_code.substr(0, 4) + "-" + raw_code.substr(4, 4);
@@ -163,11 +207,6 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
             };
         }
 
-        if (audit_publisher_) {
-            audit_publisher_->publish(domain::AuditEvent::device_enrolled(user_id, device_id, false, client_ip));
-            audit_publisher_->publish(domain::AuditEvent::device_pairing_initiated(user_id, device_id, client_ip));
-        }
-
         return DeviceEnrollmentResult{
             .success = true,
             .device_id = device_id,
@@ -175,11 +214,6 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
             .pairing_code = formatted_code,
             .pairing_code_expires_at = expires_at,
         };
-    }
-
-    if (audit_publisher_) {
-        audit_publisher_->publish(domain::AuditEvent::device_enrolled(user_id, device_id, true, client_ip));
-        audit_publisher_->publish(domain::AuditEvent::device_authorized(user_id, device_id, client_ip));
     }
 
     return DeviceEnrollmentResult{
@@ -221,6 +255,7 @@ std::optional<DevicePairingChallenge> DeviceManager::initiate_device_pairing(con
         pairing_challenges_[pending_device_id] = challenge;
     }
 
+    // Category B: Autonomous outbox audit commit for in-memory pairing challenge refresh
     if (audit_publisher_) {
         audit_publisher_->publish(domain::AuditEvent::device_pairing_initiated(user_id, pending_device_id, client_ip));
     }
@@ -278,17 +313,28 @@ DeviceAuthorizationResult DeviceManager::authorize_device(const domain::Uuid& us
         }
 
         try {
-            device_repo_->authorize_device(device_id, now);
+            if (pool_ != nullptr) {
+                // Category A: Atomic device authorization + outbox staging
+                auto conn = pool_->acquire();
+                pqxx::work tx(*conn);
+                device_repo_->authorize_device(device_id, now, tx);
+                if (audit_publisher_) {
+                    audit_publisher_->publish_in_tx(domain::AuditEvent::device_authorized(user_id, device_id, client_ip),
+                                                    tx);
+                }
+                tx.commit();
+            } else {
+                device_repo_->authorize_device(device_id, now);
+                if (audit_publisher_) {
+                    audit_publisher_->publish(domain::AuditEvent::device_authorized(user_id, device_id, client_ip));
+                }
+            }
         } catch (const repository::RepositoryException& ex) {
             return DeviceAuthorizationResult{
                 .success = false,
                 .status = domain::DeviceStatus::Revoked,
                 .error_message = ex.what(),
             };
-        }
-
-        if (audit_publisher_) {
-            audit_publisher_->publish(domain::AuditEvent::device_authorized(user_id, device_id, client_ip));
         }
 
         return DeviceAuthorizationResult{
@@ -299,63 +345,84 @@ DeviceAuthorizationResult DeviceManager::authorize_device(const domain::Uuid& us
     }
 
     // 2. Cross-Device Pairing Code Verification
-    std::lock_guard<std::mutex> lock(challenge_mutex_);
-    auto it = pairing_challenges_.find(device_id);
-    if (it == pairing_challenges_.end() || it->second.is_consumed) {
-        return DeviceAuthorizationResult{
-            .success = false,
-            .error_message = "Pairing challenge not found or already consumed",
-        };
-    }
-
-    auto& challenge = it->second;
-
-    // Check expiration
-    if (now > challenge.expires_at) {
-        return DeviceAuthorizationResult{
-            .success = false,
-            .error_message = "Pairing challenge has expired",
-        };
-    }
-
-    // Check lockout
-    if (challenge.is_locked_out || challenge.failed_attempts >= kMaxFailedPairingAttempts) {
-        challenge.is_locked_out = true;
-        return DeviceAuthorizationResult{
-            .success = false,
-            .error_message = "Pairing challenge locked out due to too many failed attempts",
-            .is_locked_out = true,
-        };
-    }
-
-    // Verify code
-    const std::string submitted_normalized = normalize_code(pairing_code);
-    if (submitted_normalized != challenge.pairing_code) {
-        challenge.failed_attempts++;
-        if (challenge.failed_attempts >= kMaxFailedPairingAttempts) {
-            challenge.is_locked_out = true;
+    {
+        std::lock_guard<std::mutex> lock(challenge_mutex_);
+        auto it = pairing_challenges_.find(device_id);
+        if (it == pairing_challenges_.end() || it->second.is_consumed) {
+            return DeviceAuthorizationResult{
+                .success = false,
+                .error_message = "Pairing challenge not found or already consumed",
+            };
         }
-        return DeviceAuthorizationResult{
-            .success = false,
-            .error_message = "Invalid pairing code",
-            .is_locked_out = challenge.is_locked_out,
-        };
+
+        auto& challenge = it->second;
+
+        // Check expiration
+        if (now > challenge.expires_at) {
+            return DeviceAuthorizationResult{
+                .success = false,
+                .error_message = "Pairing challenge has expired",
+            };
+        }
+
+        // Check lockout
+        if (challenge.is_locked_out || challenge.failed_attempts >= kMaxFailedPairingAttempts) {
+            challenge.is_locked_out = true;
+            return DeviceAuthorizationResult{
+                .success = false,
+                .error_message = "Pairing challenge locked out due to too many failed attempts",
+                .is_locked_out = true,
+            };
+        }
+
+        // Verify code
+        const std::string submitted_normalized = normalize_code(pairing_code);
+        if (submitted_normalized != challenge.pairing_code) {
+            challenge.failed_attempts++;
+            if (challenge.failed_attempts >= kMaxFailedPairingAttempts) {
+                challenge.is_locked_out = true;
+            }
+            return DeviceAuthorizationResult{
+                .success = false,
+                .error_message = "Invalid pairing code",
+                .is_locked_out = challenge.is_locked_out,
+            };
+        }
+
+        // Mark consumed optimistically prior to releasing lock for DB transaction
+        challenge.is_consumed = true;
     }
 
-    // Code matched!
-    challenge.is_consumed = true;
     try {
-        device_repo_->authorize_device(device_id, now);
+        if (pool_ != nullptr) {
+            // Category A: Atomic device authorization + outbox staging
+            auto conn = pool_->acquire();
+            pqxx::work tx(*conn);
+            device_repo_->authorize_device(device_id, now, tx);
+            if (audit_publisher_) {
+                audit_publisher_->publish_in_tx(domain::AuditEvent::device_authorized(user_id, device_id, client_ip),
+                                                tx);
+            }
+            tx.commit();
+        } else {
+            device_repo_->authorize_device(device_id, now);
+            if (audit_publisher_) {
+                audit_publisher_->publish(domain::AuditEvent::device_authorized(user_id, device_id, client_ip));
+            }
+        }
     } catch (const repository::RepositoryException& ex) {
         return DeviceAuthorizationResult{
             .success = false,
             .status = domain::DeviceStatus::Revoked,
             .error_message = ex.what(),
         };
-    }
-
-    if (audit_publisher_) {
-        audit_publisher_->publish(domain::AuditEvent::device_authorized(user_id, device_id, client_ip));
+    } catch (...) {
+        std::lock_guard<std::mutex> lock(challenge_mutex_);
+        auto it = pairing_challenges_.find(device_id);
+        if (it != pairing_challenges_.end()) {
+            it->second.is_consumed = false;
+        }
+        throw;
     }
 
     return DeviceAuthorizationResult{
@@ -411,24 +478,40 @@ DeviceRevocationResult DeviceManager::revoke_device(const domain::Uuid& user_id,
     const auto now = std::chrono::system_clock::now();
     const std::string effective_reason = reason.empty() ? "Device revoked by user" : std::string(reason);
 
-    // 5. Update device repository status to Revoked
-    device_repo_->revoke_device(device_id, effective_reason, now);
+    // 5-7. Category A: Atomically revoke device, cascade sessions & keys, and stage outbox audit event
+    if (pool_ != nullptr) {
+        auto conn = pool_->acquire();
+        pqxx::work tx(*conn);
 
-    // 6. Cascade revocation to active sessions and refresh tokens
-    session_manager_->revoke_all_device_sessions(device_id, effective_reason);
+        device_repo_->revoke_device(device_id, effective_reason, now, tx);
+        const auto session_rev_res = session_manager_->revoke_all_device_sessions_in_tx(device_id, effective_reason, tx);
+        if (!session_rev_res.is_success()) {
+            throw std::runtime_error("Failed to revoke device sessions atomically: " +
+                                     session_rev_res.diagnostic_message);
+        }
+        public_key_repo_->revoke_all_device_keys(device_id, now, tx);
 
-    // 7. Revoke all active public cryptographic keys bound to this device
-    public_key_repo_->revoke_all_device_keys(device_id, now);
+        if (audit_publisher_) {
+            audit_publisher_->publish_in_tx(
+                domain::AuditEvent::device_revoked(user_id, device_id, effective_reason, client_ip), tx);
+        }
+
+        tx.commit();
+    } else {
+        device_repo_->revoke_device(device_id, effective_reason, now);
+        session_manager_->revoke_all_device_sessions(device_id, effective_reason);
+        public_key_repo_->revoke_all_device_keys(device_id, now);
+
+        if (audit_publisher_) {
+            audit_publisher_->publish(
+                domain::AuditEvent::device_revoked(user_id, device_id, effective_reason, client_ip));
+        }
+    }
 
     // 8. Evict any pending pairing challenges for this device
     {
         std::lock_guard<std::mutex> lock(challenge_mutex_);
         pairing_challenges_.erase(device_id);
-    }
-
-    // 9. Emit audit event
-    if (audit_publisher_) {
-        audit_publisher_->publish(domain::AuditEvent::device_revoked(user_id, device_id, effective_reason, client_ip));
     }
 
     return DeviceRevocationResult{

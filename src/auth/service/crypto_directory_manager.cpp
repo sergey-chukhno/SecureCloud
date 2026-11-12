@@ -6,6 +6,7 @@
 #include "auth/domain/audit_event.hpp"
 
 #include <algorithm>
+#include <pqxx/pqxx>
 #include <stdexcept>
 #include <utility>
 
@@ -13,9 +14,10 @@ namespace securecloud::auth::service {
 
 CryptoDirectoryManager::CryptoDirectoryManager(std::shared_ptr<repository::IDeviceRepository> device_repo,
                                                std::shared_ptr<repository::IDevicePublicKeyRepository> public_key_repo,
-                                               std::shared_ptr<IAuditEventPublisher> audit_publisher)
+                                               std::shared_ptr<IAuditEventPublisher> audit_publisher,
+                                               db::PostgresConnectionPool* pool)
     : device_repo_(std::move(device_repo)), public_key_repo_(std::move(public_key_repo)),
-      audit_publisher_(std::move(audit_publisher)) {
+      audit_publisher_(std::move(audit_publisher)), pool_(pool) {
     if (!device_repo_) {
         throw std::invalid_argument("CryptoDirectoryManager requires non-null IDeviceRepository");
     }
@@ -181,10 +183,8 @@ UpdateCryptoPrekeysResult CryptoDirectoryManager::update_crypto_prekeys(
         return UpdateCryptoPrekeysResult::permission_denied("Device is not active");
     }
 
-    bool signed_prekey_rotated = false;
-    int32_t one_time_prekeys_added = 0;
-
-    // Handle Signed Prekey rotation
+    // Validate cryptographic material prior to opening a database write transaction
+    std::optional<domain::DevicePublicKeyEntity> new_spk_entity;
     if (!new_signed_prekey.empty()) {
         if (new_signature.empty()) {
             return UpdateCryptoPrekeysResult::invalid_argument("Signed prekey requires accompanying signature");
@@ -214,8 +214,8 @@ UpdateCryptoPrekeysResult CryptoDirectoryManager::update_crypto_prekeys(
                                                                sig_err);
         }
 
-        auto now = std::chrono::system_clock::now();
-        domain::DevicePublicKeyEntity new_spk_entity{
+        const auto now = std::chrono::system_clock::now();
+        new_spk_entity = domain::DevicePublicKeyEntity{
             .key_id = domain::Uuid::generate_v7(),
             .device_id = target_device_id,
             .key_type = domain::KeyType::SignedPrekey,
@@ -226,61 +226,88 @@ UpdateCryptoPrekeysResult CryptoDirectoryManager::update_crypto_prekeys(
             .replaced_by_key_id = std::nullopt,
             .signature = std::vector<uint8_t>(new_signature.begin(), new_signature.end()),
         };
-
-        try {
-            auto current_spk_opt = public_key_repo_->find_active_signed_prekey(target_device_id);
-            if (current_spk_opt) {
-                public_key_repo_->replace_key(current_spk_opt->key_id, new_spk_entity);
-            } else {
-                public_key_repo_->store_public_key(new_spk_entity);
-            }
-        } catch (const std::exception& ex) {
-            return UpdateCryptoPrekeysResult::internal_error(std::string("Repository error storing signed prekey: ") +
-                                                             ex.what());
-        }
-
-        signed_prekey_rotated = true;
-        if (audit_publisher_) {
-            audit_publisher_->publish(
-                domain::AuditEvent::signed_prekey_rotated(target_dev.user_id, target_device_id, client_ip));
-        }
     }
 
-    // Handle One-Time Prekeys replenishment
     if (!new_one_time_prekeys.empty()) {
         std::string val_err;
         if (!crypto::DeviceKeyValidator::validate_one_time_prekeys(new_one_time_prekeys, &val_err)) {
             return UpdateCryptoPrekeysResult::invalid_argument("Invalid one-time prekeys: " + val_err);
         }
-
-        try {
-            public_key_repo_->store_one_time_prekeys(target_device_id, new_one_time_prekeys);
-        } catch (const std::exception& ex) {
-            return UpdateCryptoPrekeysResult::internal_error(
-                std::string("Repository error storing one-time prekeys: ") + ex.what());
-        }
-
-        one_time_prekeys_added = static_cast<int32_t>(new_one_time_prekeys.size());
-
-        int32_t current_active_otk = 0;
-        try {
-            current_active_otk = public_key_repo_->count_active_one_time_prekeys(target_device_id);
-        } catch (const std::exception& ex) {
-            return UpdateCryptoPrekeysResult::internal_error(
-                std::string("Repository error counting one-time prekeys: ") + ex.what());
-        }
-
-        if (audit_publisher_) {
-            audit_publisher_->publish(domain::AuditEvent::prekeys_updated(target_dev.user_id, target_device_id,
-                                                                          current_active_otk, client_ip));
-        }
     }
 
+    bool signed_prekey_rotated = false;
+    int32_t one_time_prekeys_added = 0;
     int32_t total_active_otk = 0;
+
     try {
-        total_active_otk = public_key_repo_->count_active_one_time_prekeys(target_device_id);
+        if (pool_ != nullptr) {
+            // Category A: Atomic PostgreSQL transaction committing prekey updates + outbox events together
+            auto conn = pool_->acquire();
+            pqxx::work tx(*conn);
+
+            if (new_spk_entity.has_value()) {
+                auto current_spk_opt = public_key_repo_->find_active_signed_prekey(target_device_id, tx);
+                if (current_spk_opt) {
+                    public_key_repo_->replace_key(current_spk_opt->key_id, *new_spk_entity, tx);
+                } else {
+                    public_key_repo_->store_public_key(*new_spk_entity, tx);
+                }
+                signed_prekey_rotated = true;
+
+                if (audit_publisher_) {
+                    audit_publisher_->publish_in_tx(
+                        domain::AuditEvent::signed_prekey_rotated(target_dev.user_id, target_device_id, client_ip), tx);
+                }
+            }
+
+            if (!new_one_time_prekeys.empty()) {
+                public_key_repo_->store_one_time_prekeys(target_device_id, new_one_time_prekeys, tx);
+                one_time_prekeys_added = static_cast<int32_t>(new_one_time_prekeys.size());
+                total_active_otk = public_key_repo_->count_active_one_time_prekeys(target_device_id, tx);
+
+                if (audit_publisher_) {
+                    audit_publisher_->publish_in_tx(
+                        domain::AuditEvent::prekeys_updated(target_dev.user_id, target_device_id, total_active_otk,
+                                                            client_ip),
+                        tx);
+                }
+            } else {
+                total_active_otk = public_key_repo_->count_active_one_time_prekeys(target_device_id, tx);
+            }
+
+            tx.commit();
+        } else {
+            // Fallback for mock-backed unit tests without a PostgreSQL connection pool
+            if (new_spk_entity.has_value()) {
+                auto current_spk_opt = public_key_repo_->find_active_signed_prekey(target_device_id);
+                if (current_spk_opt) {
+                    public_key_repo_->replace_key(current_spk_opt->key_id, *new_spk_entity);
+                } else {
+                    public_key_repo_->store_public_key(*new_spk_entity);
+                }
+                signed_prekey_rotated = true;
+
+                if (audit_publisher_) {
+                    audit_publisher_->publish(
+                        domain::AuditEvent::signed_prekey_rotated(target_dev.user_id, target_device_id, client_ip));
+                }
+            }
+
+            if (!new_one_time_prekeys.empty()) {
+                public_key_repo_->store_one_time_prekeys(target_device_id, new_one_time_prekeys);
+                one_time_prekeys_added = static_cast<int32_t>(new_one_time_prekeys.size());
+                total_active_otk = public_key_repo_->count_active_one_time_prekeys(target_device_id);
+
+                if (audit_publisher_) {
+                    audit_publisher_->publish(domain::AuditEvent::prekeys_updated(target_dev.user_id, target_device_id,
+                                                                                  total_active_otk, client_ip));
+                }
+            } else {
+                total_active_otk = public_key_repo_->count_active_one_time_prekeys(target_device_id);
+            }
+        }
     } catch (const std::exception& ex) {
-        return UpdateCryptoPrekeysResult::internal_error(std::string("Repository error counting one-time prekeys: ") +
+        return UpdateCryptoPrekeysResult::internal_error(std::string("Transaction error updating prekeys: ") +
                                                          ex.what());
     }
 

@@ -63,6 +63,20 @@ AuthConfig AuthConfig::load(const common::configuration::ConfigurationSource& so
         config.db_password = common::configuration::SecretString(pass_val.value());
     }
 
+    auto instance_val = source.get("SECURECLOUD_AUTH_INSTANCE_ID");
+    if (instance_val.has_value() && !instance_val.value().empty()) {
+        auto parsed = common::configuration::ConfigParser::parse_string("SECURECLOUD_AUTH_INSTANCE_ID",
+                                                                        instance_val.value(), out_errors, false);
+        if (parsed.has_value()) {
+            config.producer_instance = parsed.value();
+        }
+    } else {
+        auto hostname_val = source.get("HOSTNAME");
+        if (hostname_val.has_value() && !hostname_val.value().empty()) {
+            config.producer_instance = hostname_val.value();
+        }
+    }
+
     return config;
 }
 

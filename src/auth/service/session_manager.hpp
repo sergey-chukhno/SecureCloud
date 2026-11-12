@@ -1,5 +1,6 @@
 #pragma once
 
+#include "db/postgres_connection_pool.hpp"
 #include "domain/entities.hpp"
 #include "domain/enums.hpp"
 #include "domain/session_result.hpp"
@@ -10,6 +11,7 @@
 #include <chrono>
 #include <memory>
 #include <optional>
+#include <pqxx/pqxx>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -111,18 +113,19 @@ class ISessionManager {
     virtual domain::SessionRevocationResult revoke_all_device_sessions(const domain::Uuid& device_id,
                                                                        std::string_view reason = "") = 0;
 
+    /// Revokes all active sessions bound to a specific device inside an existing business transaction.
+    virtual domain::SessionRevocationResult revoke_all_device_sessions_in_tx(const domain::Uuid& device_id,
+                                                                             std::string_view reason,
+                                                                             pqxx::transaction_base& tx) {
+        (void)tx;
+        return revoke_all_device_sessions(device_id, reason);
+    }
+
     /// Revokes all active sessions belonging to a specific user across all devices atomically.
     virtual domain::SessionRevocationResult revoke_all_user_sessions(const domain::Uuid& user_id,
                                                                      std::string_view reason = "") = 0;
 };
 
-/// Production implementation of ISessionManager.
-///
-/// Invariants & Rules:
-/// 1. Ownership: verifies device_id exists and device.user_id == user.user_id.
-/// 2. Active status: verifies device.device_status == DeviceStatus::Active.
-/// 3. Assurance level: session stamped with AuthenticationLevel::PrimaryOnly.
-/// 4. Durability: session persisted via ISessionRepository and device activity timestamp updated.
 class IAuditEventPublisher;
 
 /// Production implementation of ISessionManager.
@@ -132,12 +135,14 @@ class IAuditEventPublisher;
 /// 2. Active status: verifies device.device_status == DeviceStatus::Active.
 /// 3. Assurance level: session stamped with AuthenticationLevel::PrimaryOnly.
 /// 4. Durability: session persisted via ISessionRepository and device activity timestamp updated.
+/// 5. Audit Atomicity: Category A mutations enlist audit staging in the active PostgreSQL transaction.
 class SessionManager final : public ISessionManager {
   public:
     SessionManager(std::shared_ptr<repository::ISessionRepository> session_repository,
                    std::shared_ptr<repository::IDeviceRepository> device_repository,
                    std::chrono::seconds session_ttl = std::chrono::hours(24),
-                   std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr);
+                   std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr,
+                   db::PostgresConnectionPool* pool = nullptr);
     ~SessionManager() override = default;
 
     SessionManager(const SessionManager&) = delete;
@@ -162,6 +167,10 @@ class SessionManager final : public ISessionManager {
     domain::SessionRevocationResult revoke_all_device_sessions(const domain::Uuid& device_id,
                                                                std::string_view reason = "") override;
 
+    domain::SessionRevocationResult revoke_all_device_sessions_in_tx(const domain::Uuid& device_id,
+                                                                     std::string_view reason,
+                                                                     pqxx::transaction_base& tx) override;
+
     domain::SessionRevocationResult revoke_all_user_sessions(const domain::Uuid& user_id,
                                                              std::string_view reason = "") override;
 
@@ -172,6 +181,7 @@ class SessionManager final : public ISessionManager {
     std::shared_ptr<repository::IDeviceRepository> device_repo_;
     std::chrono::seconds session_ttl_;
     std::shared_ptr<IAuditEventPublisher> audit_publisher_;
+    db::PostgresConnectionPool* pool_{nullptr};
 };
 
 } // namespace securecloud::auth::service

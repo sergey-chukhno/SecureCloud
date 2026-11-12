@@ -2,6 +2,7 @@
 
 #include "auth/crypto/mfa_secret_protector.hpp"
 #include "auth/crypto/totp_engine.hpp"
+#include "auth/db/postgres_connection_pool.hpp"
 #include "auth/domain/entities.hpp"
 #include "auth/domain/enums.hpp"
 #include "auth/domain/mfa_result.hpp"
@@ -74,7 +75,8 @@ class IMfaManager {
  *
  * Implements RFC 6238 TOTP lifecycle, anti-replay time step tracking,
  * 3-attempt brute-force challenge lockout, disaster recovery code fallbacks,
- * and session assurance level promotion to AuthenticationLevel::MfaVerified.
+ * session assurance level promotion to AuthenticationLevel::MfaVerified,
+ * and atomic Transactional Outbox audit event staging.
  */
 class MfaManager : public IMfaManager {
   public:
@@ -85,7 +87,7 @@ class MfaManager : public IMfaManager {
                std::shared_ptr<repository::IUserRepository> user_repository,
                std::shared_ptr<IMfaAuthenticator> authenticator, std::shared_ptr<crypto::TotpEngine> totp_engine,
                std::shared_ptr<crypto::MfaSecretProtector> secret_protector,
-               std::shared_ptr<IAuditEventPublisher> audit_publisher);
+               std::shared_ptr<IAuditEventPublisher> audit_publisher, db::PostgresConnectionPool* pool = nullptr);
 
     [[nodiscard]] bool is_mfa_enabled_for_user(const domain::Uuid& user_id) override;
 
@@ -116,6 +118,7 @@ class MfaManager : public IMfaManager {
     std::shared_ptr<crypto::TotpEngine> totp_engine_;
     std::shared_ptr<crypto::MfaSecretProtector> secret_protector_;
     std::shared_ptr<IAuditEventPublisher> audit_publisher_;
+    db::PostgresConnectionPool* pool_{nullptr};
 
     // Anti-replay time step tracking: user_id -> last_used_step
     mutable std::mutex replay_mutex_;

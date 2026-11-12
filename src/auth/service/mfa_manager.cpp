@@ -2,9 +2,11 @@
 
 #include "auth/crypto/base32.hpp"
 #include "auth/crypto/recovery_code_generator.hpp"
+#include "auth/domain/audit_event.hpp"
 
 #include <chrono>
 #include <openssl/crypto.h>
+#include <pqxx/pqxx>
 #include <stdexcept>
 
 namespace securecloud::auth::service {
@@ -15,11 +17,11 @@ MfaManager::MfaManager(std::shared_ptr<repository::IMfaRepository> mfa_repositor
                        std::shared_ptr<IMfaAuthenticator> authenticator,
                        std::shared_ptr<crypto::TotpEngine> totp_engine,
                        std::shared_ptr<crypto::MfaSecretProtector> secret_protector,
-                       std::shared_ptr<IAuditEventPublisher> audit_publisher)
+                       std::shared_ptr<IAuditEventPublisher> audit_publisher, db::PostgresConnectionPool* pool)
     : mfa_repository_(std::move(mfa_repository)), session_repository_(std::move(session_repository)),
       user_repository_(std::move(user_repository)), authenticator_(std::move(authenticator)),
       totp_engine_(std::move(totp_engine)), secret_protector_(std::move(secret_protector)),
-      audit_publisher_(std::move(audit_publisher)) {
+      audit_publisher_(std::move(audit_publisher)), pool_(pool) {
     if (!mfa_repository_) {
         throw std::invalid_argument("MfaManager: mfa_repository cannot be null");
     }
@@ -79,8 +81,21 @@ domain::MfaEnrollmentInitiation MfaManager::initiate_enrollment(const domain::Uu
     config.created_at = std::chrono::system_clock::now();
     config.version = 1;
 
-    mfa_repository_->store_mfa_configuration(config);
-    audit_publisher_->publish(domain::AuditEvent::mfa_enrollment_initiated(user_id));
+    try {
+        if (pool_ != nullptr) {
+            auto conn = pool_->acquire();
+            pqxx::work tx(*conn);
+            mfa_repository_->store_mfa_configuration(config, tx);
+            audit_publisher_->publish_in_tx(domain::AuditEvent::mfa_enrollment_initiated(user_id), tx);
+            tx.commit();
+        } else {
+            mfa_repository_->store_mfa_configuration(config);
+            audit_publisher_->publish(domain::AuditEvent::mfa_enrollment_initiated(user_id));
+        }
+    } catch (...) {
+        OPENSSL_cleanse(secret_bytes.data(), secret_bytes.size());
+        throw;
+    }
 
     // Zeroize plaintext secret from memory
     OPENSSL_cleanse(secret_bytes.data(), secret_bytes.size());
@@ -117,17 +132,24 @@ MfaManager::confirm_enrollment(const domain::Uuid& user_id, std::string_view cod
             ver_res.error_message.empty() ? "Invalid TOTP verification code" : ver_res.error_message);
     }
 
-    // Activate MFA in database
-    mfa_repository_->enable_mfa(config.mfa_configuration_id, now, config.version);
+    // Category A: Atomically activate MFA and stage outbox audit event
+    if (pool_ != nullptr) {
+        auto conn = pool_->acquire();
+        pqxx::work tx(*conn);
+        mfa_repository_->enable_mfa(config.mfa_configuration_id, now, config.version, tx);
+        audit_publisher_->publish_in_tx(domain::AuditEvent::mfa_enrollment_confirmed(user_id, client_ip), tx);
+        tx.commit();
+    } else {
+        mfa_repository_->enable_mfa(config.mfa_configuration_id, now, config.version);
+        audit_publisher_->publish(domain::AuditEvent::mfa_enrollment_confirmed(user_id, client_ip));
+    }
 
-    // Generate single-use recovery codes
+    // Generate single-use recovery codes after durable commit
     auto batch = crypto::RecoveryCodeGenerator::generate_batch(crypto::RecoveryCodeGenerator::kDefaultCodeCount);
     {
         std::lock_guard<std::mutex> lock(recovery_mutex_);
         user_recovery_codes_[user_id.to_string()] = batch.hashed_codes;
     }
-
-    audit_publisher_->publish(domain::AuditEvent::mfa_enrollment_confirmed(user_id, client_ip));
 
     return domain::MfaEnrollmentConfirmationResult::success(std::move(batch.plaintext_codes));
 }
@@ -166,9 +188,19 @@ bool MfaManager::disable_mfa(const domain::Uuid& user_id, std::string_view code_
         return false;
     }
 
-    mfa_repository_->disable_mfa(config_opt->mfa_configuration_id, now, config_opt->version);
+    // Category A: Atomically disable MFA and stage outbox audit event
+    if (pool_ != nullptr) {
+        auto conn = pool_->acquire();
+        pqxx::work tx(*conn);
+        mfa_repository_->disable_mfa(config_opt->mfa_configuration_id, now, config_opt->version, tx);
+        audit_publisher_->publish_in_tx(domain::AuditEvent::mfa_disabled(user_id, client_ip), tx);
+        tx.commit();
+    } else {
+        mfa_repository_->disable_mfa(config_opt->mfa_configuration_id, now, config_opt->version);
+        audit_publisher_->publish(domain::AuditEvent::mfa_disabled(user_id, client_ip));
+    }
 
-    // Clear user's recovery codes and replay tracker
+    // Clear user's recovery codes and replay tracker after commit
     {
         std::lock_guard<std::mutex> lock(recovery_mutex_);
         user_recovery_codes_.erase(user_id.to_string());
@@ -178,7 +210,6 @@ bool MfaManager::disable_mfa(const domain::Uuid& user_id, std::string_view code_
         last_used_time_steps_.erase(user_id.to_string());
     }
 
-    audit_publisher_->publish(domain::AuditEvent::mfa_disabled(user_id, client_ip));
     return true;
 }
 
@@ -195,8 +226,17 @@ domain::MfaChallengeEntity MfaManager::create_challenge(const domain::Uuid& user
     challenge.created_at = now;
     challenge.expires_at = now + ttl;
 
-    mfa_repository_->create_challenge(challenge);
-    audit_publisher_->publish(domain::AuditEvent::mfa_challenge_created(user_id, session_id));
+    // Category A: Atomically persist MFA challenge and stage outbox audit event
+    if (pool_ != nullptr) {
+        auto conn = pool_->acquire();
+        pqxx::work tx(*conn);
+        mfa_repository_->create_challenge(challenge, tx);
+        audit_publisher_->publish_in_tx(domain::AuditEvent::mfa_challenge_created(user_id, session_id), tx);
+        tx.commit();
+    } else {
+        mfa_repository_->create_challenge(challenge);
+        audit_publisher_->publish(domain::AuditEvent::mfa_challenge_created(user_id, session_id));
+    }
 
     return challenge;
 }
@@ -222,9 +262,18 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
 
     const auto now = std::chrono::system_clock::now();
     if (challenge.challenge_status == domain::MfaChallengeStatus::Expired || now > challenge.expires_at) {
-        mfa_repository_->fail_challenge(challenge_id);
-        audit_publisher_->publish(domain::AuditEvent::mfa_challenge_failed(challenge.user_id, challenge.session_id,
-                                                                           "Challenge expired", client_ip));
+        const auto fail_event = domain::AuditEvent::mfa_challenge_failed(challenge.user_id, challenge.session_id,
+                                                                         "Challenge expired", client_ip);
+        if (pool_ != nullptr) {
+            auto conn = pool_->acquire();
+            pqxx::work tx(*conn);
+            mfa_repository_->fail_challenge(challenge_id, tx);
+            audit_publisher_->publish_in_tx(fail_event, tx);
+            tx.commit();
+        } else {
+            mfa_repository_->fail_challenge(challenge_id);
+            audit_publisher_->publish(fail_event);
+        }
         return domain::MfaChallengeVerificationResult::failure(domain::MfaChallengeVerificationStatus::ExpiredChallenge,
                                                                "Challenge has expired");
     }
@@ -237,9 +286,18 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
     }
 
     if (current_attempts > kMaxChallengeAttempts) {
-        mfa_repository_->fail_challenge(challenge_id);
-        audit_publisher_->publish(domain::AuditEvent::mfa_challenge_failed(
-            challenge.user_id, challenge.session_id, "Max verification attempts exceeded", client_ip));
+        const auto fail_event = domain::AuditEvent::mfa_challenge_failed(
+            challenge.user_id, challenge.session_id, "Max verification attempts exceeded", client_ip);
+        if (pool_ != nullptr) {
+            auto conn = pool_->acquire();
+            pqxx::work tx(*conn);
+            mfa_repository_->fail_challenge(challenge_id, tx);
+            audit_publisher_->publish_in_tx(fail_event, tx);
+            tx.commit();
+        } else {
+            mfa_repository_->fail_challenge(challenge_id);
+            audit_publisher_->publish(fail_event);
+        }
         return domain::MfaChallengeVerificationResult::failure(
             domain::MfaChallengeVerificationStatus::MaxAttemptsExceeded, "Max verification attempts exceeded");
     }
@@ -268,11 +326,23 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
             std::lock_guard<std::mutex> lock(replay_mutex_);
             auto it = last_used_time_steps_.find(challenge.user_id.to_string());
             if (it != last_used_time_steps_.end() && it->second == matched_step) {
+                const auto replay_event = domain::AuditEvent::mfa_challenge_failed(
+                    challenge.user_id, challenge.session_id, "TOTP code replay detected", client_ip);
                 if (current_attempts >= kMaxChallengeAttempts) {
-                    mfa_repository_->fail_challenge(challenge_id);
+                    if (pool_ != nullptr) {
+                        auto conn = pool_->acquire();
+                        pqxx::work tx(*conn);
+                        mfa_repository_->fail_challenge(challenge_id, tx);
+                        audit_publisher_->publish_in_tx(replay_event, tx);
+                        tx.commit();
+                    } else {
+                        mfa_repository_->fail_challenge(challenge_id);
+                        audit_publisher_->publish(replay_event);
+                    }
+                } else {
+                    // Category B: Autonomous rejection audit event
+                    audit_publisher_->publish(replay_event);
                 }
-                audit_publisher_->publish(domain::AuditEvent::mfa_challenge_failed(
-                    challenge.user_id, challenge.session_id, "TOTP code replay detected", client_ip));
                 return domain::MfaChallengeVerificationResult::failure(
                     domain::MfaChallengeVerificationStatus::InvalidCode,
                     "TOTP code replay detected; code has already been used");
@@ -297,32 +367,61 @@ domain::MfaChallengeVerificationResult MfaManager::verify_challenge(const domain
 
     if (!verified) {
         if (current_attempts >= kMaxChallengeAttempts) {
-            mfa_repository_->fail_challenge(challenge_id);
-            audit_publisher_->publish(domain::AuditEvent::mfa_challenge_failed(
-                challenge.user_id, challenge.session_id, "Max verification attempts exceeded", client_ip));
+            const auto fail_event = domain::AuditEvent::mfa_challenge_failed(
+                challenge.user_id, challenge.session_id, "Max verification attempts exceeded", client_ip);
+            if (pool_ != nullptr) {
+                auto conn = pool_->acquire();
+                pqxx::work tx(*conn);
+                mfa_repository_->fail_challenge(challenge_id, tx);
+                audit_publisher_->publish_in_tx(fail_event, tx);
+                tx.commit();
+            } else {
+                mfa_repository_->fail_challenge(challenge_id);
+                audit_publisher_->publish(fail_event);
+            }
             return domain::MfaChallengeVerificationResult::failure(
                 domain::MfaChallengeVerificationStatus::MaxAttemptsExceeded,
                 "Invalid code; max verification attempts exceeded");
         }
+        // Category B: Autonomous rejection audit event
         audit_publisher_->publish(domain::AuditEvent::mfa_challenge_failed(challenge.user_id, challenge.session_id,
                                                                            "Invalid verification code", client_ip));
         return domain::MfaChallengeVerificationResult::failure(domain::MfaChallengeVerificationStatus::InvalidCode,
                                                                "Invalid verification code");
     }
 
-    // Verification succeeded! Complete challenge in repository
-    mfa_repository_->complete_challenge(challenge_id, now);
+    // Category A: Verification succeeded! Complete challenge, promote session assurance level,
+    // and stage audit events in a single atomic PostgreSQL transaction.
+    if (pool_ != nullptr) {
+        auto conn = pool_->acquire();
+        pqxx::work tx(*conn);
 
-    // Promote session assurance level to MfaVerified
-    session_repository_->update_authentication_level(challenge.session_id, domain::AuthenticationLevel::MfaVerified);
-    session_repository_->touch_session_activity(challenge.session_id, now);
+        mfa_repository_->complete_challenge(challenge_id, now, tx);
+        session_repository_->update_authentication_level(challenge.session_id,
+                                                         domain::AuthenticationLevel::MfaVerified, tx);
+        session_repository_->touch_session_activity(challenge.session_id, now, tx);
 
-    if (is_recovery) {
+        if (is_recovery) {
+            audit_publisher_->publish_in_tx(
+                domain::AuditEvent::mfa_recovery_code_used(challenge.user_id, challenge.session_id, client_ip), tx);
+        }
+        audit_publisher_->publish_in_tx(
+            domain::AuditEvent::mfa_challenge_succeeded(challenge.user_id, challenge.session_id, client_ip), tx);
+
+        tx.commit();
+    } else {
+        mfa_repository_->complete_challenge(challenge_id, now);
+        session_repository_->update_authentication_level(challenge.session_id,
+                                                         domain::AuthenticationLevel::MfaVerified);
+        session_repository_->touch_session_activity(challenge.session_id, now);
+
+        if (is_recovery) {
+            audit_publisher_->publish(
+                domain::AuditEvent::mfa_recovery_code_used(challenge.user_id, challenge.session_id, client_ip));
+        }
         audit_publisher_->publish(
-            domain::AuditEvent::mfa_recovery_code_used(challenge.user_id, challenge.session_id, client_ip));
+            domain::AuditEvent::mfa_challenge_succeeded(challenge.user_id, challenge.session_id, client_ip));
     }
-    audit_publisher_->publish(
-        domain::AuditEvent::mfa_challenge_succeeded(challenge.user_id, challenge.session_id, client_ip));
 
     // Clear challenge attempts
     {

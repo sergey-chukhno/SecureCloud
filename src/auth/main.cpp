@@ -3,6 +3,7 @@
 #include "auth/crypto/token_crypto.hpp"
 #include "auth/crypto/totp_engine.hpp"
 #include "auth/db/postgres_connection_pool.hpp"
+#include "auth/repository/auth_outbox_repository.hpp"
 #include "auth/repository/device_public_key_repository.hpp"
 #include "auth/repository/device_repository.hpp"
 #include "auth/repository/mfa_repository.hpp"
@@ -31,6 +32,8 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
+#include <cstring>
 #include <grpcpp/grpcpp.h>
 #include <iostream>
 #include <memory>
@@ -112,9 +115,13 @@ int run_service() {
     std::shared_ptr<securecloud::auth::service::DeviceManager> device_mgr;
     std::shared_ptr<securecloud::auth::service::CryptoDirectoryManager> crypto_directory_mgr;
     std::shared_ptr<securecloud::auth::service::PrekeyManager> prekey_mgr;
-    auto audit_publisher = std::make_shared<securecloud::auth::service::AuditEventPublisher>();
+    std::shared_ptr<securecloud::auth::service::IAuditEventPublisher> audit_publisher;
 
     if (pool) {
+        auto outbox_repo = std::make_shared<securecloud::auth::repository::PostgresAuthOutboxRepository>(*pool);
+        audit_publisher = std::make_shared<securecloud::auth::service::OutboxAuditEventPublisher>(
+            outbox_repo, config.producer_instance);
+
         auto user_repo = std::make_shared<securecloud::auth::repository::PostgresUserRepository>(*pool);
         auto device_repo = std::make_shared<securecloud::auth::repository::PostgresDeviceRepository>(*pool);
         auto public_key_repo =
@@ -138,17 +145,22 @@ int run_service() {
 
         verifier = std::make_shared<securecloud::auth::service::CredentialVerifier>(user_repo, hasher);
         session_mgr = std::make_shared<securecloud::auth::service::SessionManager>(
-            session_repo, device_repo, std::chrono::hours(24), audit_publisher);
+            session_repo, device_repo, std::chrono::hours(24), audit_publisher, pool.get());
         token_mgr = std::make_shared<securecloud::auth::service::TokenManager>(
-            token_signer, refresh_token_repo, session_repo, device_repo, audit_publisher);
+            token_signer, refresh_token_repo, session_repo, device_repo, audit_publisher,
+            securecloud::auth::service::TokenManagerConfig{}, pool.get());
         mfa_mgr = std::make_shared<securecloud::auth::service::MfaManager>(
-            mfa_repo, session_repo, user_repo, authenticator, totp_engine, secret_protector, audit_publisher);
-        device_mgr = std::make_shared<securecloud::auth::service::DeviceManager>(device_repo, public_key_repo,
-                                                                                 session_mgr, audit_publisher);
+            mfa_repo, session_repo, user_repo, authenticator, totp_engine, secret_protector, audit_publisher,
+            pool.get());
+        device_mgr = std::make_shared<securecloud::auth::service::DeviceManager>(
+            device_repo, public_key_repo, session_mgr, audit_publisher,
+            securecloud::auth::service::DeviceManager::kDefaultPairingTtl, pool.get());
         crypto_directory_mgr = std::make_shared<securecloud::auth::service::CryptoDirectoryManager>(
-            device_repo, public_key_repo, audit_publisher);
+            device_repo, public_key_repo, audit_publisher, pool.get());
         prekey_mgr =
             std::make_shared<securecloud::auth::service::PrekeyManager>(device_repo, public_key_repo, audit_publisher);
+    } else {
+        audit_publisher = std::make_shared<securecloud::auth::service::AuditEventPublisher>();
     }
 
     // Instantiate AuthServiceImpl wired with domain verifier, session manager, audit publisher, token manager, MFA

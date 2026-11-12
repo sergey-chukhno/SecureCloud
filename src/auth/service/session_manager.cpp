@@ -10,9 +10,10 @@ namespace securecloud::auth::service {
 
 SessionManager::SessionManager(std::shared_ptr<repository::ISessionRepository> session_repository,
                                std::shared_ptr<repository::IDeviceRepository> device_repository,
-                               std::chrono::seconds session_ttl, std::shared_ptr<IAuditEventPublisher> audit_publisher)
+                               std::chrono::seconds session_ttl, std::shared_ptr<IAuditEventPublisher> audit_publisher,
+                               db::PostgresConnectionPool* pool)
     : session_repo_(std::move(session_repository)), device_repo_(std::move(device_repository)),
-      session_ttl_(session_ttl), audit_publisher_(std::move(audit_publisher)) {
+      session_ttl_(session_ttl), audit_publisher_(std::move(audit_publisher)), pool_(pool) {
     if (!session_repo_) {
         throw std::invalid_argument("SessionManager: session_repository cannot be null");
     }
@@ -68,23 +69,22 @@ SessionEstablishmentResult SessionManager::establish_session(const domain::UserE
     session.revoked_at = std::nullopt;
 
     try {
-        session_repo_->create_session(session);
+        if (pool_ != nullptr) {
+            auto conn = pool_->acquire();
+            pqxx::work tx(*conn);
+            session_repo_->create_session(session, tx);
+            device_repo_->update_last_authenticated(device_id, now, tx);
+            tx.commit();
+        } else {
+            session_repo_->create_session(session);
+            device_repo_->update_last_authenticated(device_id, now);
+        }
+        device_opt->last_authenticated_at = now;
     } catch (const std::exception& ex) {
         return SessionEstablishmentResult::internal_error(std::string("Database error during session persistence: ") +
                                                           ex.what());
     } catch (...) {
         return SessionEstablishmentResult::internal_error("Unknown database error during session persistence");
-    }
-
-    try {
-        device_repo_->update_last_authenticated(device_id, now);
-        device_opt->last_authenticated_at = now;
-    } catch (const std::exception& ex) {
-        return SessionEstablishmentResult::internal_error(
-            std::string("Database error updating device last_authenticated timestamp: ") + ex.what());
-    } catch (...) {
-        return SessionEstablishmentResult::internal_error(
-            "Unknown database error updating device last_authenticated timestamp");
     }
 
     return SessionEstablishmentResult::success(std::move(session), std::move(*device_opt));
@@ -111,6 +111,7 @@ domain::SessionValidationResult SessionManager::validate_session(const domain::U
 
     // Lifecycle check: Revoked sessions are immediately and irreversibly rejected
     if (session.session_status == domain::SessionStatus::Revoked) {
+        // Category B: Autonomous outbox commit for rejected session attempt
         if (audit_publisher_) {
             audit_publisher_->publish(domain::AuditEvent::session_revoked_attempt(session_id));
         }
@@ -120,6 +121,7 @@ domain::SessionValidationResult SessionManager::validate_session(const domain::U
     // Lifecycle check: Expired status or wall-clock expiration exceeded
     auto now = std::chrono::system_clock::now();
     if (session.session_status == domain::SessionStatus::Expired || now >= session.expires_at) {
+        // Category B: Autonomous outbox commit for expired session attempt
         if (audit_publisher_) {
             audit_publisher_->publish(domain::AuditEvent::session_expired_attempt(session_id));
         }
@@ -205,7 +207,25 @@ domain::SessionRevocationResult SessionManager::revoke_session(const domain::Uui
     auto now = std::chrono::system_clock::now();
     bool revoked = false;
     try {
-        revoked = session_repo_->revoke_session_atomic(session_id, now);
+        if (pool_ != nullptr) {
+            // Category A: Atomic session revocation + outbox staging in single transaction
+            auto conn = pool_->acquire();
+            pqxx::work tx(*conn);
+            revoked = session_repo_->revoke_session_atomic(session_id, now, tx);
+            if (revoked && audit_publisher_) {
+                audit_publisher_->publish_in_tx(
+                    domain::AuditEvent::session_revoked(session_id, session_opt->user_id, session_opt->device_id,
+                                                        reason),
+                    tx);
+            }
+            tx.commit();
+        } else {
+            revoked = session_repo_->revoke_session_atomic(session_id, now);
+            if (revoked && audit_publisher_) {
+                audit_publisher_->publish(domain::AuditEvent::session_revoked(session_id, session_opt->user_id,
+                                                                              session_opt->device_id, reason));
+            }
+        }
     } catch (const std::exception& ex) {
         return domain::SessionRevocationResult::internal_error(std::string("Database error revoking session: ") +
                                                                ex.what());
@@ -216,11 +236,6 @@ domain::SessionRevocationResult SessionManager::revoke_session(const domain::Uui
     if (!revoked) {
         return domain::SessionRevocationResult::already_revoked("Session already revoked by concurrent operation: " +
                                                                 session_id.to_string());
-    }
-
-    if (audit_publisher_) {
-        audit_publisher_->publish(
-            domain::AuditEvent::session_revoked(session_id, session_opt->user_id, session_opt->device_id, reason));
     }
 
     return domain::SessionRevocationResult::success(1);
@@ -237,6 +252,24 @@ domain::SessionRevocationResult SessionManager::revoke_all_device_sessions(const
             std::string("Database error revoking device sessions: ") + ex.what());
     } catch (...) {
         return domain::SessionRevocationResult::internal_error("Unknown database error revoking device sessions");
+    }
+
+    return domain::SessionRevocationResult::success(count);
+}
+
+domain::SessionRevocationResult SessionManager::revoke_all_device_sessions_in_tx(const domain::Uuid& device_id,
+                                                                                 std::string_view /*reason*/,
+                                                                                 pqxx::transaction_base& tx) {
+    auto now = std::chrono::system_clock::now();
+    uint64_t count = 0;
+    try {
+        count = session_repo_->revoke_all_device_sessions_atomic(device_id, now, tx);
+    } catch (const std::exception& ex) {
+        return domain::SessionRevocationResult::internal_error(
+            std::string("Database error revoking device sessions in transaction: ") + ex.what());
+    } catch (...) {
+        return domain::SessionRevocationResult::internal_error(
+            "Unknown database error revoking device sessions in transaction");
     }
 
     return domain::SessionRevocationResult::success(count);

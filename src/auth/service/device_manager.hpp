@@ -1,5 +1,6 @@
 #pragma once
 
+#include "auth/db/postgres_connection_pool.hpp"
 #include "auth/domain/entities.hpp"
 #include "auth/domain/enums.hpp"
 #include "auth/domain/uuid.hpp"
@@ -101,7 +102,7 @@ class IDeviceManager {
 
 class ISessionManager;
 
-/// Concrete thread-safe implementation of IDeviceManager.
+/// Concrete thread-safe implementation of IDeviceManager with atomic Transactional Outbox support.
 class DeviceManager : public IDeviceManager {
   public:
     static constexpr std::chrono::seconds kDefaultPairingTtl{600}; // 10 minutes
@@ -111,7 +112,8 @@ class DeviceManager : public IDeviceManager {
                   std::shared_ptr<repository::IDevicePublicKeyRepository> public_key_repo,
                   std::shared_ptr<ISessionManager> session_manager,
                   std::shared_ptr<IAuditEventPublisher> audit_publisher,
-                  std::chrono::seconds pairing_ttl = kDefaultPairingTtl);
+                  std::chrono::seconds pairing_ttl = kDefaultPairingTtl,
+                  db::PostgresConnectionPool* pool = nullptr);
 
     DeviceEnrollmentResult enroll_device(const domain::Uuid& user_id, std::span<const uint8_t> identity_key,
                                          std::span<const uint8_t> signed_prekey, std::span<const uint8_t> signature,
@@ -143,6 +145,7 @@ class DeviceManager : public IDeviceManager {
     std::shared_ptr<ISessionManager> session_manager_;
     std::shared_ptr<IAuditEventPublisher> audit_publisher_;
     std::chrono::seconds pairing_ttl_;
+    db::PostgresConnectionPool* pool_{nullptr};
 
     std::mutex challenge_mutex_;
     std::unordered_map<domain::Uuid, DevicePairingChallenge> pairing_challenges_;
