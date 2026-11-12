@@ -1,3 +1,5 @@
+#include "auth/audit/auth_audit_client.hpp"
+#include "auth/audit/auth_outbox_relay.hpp"
 #include "auth/crypto/argon2id_hasher.hpp"
 #include "auth/crypto/mfa_secret_protector.hpp"
 #include "auth/crypto/token_crypto.hpp"
@@ -116,11 +118,24 @@ int run_service() {
     std::shared_ptr<securecloud::auth::service::CryptoDirectoryManager> crypto_directory_mgr;
     std::shared_ptr<securecloud::auth::service::PrekeyManager> prekey_mgr;
     std::shared_ptr<securecloud::auth::service::IAuditEventPublisher> audit_publisher;
+    std::unique_ptr<securecloud::auth::audit::AuthOutboxRelay> outbox_relay;
 
     if (pool) {
         auto outbox_repo = std::make_shared<securecloud::auth::repository::PostgresAuthOutboxRepository>(*pool);
         audit_publisher = std::make_shared<securecloud::auth::service::OutboxAuditEventPublisher>(
             outbox_repo, config.producer_instance);
+
+        if (config.outbox_relay_enabled) {
+            securecloud::auth::audit::AuthAuditClientConfig audit_client_cfg;
+            audit_client_cfg.target_endpoint = config.audit_endpoint;
+            audit_client_cfg.timeout = config.audit_timeout;
+            audit_client_cfg.tls_credentials = config.common.tls_credentials;
+            audit_client_cfg.expected_peer_san = config.audit_expected_peer_san;
+
+            auto audit_client = std::make_shared<securecloud::auth::audit::AuthAuditClient>(audit_client_cfg);
+            outbox_relay = std::make_unique<securecloud::auth::audit::AuthOutboxRelay>(
+                outbox_repo, std::move(audit_client), config.outbox_relay, config.producer_instance);
+        }
 
         auto user_repo = std::make_shared<securecloud::auth::repository::PostgresUserRepository>(*pool);
         auto device_repo = std::make_shared<securecloud::auth::repository::PostgresDeviceRepository>(*pool);
@@ -182,6 +197,10 @@ int run_service() {
         return 1;
     }
 
+    if (outbox_relay) {
+        outbox_relay->start();
+    }
+
     health_manager.set_live(true);
     health_manager.set_ready(true);
 
@@ -208,12 +227,18 @@ int run_service() {
     // Step 3: Destroy server instance (avoids deadlock-prone server->Wait() call after bounded Shutdown)
     server.reset();
 
-    // Step 4: Bounded database pool drain (2s)
+    // Step 4: Stop background outbox relay and perform bounded drain of remaining staged events
+    if (outbox_relay) {
+        outbox_relay->stop();
+        outbox_relay.reset();
+    }
+
+    // Step 5: Bounded database pool drain (2s)
     if (pool) {
         pool->shutdown(k_pool_drain_timeout);
     }
 
-    // Step 5: Process termination with exit code 0
+    // Step 6: Process termination with exit code 0
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Graceful shutdown completed successfully.\n";
     return 0;
 }

@@ -35,6 +35,7 @@ add_library(securecloud_auth_config STATIC
         service/auth_service_impl.cpp
         audit/auth_audit_mapper.cpp
         audit/auth_audit_client.cpp
+        audit/auth_outbox_relay.cpp
 )
 
 add_library(securecloud::auth_config ALIAS securecloud_auth_config)

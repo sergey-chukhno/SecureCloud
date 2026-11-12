@@ -3939,3 +3939,21 @@ target_compile_definitions(securecloud_auth_audit_client_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_auth_audit_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Relay & Retention Engine Unit Test Suite (AUDIT-013-T05)
+add_executable(securecloud_auth_outbox_relay_test
+        auth/auth_outbox_relay_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_relay_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_relay_test ${SECURECLOUD_TEST_PROPERTIES})
