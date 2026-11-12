@@ -198,4 +198,102 @@ void DefaultGatewayClient::set_simulated_failure(bool fail, std::string error_me
     failure_message_ = std::move(error_message);
 }
 
+application::ClientResult<application::interfaces::PairingInitiationResult>
+DefaultGatewayClient::initiate_device_pairing(const domain::DeviceId& device_id) {
+    if (simulate_failure_) {
+        return application::ClientResult<application::interfaces::PairingInitiationResult>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (device_id.empty()) {
+        return application::ClientResult<application::interfaces::PairingInitiationResult>::error(
+            application::ClientError::validation("Device ID cannot be empty for pairing initiation"));
+    }
+
+    if (simulated_pairing_result_.has_value()) {
+        return application::ClientResult<application::interfaces::PairingInitiationResult>::ok(
+            *simulated_pairing_result_);
+    }
+
+    application::interfaces::PairingInitiationResult res;
+    res.device_id = device_id;
+    res.pairing_code = simulated_pairing_code_.empty() ? "948201" : simulated_pairing_code_;
+    res.expires_at = std::chrono::system_clock::now() + std::chrono::minutes(10);
+    return application::ClientResult<application::interfaces::PairingInitiationResult>::ok(std::move(res));
+}
+
+application::ClientResult<void>
+DefaultGatewayClient::authorize_device_pairing(const domain::DeviceId& device_id, std::string_view pairing_code,
+                                              std::string_view mfa_token) {
+    if (simulate_failure_) {
+        return application::ClientResult<void>::error(application::ClientError::network(failure_message_));
+    }
+    if (device_id.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Device ID cannot be empty for pairing authorization"));
+    }
+    if (pairing_code.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Pairing code cannot be empty for pairing authorization"));
+    }
+
+    if (require_mfa_for_authorization_) {
+        if (mfa_token.empty()) {
+            return application::ClientResult<void>::error(
+                application::ClientError(application::ClientErrorCode::AuthenticationRequired,
+                                         application::ClientErrorCategory::Authentication,
+                                         "MFA verification required to authorize device pairing"));
+        }
+        if (mfa_token == "invalid" || mfa_token == "bad_token") {
+            return application::ClientResult<void>::error(
+                application::ClientError(application::ClientErrorCode::InvalidCredentials,
+                                         application::ClientErrorCategory::Authentication,
+                                         "Invalid MFA verification token"));
+        }
+    }
+
+    // Update status in simulated device lists if present
+    for (auto& [uid, devices] : simulated_user_devices_) {
+        for (auto& dev : devices) {
+            if (dev.device_id() == device_id) {
+                dev.set_status(domain::DeviceAuthorizationStatus::Authorized);
+                dev.set_trust_level(domain::DeviceTrustLevel::VerifiedOutOfBand);
+            }
+        }
+    }
+
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<std::vector<domain::Device>>
+DefaultGatewayClient::list_user_devices(const domain::UserId& user_id) {
+    if (simulate_failure_) {
+        return application::ClientResult<std::vector<domain::Device>>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (user_id.empty()) {
+        return application::ClientResult<std::vector<domain::Device>>::error(
+            application::ClientError::validation("User ID cannot be empty to list devices"));
+    }
+
+    auto it = simulated_user_devices_.find(user_id);
+    if (it != simulated_user_devices_.end()) {
+        return application::ClientResult<std::vector<domain::Device>>::ok(it->second);
+    }
+
+    return application::ClientResult<std::vector<domain::Device>>::ok({});
+}
+
+void DefaultGatewayClient::set_simulated_pairing_result(application::interfaces::PairingInitiationResult result) {
+    simulated_pairing_result_ = std::move(result);
+}
+
+void DefaultGatewayClient::set_simulated_user_devices(const domain::UserId& user_id,
+                                                     std::vector<domain::Device> devices) {
+    simulated_user_devices_[user_id] = std::move(devices);
+}
+
+void DefaultGatewayClient::set_simulated_authorization_mfa_requirement(bool require_mfa) {
+    require_mfa_for_authorization_ = require_mfa;
+}
+
 } // namespace securecloud::client::infrastructure::adapters

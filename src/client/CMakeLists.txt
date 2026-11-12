@@ -74,6 +74,7 @@ if(Qt6_FOUND)
         application/managers/messaging_manager.cpp
         application/managers/contact_manager.cpp
         application/managers/device_manager.cpp
+        application/managers/device_pairing_coordinator.cpp
         application/managers/prekey_lifecycle_coordinator.cpp
         application/managers/ratchet_session_manager.cpp
         application/managers/file_manager.cpp
