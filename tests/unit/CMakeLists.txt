@@ -4008,3 +4008,18 @@ target_link_libraries(securecloud_messaging_audit_event_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_messaging_audit_event_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging ScyllaDB Audit Outbox Repository Unit Test Suite (AUDIT-014-T02)
+add_executable(securecloud_scylla_messaging_audit_outbox_repository_test
+        messaging/scylla_messaging_audit_outbox_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_messaging_audit_outbox_repository_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud::compiler_flags
+        OpenSSL::Crypto
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_messaging_audit_outbox_repository_test ${SECURECLOUD_TEST_PROPERTIES})
