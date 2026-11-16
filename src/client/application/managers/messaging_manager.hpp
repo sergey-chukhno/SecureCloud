@@ -97,6 +97,9 @@ class MessagingManager {
                                                           const std::string& sender_display_name = "");
 
   private:
+    ClientResult<void> validate_recipients_can_receive(const domain::Conversation& conv,
+                                                       const domain::UserId& sender_user_id) const;
+
     interfaces::IGatewayClient& gateway_;
     interfaces::ILocalStore& local_store_;
     interfaces::ICryptoProvider& crypto_provider_;

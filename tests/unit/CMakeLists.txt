@@ -3725,6 +3725,12 @@ if(Qt6_FOUND)
         client/safety_number_engine_test.cpp
         client/workspace_view_model_devices_test.cpp
         client/multi_device_trust_integration_test.cpp
+        client/contact_domain_and_directory_test.cpp
+        client/contact_directory_sync_test.cpp
+        client/contact_verification_pipeline_test.cpp
+        client/identity_key_change_alert_test.cpp
+        client/workspace_view_model_contacts_test.cpp
+        client/contact_management_integration_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

@@ -75,6 +75,19 @@ std::string_view to_string(KeyVerificationStatus status) noexcept {
     return "Unknown";
 }
 
+std::optional<KeyVerificationStatus> key_verification_status_from_string(std::string_view str) noexcept {
+    if (str == "Verified") {
+        return KeyVerificationStatus::Verified;
+    }
+    if (str == "KeyChanged") {
+        return KeyVerificationStatus::KeyChanged;
+    }
+    if (str == "Unverified") {
+        return KeyVerificationStatus::Unverified;
+    }
+    return std::nullopt;
+}
+
 CryptoIdentity::CryptoIdentity(std::string identity_key, std::string fingerprint,
                                KeyVerificationStatus verification_status, std::string signed_prekey,
                                std::string signature, std::chrono::system_clock::time_point created_at)

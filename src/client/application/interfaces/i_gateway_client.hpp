@@ -4,6 +4,7 @@
 #include "domain/conversation_id.hpp"
 #include "domain/device.hpp"
 #include "domain/device_id.hpp"
+#include "domain/directory_user_entry.hpp"
 #include "domain/one_time_prekey_record.hpp"
 #include "domain/prekey_bundle.hpp"
 #include "domain/prekey_inventory_status.hpp"
@@ -84,6 +85,11 @@ class IGatewayClient {
     virtual ClientResult<std::vector<domain::Device>> list_user_devices(const domain::UserId& user_id) = 0;
 
     virtual ClientResult<void> revoke_device(const domain::DeviceId& device_id, std::string_view mfa_token = "") = 0;
+
+    virtual ClientResult<std::vector<domain::DirectoryUserEntry>> search_directory_users(std::string_view query,
+                                                                                         std::size_t limit = 20) = 0;
+
+    virtual ClientResult<domain::DirectoryUserEntry> lookup_user_identity(const domain::UserId& user_id) = 0;
 };
 
 } // namespace securecloud::client::application::interfaces

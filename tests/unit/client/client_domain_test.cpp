@@ -281,6 +281,16 @@ class MockGatewayClient final : public IGatewayClient {
     ClientResult<void> revoke_device(const DeviceId& /*device_id*/, std::string_view /*mfa_token*/) override {
         return ClientResult<void>::ok();
     }
+
+    ClientResult<std::vector<domain::DirectoryUserEntry>> search_directory_users(std::string_view /*query*/,
+                                                                                 std::size_t /*limit*/) override {
+        return ClientResult<std::vector<domain::DirectoryUserEntry>>::ok({});
+    }
+
+    ClientResult<domain::DirectoryUserEntry> lookup_user_identity(const domain::UserId& user_id) override {
+        return ClientResult<domain::DirectoryUserEntry>::ok(
+            domain::DirectoryUserEntry(user_id, "@mock", "Mock User", std::vector<uint8_t>(32, 0x01), "FP_MOCK", 1));
+    }
 };
 
 TEST(ApplicationInterfacesTest, InterfacePolymorphismAndContracts) {

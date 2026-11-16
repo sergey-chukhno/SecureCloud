@@ -192,12 +192,19 @@ ClientResult<domain::Message> MessagingManager::send_message(const domain::Conve
         return ClientResult<domain::Message>::error(ClientError::validation("Conversation ID cannot be empty"));
     }
 
+    auto conv_lookup = local_store_.get_conversation(conversation_id);
+    if (conv_lookup.is_ok()) {
+        const auto guard_res = validate_recipients_can_receive(conv_lookup.value(), sender_user_id);
+        if (guard_res.is_error()) {
+            return ClientResult<domain::Message>::error(guard_res.error());
+        }
+    }
+
     std::string ciphertext;
     if (ratchet_session_manager_ != nullptr) {
         domain::UserId peer_user_id;
-        auto conv_res = local_store_.get_conversation(conversation_id);
-        if (conv_res.is_ok()) {
-            for (const auto& p : conv_res.value().participants()) {
+        if (conv_lookup.is_ok()) {
+            for (const auto& p : conv_lookup.value().participants()) {
                 if (p != sender_user_id) {
                     peer_user_id = p;
                     break;
@@ -262,22 +269,9 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
     const auto& conv = conv_res.value();
 
     // 2. ADR-008 & Security Guard: Inspect all recipient participants
-    for (const auto& participant_id : conv.participants()) {
-        if (participant_id == sender_user_id) {
-            continue;
-        }
-        auto contact_res = local_store_.get_contact(participant_id);
-        if (contact_res.is_ok()) {
-            const auto& contact = contact_res.value();
-            if (contact.verification_status() == domain::KeyVerificationStatus::KeyChanged) {
-                return ClientResult<domain::Message>::error(
-                    ClientError::validation("Outbound messaging suspended: recipient identity key changed (ADR-008)"));
-            }
-            if (contact.is_blocked()) {
-                return ClientResult<domain::Message>::error(
-                    ClientError::validation("Cannot send message: recipient is blocked"));
-            }
-        }
+    const auto guard_res = validate_recipients_can_receive(conv, sender_user_id);
+    if (guard_res.is_error()) {
+        return ClientResult<domain::Message>::error(guard_res.error());
     }
 
     // If RatchetSessionManager is active, advance Double Ratchet sessions for participants
@@ -326,6 +320,14 @@ ClientResult<domain::Message> MessagingManager::retry_failed_message(const domai
     if (msg.delivery_state() != domain::DeliveryState::Failed) {
         return ClientResult<domain::Message>::error(
             ClientError::validation("Cannot retry message that is not in Failed state"));
+    }
+
+    const auto conv_res = local_store_.get_conversation(conversation_id);
+    if (conv_res.is_ok()) {
+        const auto guard_res = validate_recipients_can_receive(conv_res.value(), msg.sender_user_id());
+        if (guard_res.is_error()) {
+            return ClientResult<domain::Message>::error(guard_res.error());
+        }
     }
 
     // Preserve original idempotency_key per detailed-design.md §2.8 and ADR-007
@@ -387,6 +389,12 @@ ClientResult<domain::Message> MessagingManager::process_inbound_message(
             ClientError::validation("Conversation ID, Sender User ID, and Sender Device ID are required"));
     }
 
+    const auto sender_contact = local_store_.get_contact(sender_user_id);
+    if (sender_contact.is_ok() && sender_contact.value().is_blocked()) {
+        return ClientResult<domain::Message>::error(
+            ClientError::validation("Inbound message dropped: sender is blocked"));
+    }
+
     std::string decrypted_plaintext;
     if (ratchet_session_manager_ != nullptr) {
         auto dec_res = ratchet_session_manager_->decrypt_payload_from_device(sender_user_id, sender_device_id, payload);
@@ -434,6 +442,13 @@ ClientResult<domain::Message> MessagingManager::process_inbound_message(
         return ClientResult<domain::Message>::error(
             ClientError::validation("Conversation ID, Sender User ID, and Sender Device ID are required"));
     }
+
+    const auto sender_contact = local_store_.get_contact(sender_user_id);
+    if (sender_contact.is_ok() && sender_contact.value().is_blocked()) {
+        return ClientResult<domain::Message>::error(
+            ClientError::validation("Inbound message dropped: sender is blocked"));
+    }
+
     if (!ratchet_session_manager_) {
         return ClientResult<domain::Message>::error(
             ClientError::crypto("RatchetSessionManager required to decrypt EncryptedMessageEnvelope"));
@@ -467,6 +482,28 @@ ClientResult<domain::Message> MessagingManager::process_inbound_message(
     }
 
     return ClientResult<domain::Message>::ok(std::move(msg));
+}
+
+ClientResult<void> MessagingManager::validate_recipients_can_receive(const domain::Conversation& conv,
+                                                                     const domain::UserId& sender_user_id) const {
+    for (const auto& participant_id : conv.participants()) {
+        if (participant_id == sender_user_id) {
+            continue;
+        }
+        auto contact_res = local_store_.get_contact(participant_id);
+        if (contact_res.is_ok()) {
+            const auto& contact = contact_res.value();
+            if (contact.verification_status() == domain::KeyVerificationStatus::KeyChanged) {
+                return ClientResult<void>::error(
+                    ClientError::validation("Outbound messaging suspended: recipient identity key changed (ADR-008)"));
+            }
+            if (contact.is_blocked()) {
+                return ClientResult<void>::error(ClientError::validation("Cannot send message: recipient is blocked"));
+            }
+        }
+    }
+
+    return ClientResult<void>::ok();
 }
 
 } // namespace securecloud::client::application::managers
