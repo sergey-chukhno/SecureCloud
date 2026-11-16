@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -13,6 +14,7 @@ namespace securecloud::client::domain {
 enum class PresenceStatus { Online, Away, Offline };
 
 [[nodiscard]] std::string_view to_string(PresenceStatus status) noexcept;
+[[nodiscard]] std::optional<PresenceStatus> presence_status_from_string(std::string_view str) noexcept;
 
 class Contact {
   public:
@@ -25,7 +27,8 @@ class Contact {
     Contact(UserId user_id, std::string alias, KeyVerificationStatus verification_status,
             std::string identity_fingerprint, bool is_blocked, std::string safety_number, std::string role_note,
             PresenceStatus presence_status = PresenceStatus::Offline, uint32_t authorized_device_count = 1,
-            std::chrono::system_clock::time_point updated_at = std::chrono::system_clock::now());
+            std::chrono::system_clock::time_point updated_at = std::chrono::system_clock::now(),
+            std::optional<std::chrono::system_clock::time_point> last_seen_at = std::nullopt);
 
     [[nodiscard]] const UserId& user_id() const noexcept { return user_id_; }
     [[nodiscard]] const std::string& alias() const noexcept { return alias_; }
@@ -37,6 +40,18 @@ class Contact {
     [[nodiscard]] PresenceStatus presence_status() const noexcept { return presence_status_; }
     [[nodiscard]] uint32_t authorized_device_count() const noexcept { return authorized_device_count_; }
     [[nodiscard]] std::chrono::system_clock::time_point updated_at() const noexcept { return updated_at_; }
+    [[nodiscard]] const std::optional<std::chrono::system_clock::time_point>& last_seen_at() const noexcept {
+        return last_seen_at_;
+    }
+
+    // Predicates
+    [[nodiscard]] bool is_verified() const noexcept { return verification_status_ == KeyVerificationStatus::Verified; }
+    [[nodiscard]] bool has_key_changed() const noexcept {
+        return verification_status_ == KeyVerificationStatus::KeyChanged;
+    }
+    [[nodiscard]] bool can_send_messages() const noexcept {
+        return !is_blocked_ && verification_status_ != KeyVerificationStatus::KeyChanged;
+    }
 
     void set_alias(std::string alias) { alias_ = std::move(alias); }
     void set_verification_status(KeyVerificationStatus status) noexcept { verification_status_ = status; }
@@ -47,6 +62,10 @@ class Contact {
     void set_presence_status(PresenceStatus status) noexcept { presence_status_ = status; }
     void set_authorized_device_count(uint32_t count) noexcept { authorized_device_count_ = count; }
     void set_updated_at(std::chrono::system_clock::time_point tp) noexcept { updated_at_ = tp; }
+    void set_last_seen_at(std::optional<std::chrono::system_clock::time_point> tp) noexcept { last_seen_at_ = tp; }
+
+    [[nodiscard]] std::string to_json() const;
+    static std::optional<Contact> from_json(std::string_view json_str);
 
     bool operator==(const Contact& other) const noexcept;
     bool operator!=(const Contact& other) const noexcept { return !(*this == other); }
@@ -62,6 +81,7 @@ class Contact {
     PresenceStatus presence_status_{PresenceStatus::Offline};
     uint32_t authorized_device_count_{1};
     std::chrono::system_clock::time_point updated_at_{std::chrono::system_clock::now()};
+    std::optional<std::chrono::system_clock::time_point> last_seen_at_{std::nullopt};
 };
 
 } // namespace securecloud::client::domain

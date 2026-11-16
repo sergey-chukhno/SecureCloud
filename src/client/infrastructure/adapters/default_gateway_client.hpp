@@ -51,6 +51,11 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     application::ClientResult<void> revoke_device(const domain::DeviceId& device_id,
                                                   std::string_view mfa_token = "") override;
 
+    application::ClientResult<std::vector<domain::DirectoryUserEntry>>
+    search_directory_users(std::string_view query, std::size_t limit = 20) override;
+
+    application::ClientResult<domain::DirectoryUserEntry> lookup_user_identity(const domain::UserId& user_id) override;
+
     // Test Hooks for deterministic simulation
     void set_simulated_inventory_status(domain::PrekeyInventoryStatus status);
     void set_simulated_registration_status(domain::DeviceAuthorizationStatus status, std::string pairing_code = "");
@@ -59,6 +64,7 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
                                       std::vector<application::interfaces::DeviceCryptoDirectoryEntry> directory);
     void set_simulated_pairing_result(application::interfaces::PairingInitiationResult result);
     void set_simulated_user_devices(const domain::UserId& user_id, std::vector<domain::Device> devices);
+    void set_simulated_directory_users(std::vector<domain::DirectoryUserEntry> users);
     void set_simulated_authorization_mfa_requirement(bool require_mfa);
     void set_simulated_revocation_mfa_requirement(bool require_mfa);
     void set_simulated_failure(bool fail, std::string error_message = "Simulated network failure");
@@ -80,6 +86,7 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
 
     std::optional<application::interfaces::PairingInitiationResult> simulated_pairing_result_;
     std::unordered_map<domain::UserId, std::vector<domain::Device>> simulated_user_devices_;
+    std::vector<domain::DirectoryUserEntry> simulated_directory_users_;
     bool require_mfa_for_authorization_{true};
     bool require_mfa_for_revocation_{false};
 };

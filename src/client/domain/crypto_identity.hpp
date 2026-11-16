@@ -13,6 +13,7 @@ namespace securecloud::client::domain {
 enum class KeyVerificationStatus { Unverified, Verified, KeyChanged };
 
 [[nodiscard]] std::string_view to_string(KeyVerificationStatus status) noexcept;
+[[nodiscard]] std::optional<KeyVerificationStatus> key_verification_status_from_string(std::string_view str) noexcept;
 
 class CryptoIdentity {
   public:

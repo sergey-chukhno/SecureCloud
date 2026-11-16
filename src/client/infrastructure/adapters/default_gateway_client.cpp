@@ -2,6 +2,8 @@
 
 #include "domain/prekey_policy.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <iomanip>
 #include <sstream>
 
@@ -348,6 +350,76 @@ void DefaultGatewayClient::set_simulated_authorization_mfa_requirement(bool requ
 
 void DefaultGatewayClient::set_simulated_revocation_mfa_requirement(bool require_mfa) {
     require_mfa_for_revocation_ = require_mfa;
+}
+
+application::ClientResult<std::vector<domain::DirectoryUserEntry>>
+DefaultGatewayClient::search_directory_users(std::string_view query, std::size_t limit) {
+    if (simulate_failure_) {
+        return application::ClientResult<std::vector<domain::DirectoryUserEntry>>::error(
+            application::ClientError::network(failure_message_));
+    }
+
+    std::vector<domain::DirectoryUserEntry> results;
+    results.reserve(std::min(simulated_directory_users_.size(), limit));
+
+    auto to_lower = [](std::string_view sv) {
+        std::string s;
+        s.reserve(sv.size());
+        for (const char c : sv) {
+            s.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
+        }
+        return s;
+    };
+
+    const std::string lower_query = to_lower(query);
+
+    for (const auto& entry : simulated_directory_users_) {
+        if (results.size() >= limit) {
+            break;
+        }
+
+        if (lower_query.empty()) {
+            results.push_back(entry);
+            continue;
+        }
+
+        const std::string lower_handle = to_lower(entry.handle());
+        const std::string lower_display = to_lower(entry.display_name());
+        const std::string lower_uid = to_lower(entry.user_id().value());
+
+        if (lower_handle.find(lower_query) != std::string::npos ||
+            lower_display.find(lower_query) != std::string::npos || lower_uid.find(lower_query) != std::string::npos) {
+            results.push_back(entry);
+        }
+    }
+
+    return application::ClientResult<std::vector<domain::DirectoryUserEntry>>::ok(std::move(results));
+}
+
+application::ClientResult<domain::DirectoryUserEntry>
+DefaultGatewayClient::lookup_user_identity(const domain::UserId& user_id) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::DirectoryUserEntry>::error(
+            application::ClientError::network(failure_message_));
+    }
+
+    if (user_id.empty()) {
+        return application::ClientResult<domain::DirectoryUserEntry>::error(
+            application::ClientError::validation("User ID cannot be empty"));
+    }
+
+    for (const auto& entry : simulated_directory_users_) {
+        if (entry.user_id() == user_id) {
+            return application::ClientResult<domain::DirectoryUserEntry>::ok(entry);
+        }
+    }
+
+    return application::ClientResult<domain::DirectoryUserEntry>::error(
+        application::ClientError::validation("User identity not found in directory: " + user_id.value()));
+}
+
+void DefaultGatewayClient::set_simulated_directory_users(std::vector<domain::DirectoryUserEntry> users) {
+    simulated_directory_users_ = std::move(users);
 }
 
 } // namespace securecloud::client::infrastructure::adapters

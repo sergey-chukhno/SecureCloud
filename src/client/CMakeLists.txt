@@ -20,6 +20,7 @@ if(Qt6_FOUND)
         domain/device.cpp
         domain/user.cpp
         domain/contact.cpp
+        domain/directory_user_entry.cpp
         domain/conversation.cpp
         domain/message.cpp
         domain/crypto/x3dh_models.cpp
@@ -35,6 +36,7 @@ if(Qt6_FOUND)
     )
     target_link_libraries(securecloud_client_domain PUBLIC
         securecloud::common
+        securecloud::json
         securecloud::compiler_flags
         OpenSSL::Crypto
     )
