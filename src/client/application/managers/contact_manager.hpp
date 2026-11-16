@@ -39,6 +39,9 @@ class ContactManager {
         ratchet_session_manager_ = ratchet_session_manager;
     }
     void set_local_identity(domain::UserId local_user_id, std::vector<uint8_t> local_identity_public_key);
+    [[nodiscard]] bool has_local_identity() const noexcept {
+        return !local_user_id_.empty() && !local_identity_public_key_.empty();
+    }
 
     // Local Address Book CRUD
     ClientResult<void> add_or_update_contact(const domain::Contact& contact);

@@ -184,6 +184,14 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE void simulatePeerKeyChange(const QString& userId);
     Q_INVOKABLE void acceptAndVerifyPeerKey(const QString& userId);
 
+    // Contact Directory, Verification & Blocking (CLIENT-008-T05)
+    Q_INVOKABLE bool addContactByHandle(const QString& handle, const QString& displayName = QString(),
+                                        const QString& roleNote = QString());
+    Q_INVOKABLE bool verifyContactSafetyNumber(const QString& userId, bool verified);
+    Q_INVOKABLE bool blockContact(const QString& userId, bool blocked);
+    Q_INVOKABLE void syncContacts();
+    Q_INVOKABLE bool acknowledgeKeyChange(const QString& userId);
+
     // Group Conversations Management
     Q_INVOKABLE QString createDirectConversation(const QString& peerUserId);
     Q_INVOKABLE QString createGroupConversation(const QString& groupTitle, const QVariantList& participantUserIds);
@@ -290,6 +298,7 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] const ConversationEntry* findConversation(const QString& conversationId) const;
     [[nodiscard]] ConversationEntry* findConversationMutable(const QString& conversationId);
     [[nodiscard]] bool matchesQuery(const QString& candidate) const;
+    [[nodiscard]] QString resolveTargetPeerUserId(const QString& userId) const;
     static QString formatFileSize(qint64 bytes);
     static QString priorityToLabel(int priority);
 

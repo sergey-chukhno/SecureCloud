@@ -389,6 +389,12 @@ ClientResult<domain::Message> MessagingManager::process_inbound_message(
             ClientError::validation("Conversation ID, Sender User ID, and Sender Device ID are required"));
     }
 
+    const auto sender_contact = local_store_.get_contact(sender_user_id);
+    if (sender_contact.is_ok() && sender_contact.value().is_blocked()) {
+        return ClientResult<domain::Message>::error(
+            ClientError::validation("Inbound message dropped: sender is blocked"));
+    }
+
     std::string decrypted_plaintext;
     if (ratchet_session_manager_ != nullptr) {
         auto dec_res = ratchet_session_manager_->decrypt_payload_from_device(sender_user_id, sender_device_id, payload);
@@ -436,6 +442,13 @@ ClientResult<domain::Message> MessagingManager::process_inbound_message(
         return ClientResult<domain::Message>::error(
             ClientError::validation("Conversation ID, Sender User ID, and Sender Device ID are required"));
     }
+
+    const auto sender_contact = local_store_.get_contact(sender_user_id);
+    if (sender_contact.is_ok() && sender_contact.value().is_blocked()) {
+        return ClientResult<domain::Message>::error(
+            ClientError::validation("Inbound message dropped: sender is blocked"));
+    }
+
     if (!ratchet_session_manager_) {
         return ClientResult<domain::Message>::error(
             ClientError::crypto("RatchetSessionManager required to decrypt EncryptedMessageEnvelope"));

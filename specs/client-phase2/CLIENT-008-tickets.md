@@ -40,7 +40,7 @@ With the completion of **Cards `CLIENT-005` through `CLIENT-007`**, the SecureCl
 | **CLIENT-008-T02** | Contact Directory Synchronization, Discovery & Presence Resolution Engine | **Completed** | `ContactManager`: Directory reconciliation, multi-device count updates, presence privacy shield integration |
 | **CLIENT-008-T03** | Out-of-Band 60-Digit Safety Number Verification & Cryptographic State Pinning | **Completed** | Mutual 60-digit safety number lazy derivation & caching, verified key fingerprint pinning in `ISecureStorage` |
 | **CLIENT-008-T04** | Automated Identity Key Change Detection, Alerting & Messaging Suspension | **Completed** | Key rotation detection, `KeyChanged` transition, `MessagingManager` outbound suspension guard, alert event dispatch |
-| **CLIENT-008-T05** | Contact Blocking, Anti-Harassment Privacy Controls & ViewModel Integration | Ready for Implementation | Inbound/outbound blocking enforcement, presence masking, `WorkspaceViewModel` production wiring, QML bindings |
+| **CLIENT-008-T05** | Contact Blocking, Anti-Harassment Privacy Controls & ViewModel Integration | **Completed** | Inbound/outbound blocking enforcement, presence masking, `WorkspaceViewModel` production wiring & `Q_INVOKABLE` bindings |
 | **CLIENT-008-T06** | Contact Management Integration Suite & Comprehensive Verification | Ready for Implementation | End-to-end integration test suite, offscreen visual smoke tests, 100% test pass, final card walkthrough report |
 
 ```text
@@ -235,13 +235,12 @@ With the completion of **Cards `CLIENT-005` through `CLIENT-007`**, the SecureCl
      - Inbound Guard: Inbound messages from blocked senders are dropped at the client perimeter before Double Ratchet decryption.
      - Presence Masking: Blocked contacts always receive synthetic `Offline` presence.
   2. **`WorkspaceViewModel` Production Wiring:**
-     - Bind `contacts()` property directly to `ContactManager::get_contacts()`.
-     - Wire `Q_INVOKABLE bool addContactByHandle(const QString& handle, const QString& displayName, const QString& roleNote);`
+     - Synchronize `contacts()` property with live `ContactManager` records.
+     - Wire `Q_INVOKABLE bool addContactByHandle(const QString& handle, const QString& displayName = QString(), const QString& roleNote = QString());`
      - Wire `Q_INVOKABLE bool verifyContactSafetyNumber(const QString& userId, bool verified);`
-     - Wire `Q_INVOKABLE bool scanContactQr(const QString& qrPayload);`
      - Wire `Q_INVOKABLE bool blockContact(const QString& userId, bool blocked);`
      - Wire `Q_INVOKABLE void syncContacts();`
-     - Wire `Q_INVOKABLE void acknowledgeKeyChange(const QString& userId);`
+     - Wire `Q_INVOKABLE bool acknowledgeKeyChange(const QString& userId);`
   3. **Reactive UI Event & Property Synchronization:**
      - Emit `contactsChanged()`, `conversationsChanged()`, `selectedConversationChanged()` on all contact transitions.
      - Ensure Zone 2 (Contact List), Zone 3 (Chat Header), and Zone 4 (Peer Security Inspector) update synchronously.
