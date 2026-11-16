@@ -70,7 +70,7 @@ void FileSpoolPendingStore::recover_and_rebuild_index() {
 
     while (file.peek() != EOF) {
         RecordHeader hdr;
-        file.read(reinterpret_cast<char*>(&hdr), sizeof(RecordHeader));
+        file.read(reinterpret_cast<char*>(&hdr), static_cast<std::streamsize>(sizeof(RecordHeader)));
         if (file.gcount() < static_cast<std::streamsize>(sizeof(RecordHeader))) {
             ++unrecoverable_count_;
             break;
@@ -82,7 +82,7 @@ void FileSpoolPendingStore::recover_and_rebuild_index() {
         }
 
         std::vector<uint8_t> payload(hdr.payload_length);
-        file.read(reinterpret_cast<char*>(payload.data()), hdr.payload_length);
+        file.read(reinterpret_cast<char*>(payload.data()), static_cast<std::streamsize>(hdr.payload_length));
         if (file.gcount() < static_cast<std::streamsize>(hdr.payload_length)) {
             ++unrecoverable_count_;
             break;
@@ -166,8 +166,9 @@ void FileSpoolPendingStore::perform_group_commit() {
         hdr.attempt_count = rec.attempt_count;
         std::memcpy(hdr.event_id_bytes, rec.event_id.bytes().data(), 16);
 
-        file.write(reinterpret_cast<const char*>(&hdr), sizeof(RecordHeader));
-        file.write(reinterpret_cast<const char*>(rec.proto_bytes.data()), rec.proto_bytes.size());
+        file.write(reinterpret_cast<const char*>(&hdr), static_cast<std::streamsize>(sizeof(RecordHeader)));
+        file.write(reinterpret_cast<const char*>(rec.proto_bytes.data()),
+                   static_cast<std::streamsize>(rec.proto_bytes.size()));
 
         total_spool_bytes_ += rec.proto_bytes.size() + sizeof(RecordHeader);
         const auto id = rec.event_id;
