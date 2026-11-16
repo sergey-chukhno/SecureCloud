@@ -1,5 +1,6 @@
 #pragma once
 
+#include "auth/db/postgres_connection_pool.hpp"
 #include "auth/domain/entities.hpp"
 #include "auth/domain/enums.hpp"
 #include "auth/domain/uuid.hpp"
@@ -207,7 +208,8 @@ class CryptoDirectoryManager : public ICryptoDirectoryManager {
   public:
     CryptoDirectoryManager(std::shared_ptr<repository::IDeviceRepository> device_repo,
                            std::shared_ptr<repository::IDevicePublicKeyRepository> public_key_repo,
-                           std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr);
+                           std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr,
+                           db::PostgresConnectionPool* pool = nullptr);
 
     [[nodiscard]] CryptoIdentityResult get_crypto_identity(const domain::Uuid& device_id) override;
 
@@ -224,6 +226,7 @@ class CryptoDirectoryManager : public ICryptoDirectoryManager {
     std::shared_ptr<repository::IDeviceRepository> device_repo_;
     std::shared_ptr<repository::IDevicePublicKeyRepository> public_key_repo_;
     std::shared_ptr<IAuditEventPublisher> audit_publisher_;
+    db::PostgresConnectionPool* pool_{nullptr};
 };
 
 } // namespace securecloud::auth::service

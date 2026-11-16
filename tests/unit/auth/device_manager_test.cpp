@@ -576,16 +576,31 @@ TEST_F(DeviceManagerTest, InitiateDevicePairing_GeneratesFreshChallengeForPendin
     EXPECT_CALL(*device_repo_, find_by_id(dev_id)).WillRepeatedly(Return(pending_dev));
     EXPECT_CALL(*device_repo_, authorize_device(dev_id, _)).Times(1);
 
+    domain::AuditEvent pairing_event;
+    EXPECT_CALL(*audit_publisher_, publish(_)).WillOnce(SaveArg<0>(&pairing_event));
+
     auto challenge_opt = manager.initiate_device_pairing(user_id_, dev_id, "127.0.0.1");
     ASSERT_TRUE(challenge_opt.has_value());
     EXPECT_EQ(challenge_opt->device_id, dev_id);
     EXPECT_FALSE(challenge_opt->pairing_code.empty());
+
+    EXPECT_EQ(pairing_event.event_type, domain::AuditEventType::DevicePairingInitiated);
+    EXPECT_EQ(pairing_event.user_id, user_id_);
+    EXPECT_EQ(pairing_event.device_id, dev_id);
+    EXPECT_EQ(pairing_event.to_json().find(challenge_opt->pairing_code), std::string::npos);
+
+    domain::AuditEvent auth_event;
+    EXPECT_CALL(*audit_publisher_, publish(_)).WillOnce(SaveArg<0>(&auth_event));
 
     // Authorize with this freshly initiated challenge PIN
     auto res =
         manager.authorize_device(user_id_, dev_id, challenge_opt->pairing_code, AuthenticationLevel::PrimaryOnly);
     EXPECT_TRUE(res.success);
     EXPECT_EQ(res.status, DeviceStatus::Active);
+
+    EXPECT_EQ(auth_event.event_type, domain::AuditEventType::DeviceAuthorized);
+    EXPECT_EQ(auth_event.user_id, user_id_);
+    EXPECT_EQ(auth_event.device_id, dev_id);
 }
 
 TEST_F(DeviceManagerTest, ListUserDevices_DelegatesToRepository) {

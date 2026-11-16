@@ -1,3 +1,4 @@
+#include "auth/domain/auth_outbox_entity.hpp"
 #include "auth/domain/entities.hpp"
 #include "auth/domain/enums.hpp"
 #include "auth/domain/timestamp.hpp"
@@ -140,6 +141,29 @@ TEST(DomainEntitiesTest, AllEnumsRoundTripStringConversions) {
     EXPECT_EQ(parse_enum<MfaChallengeStatus>("Pending"), MfaChallengeStatus::Pending);
     EXPECT_EQ(parse_enum<MfaChallengeStatus>("Completed"), MfaChallengeStatus::Completed);
     EXPECT_EQ(to_string(MfaChallengeStatus::Completed), "Completed");
+
+    // OutboxStatus (AUDIT-013-T02)
+    EXPECT_EQ(to_string(OutboxStatus::Pending), "PENDING");
+    EXPECT_EQ(to_string(OutboxStatus::Published), "PUBLISHED");
+    EXPECT_EQ(to_string(OutboxStatus::Failed), "FAILED");
+    EXPECT_EQ(to_string(OutboxStatus::Quarantined), "QUARANTINED");
+    EXPECT_EQ(parse_outbox_status("PENDING"), OutboxStatus::Pending);
+    EXPECT_EQ(parse_outbox_status("Pending"), OutboxStatus::Pending);
+    EXPECT_EQ(parse_outbox_status("PUBLISHED"), OutboxStatus::Published);
+    EXPECT_EQ(parse_outbox_status("FAILED"), OutboxStatus::Failed);
+    EXPECT_EQ(parse_outbox_status("QUARANTINED"), OutboxStatus::Quarantined);
+    EXPECT_EQ(parse_outbox_status("UNKNOWN"), std::nullopt);
+
+    // OutboxSeverity (AUDIT-013-T02)
+    EXPECT_EQ(to_string(OutboxSeverity::Info), "INFO");
+    EXPECT_EQ(to_string(OutboxSeverity::Warning), "WARNING");
+    EXPECT_EQ(to_string(OutboxSeverity::Security), "SECURITY");
+    EXPECT_EQ(to_string(OutboxSeverity::Critical), "CRITICAL");
+    EXPECT_EQ(parse_outbox_severity("INFO"), OutboxSeverity::Info);
+    EXPECT_EQ(parse_outbox_severity("Warning"), OutboxSeverity::Warning);
+    EXPECT_EQ(parse_outbox_severity("SECURITY"), OutboxSeverity::Security);
+    EXPECT_EQ(parse_outbox_severity("CRITICAL"), OutboxSeverity::Critical);
+    EXPECT_EQ(parse_outbox_severity("TRACE"), std::nullopt);
 }
 
 // --- 3. Timestamp Tests ---
@@ -192,6 +216,16 @@ TEST(DomainEntitiesTest, EntityDefaultsInitialization) {
     EXPECT_EQ(challenge.challenge_purpose, MfaChallengePurpose::Login);
     EXPECT_EQ(challenge.challenge_status, MfaChallengeStatus::Pending);
     EXPECT_FALSE(challenge.completed_at.has_value());
+
+    AuthOutboxEntity outbox;
+    EXPECT_TRUE(outbox.event_id.is_nil());
+    EXPECT_FALSE(outbox.aggregate_id.has_value());
+    EXPECT_EQ(outbox.severity, OutboxSeverity::Info);
+    EXPECT_EQ(outbox.status, OutboxStatus::Pending);
+    EXPECT_EQ(outbox.retry_count, 0);
+    EXPECT_FALSE(outbox.processed_at.has_value());
+    EXPECT_FALSE(outbox.last_error.has_value());
+    EXPECT_FALSE(outbox.leased_until.has_value());
 }
 
 } // namespace securecloud::auth::domain::test

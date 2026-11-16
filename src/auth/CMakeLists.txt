@@ -10,6 +10,7 @@ add_library(securecloud_auth_config STATIC
         repository/refresh_token_repository.cpp
         repository/device_public_key_repository.cpp
         repository/mfa_repository.cpp
+        repository/auth_outbox_repository.cpp
         crypto/argon2id_hasher.cpp
         crypto/token_crypto.cpp
         crypto/base32.cpp
@@ -29,7 +30,14 @@ add_library(securecloud_auth_config STATIC
         service/crypto_directory_manager.cpp
         service/prekey_manager.cpp
         service/audit_event_publisher.cpp
+        service/outbox_event_mapper.cpp
+        service/outbox_relay_worker.cpp
         service/auth_service_impl.cpp
+        audit/auth_audit_mapper.cpp
+        audit/auth_audit_client.cpp
+        audit/auth_outbox_metrics.cpp
+        audit/auth_outbox_diagnostics.cpp
+        audit/auth_outbox_relay.cpp
 )
 
 add_library(securecloud::auth_config ALIAS securecloud_auth_config)

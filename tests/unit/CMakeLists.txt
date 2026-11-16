@@ -3889,3 +3889,130 @@ target_link_libraries(securecloud_gateway_audit_verification_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_gateway_audit_verification_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Event Mapper Unit Test Suite (AUDIT-013-T03)
+add_executable(securecloud_auth_outbox_event_mapper_test
+        auth/outbox_event_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_event_mapper_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_event_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Relay Worker Unit Test Suite (AUDIT-013-T03)
+add_executable(securecloud_auth_outbox_relay_worker_test
+        auth/outbox_relay_worker_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_relay_worker_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_relay_worker_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Canonical Audit Proto Mapper Unit Test Suite (AUDIT-013-T04)
+add_executable(securecloud_auth_audit_mapper_test
+        auth/auth_audit_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_auth_audit_mapper_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_audit_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth mTLS Audit Ingestion Client Unit Test Suite (AUDIT-013-T04)
+add_executable(securecloud_auth_audit_client_test
+        auth/auth_audit_client_test.cpp
+)
+
+target_link_libraries(securecloud_auth_audit_client_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_auth_audit_client_test PRIVATE
+        SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_auth_audit_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Relay & Retention Engine Unit Test Suite (AUDIT-013-T05)
+add_executable(securecloud_auth_outbox_relay_test
+        auth/auth_outbox_relay_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_relay_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_relay_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Observability, Lock-Free Metrics & Zero-PII Diagnostics Test Suite (AUDIT-013-T06)
+add_executable(securecloud_auth_outbox_metrics_test
+        auth/auth_outbox_metrics_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_metrics_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_metrics_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Comprehensive Verification Test Suite (AUDIT-013-T07)
+add_executable(securecloud_auth_outbox_test
+        auth/auth_outbox_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_test ${SECURECLOUD_TEST_PROPERTIES})

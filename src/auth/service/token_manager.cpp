@@ -3,6 +3,7 @@
 #include "auth/domain/audit_event.hpp"
 #include "auth/repository/exceptions.hpp"
 
+#include <pqxx/pqxx>
 #include <stdexcept>
 
 namespace securecloud::auth::service {
@@ -11,10 +12,11 @@ TokenManager::TokenManager(std::shared_ptr<crypto::ITokenSigner> token_signer,
                            std::shared_ptr<repository::IRefreshTokenRepository> refresh_token_repo,
                            std::shared_ptr<repository::ISessionRepository> session_repo,
                            std::shared_ptr<repository::IDeviceRepository> device_repo,
-                           std::shared_ptr<IAuditEventPublisher> audit_publisher, TokenManagerConfig config)
+                           std::shared_ptr<IAuditEventPublisher> audit_publisher, TokenManagerConfig config,
+                           db::PostgresConnectionPool* pool)
     : token_signer_(std::move(token_signer)), refresh_token_repo_(std::move(refresh_token_repo)),
       session_repo_(std::move(session_repo)), device_repo_(std::move(device_repo)),
-      audit_publisher_(std::move(audit_publisher)), config_(std::move(config)) {
+      audit_publisher_(std::move(audit_publisher)), config_(std::move(config)), pool_(pool) {
     if (!token_signer_) {
         throw std::invalid_argument("TokenManager: token_signer cannot be null");
     }
@@ -81,7 +83,14 @@ domain::TokenPair TokenManager::issue_initial_tokens(const domain::SessionEntity
     rt_entity.rotated_at = std::nullopt;
     rt_entity.replaced_by_token_id = std::nullopt;
 
-    refresh_token_repo_->create_token(rt_entity);
+    if (pool_ != nullptr) {
+        auto conn = pool_->acquire();
+        pqxx::work tx(*conn);
+        refresh_token_repo_->create_token(rt_entity, tx);
+        tx.commit();
+    } else {
+        refresh_token_repo_->create_token(rt_entity);
+    }
 
     domain::TokenPair pair;
     pair.access_token = std::move(access_token);
@@ -116,14 +125,29 @@ domain::TokenRefreshResult TokenManager::refresh_tokens(std::string_view refresh
             }
 
             // Outside grace window: true replay attack / token compromise!
+            // Category A: Atomically revoke session/token family and stage outbox audit event
+            const auto reuse_event =
+                domain::AuditEvent::token_reuse_detected(token_opt->session_id, token_opt->device_id, client_ip);
             try {
-                refresh_token_repo_->handle_token_reuse(verifier_hash);
+                if (pool_ != nullptr) {
+                    auto conn = pool_->acquire();
+                    pqxx::work tx(*conn);
+                    refresh_token_repo_->handle_token_reuse(verifier_hash, tx);
+                    if (audit_publisher_) {
+                        audit_publisher_->publish_in_tx(reuse_event, tx);
+                    }
+                    tx.commit();
+                } else {
+                    refresh_token_repo_->handle_token_reuse(verifier_hash);
+                    if (audit_publisher_) {
+                        audit_publisher_->publish(reuse_event);
+                    }
+                }
             } catch (...) {
-                // Best-effort persistence guarantee
-            }
-            if (audit_publisher_) {
-                audit_publisher_->publish(
-                    domain::AuditEvent::token_reuse_detected(token_opt->session_id, token_opt->device_id, client_ip));
+                // Fallback to autonomous audit event if compromise revocation transaction throws
+                if (audit_publisher_) {
+                    audit_publisher_->publish(reuse_event);
+                }
             }
             return domain::TokenRefreshResult::compromise_detected(
                 "Refresh token reuse detected: token was previously rotated; session revoked");
@@ -195,14 +219,36 @@ domain::TokenRefreshResult TokenManager::refresh_tokens(std::string_view refresh
         new_token.rotated_at = std::nullopt;
         new_token.replaced_by_token_id = std::nullopt;
 
-        // Atomic rotation in repository
-        refresh_token_repo_->rotate_token_atomic(token_opt->refresh_token_id, new_token);
+        // Category A: Atomically rotate refresh token, slide session/device activity timestamps,
+        // and stage the audit event inside a single PostgreSQL transaction
+        if (pool_ != nullptr) {
+            auto conn = pool_->acquire();
+            pqxx::work tx(*conn);
 
-        // Slide session and device activity timestamps
-        session_repo_->touch_session_activity(session_opt->session_id, now);
-        device_repo_->update_last_authenticated(device_id, now);
+            refresh_token_repo_->rotate_token_atomic(token_opt->refresh_token_id, new_token, tx);
+            session_repo_->touch_session_activity(session_opt->session_id, now, tx);
+            device_repo_->update_last_authenticated(device_id, now, tx);
 
-        // Issue new signed access token
+            if (audit_publisher_) {
+                audit_publisher_->publish_in_tx(domain::AuditEvent::token_refreshed(session_opt->session_id,
+                                                                                    session_opt->user_id, device_id,
+                                                                                    client_ip),
+                                                tx);
+            }
+
+            tx.commit();
+        } else {
+            refresh_token_repo_->rotate_token_atomic(token_opt->refresh_token_id, new_token);
+            session_repo_->touch_session_activity(session_opt->session_id, now);
+            device_repo_->update_last_authenticated(device_id, now);
+
+            if (audit_publisher_) {
+                audit_publisher_->publish(domain::AuditEvent::token_refreshed(
+                    session_opt->session_id, session_opt->user_id, device_id, client_ip));
+            }
+        }
+
+        // Issue new signed access token after durable database commit
         domain::AccessTokenClaims claims;
         claims.issuer = config_.issuer;
         claims.audience = config_.audience;
@@ -217,12 +263,6 @@ domain::TokenRefreshResult TokenManager::refresh_tokens(std::string_view refresh
         claims.authentication_level = session_opt->authentication_level;
 
         std::string access_token = domain::TokenEnvelopeSerializer::serialize(claims, *token_signer_);
-
-        // Emit audit telemetry
-        if (audit_publisher_) {
-            audit_publisher_->publish(domain::AuditEvent::token_refreshed(session_opt->session_id, session_opt->user_id,
-                                                                          device_id, client_ip));
-        }
 
         domain::TokenPair pair;
         pair.access_token = std::move(access_token);

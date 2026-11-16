@@ -1,6 +1,7 @@
 #pragma once
 
 #include "auth/crypto/token_crypto.hpp"
+#include "auth/db/postgres_connection_pool.hpp"
 #include "auth/domain/entities.hpp"
 #include "auth/domain/token_claims.hpp"
 #include "auth/domain/token_result.hpp"
@@ -66,7 +67,7 @@ class ITokenManager {
  * 2. Access tokens are short-lived, signed with Ed25519, and cryptographically bound to session & device.
  * 3. Plaintext refresh token secrets are never stored; only deterministic SHA-256 verifiers are persisted.
  * 4. Device and session bindings are rigorously verified before every rotation.
- * 5. Replay of previously rotated refresh tokens triggers automatic session revocation and audit telemetry.
+ * 5. Replay of previously rotated refresh tokens triggers atomic session revocation and outbox audit staging.
  */
 class TokenManager final : public ITokenManager {
   public:
@@ -74,7 +75,8 @@ class TokenManager final : public ITokenManager {
                  std::shared_ptr<repository::IRefreshTokenRepository> refresh_token_repo,
                  std::shared_ptr<repository::ISessionRepository> session_repo,
                  std::shared_ptr<repository::IDeviceRepository> device_repo,
-                 std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr, TokenManagerConfig config = {});
+                 std::shared_ptr<IAuditEventPublisher> audit_publisher = nullptr, TokenManagerConfig config = {},
+                 db::PostgresConnectionPool* pool = nullptr);
 
     ~TokenManager() override = default;
 
@@ -99,6 +101,7 @@ class TokenManager final : public ITokenManager {
     std::shared_ptr<repository::IDeviceRepository> device_repo_;
     std::shared_ptr<IAuditEventPublisher> audit_publisher_;
     TokenManagerConfig config_;
+    db::PostgresConnectionPool* pool_{nullptr};
 };
 
 } // namespace securecloud::auth::service
