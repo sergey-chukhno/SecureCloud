@@ -38,7 +38,7 @@ With the completion of **Cards `CLIENT-005` through `CLIENT-007`**, the SecureCl
 |---|---|---|---|
 | **CLIENT-008-T01** | Contact Domain Model Enrichment & Gateway Directory Discovery Contracts | **Completed** | Enriched `Contact`, `DirectoryUserEntry`, Gateway client directory search/lookup methods, unit tests |
 | **CLIENT-008-T02** | Contact Directory Synchronization, Discovery & Presence Resolution Engine | **Completed** | `ContactManager`: Directory reconciliation, multi-device count updates, presence privacy shield integration |
-| **CLIENT-008-T03** | Out-of-Band Safety Number Verification & Scannable QR Code Pipeline | Ready for Implementation | Mutual 60-digit safety number derivation, QR barcode scanner parser, verified state persistence in `ISecureStorage` |
+| **CLIENT-008-T03** | Out-of-Band 60-Digit Safety Number Verification & Cryptographic State Pinning | **Completed** | Mutual 60-digit safety number lazy derivation & caching, verified key fingerprint pinning in `ISecureStorage` |
 | **CLIENT-008-T04** | Automated Identity Key Change Detection, Alerting & Messaging Suspension | Ready for Implementation | Key rotation detection, `KeyChanged` transition, `MessagingManager` outbound suspension guard, alert event dispatch |
 | **CLIENT-008-T05** | Contact Blocking, Anti-Harassment Privacy Controls & ViewModel Integration | Ready for Implementation | Inbound/outbound blocking enforcement, presence masking, `WorkspaceViewModel` production wiring, QML bindings |
 | **CLIENT-008-T06** | Contact Management Integration Suite & Comprehensive Verification | Ready for Implementation | End-to-end integration test suite, offscreen visual smoke tests, 100% test pass, final card walkthrough report |
@@ -171,24 +171,20 @@ With the completion of **Cards `CLIENT-005` through `CLIENT-007`**, the SecureCl
 
 ---
 
-### CLIENT-008-T03: Out-of-Band Safety Number Verification & Scannable QR Code Pipeline
+### CLIENT-008-T03: Out-of-Band 60-Digit Safety Number Verification & Cryptographic State Pinning
 
 - **Ticket ID:** `CLIENT-008-T03`
-- **Component:** `src/client/application/managers/` & `src/client/infrastructure/`
-- **Objective:** Implement the end-to-end peer identity verification pipeline, connecting `SafetyNumberEngine` into `ContactManager` for out-of-band verification and scannable QR payload parsing.
+- **Component:** `src/client/application/managers/`
+- **Objective:** Implement the focused out-of-band 60-digit Safety Number peer verification pipeline (aligned with the `CLIENT-007-T04` desktop decision — no QR scanner UI), connecting `SafetyNumberEngine` into `ContactManager` for on-demand safety number resolution and cryptographic fingerprint pinning in `ISecureStorage`.
 - **Architectural Scope:**
-  1. **Pairwise Safety Number Management:**
+  1. **Pairwise Safety Number Resolution & Caching:**
      - `ClientResult<std::string> get_or_compute_safety_number(const domain::UserId& peer_user_id);`
-     - Formats raw 60-digit string into 12 blocks of 5 digits separated by spaces (71 characters total).
-  2. **Scannable QR Verification Payload:**
-     - `ClientResult<std::string> generate_contact_verification_qr(const domain::UserId& peer_user_id);`
-     - Generates scannable URI: `securecloud://verify?v=1&u1=...&u2=...&sn=...`.
-     - `ClientResult<bool> verify_contact_qr_payload(std::string_view scanned_uri);`
-     - Parses scanned URI, validates user IDs and safety number match, and marks contact as `Verified`.
-  3. **Verification State Persistence:**
+     - Resolves peer Ed25519 identity key (`lookup_user_identity` with fallback to `get_device_crypto_directory`), computes commutative 60-digit number formatted as 12 blocks of 5 digits (71 characters), and caches it in `ILocalStore`.
+  2. **Verification State Persistence & Key Pinning:**
      - `ClientResult<void> set_contact_verified(const domain::UserId& peer_user_id, bool verified);`
-     - Persists verified identity key fingerprint into `ISecureStorage` under `identity.verified.<peer_uid>`.
-     - Updates contact `verification_status` in `ILocalStore`.
+     - Persists (or clears) the verified peer identity key fingerprint in `ISecureStorage` under `identity.verified.<peer_uid>`.
+     - Updates contact `verification_status` and `identity_fingerprint` in `ILocalStore`.
+     - Updates `verify_contact_key` to delegate to `set_contact_verified` while preserving compatibility with locally seeded contacts.
 
 - **Deliverables:**
   - Extended `src/client/application/managers/contact_manager.hpp` & `.cpp`

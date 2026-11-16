@@ -65,8 +65,13 @@ class ContactManager {
     ClientResult<domain::PresenceStatus> resolve_contact_presence(const domain::UserId& user_id,
                                                                   domain::PresenceStatus reported_presence);
 
+    // Out-of-Band Safety Number Verification (CLIENT-008-T03)
+    ClientResult<std::string> get_or_compute_safety_number(const domain::UserId& peer_user_id);
+    ClientResult<void> set_contact_verified(const domain::UserId& peer_user_id, bool verified);
+
   private:
     [[nodiscard]] bool has_mutual_conversation(const domain::UserId& peer_user_id) const;
+    ClientResult<std::vector<uint8_t>> resolve_peer_identity_key(const domain::UserId& peer_user_id) const;
 
     interfaces::ILocalStore& local_store_;
     interfaces::IGatewayClient* gateway_{nullptr};

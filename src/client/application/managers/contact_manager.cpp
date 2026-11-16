@@ -117,10 +117,17 @@ ClientResult<void> ContactManager::mark_contact_key_changed(const domain::UserId
 }
 
 ClientResult<void> ContactManager::verify_contact_key(const domain::UserId& user_id, bool verified) {
+    const auto strict_res = set_contact_verified(user_id, verified);
+    if (strict_res.is_ok()) {
+        return strict_res;
+    }
+
+    // Preserve compatibility for locally seeded UI contacts (prior to directory wiring in T05)
     auto contact_res = local_store_.get_contact(user_id);
     if (contact_res.is_error()) {
-        return ClientResult<void>::error(contact_res.error());
+        return strict_res;
     }
+
     auto contact = contact_res.value();
     contact.set_verification_status(verified ? domain::KeyVerificationStatus::Verified
                                              : domain::KeyVerificationStatus::Unverified);
@@ -287,6 +294,96 @@ ContactManager::resolve_contact_presence(const domain::UserId& user_id, domain::
     return ClientResult<domain::PresenceStatus>::ok(effective_presence);
 }
 
+ClientResult<std::string> ContactManager::get_or_compute_safety_number(const domain::UserId& peer_user_id) {
+    if (peer_user_id.empty()) {
+        return ClientResult<std::string>::error(
+            ClientError::validation("Peer user_id cannot be empty for safety number computation"));
+    }
+
+    auto contact_res = local_store_.get_contact(peer_user_id);
+    if (contact_res.is_error()) {
+        return ClientResult<std::string>::error(contact_res.error());
+    }
+
+    auto contact = contact_res.value();
+    if (!contact.safety_number().empty()) {
+        return ClientResult<std::string>::ok(SafetyNumberEngine::format_safety_number(contact.safety_number()));
+    }
+
+    if (safety_number_engine_ == nullptr) {
+        return ClientResult<std::string>::error(
+            ClientError::validation("SafetyNumberEngine is not configured for safety number computation"));
+    }
+    if (local_user_id_.empty() || local_identity_public_key_.empty()) {
+        return ClientResult<std::string>::error(
+            ClientError::validation("Local user identity must be configured to compute safety numbers"));
+    }
+
+    const auto peer_key_res = resolve_peer_identity_key(peer_user_id);
+    if (peer_key_res.is_error()) {
+        return ClientResult<std::string>::error(peer_key_res.error());
+    }
+
+    const auto sn_res = safety_number_engine_->compute_safety_number(local_user_id_, local_identity_public_key_,
+                                                                     peer_user_id, peer_key_res.value());
+    if (sn_res.is_error()) {
+        return ClientResult<std::string>::error(sn_res.error());
+    }
+
+    contact.set_safety_number(sn_res.value());
+    contact.set_updated_at(std::chrono::system_clock::now());
+
+    const auto save_res = local_store_.save_contact(contact);
+    if (save_res.is_error()) {
+        return ClientResult<std::string>::error(save_res.error());
+    }
+
+    return ClientResult<std::string>::ok(sn_res.value());
+}
+
+ClientResult<void> ContactManager::set_contact_verified(const domain::UserId& peer_user_id, bool verified) {
+    if (peer_user_id.empty()) {
+        return ClientResult<void>::error(
+            ClientError::validation("Peer user_id cannot be empty for contact verification"));
+    }
+
+    auto contact_res = local_store_.get_contact(peer_user_id);
+    if (contact_res.is_error()) {
+        return ClientResult<void>::error(contact_res.error());
+    }
+
+    auto contact = contact_res.value();
+
+    if (safety_number_engine_ != nullptr) {
+        if (verified) {
+            const auto peer_key_res = resolve_peer_identity_key(peer_user_id);
+            if (peer_key_res.is_ok()) {
+                const auto state_res =
+                    safety_number_engine_->set_verification_state(peer_user_id, peer_key_res.value(), true);
+                if (state_res.is_error()) {
+                    return state_res;
+                }
+                const auto fp_res = safety_number_engine_->get_verified_fingerprint(peer_user_id);
+                if (fp_res.is_ok() && fp_res.value().has_value()) {
+                    contact.set_identity_fingerprint(*fp_res.value());
+                }
+            } else if (gateway_ != nullptr) {
+                return ClientResult<void>::error(peer_key_res.error());
+            }
+        } else {
+            const auto state_res = safety_number_engine_->set_verification_state(peer_user_id, {}, false);
+            if (state_res.is_error()) {
+                return state_res;
+            }
+        }
+    }
+
+    contact.set_verification_status(verified ? domain::KeyVerificationStatus::Verified
+                                             : domain::KeyVerificationStatus::Unverified);
+    contact.set_updated_at(std::chrono::system_clock::now());
+    return local_store_.save_contact(contact);
+}
+
 bool ContactManager::has_mutual_conversation(const domain::UserId& peer_user_id) const {
     const auto convs_res = local_store_.list_conversations();
     if (!convs_res.is_ok()) {
@@ -303,6 +400,32 @@ bool ContactManager::has_mutual_conversation(const domain::UserId& peer_user_id)
     }
 
     return false;
+}
+
+ClientResult<std::vector<uint8_t>> ContactManager::resolve_peer_identity_key(const domain::UserId& peer_user_id) const {
+    if (peer_user_id.empty()) {
+        return ClientResult<std::vector<uint8_t>>::error(ClientError::validation("Peer user_id cannot be empty"));
+    }
+
+    if (gateway_ != nullptr) {
+        const auto lookup_res = gateway_->lookup_user_identity(peer_user_id);
+        if (lookup_res.is_ok() && !lookup_res.value().identity_public_key().empty()) {
+            return ClientResult<std::vector<uint8_t>>::ok(lookup_res.value().identity_public_key());
+        }
+
+        const auto dir_res = gateway_->get_device_crypto_directory(peer_user_id);
+        if (dir_res.is_ok()) {
+            for (const auto& dev_entry : dir_res.value()) {
+                if (dev_entry.status == domain::DeviceAuthorizationStatus::Authorized &&
+                    !dev_entry.identity_key.empty()) {
+                    return ClientResult<std::vector<uint8_t>>::ok(dev_entry.identity_key);
+                }
+            }
+        }
+    }
+
+    return ClientResult<std::vector<uint8_t>>::error(
+        ClientError::validation("Unable to resolve peer identity public key for user: " + peer_user_id.value()));
 }
 
 } // namespace securecloud::client::application::managers
