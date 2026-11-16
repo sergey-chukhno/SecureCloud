@@ -39,7 +39,7 @@ With the completion of **Cards `CLIENT-005` through `CLIENT-007`**, the SecureCl
 | **CLIENT-008-T01** | Contact Domain Model Enrichment & Gateway Directory Discovery Contracts | **Completed** | Enriched `Contact`, `DirectoryUserEntry`, Gateway client directory search/lookup methods, unit tests |
 | **CLIENT-008-T02** | Contact Directory Synchronization, Discovery & Presence Resolution Engine | **Completed** | `ContactManager`: Directory reconciliation, multi-device count updates, presence privacy shield integration |
 | **CLIENT-008-T03** | Out-of-Band 60-Digit Safety Number Verification & Cryptographic State Pinning | **Completed** | Mutual 60-digit safety number lazy derivation & caching, verified key fingerprint pinning in `ISecureStorage` |
-| **CLIENT-008-T04** | Automated Identity Key Change Detection, Alerting & Messaging Suspension | Ready for Implementation | Key rotation detection, `KeyChanged` transition, `MessagingManager` outbound suspension guard, alert event dispatch |
+| **CLIENT-008-T04** | Automated Identity Key Change Detection, Alerting & Messaging Suspension | **Completed** | Key rotation detection, `KeyChanged` transition, `MessagingManager` outbound suspension guard, alert event dispatch |
 | **CLIENT-008-T05** | Contact Blocking, Anti-Harassment Privacy Controls & ViewModel Integration | Ready for Implementation | Inbound/outbound blocking enforcement, presence masking, `WorkspaceViewModel` production wiring, QML bindings |
 | **CLIENT-008-T06** | Contact Management Integration Suite & Comprehensive Verification | Ready for Implementation | End-to-end integration test suite, offscreen visual smoke tests, 100% test pass, final card walkthrough report |
 

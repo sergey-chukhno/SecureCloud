@@ -9,6 +9,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -69,6 +71,17 @@ class ContactManager {
     ClientResult<std::string> get_or_compute_safety_number(const domain::UserId& peer_user_id);
     ClientResult<void> set_contact_verified(const domain::UserId& peer_user_id, bool verified);
 
+    // Automated Identity Key Change Detection & Alerting (CLIENT-008-T04)
+    using KeyChangeAlertCallback =
+        std::function<void(const domain::UserId& peer_user_id, const std::string& new_safety_number)>;
+
+    void set_key_change_alert_callback(KeyChangeAlertCallback callback) {
+        key_change_alert_callback_ = std::move(callback);
+    }
+    ClientResult<domain::KeyVerificationStatus>
+    evaluate_contact_key_change(const domain::UserId& peer_user_id, std::span<const uint8_t> observed_identity_key);
+    ClientResult<void> acknowledge_and_verify_key_change(const domain::UserId& peer_user_id);
+
   private:
     [[nodiscard]] bool has_mutual_conversation(const domain::UserId& peer_user_id) const;
     ClientResult<std::vector<uint8_t>> resolve_peer_identity_key(const domain::UserId& peer_user_id) const;
@@ -80,6 +93,7 @@ class ContactManager {
 
     domain::UserId local_user_id_;
     std::vector<uint8_t> local_identity_public_key_;
+    KeyChangeAlertCallback key_change_alert_callback_;
 };
 
 } // namespace securecloud::client::application::managers

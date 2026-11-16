@@ -217,12 +217,19 @@ ClientResult<std::size_t> ContactManager::sync_contacts() {
             return ClientResult<std::size_t>::error(dir_res.error());
         }
 
+        std::vector<uint8_t> active_peer_key;
+        std::string active_peer_fingerprint;
+
         const auto& directory = dir_res.value();
         if (!directory.empty()) {
             uint32_t authorized_count = 0;
             for (const auto& dev_entry : directory) {
                 if (dev_entry.status == domain::DeviceAuthorizationStatus::Authorized) {
                     ++authorized_count;
+                    if (active_peer_key.empty() && !dev_entry.identity_key.empty()) {
+                        active_peer_key = dev_entry.identity_key;
+                        active_peer_fingerprint = dev_entry.identity_key_fingerprint;
+                    }
                     if (contact.identity_fingerprint().empty() && !dev_entry.identity_key_fingerprint.empty()) {
                         contact.set_identity_fingerprint(dev_entry.identity_key_fingerprint);
                     }
@@ -238,9 +245,39 @@ ClientResult<std::size_t> ContactManager::sync_contacts() {
             const auto lookup_res = gateway_->lookup_user_identity(contact.user_id());
             if (lookup_res.is_ok()) {
                 contact.set_authorized_device_count(lookup_res.value().active_device_count());
-                if (contact.identity_fingerprint().empty() && !lookup_res.value().identity_fingerprint().empty()) {
-                    contact.set_identity_fingerprint(lookup_res.value().identity_fingerprint());
+                active_peer_key = lookup_res.value().identity_public_key();
+                active_peer_fingerprint = lookup_res.value().identity_fingerprint();
+                if (contact.identity_fingerprint().empty() && !active_peer_fingerprint.empty()) {
+                    contact.set_identity_fingerprint(active_peer_fingerprint);
                 }
+            }
+        }
+
+        // Automated Identity Key Change Detection during sync (ADR-008 §18, CLIENT-008-T04)
+        bool key_changed_detected = false;
+        if (safety_number_engine_ != nullptr && !active_peer_key.empty()) {
+            const auto eval_res =
+                safety_number_engine_->evaluate_key_verification_status(contact.user_id(), active_peer_key);
+            const bool engine_flagged =
+                eval_res.is_ok() && eval_res.value() == domain::KeyVerificationStatus::KeyChanged;
+            const bool local_fp_mismatch = contact.verification_status() == domain::KeyVerificationStatus::Verified &&
+                                           !contact.identity_fingerprint().empty() &&
+                                           !active_peer_fingerprint.empty() &&
+                                           contact.identity_fingerprint() != active_peer_fingerprint;
+
+            if (engine_flagged || local_fp_mismatch) {
+                contact.set_verification_status(domain::KeyVerificationStatus::KeyChanged);
+                if (!active_peer_fingerprint.empty()) {
+                    contact.set_identity_fingerprint(active_peer_fingerprint);
+                }
+                if (!local_user_id_.empty() && !local_identity_public_key_.empty()) {
+                    const auto sn_res = safety_number_engine_->compute_safety_number(
+                        local_user_id_, local_identity_public_key_, contact.user_id(), active_peer_key);
+                    if (sn_res.is_ok()) {
+                        contact.set_safety_number(sn_res.value());
+                    }
+                }
+                key_changed_detected = true;
             }
         }
 
@@ -254,6 +291,10 @@ ClientResult<std::size_t> ContactManager::sync_contacts() {
         const auto save_res = local_store_.save_contact(contact);
         if (save_res.is_error()) {
             return ClientResult<std::size_t>::error(save_res.error());
+        }
+
+        if (key_changed_detected && key_change_alert_callback_) {
+            key_change_alert_callback_(contact.user_id(), contact.safety_number());
         }
 
         ++synced_count;
@@ -382,6 +423,88 @@ ClientResult<void> ContactManager::set_contact_verified(const domain::UserId& pe
                                              : domain::KeyVerificationStatus::Unverified);
     contact.set_updated_at(std::chrono::system_clock::now());
     return local_store_.save_contact(contact);
+}
+
+ClientResult<domain::KeyVerificationStatus>
+ContactManager::evaluate_contact_key_change(const domain::UserId& peer_user_id,
+                                            std::span<const uint8_t> observed_identity_key) {
+    if (peer_user_id.empty()) {
+        return ClientResult<domain::KeyVerificationStatus>::error(
+            ClientError::validation("Peer user_id cannot be empty for key change evaluation"));
+    }
+    if (observed_identity_key.empty()) {
+        return ClientResult<domain::KeyVerificationStatus>::error(
+            ClientError::validation("Observed peer identity key cannot be empty"));
+    }
+    if (safety_number_engine_ == nullptr) {
+        return ClientResult<domain::KeyVerificationStatus>::error(
+            ClientError::validation("SafetyNumberEngine is not configured for key change evaluation"));
+    }
+
+    auto contact_res = local_store_.get_contact(peer_user_id);
+    if (contact_res.is_error()) {
+        return ClientResult<domain::KeyVerificationStatus>::error(contact_res.error());
+    }
+
+    const auto eval_res = safety_number_engine_->evaluate_key_verification_status(peer_user_id, observed_identity_key);
+    if (eval_res.is_error()) {
+        return ClientResult<domain::KeyVerificationStatus>::error(eval_res.error());
+    }
+
+    if (eval_res.value() == domain::KeyVerificationStatus::KeyChanged) {
+        auto contact = contact_res.value();
+        contact.set_verification_status(domain::KeyVerificationStatus::KeyChanged);
+
+        if (!local_user_id_.empty() && !local_identity_public_key_.empty()) {
+            const auto sn_res = safety_number_engine_->compute_safety_number(local_user_id_, local_identity_public_key_,
+                                                                             peer_user_id, observed_identity_key);
+            if (sn_res.is_ok()) {
+                contact.set_safety_number(sn_res.value());
+            }
+        }
+
+        contact.set_updated_at(std::chrono::system_clock::now());
+        const auto save_res = local_store_.save_contact(contact);
+        if (save_res.is_error()) {
+            return ClientResult<domain::KeyVerificationStatus>::error(save_res.error());
+        }
+
+        if (key_change_alert_callback_) {
+            key_change_alert_callback_(peer_user_id, contact.safety_number());
+        }
+    }
+
+    return eval_res;
+}
+
+ClientResult<void> ContactManager::acknowledge_and_verify_key_change(const domain::UserId& peer_user_id) {
+    if (peer_user_id.empty()) {
+        return ClientResult<void>::error(
+            ClientError::validation("Peer user_id cannot be empty to acknowledge key change"));
+    }
+
+    auto contact_res = local_store_.get_contact(peer_user_id);
+    if (contact_res.is_error()) {
+        return ClientResult<void>::error(contact_res.error());
+    }
+
+    auto contact = contact_res.value();
+    contact.set_safety_number("");
+    const auto clear_res = local_store_.save_contact(contact);
+    if (clear_res.is_error()) {
+        return clear_res;
+    }
+
+    const auto verify_res = set_contact_verified(peer_user_id, true);
+    if (verify_res.is_error()) {
+        return verify_res;
+    }
+
+    if (safety_number_engine_ != nullptr && !local_user_id_.empty() && !local_identity_public_key_.empty()) {
+        [[maybe_unused]] const auto sn_res = get_or_compute_safety_number(peer_user_id);
+    }
+
+    return ClientResult<void>::ok();
 }
 
 bool ContactManager::has_mutual_conversation(const domain::UserId& peer_user_id) const {
