@@ -235,6 +235,12 @@ jobs:
       - name: Ensure vcpkg cache directories exist
         shell: pwsh
         run: |
+          $matchedKey = "${{ steps.vcpkg-cache.outputs.cache-matched-key }}"
+          $expectedSuffix = "-${{ steps.vcpkg-abi.outputs.abi_key }}"
+          if (-not [string]::IsNullOrEmpty($matchedKey) -and -not $matchedKey.EndsWith($expectedSuffix)) {
+            Write-Host "Fallback cache '$matchedKey' does not match current ABI suffix '$expectedSuffix'. Clearing stale .vcpkg_archives..."
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "${{ github.workspace }}/.vcpkg_archives"
+          }
           New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg_archives"
           New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg_downloads"
 
