@@ -233,5 +233,41 @@ TEST_F(WorkspaceViewModelContactsTest, SyncContactsDetectsKeyRotationInUiAndAckn
     EXPECT_TRUE(vm_->sendMessage(QStringLiteral("Resumed after re-verification")));
 }
 
+TEST_F(WorkspaceViewModelContactsTest, BlockingPeerMasksPresenceConsistentlyAcrossContactsMessagesAndHeader) {
+    auto find_presence_in = [](const QVariantList& list, const QString& peer_uid) -> QString {
+        for (const QVariant& v : list) {
+            const QVariantMap m = v.toMap();
+            if (m.value(QStringLiteral("userId")).toString() == peer_uid ||
+                m.value(QStringLiteral("peerUserId")).toString() == peer_uid) {
+                return m.value(QStringLiteral("presence")).toString();
+            }
+        }
+        return QString();
+    };
+
+    const QString frances_uid = QStringLiteral("frances.swann@securecloud.org");
+    vm_->selectContact(frances_uid);
+
+    // Initially Frances is Online in Contacts, Messages (conversations), and Chat Header / Inspector
+    EXPECT_EQ(find_presence_in(vm_->contacts(), frances_uid), QStringLiteral("Online"));
+    EXPECT_EQ(find_presence_in(vm_->conversations(), frances_uid), QStringLiteral("Online"));
+    EXPECT_EQ(vm_->selectedPeerPresence(), QStringLiteral("Online"));
+
+    // Toggle block via Inspector action -> Offline everywhere
+    vm_->togglePeerBlocked(frances_uid);
+    EXPECT_TRUE(vm_->selectedPeerBlocked());
+    EXPECT_EQ(find_presence_in(vm_->contacts(), frances_uid), QStringLiteral("Offline"));
+    EXPECT_EQ(find_presence_in(vm_->conversations(), frances_uid), QStringLiteral("Offline"));
+    EXPECT_EQ(vm_->selectedPeerPresence(), QStringLiteral("Offline"));
+    EXPECT_FALSE(vm_->sendMessage(QStringLiteral("Blocked in Messages")));
+
+    // Toggle unblock -> Online restored everywhere
+    vm_->togglePeerBlocked(frances_uid);
+    EXPECT_FALSE(vm_->selectedPeerBlocked());
+    EXPECT_EQ(find_presence_in(vm_->contacts(), frances_uid), QStringLiteral("Online"));
+    EXPECT_EQ(find_presence_in(vm_->conversations(), frances_uid), QStringLiteral("Online"));
+    EXPECT_EQ(vm_->selectedPeerPresence(), QStringLiteral("Online"));
+}
+
 } // namespace
 } // namespace securecloud::client::tests

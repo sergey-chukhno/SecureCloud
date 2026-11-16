@@ -41,7 +41,7 @@ With the completion of **Cards `CLIENT-005` through `CLIENT-007`**, the SecureCl
 | **CLIENT-008-T03** | Out-of-Band 60-Digit Safety Number Verification & Cryptographic State Pinning | **Completed** | Mutual 60-digit safety number lazy derivation & caching, verified key fingerprint pinning in `ISecureStorage` |
 | **CLIENT-008-T04** | Automated Identity Key Change Detection, Alerting & Messaging Suspension | **Completed** | Key rotation detection, `KeyChanged` transition, `MessagingManager` outbound suspension guard, alert event dispatch |
 | **CLIENT-008-T05** | Contact Blocking, Anti-Harassment Privacy Controls & ViewModel Integration | **Completed** | Inbound/outbound blocking enforcement, presence masking, `WorkspaceViewModel` production wiring & `Q_INVOKABLE` bindings |
-| **CLIENT-008-T06** | Contact Management Integration Suite & Comprehensive Verification | Ready for Implementation | End-to-end integration test suite, offscreen visual smoke tests, 100% test pass, final card walkthrough report |
+| **CLIENT-008-T06** | Contact Management Integration Suite & Comprehensive Verification | **Completed** | End-to-end integration test suite, offscreen visual smoke tests, 100% test pass, final card walkthrough report |
 
 ```text
                             SECURECLOUD CLIENT (Phase 2 - CLIENT-008)
@@ -257,12 +257,12 @@ With the completion of **Cards `CLIENT-005` through `CLIENT-007`**, the SecureCl
 - **Component:** `tests/integration/` & `docs/final-reports/`
 - **Objective:** Implement the end-to-end contact management and peer verification integration test suite, verify 100% test pass, zero warnings, `.clang-format` compliance, and compile the final Card 008 walkthrough report.
 - **Architectural Scope:**
-  1. **End-to-End Contact Integration Tests (`MultiContactVerificationIntegrationTest`):**
-     - **Contact Discovery & Onboarding**: Search directory, resolve public identity key, derive 60-digit safety number, persist contact.
-     - **Mutual QR Verification Handshake**: Generate scannable QR, parse on peer client, verify symmetric match, update state to `Verified`.
-     - **Identity Key Change & Suspension Lifecycle**: Peer rotates identity key; directory sync detects mismatch; transitions to `KeyChanged`; asserts `MessagingManager` rejects outbound messages; peer re-verifies and unblocks messaging.
-     - **Contact Blocking & Harassment Shield**: Block contact; assert outbound message blocked; assert inbound message silently discarded; unblock contact.
-     - **Multi-Device Directory Reconciliation**: Peer adds/revokes secondary devices; directory sync updates device counts; verifies fan-out routing accuracy.
+  1. **End-to-End Contact Integration Tests (`ContactManagementIntegrationTest`):**
+     - **Contact Discovery, Onboarding & Mutual 60-Digit Verification**: Two independent workstations search directory, onboard with local aliases, derive identical commutative 60-digit safety numbers, and pin Ed25519 fingerprints in `ISecureStorage`.
+     - **Identity Key Change & Suspension Lifecycle**: Peer rotates identity key; directory sync detects mismatch; transitions to `KeyChanged`; asserts `MessagingManager` rejects outbound messages across stage/send/retry; peer acknowledges and re-verifies to resume messaging.
+     - **Contact Blocking & Harassment Shield**: Exercises ADR-008 §24 Mutual-Conversation Privacy Shield and contact blocking; asserts outbound sends blocked, inbound Double Ratchet packets dropped before decryption, and presence masked `Offline`.
+     - **Multi-Device Directory Reconciliation**: Establishes sessions across 3 peer devices; revokes 1 device; directory sync reconciles count `3 -> 2`, purges revoked Double Ratchet session, and excludes revoked device from fan-out encryption.
+     - **WorkspaceViewModel Full User Journey**: Drives `addContactByHandle` -> `verifyContactSafetyNumber` -> `sendMessage` -> directory key rotation -> `syncContacts` -> `acknowledgeKeyChange` -> `blockContact` -> `removeContact`.
   2. **Codebase Hygiene & Quality Gates:**
      - 100% passing tests across all unit and integration test suites.
      - Zero compiler warnings (`-Wall -Wextra -Wpedantic -Werror`).

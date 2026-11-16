@@ -425,20 +425,50 @@ QString WorkspaceViewModel::priorityToLabel(int priority) {
 QVariantList WorkspaceViewModel::conversations() const {
     QVariantList result;
     for (const auto& conv : conversations_) {
+        QString displayName = conv.peerDisplayName;
+        QString presence = conv.presence;
+        bool isVerified = conv.isVerified;
+        bool isBlocked = conv.isBlocked;
+        QString safetyNumber = conv.safetyNumber;
+        int deviceCount = conv.authorizedDeviceCount;
+        QString verificationStatus = conv.verificationStatus;
+
+        if (!conv.isGroup) {
+            const auto cRes =
+                app_.bootstrap().contact_manager().get_contact(domain::UserId(conv.peerUserId.toStdString()));
+            if (cRes.is_ok()) {
+                const auto& c = cRes.value();
+                if (!c.alias().empty()) {
+                    displayName = QString::fromStdString(c.alias());
+                }
+                isVerified = c.is_verified();
+                isBlocked = c.is_blocked();
+                if (!c.safety_number().empty()) {
+                    safetyNumber = QString::fromStdString(c.safety_number());
+                }
+                deviceCount = static_cast<int>(c.authorized_device_count());
+                const auto statusSv = domain::to_string(c.verification_status());
+                verificationStatus = QString::fromUtf8(statusSv.data(), static_cast<qsizetype>(statusSv.size()));
+            }
+            if (isBlocked) {
+                presence = QStringLiteral("Offline");
+            }
+        }
+
         const QString priorityStr = priorityToLabel(conv.lastMessagePriority);
-        if (!matchesQuery(conv.peerDisplayName) && !matchesQuery(conv.peerHandle) &&
-            !matchesQuery(conv.lastMessagePreview) && !matchesQuery(priorityStr)) {
+        if (!matchesQuery(displayName) && !matchesQuery(conv.peerHandle) && !matchesQuery(conv.lastMessagePreview) &&
+            !matchesQuery(priorityStr)) {
             continue;
         }
         QVariantMap item;
         item.insert(QStringLiteral("conversationId"), conv.conversationId);
         item.insert(QStringLiteral("peerUserId"), conv.peerUserId);
-        item.insert(QStringLiteral("peerDisplayName"), conv.peerDisplayName);
+        item.insert(QStringLiteral("peerDisplayName"), displayName);
         item.insert(QStringLiteral("peerHandle"), conv.peerHandle);
-        item.insert(QStringLiteral("presence"), conv.presence);
-        item.insert(QStringLiteral("isVerified"), conv.isVerified);
-        item.insert(QStringLiteral("isBlocked"), conv.isBlocked);
-        item.insert(QStringLiteral("safetyNumber"), conv.safetyNumber);
+        item.insert(QStringLiteral("presence"), presence);
+        item.insert(QStringLiteral("isVerified"), isVerified);
+        item.insert(QStringLiteral("isBlocked"), isBlocked);
+        item.insert(QStringLiteral("safetyNumber"), safetyNumber);
         item.insert(QStringLiteral("lastMessagePreview"), conv.lastMessagePreview);
         item.insert(QStringLiteral("timestampText"), conv.timestampText);
         item.insert(QStringLiteral("unreadCount"), conv.unreadCount);
@@ -447,8 +477,8 @@ QVariantList WorkspaceViewModel::conversations() const {
         item.insert(QStringLiteral("isSelected"), conv.conversationId == selected_conversation_id_);
         item.insert(QStringLiteral("isGroup"), conv.isGroup);
         item.insert(QStringLiteral("participantCount"), static_cast<int>(conv.participantUserIds.size()));
-        item.insert(QStringLiteral("deviceCount"), conv.authorizedDeviceCount);
-        item.insert(QStringLiteral("verificationStatus"), conv.verificationStatus);
+        item.insert(QStringLiteral("deviceCount"), deviceCount);
+        item.insert(QStringLiteral("verificationStatus"), verificationStatus);
         result.append(item);
     }
     return result;
@@ -629,7 +659,20 @@ QString WorkspaceViewModel::selectedPeerHandle() const {
 
 QString WorkspaceViewModel::selectedPeerPresence() const {
     const auto* conv = findConversation(selected_conversation_id_);
-    return conv ? conv->presence : QStringLiteral("Offline");
+    if (!conv) {
+        return QStringLiteral("Offline");
+    }
+    if (conv->isBlocked) {
+        return QStringLiteral("Offline");
+    }
+    if (!conv->isGroup) {
+        const auto cRes =
+            app_.bootstrap().contact_manager().get_contact(domain::UserId(conv->peerUserId.toStdString()));
+        if (cRes.is_ok() && cRes.value().is_blocked()) {
+            return QStringLiteral("Offline");
+        }
+    }
+    return conv->presence;
 }
 
 bool WorkspaceViewModel::selectedPeerVerified() const {
@@ -1249,15 +1292,10 @@ void WorkspaceViewModel::togglePeerVerified(const QString& peerUserId) {
 }
 
 void WorkspaceViewModel::togglePeerBlocked(const QString& peerUserId) {
-    for (auto& conv : conversations_) {
+    for (const auto& conv : conversations_) {
         if (conv.peerUserId == peerUserId ||
             (peerUserId.isEmpty() && conv.conversationId == selected_conversation_id_)) {
-            conv.isBlocked = !conv.isBlocked;
-            (void)app_.bootstrap().contact_manager().set_blocked(domain::UserId(conv.peerUserId.toStdString()),
-                                                                 conv.isBlocked);
-            emit selectedConversationChanged();
-            emit conversationsChanged();
-            emit contactsChanged();
+            (void)blockContact(conv.peerUserId, !conv.isBlocked);
             return;
         }
     }
@@ -1537,13 +1575,7 @@ bool WorkspaceViewModel::updateContactProfile(const QString& userId, const QStri
         return false;
     }
 
-    QString peerUid = userId.trimmed();
-    if (peerUid.startsWith('@')) {
-        peerUid = peerUid.mid(1);
-    }
-    if (!peerUid.contains('@')) {
-        peerUid += QStringLiteral("@securecloud.org");
-    }
+    const QString peerUid = resolveTargetPeerUserId(userId);
 
     const auto updateRes = app_.bootstrap().contact_manager().update_contact_alias(
         domain::UserId(peerUid.toStdString()), displayName.toStdString(), roleNote.toStdString());
@@ -1572,13 +1604,7 @@ bool WorkspaceViewModel::removeContact(const QString& userId) {
         return false;
     }
 
-    QString peerUid = userId.trimmed();
-    if (peerUid.startsWith('@')) {
-        peerUid = peerUid.mid(1);
-    }
-    if (!peerUid.contains('@')) {
-        peerUid += QStringLiteral("@securecloud.org");
-    }
+    const QString peerUid = resolveTargetPeerUserId(userId);
 
     const auto delRes = app_.bootstrap().contact_manager().remove_contact(domain::UserId(peerUid.toStdString()));
     if (delRes.is_error()) {
@@ -1780,9 +1806,6 @@ bool WorkspaceViewModel::blockContact(const QString& userId, bool blocked) {
     for (auto& conv : conversations_) {
         if (!conv.isGroup && conv.peerUserId == targetUid) {
             conv.isBlocked = blocked;
-            if (blocked) {
-                conv.presence = QStringLiteral("Offline");
-            }
         }
     }
 
@@ -1814,7 +1837,7 @@ void WorkspaceViewModel::syncContacts() {
             if (!c.safety_number().empty()) {
                 conv.safetyNumber = QString::fromStdString(c.safety_number());
             }
-            if (c.is_blocked() || c.authorized_device_count() == 0) {
+            if (c.authorized_device_count() == 0) {
                 conv.presence = QStringLiteral("Offline");
             }
         }
