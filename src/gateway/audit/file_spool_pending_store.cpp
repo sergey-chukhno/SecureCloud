@@ -68,6 +68,7 @@ void FileSpoolPendingStore::recover_and_rebuild_index() {
         return;
     }
 
+    std::streampos last_valid_pos = 0;
     while (file.peek() != EOF) {
         RecordHeader hdr;
         file.read(reinterpret_cast<char*>(&hdr), static_cast<std::streamsize>(sizeof(RecordHeader)));
@@ -107,6 +108,14 @@ void FileSpoolPendingStore::recover_and_rebuild_index() {
         total_spool_bytes_ += rec.proto_bytes.size() + sizeof(RecordHeader);
         pending_map_[id] = rec;
         pending_order_.push_back(id);
+        last_valid_pos = file.tellg();
+    }
+
+    file.close();
+
+    if (unrecoverable_count_ > 0 && last_valid_pos >= 0) {
+        std::error_code ec;
+        std::filesystem::resize_file(wal_path, static_cast<uintmax_t>(last_valid_pos), ec);
     }
 }
 
@@ -129,16 +138,16 @@ AdmissionResult FileSpoolPendingStore::append(PendingRecord record) noexcept {
 }
 
 void FileSpoolPendingStore::writer_thread_loop() {
-    while (running_.load(std::memory_order_acquire)) {
+    while (true) {
         std::unique_lock<std::mutex> lock(mutex_);
         cv_.wait_for(lock, std::chrono::milliseconds(config_.group_commit_interval_ms),
                      [this] { return !handoff_queue_.empty() || !running_.load(std::memory_order_relaxed); });
 
-        if (handoff_queue_.empty()) {
-            continue;
+        if (!handoff_queue_.empty()) {
+            perform_group_commit();
+        } else if (!running_.load(std::memory_order_relaxed)) {
+            break;
         }
-
-        perform_group_commit();
     }
 }
 
