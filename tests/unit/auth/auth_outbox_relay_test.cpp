@@ -99,7 +99,7 @@ TEST(AuthOutboxRelayTest, PollAndDispatch_ValidBatch_MapsSanitizesAndMarksPublis
         .WillOnce(Return(std::vector<domain::AuthOutboxEntity>{e1, e2}));
 
     EXPECT_CALL(*client, submit_batch(_))
-        .WillOnce(Invoke([&](const std::vector<::securecloud::audit::v1::AuditEventProto>& batch) {
+        .WillOnce([&](const std::vector<::securecloud::audit::v1::AuditEventProto>& batch) {
             EXPECT_EQ(batch.size(), 2u);
             EXPECT_EQ(batch[0].event_id(), e1.event_id.to_string());
             EXPECT_EQ(batch[0].producer_service(), ::securecloud::audit::v1::PRODUCER_SERVICE_AUTH);
@@ -111,7 +111,7 @@ TEST(AuthOutboxRelayTest, PollAndDispatch_ValidBatch_MapsSanitizesAndMarksPublis
             res.accepted_count = 2;
             res.rejected_count = 0;
             return res;
-        }));
+        });
 
     EXPECT_CALL(*repo, mark_published(e1.event_id)).WillOnce(Return(true));
     EXPECT_CALL(*repo, mark_published(e2.event_id)).WillOnce(Return(true));
@@ -138,7 +138,7 @@ TEST(AuthOutboxRelayTest, PollAndDispatch_PermanentRejectionsAndMalformedPayload
     EXPECT_CALL(*repo, mark_quarantined(poison_ev.event_id, _)).WillOnce(Return(true));
 
     EXPECT_CALL(*client, submit_batch(_))
-        .WillOnce(Invoke([&](const std::vector<::securecloud::audit::v1::AuditEventProto>& batch) {
+        .WillOnce([&](const std::vector<::securecloud::audit::v1::AuditEventProto>& batch) {
             EXPECT_EQ(batch.size(), 2u);
             AuditBatchSubmitResult res;
             res.rpc_success = true;
@@ -147,7 +147,7 @@ TEST(AuthOutboxRelayTest, PollAndDispatch_PermanentRejectionsAndMalformedPayload
             res.rejected_count = 1;
             res.rejected_event_ids = {rejected_ev.event_id.to_string()};
             return res;
-        }));
+        });
 
     EXPECT_CALL(*repo, mark_published(valid_ev.event_id)).WillOnce(Return(true));
     EXPECT_CALL(*repo, mark_quarantined(rejected_ev.event_id, HasSubstr("AuditIngestionService")))

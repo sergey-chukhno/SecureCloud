@@ -21,7 +21,7 @@ namespace {
 #if defined(_WIN32) || defined(_WIN64)
     gmtime_s(&tm_buf, &time_t_now);
 #else
-    gmtime_r(&tm_buf, &time_t_now);
+    gmtime_r(&time_t_now, &tm_buf);
 #endif
 
     std::ostringstream ss;
@@ -32,8 +32,8 @@ namespace {
 [[nodiscard]] std::string to_lower_ascii(std::string_view input) {
     std::string out;
     out.reserve(input.size());
-    for (unsigned char ch : input) {
-        out.push_back(static_cast<char>(std::tolower(ch)));
+    for (char raw_ch : input) {
+        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(raw_ch))));
     }
     return out;
 }
@@ -92,11 +92,12 @@ std::string AuthOutboxDiagnostics::scrub_sensitive_data(std::string_view raw) no
         // Strip newlines/control chars to prevent log injection
         std::string clean;
         clean.reserve(raw.size());
-        for (unsigned char ch : raw) {
+        for (char raw_ch : raw) {
+            const unsigned char ch = static_cast<unsigned char>(raw_ch);
             if (ch == '\r' || ch == '\n') {
                 clean.push_back(' ');
             } else if (ch >= 0x20 && ch != 0x7F) {
-                clean.push_back(static_cast<char>(ch));
+                clean.push_back(raw_ch);
             }
         }
         return clean;
