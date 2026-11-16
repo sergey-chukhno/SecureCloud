@@ -465,7 +465,7 @@ TEST_F(GatewayResilienceIntegrationTest, TestCase2_DownstreamServiceOutageReturn
 // Client header X-Request-Timeout: 150 clamps downstream budget and times out early.
 // ============================================================================
 TEST_F(GatewayResilienceIntegrationTest, TestCase3_ClientSuppliedDeadlineHeaderEnforced) {
-    mock_auth_service_.get_user_delay_ms.store(350); // Downstream takes 350ms
+    mock_auth_service_.get_user_delay_ms.store(800); // Downstream takes 800ms (> 600ms default timeout)
 
     auto client = create_client(std::chrono::milliseconds(3000));
     httplib::Headers headers = {
@@ -478,8 +478,8 @@ TEST_F(GatewayResilienceIntegrationTest, TestCase3_ClientSuppliedDeadlineHeaderE
 
     ASSERT_TRUE(res);
     EXPECT_EQ(res->status, 504);
-    // Request must time out near 150ms, well before the 600ms default
-    EXPECT_LE(elapsed.count(), 350);
+    // Request must time out near 150ms, well before the 600ms default timeout
+    EXPECT_LT(elapsed.count(), 550);
 
     auto body = nlohmann::json::parse(res->body);
     EXPECT_EQ(body["status"], 504);

@@ -28,8 +28,8 @@ constexpr int64_t kMaxPastAgeMs = 24LL * 1095LL * 60LL * 60LL * 1000LL; // 36 mo
 [[nodiscard]] std::string to_lower_ascii(std::string_view input) {
     std::string out;
     out.reserve(input.size());
-    for (unsigned char ch : input) {
-        out.push_back(static_cast<char>(std::tolower(ch)));
+    for (char raw_ch : input) {
+        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(raw_ch))));
     }
     return out;
 }

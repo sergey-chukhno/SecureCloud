@@ -30,8 +30,17 @@ class MockOutboxRepository : public repository::IAuthOutboxRepository {
     MOCK_METHOD(std::vector<domain::AuthOutboxEntity>, fetch_and_lease_pending_batch,
                 (std::size_t limit, std::chrono::seconds lease_duration), (override));
     MOCK_METHOD(bool, mark_published, (const domain::Uuid& event_id), (override));
-    MOCK_METHOD(bool, mark_failed, (const domain::Uuid& event_id, std::string_view error), (override));
-    MOCK_METHOD(bool, mark_quarantined, (const domain::Uuid& event_id, std::string_view reason), (override));
+
+    bool mark_failed(const domain::Uuid& event_id, std::string_view error) override {
+        return mark_failed_str(event_id, std::string(error));
+    }
+    MOCK_METHOD(bool, mark_failed_str, (const domain::Uuid& event_id, const std::string& error));
+
+    bool mark_quarantined(const domain::Uuid& event_id, std::string_view reason) override {
+        return mark_quarantined_str(event_id, std::string(reason));
+    }
+    MOCK_METHOD(bool, mark_quarantined_str, (const domain::Uuid& event_id, const std::string& reason));
+
     MOCK_METHOD(std::size_t, purge_published_older_than,
                 (std::chrono::system_clock::time_point cutoff, std::size_t batch_size), (override));
     MOCK_METHOD(std::size_t, count_pending, (), (override));
@@ -143,7 +152,7 @@ TEST(AuthOutboxMetricsTest, PublisherAndRelay_AccuratelyTrackLifecycleMetricsAnd
 
     EXPECT_CALL(*client, submit_batch(_)).WillOnce(Return(partial_res));
     EXPECT_CALL(*repo, mark_published(e1.event_id)).WillOnce(Return(true));
-    EXPECT_CALL(*repo, mark_quarantined(e2.event_id, _)).WillOnce(Return(true));
+    EXPECT_CALL(*repo, mark_quarantined_str(e2.event_id, _)).WillOnce(Return(true));
 
     AuthOutboxRelay relay(repo, client, {}, "auth-1", &metrics, &diagnostics);
     EXPECT_EQ(relay.poll_and_dispatch(), 2u);

@@ -35,8 +35,17 @@ class MockAuthOutboxRepository : public repository::IAuthOutboxRepository {
     MOCK_METHOD(std::vector<domain::AuthOutboxEntity>, fetch_and_lease_pending_batch,
                 (std::size_t limit, std::chrono::seconds lease_duration), (override));
     MOCK_METHOD(bool, mark_published, (const domain::Uuid& event_id), (override));
-    MOCK_METHOD(bool, mark_failed, (const domain::Uuid& event_id, std::string_view error), (override));
-    MOCK_METHOD(bool, mark_quarantined, (const domain::Uuid& event_id, std::string_view reason), (override));
+
+    bool mark_failed(const domain::Uuid& event_id, std::string_view error) override {
+        return mark_failed_str(event_id, std::string(error));
+    }
+    MOCK_METHOD(bool, mark_failed_str, (const domain::Uuid& event_id, const std::string& error));
+
+    bool mark_quarantined(const domain::Uuid& event_id, std::string_view reason) override {
+        return mark_quarantined_str(event_id, std::string(reason));
+    }
+    MOCK_METHOD(bool, mark_quarantined_str, (const domain::Uuid& event_id, const std::string& reason));
+
     MOCK_METHOD(std::size_t, purge_published_older_than,
                 (std::chrono::system_clock::time_point cutoff, std::size_t batch_size), (override));
     MOCK_METHOD(std::size_t, count_pending, (), (override));

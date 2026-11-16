@@ -3702,12 +3702,35 @@ if(Qt6_FOUND)
         client/client_config_test.cpp
         client/client_error_test.cpp
         client/client_domain_test.cpp
+        client/client_crypto_provider_test.cpp
+        client/client_key_storage_test.cpp
+        client/client_gateway_test.cpp
+        client/client_device_lifecycle_test.cpp
+        client/client_crypto_identity_test.cpp
+        client/client_device_registration_test.cpp
         client/client_contacts_messaging_test.cpp
         client/client_lifecycle_test.cpp
         client/navigation_controller_test.cpp
         client/ui_theme_test.cpp
         client/ui_components_test.cpp
         client/window_state_manager_test.cpp
+        client/x3dh_engine_test.cpp
+        client/double_ratchet_engine_test.cpp
+        client/skipped_keys_store_test.cpp
+        client/ratchet_session_manager_test.cpp
+        client/e2ee_messaging_integration_test.cpp
+        client/device_domain_models_test.cpp
+        client/device_pairing_coordinator_test.cpp
+        client/device_revocation_pipeline_test.cpp
+        client/safety_number_engine_test.cpp
+        client/workspace_view_model_devices_test.cpp
+        client/multi_device_trust_integration_test.cpp
+        client/contact_domain_and_directory_test.cpp
+        client/contact_directory_sync_test.cpp
+        client/contact_verification_pipeline_test.cpp
+        client/identity_key_change_alert_test.cpp
+        client/workspace_view_model_contacts_test.cpp
+        client/contact_management_integration_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

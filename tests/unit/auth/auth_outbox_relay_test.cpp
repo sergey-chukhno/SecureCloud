@@ -34,8 +34,17 @@ class MockAuthOutboxRepository : public repository::IAuthOutboxRepository {
     MOCK_METHOD(std::vector<domain::AuthOutboxEntity>, fetch_and_lease_pending_batch,
                 (std::size_t limit, std::chrono::seconds lease_duration), (override));
     MOCK_METHOD(bool, mark_published, (const domain::Uuid& event_id), (override));
-    MOCK_METHOD(bool, mark_failed, (const domain::Uuid& event_id, std::string_view error), (override));
-    MOCK_METHOD(bool, mark_quarantined, (const domain::Uuid& event_id, std::string_view reason), (override));
+
+    bool mark_failed(const domain::Uuid& event_id, std::string_view error) override {
+        return mark_failed_str(event_id, std::string(error));
+    }
+    MOCK_METHOD(bool, mark_failed_str, (const domain::Uuid& event_id, const std::string& error));
+
+    bool mark_quarantined(const domain::Uuid& event_id, std::string_view reason) override {
+        return mark_quarantined_str(event_id, std::string(reason));
+    }
+    MOCK_METHOD(bool, mark_quarantined_str, (const domain::Uuid& event_id, const std::string& reason));
+
     MOCK_METHOD(std::size_t, purge_published_older_than,
                 (std::chrono::system_clock::time_point cutoff, std::size_t batch_size), (override));
     MOCK_METHOD(std::size_t, count_pending, (), (override));
@@ -99,7 +108,7 @@ TEST(AuthOutboxRelayTest, PollAndDispatch_ValidBatch_MapsSanitizesAndMarksPublis
         .WillOnce(Return(std::vector<domain::AuthOutboxEntity>{e1, e2}));
 
     EXPECT_CALL(*client, submit_batch(_))
-        .WillOnce(Invoke([&](const std::vector<::securecloud::audit::v1::AuditEventProto>& batch) {
+        .WillOnce([&](const std::vector<::securecloud::audit::v1::AuditEventProto>& batch) {
             EXPECT_EQ(batch.size(), 2u);
             EXPECT_EQ(batch[0].event_id(), e1.event_id.to_string());
             EXPECT_EQ(batch[0].producer_service(), ::securecloud::audit::v1::PRODUCER_SERVICE_AUTH);
@@ -111,7 +120,7 @@ TEST(AuthOutboxRelayTest, PollAndDispatch_ValidBatch_MapsSanitizesAndMarksPublis
             res.accepted_count = 2;
             res.rejected_count = 0;
             return res;
-        }));
+        });
 
     EXPECT_CALL(*repo, mark_published(e1.event_id)).WillOnce(Return(true));
     EXPECT_CALL(*repo, mark_published(e2.event_id)).WillOnce(Return(true));
@@ -135,10 +144,10 @@ TEST(AuthOutboxRelayTest, PollAndDispatch_PermanentRejectionsAndMalformedPayload
         .WillOnce(Return(std::vector<domain::AuthOutboxEntity>{poison_ev, valid_ev, rejected_ev}));
 
     // Poison pill is quarantined locally before gRPC call
-    EXPECT_CALL(*repo, mark_quarantined(poison_ev.event_id, _)).WillOnce(Return(true));
+    EXPECT_CALL(*repo, mark_quarantined_str(poison_ev.event_id, _)).WillOnce(Return(true));
 
     EXPECT_CALL(*client, submit_batch(_))
-        .WillOnce(Invoke([&](const std::vector<::securecloud::audit::v1::AuditEventProto>& batch) {
+        .WillOnce([&](const std::vector<::securecloud::audit::v1::AuditEventProto>& batch) {
             EXPECT_EQ(batch.size(), 2u);
             AuditBatchSubmitResult res;
             res.rpc_success = true;
@@ -147,10 +156,10 @@ TEST(AuthOutboxRelayTest, PollAndDispatch_PermanentRejectionsAndMalformedPayload
             res.rejected_count = 1;
             res.rejected_event_ids = {rejected_ev.event_id.to_string()};
             return res;
-        }));
+        });
 
     EXPECT_CALL(*repo, mark_published(valid_ev.event_id)).WillOnce(Return(true));
-    EXPECT_CALL(*repo, mark_quarantined(rejected_ev.event_id, HasSubstr("AuditIngestionService")))
+    EXPECT_CALL(*repo, mark_quarantined_str(rejected_ev.event_id, HasSubstr("AuditIngestionService")))
         .WillOnce(Return(true));
 
     AuthOutboxRelay relay(repo, client);
@@ -174,9 +183,9 @@ TEST(AuthOutboxRelayTest, PollAndDispatch_TransientGrpcFailure_MarksFailedAndRet
     EXPECT_CALL(*client, submit_batch(_)).WillOnce(Return(unavailable_res));
 
     EXPECT_CALL(*repo, mark_published(_)).Times(0);
-    EXPECT_CALL(*repo, mark_quarantined(_, _)).Times(0);
-    EXPECT_CALL(*repo, mark_failed(e1.event_id, HasSubstr("Connection reset by peer"))).WillOnce(Return(true));
-    EXPECT_CALL(*repo, mark_failed(e2.event_id, HasSubstr("Connection reset by peer"))).WillOnce(Return(true));
+    EXPECT_CALL(*repo, mark_quarantined_str(_, _)).Times(0);
+    EXPECT_CALL(*repo, mark_failed_str(e1.event_id, HasSubstr("Connection reset by peer"))).WillOnce(Return(true));
+    EXPECT_CALL(*repo, mark_failed_str(e2.event_id, HasSubstr("Connection reset by peer"))).WillOnce(Return(true));
 
     AuthOutboxRelay relay(repo, client);
     EXPECT_EQ(relay.poll_and_dispatch(), 2u);
