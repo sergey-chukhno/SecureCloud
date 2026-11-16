@@ -15,9 +15,12 @@ namespace securecloud::gateway::audit {
 class PendingStoreTest : public ::testing::Test {
   protected:
     void SetUp() override {
-        test_dir_ = (std::filesystem::temp_directory_path() / "securecloud_test_spool").string();
+        const auto* info = ::testing::UnitTest::GetInstance()->current_test_info();
+        std::string suffix = info ? (std::string(info->test_suite_name()) + "_" + info->name()) : "spool";
+        test_dir_ = (std::filesystem::temp_directory_path() / ("securecloud_test_spool_" + suffix)).string();
         std::error_code ec;
         std::filesystem::remove_all(test_dir_, ec);
+        std::filesystem::create_directories(test_dir_, ec);
     }
 
     void TearDown() override {

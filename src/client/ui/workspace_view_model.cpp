@@ -1,10 +1,16 @@
 #include "ui/workspace_view_model.hpp"
 
+#include "application/interfaces/i_hardware_authenticator.hpp"
+#include "application/managers/device_pairing_coordinator.hpp"
+#include "application/managers/safety_number_engine.hpp"
 #include "domain/contact.hpp"
 #include "domain/conversation_id.hpp"
 #include "domain/crypto_identity.hpp"
 #include "domain/device_id.hpp"
 #include "domain/user_id.hpp"
+
+#include <QPointer>
+#include <unordered_set>
 
 namespace securecloud::client::ui {
 
@@ -13,6 +19,28 @@ WorkspaceViewModel::WorkspaceViewModel(application::ClientApplication& app, Navi
     : QObject(parent), app_(app), nav_controller_(nav_controller) {
     connect(&nav_controller_, &NavigationController::workspaceSectionChanged, this,
             [this](const QString&) { emit activeSectionChanged(); });
+
+    QPointer<WorkspaceViewModel> self(this);
+    app_.bootstrap().contact_manager().set_key_change_alert_callback(
+        [self](const domain::UserId& peer_uid, const std::string& new_safety_number) {
+            if (!self) {
+                return;
+            }
+            const QString target_uid = QString::fromStdString(peer_uid.value());
+            for (auto& conv : self->conversations_) {
+                if (!conv.isGroup && conv.peerUserId == target_uid) {
+                    conv.isVerified = false;
+                    conv.verificationStatus = QStringLiteral("KeyChanged");
+                    if (!new_safety_number.empty()) {
+                        conv.safetyNumber = QString::fromStdString(new_safety_number);
+                    }
+                }
+            }
+            emit self->selectedConversationChanged();
+            emit self->conversationsChanged();
+            emit self->contactsChanged();
+        });
+
     seedDefaultWorkspaceData();
 }
 
@@ -31,7 +59,7 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
         QStringLiteral("Online"),
         true,
         false,
-        QStringLiteral("49281 04829 88310 77241 66109 31204"),
+        QStringLiteral("49281 04829 88310 77241 66109 31204 58201 94821 03948 17263 84910 28471"),
         QStringLiteral("Principal Cryptographic Architect · Key rotation policy enforced (Double Ratchet v2)."),
         QStringLiteral("YOU: Architecture blueprint & key schedule approved."),
         QStringLiteral("Yesterday"),
@@ -50,7 +78,7 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
         QStringLiteral("Online"),
         true,
         false,
-        QStringLiteral("81726 39104 55291 00918 44127 98312"),
+        QStringLiteral("81726 39104 55291 00918 44127 98312 40291 83719 02847 16382 91048 57291"),
         QStringLiteral("Incident Response Lead · Hardware security key verified via out-of-band fingerprint."),
         QStringLiteral("Uploaded threats-q4-report.pdf (AES-256-GCM)"),
         QStringLiteral("1 min ago"),
@@ -69,7 +97,7 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
                           QStringLiteral("Busy"),
                           true,
                           false,
-                          QStringLiteral("72019 48201 99182 33410 11294 65018"),
+                          QStringLiteral("72019 48201 99182 33410 11294 65018 39201 84729 10482 73910 48291 60192"),
                           QStringLiteral("Security Operations Engineer · Gateway TLS 1.3 mTLS certificate custodian."),
                           QStringLiteral("Prekey bundle refreshed for workstation node-04."),
                           QStringLiteral("Jan 02"),
@@ -88,7 +116,7 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
                           QStringLiteral("Offline"),
                           false,
                           false,
-                          QStringLiteral("10928 38471 66251 89201 44712 09182"),
+                          QStringLiteral("10928 38471 66251 89201 44712 09182 55910 28471 90284 71209 38471 09284"),
                           QStringLiteral("External Security Auditor · Safety number pending out-of-band verification."),
                           QStringLiteral("Key exchange pending safety number check..."),
                           QStringLiteral("Jan 01"),
@@ -107,7 +135,7 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
         QStringLiteral("Offline"),
         true,
         false,
-        QStringLiteral("55412 90812 31459 77812 00192 84711"),
+        QStringLiteral("55412 90812 31459 77812 00192 84711 60192 84729 10482 73910 48291 38192"),
         QStringLiteral("Distributed Storage Engineer · Chunked AEAD file vault maintainer."),
         QStringLiteral("YOU: All 64 encrypted chunks verified."),
         QStringLiteral("Dec 23"),
@@ -183,6 +211,10 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
                                       "99999 00000 11111 22222 33333 44444", "Workstation Operator",
                                       domain::PresenceStatus::Online, 1);
     (void)app_.bootstrap().contact_manager().add_or_update_contact(selfContact);
+    if (!app_.bootstrap().contact_manager().has_local_identity()) {
+        app_.bootstrap().contact_manager().set_local_identity(domain::UserId("operator@securecloud.org"),
+                                                              std::vector<uint8_t>(32, 0xA5));
+    }
 
     // 4. Persist all conversations into LocalStore
     for (const auto& conv : conversations_) {
@@ -311,13 +343,29 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
         QStringLiteral("Outbound"), QStringLiteral("Encrypted & Verified"), QStringLiteral("Today · 09:15 AM")});
 
     // Seed operator devices & cryptographic identities
-    devices_.push_back(DeviceEntry{QStringLiteral("dev-local-01"), QStringLiteral("SecOps Workstation · macOS"),
-                                   QStringLiteral("Apple M-Series Secure Enclave · TLS 1.3 mTLS"),
-                                   QStringLiteral("ED25519-PUB-9F86D081884C7D659A2FEAA0C55AD015"),
-                                   QStringLiteral("7F8A 9B2C 1E4D 6610 9981 3042 5519 A8C1"),
-                                   QStringLiteral("SPK-X25519-0014"), QStringLiteral("SIG-ED25519-4419A8B2...C901E24F"),
-                                   QStringLiteral("Authorized"), QStringLiteral("Active now (Current Device)"), true,
-                                   false});
+    auto local_dev_res = app_.bootstrap().device_manager().get_local_device();
+    if (local_dev_res.is_ok()) {
+        const auto& real_dev = local_dev_res.value();
+        devices_.push_back(DeviceEntry{
+            QString::fromStdString(real_dev.device_id().value()), QString::fromStdString(real_dev.display_name()),
+            QStringLiteral("Apple M-Series Secure Enclave · TLS 1.3 mTLS"),
+            QString::fromStdString(real_dev.crypto_identity().identity_key()),
+            QString::fromStdString(real_dev.crypto_identity().fingerprint()),
+            QString::fromStdString(real_dev.crypto_identity().signed_prekey()),
+            QString::fromStdString(real_dev.crypto_identity().signature()),
+            QString::fromUtf8(domain::to_string(real_dev.status()).data(),
+                              static_cast<qsizetype>(domain::to_string(real_dev.status()).size())),
+            QStringLiteral("Active now (Current Device)"), true,
+            real_dev.crypto_identity().verification_status() == domain::KeyVerificationStatus::Verified});
+    } else {
+        devices_.push_back(DeviceEntry{QStringLiteral("dev-local-01"), QStringLiteral("SecOps Workstation · macOS"),
+                                       QStringLiteral("Apple M-Series Secure Enclave · TLS 1.3 mTLS"),
+                                       QStringLiteral("ED25519-PUB-9F86D081884C7D659A2FEAA0C55AD015"),
+                                       QStringLiteral("7F8A 9B2C 1E4D 6610 9981 3042 5519 A8C1"),
+                                       QStringLiteral("SPK-X25519-0014"),
+                                       QStringLiteral("SIG-ED25519-4419A8B2...C901E24F"), QStringLiteral("Authorized"),
+                                       QStringLiteral("Active now (Current Device)"), true, false});
+    }
 
     devices_.push_back(DeviceEntry{QStringLiteral("dev-mobile-02"), QStringLiteral("Field Enclave Handset · iOS 18"),
                                    QStringLiteral("Hardware Key Attested · X3DH Prekey v2"),
@@ -377,20 +425,50 @@ QString WorkspaceViewModel::priorityToLabel(int priority) {
 QVariantList WorkspaceViewModel::conversations() const {
     QVariantList result;
     for (const auto& conv : conversations_) {
+        QString displayName = conv.peerDisplayName;
+        QString presence = conv.presence;
+        bool isVerified = conv.isVerified;
+        bool isBlocked = conv.isBlocked;
+        QString safetyNumber = conv.safetyNumber;
+        int deviceCount = conv.authorizedDeviceCount;
+        QString verificationStatus = conv.verificationStatus;
+
+        if (!conv.isGroup) {
+            const auto cRes =
+                app_.bootstrap().contact_manager().get_contact(domain::UserId(conv.peerUserId.toStdString()));
+            if (cRes.is_ok()) {
+                const auto& c = cRes.value();
+                if (!c.alias().empty()) {
+                    displayName = QString::fromStdString(c.alias());
+                }
+                isVerified = c.is_verified();
+                isBlocked = c.is_blocked();
+                if (!c.safety_number().empty()) {
+                    safetyNumber = QString::fromStdString(c.safety_number());
+                }
+                deviceCount = static_cast<int>(c.authorized_device_count());
+                const auto statusSv = domain::to_string(c.verification_status());
+                verificationStatus = QString::fromUtf8(statusSv.data(), static_cast<qsizetype>(statusSv.size()));
+            }
+            if (isBlocked) {
+                presence = QStringLiteral("Offline");
+            }
+        }
+
         const QString priorityStr = priorityToLabel(conv.lastMessagePriority);
-        if (!matchesQuery(conv.peerDisplayName) && !matchesQuery(conv.peerHandle) &&
-            !matchesQuery(conv.lastMessagePreview) && !matchesQuery(priorityStr)) {
+        if (!matchesQuery(displayName) && !matchesQuery(conv.peerHandle) && !matchesQuery(conv.lastMessagePreview) &&
+            !matchesQuery(priorityStr)) {
             continue;
         }
         QVariantMap item;
         item.insert(QStringLiteral("conversationId"), conv.conversationId);
         item.insert(QStringLiteral("peerUserId"), conv.peerUserId);
-        item.insert(QStringLiteral("peerDisplayName"), conv.peerDisplayName);
+        item.insert(QStringLiteral("peerDisplayName"), displayName);
         item.insert(QStringLiteral("peerHandle"), conv.peerHandle);
-        item.insert(QStringLiteral("presence"), conv.presence);
-        item.insert(QStringLiteral("isVerified"), conv.isVerified);
-        item.insert(QStringLiteral("isBlocked"), conv.isBlocked);
-        item.insert(QStringLiteral("safetyNumber"), conv.safetyNumber);
+        item.insert(QStringLiteral("presence"), presence);
+        item.insert(QStringLiteral("isVerified"), isVerified);
+        item.insert(QStringLiteral("isBlocked"), isBlocked);
+        item.insert(QStringLiteral("safetyNumber"), safetyNumber);
         item.insert(QStringLiteral("lastMessagePreview"), conv.lastMessagePreview);
         item.insert(QStringLiteral("timestampText"), conv.timestampText);
         item.insert(QStringLiteral("unreadCount"), conv.unreadCount);
@@ -399,8 +477,8 @@ QVariantList WorkspaceViewModel::conversations() const {
         item.insert(QStringLiteral("isSelected"), conv.conversationId == selected_conversation_id_);
         item.insert(QStringLiteral("isGroup"), conv.isGroup);
         item.insert(QStringLiteral("participantCount"), static_cast<int>(conv.participantUserIds.size()));
-        item.insert(QStringLiteral("deviceCount"), conv.authorizedDeviceCount);
-        item.insert(QStringLiteral("verificationStatus"), conv.verificationStatus);
+        item.insert(QStringLiteral("deviceCount"), deviceCount);
+        item.insert(QStringLiteral("verificationStatus"), verificationStatus);
         result.append(item);
     }
     return result;
@@ -408,28 +486,103 @@ QVariantList WorkspaceViewModel::conversations() const {
 
 QVariantList WorkspaceViewModel::contacts() const {
     QVariantList result;
+    std::unordered_set<std::string> seen_user_ids;
+
     for (const auto& conv : conversations_) {
         if (conv.isGroup) {
             continue;
         }
-        if (!matchesQuery(conv.peerDisplayName) && !matchesQuery(conv.peerHandle) && !matchesQuery(conv.roleNote)) {
+        seen_user_ids.insert(conv.peerUserId.toStdString());
+
+        QString displayName = conv.peerDisplayName;
+        QString presence = conv.presence;
+        bool isVerified = conv.isVerified;
+        bool isBlocked = conv.isBlocked;
+        QString safetyNumber = conv.safetyNumber;
+        QString roleNote = conv.roleNote;
+        int deviceCount = conv.authorizedDeviceCount;
+        QString verificationStatus = conv.verificationStatus;
+
+        const auto cRes = app_.bootstrap().contact_manager().get_contact(domain::UserId(conv.peerUserId.toStdString()));
+        if (cRes.is_ok()) {
+            const auto& c = cRes.value();
+            if (!c.alias().empty()) {
+                displayName = QString::fromStdString(c.alias());
+            }
+            isVerified = c.is_verified();
+            isBlocked = c.is_blocked();
+            if (isBlocked) {
+                presence = QStringLiteral("Offline");
+            }
+            if (!c.safety_number().empty()) {
+                safetyNumber = QString::fromStdString(c.safety_number());
+            }
+            if (!c.role_note().empty()) {
+                roleNote = QString::fromStdString(c.role_note());
+            }
+            deviceCount = static_cast<int>(c.authorized_device_count());
+            const auto statusSv = domain::to_string(c.verification_status());
+            verificationStatus = QString::fromUtf8(statusSv.data(), static_cast<qsizetype>(statusSv.size()));
+        }
+
+        if (!matchesQuery(displayName) && !matchesQuery(conv.peerHandle) && !matchesQuery(roleNote)) {
             continue;
         }
+
         QVariantMap item;
         item.insert(QStringLiteral("userId"), conv.peerUserId);
-        item.insert(QStringLiteral("displayName"), conv.peerDisplayName);
+        item.insert(QStringLiteral("displayName"), displayName);
         item.insert(QStringLiteral("handle"), conv.peerHandle);
-        item.insert(QStringLiteral("presence"), conv.presence);
-        item.insert(QStringLiteral("isVerified"), conv.isVerified);
-        item.insert(QStringLiteral("isBlocked"), conv.isBlocked);
-        item.insert(QStringLiteral("safetyNumber"), conv.safetyNumber);
-        item.insert(QStringLiteral("roleNote"), conv.roleNote);
+        item.insert(QStringLiteral("presence"), presence);
+        item.insert(QStringLiteral("isVerified"), isVerified);
+        item.insert(QStringLiteral("isBlocked"), isBlocked);
+        item.insert(QStringLiteral("safetyNumber"), safetyNumber);
+        item.insert(QStringLiteral("roleNote"), roleNote);
         item.insert(QStringLiteral("conversationId"), conv.conversationId);
         item.insert(QStringLiteral("isSelected"), conv.conversationId == selected_conversation_id_);
-        item.insert(QStringLiteral("deviceCount"), conv.authorizedDeviceCount);
-        item.insert(QStringLiteral("verificationStatus"), conv.verificationStatus);
+        item.insert(QStringLiteral("deviceCount"), deviceCount);
+        item.insert(QStringLiteral("verificationStatus"), verificationStatus);
         result.append(item);
     }
+
+    // Append any directory/local contacts not currently backed by an active conversation entry
+    const auto allRes = app_.bootstrap().contact_manager().get_contacts();
+    if (allRes.is_ok()) {
+        for (const auto& c : allRes.value()) {
+            const std::string& uid = c.user_id().value();
+            if (uid == "operator@securecloud.org" || seen_user_ids.contains(uid)) {
+                continue;
+            }
+            const QString qUid = QString::fromStdString(uid);
+            const QString displayName = QString::fromStdString(c.alias());
+            const QString handle = qUid.startsWith('@') ? qUid : QStringLiteral("@%1").arg(qUid.section('@', 0, 0));
+            const QString roleNote = QString::fromStdString(c.role_note());
+            if (!matchesQuery(displayName) && !matchesQuery(handle) && !matchesQuery(roleNote)) {
+                continue;
+            }
+            const auto presenceSv =
+                domain::to_string(c.is_blocked() ? domain::PresenceStatus::Offline : c.presence_status());
+            const auto statusSv = domain::to_string(c.verification_status());
+
+            QVariantMap item;
+            item.insert(QStringLiteral("userId"), qUid);
+            item.insert(QStringLiteral("displayName"), displayName);
+            item.insert(QStringLiteral("handle"), handle);
+            item.insert(QStringLiteral("presence"),
+                        QString::fromUtf8(presenceSv.data(), static_cast<qsizetype>(presenceSv.size())));
+            item.insert(QStringLiteral("isVerified"), c.is_verified());
+            item.insert(QStringLiteral("isBlocked"), c.is_blocked());
+            item.insert(QStringLiteral("safetyNumber"), QString::fromStdString(c.safety_number()));
+            item.insert(QStringLiteral("roleNote"), roleNote);
+            item.insert(QStringLiteral("conversationId"), QString());
+            item.insert(QStringLiteral("isSelected"), false);
+            item.insert(QStringLiteral("deviceCount"), static_cast<int>(c.authorized_device_count()));
+            item.insert(QStringLiteral("verificationStatus"),
+                        QString::fromUtf8(statusSv.data(), static_cast<qsizetype>(statusSv.size())));
+            result.append(item);
+        }
+    }
+
     return result;
 }
 
@@ -506,7 +659,20 @@ QString WorkspaceViewModel::selectedPeerHandle() const {
 
 QString WorkspaceViewModel::selectedPeerPresence() const {
     const auto* conv = findConversation(selected_conversation_id_);
-    return conv ? conv->presence : QStringLiteral("Offline");
+    if (!conv) {
+        return QStringLiteral("Offline");
+    }
+    if (conv->isBlocked) {
+        return QStringLiteral("Offline");
+    }
+    if (!conv->isGroup) {
+        const auto cRes =
+            app_.bootstrap().contact_manager().get_contact(domain::UserId(conv->peerUserId.toStdString()));
+        if (cRes.is_ok() && cRes.value().is_blocked()) {
+            return QStringLiteral("Offline");
+        }
+    }
+    return conv->presence;
 }
 
 bool WorkspaceViewModel::selectedPeerVerified() const {
@@ -794,19 +960,43 @@ void WorkspaceViewModel::cycleComposerPriority() {
 
 QVariantList WorkspaceViewModel::devices() const {
     QVariantList result;
+    auto local_res = app_.bootstrap().device_manager().get_local_device();
+
     for (const auto& dev : devices_) {
         QVariantMap item;
-        item.insert(QStringLiteral("deviceId"), dev.deviceId);
-        item.insert(QStringLiteral("displayName"), dev.displayName);
-        item.insert(QStringLiteral("platformInfo"), dev.platformInfo);
-        item.insert(QStringLiteral("identityKeyHex"), dev.identityKeyHex);
-        item.insert(QStringLiteral("fingerprint"), dev.fingerprint);
-        item.insert(QStringLiteral("signedPrekeyId"), dev.signedPrekeyId);
-        item.insert(QStringLiteral("prekeySignatureHex"), dev.prekeySignatureHex);
-        item.insert(QStringLiteral("status"), dev.status);
-        item.insert(QStringLiteral("lastSeenText"), dev.lastSeenText);
-        item.insert(QStringLiteral("isCurrentDevice"), dev.isCurrentDevice);
-        item.insert(QStringLiteral("isVerified"), dev.isVerified);
+        if (dev.isCurrentDevice && local_res.is_ok()) {
+            const auto& real_dev = local_res.value();
+            item.insert(QStringLiteral("deviceId"), QString::fromStdString(real_dev.device_id().value()));
+            item.insert(QStringLiteral("displayName"), QString::fromStdString(real_dev.display_name()));
+            item.insert(QStringLiteral("platformInfo"), dev.platformInfo);
+            item.insert(QStringLiteral("identityKeyHex"),
+                        QString::fromStdString(real_dev.crypto_identity().identity_key()));
+            item.insert(QStringLiteral("fingerprint"),
+                        QString::fromStdString(real_dev.crypto_identity().fingerprint()));
+            item.insert(QStringLiteral("signedPrekeyId"),
+                        QString::fromStdString(real_dev.crypto_identity().signed_prekey()));
+            item.insert(QStringLiteral("prekeySignatureHex"),
+                        QString::fromStdString(real_dev.crypto_identity().signature()));
+            item.insert(QStringLiteral("status"),
+                        QString::fromUtf8(domain::to_string(real_dev.status()).data(),
+                                          static_cast<qsizetype>(domain::to_string(real_dev.status()).size())));
+            item.insert(QStringLiteral("lastSeenText"), dev.lastSeenText);
+            item.insert(QStringLiteral("isCurrentDevice"), true);
+            item.insert(QStringLiteral("isVerified"),
+                        real_dev.crypto_identity().verification_status() == domain::KeyVerificationStatus::Verified);
+        } else {
+            item.insert(QStringLiteral("deviceId"), dev.deviceId);
+            item.insert(QStringLiteral("displayName"), dev.displayName);
+            item.insert(QStringLiteral("platformInfo"), dev.platformInfo);
+            item.insert(QStringLiteral("identityKeyHex"), dev.identityKeyHex);
+            item.insert(QStringLiteral("fingerprint"), dev.fingerprint);
+            item.insert(QStringLiteral("signedPrekeyId"), dev.signedPrekeyId);
+            item.insert(QStringLiteral("prekeySignatureHex"), dev.prekeySignatureHex);
+            item.insert(QStringLiteral("status"), dev.status);
+            item.insert(QStringLiteral("lastSeenText"), dev.lastSeenText);
+            item.insert(QStringLiteral("isCurrentDevice"), dev.isCurrentDevice);
+            item.insert(QStringLiteral("isVerified"), dev.isVerified);
+        }
         result.append(item);
     }
     return result;
@@ -823,6 +1013,29 @@ int WorkspaceViewModel::pendingDeviceCount() const noexcept {
 }
 
 QVariantMap WorkspaceViewModel::localDeviceIdentity() const {
+    auto dev_res = app_.bootstrap().device_manager().get_local_device();
+    if (dev_res.is_ok()) {
+        const auto& dev = dev_res.value();
+        QVariantMap item;
+        item.insert(QStringLiteral("deviceId"), QString::fromStdString(dev.device_id().value()));
+        item.insert(QStringLiteral("displayName"), QString::fromStdString(dev.display_name()));
+        item.insert(QStringLiteral("platformInfo"), QStringLiteral("Apple M-Series Secure Enclave · TLS 1.3 mTLS"));
+        item.insert(QStringLiteral("identityKeyHex"), QString::fromStdString(dev.crypto_identity().identity_key()));
+        item.insert(QStringLiteral("fingerprint"), QString::fromStdString(dev.crypto_identity().fingerprint()));
+        item.insert(QStringLiteral("signedPrekeyId"), QString::fromStdString(dev.crypto_identity().signed_prekey()));
+        item.insert(QStringLiteral("prekeySignatureHex"), QString::fromStdString(dev.crypto_identity().signature()));
+        item.insert(QStringLiteral("status"),
+                    QString::fromUtf8(domain::to_string(dev.status()).data(),
+                                      static_cast<qsizetype>(domain::to_string(dev.status()).size())));
+        item.insert(QStringLiteral("isVerified"),
+                    dev.crypto_identity().verification_status() == domain::KeyVerificationStatus::Verified);
+        item.insert(QStringLiteral("lastSeenText"), QStringLiteral("Active now (Current Device)"));
+        item.insert(QStringLiteral("isCurrentDevice"), true);
+        item.insert(QStringLiteral("prekeyCount"), local_prekey_count_);
+        item.insert(QStringLiteral("prekeyHealthStatus"), local_prekey_health_);
+        return item;
+    }
+
     QVariantMap item;
     for (const auto& dev : devices_) {
         if (dev.isCurrentDevice) {
@@ -835,6 +1048,10 @@ QVariantMap WorkspaceViewModel::localDeviceIdentity() const {
             item.insert(QStringLiteral("prekeySignatureHex"), dev.prekeySignatureHex);
             item.insert(QStringLiteral("status"), dev.status);
             item.insert(QStringLiteral("isVerified"), dev.isVerified);
+            item.insert(QStringLiteral("lastSeenText"), dev.lastSeenText);
+            item.insert(QStringLiteral("isCurrentDevice"), true);
+            item.insert(QStringLiteral("prekeyCount"), local_prekey_count_);
+            item.insert(QStringLiteral("prekeyHealthStatus"), local_prekey_health_);
             return item;
         }
     }
@@ -1063,6 +1280,9 @@ void WorkspaceViewModel::togglePeerVerified(const QString& peerUserId) {
             conv.verificationStatus = conv.isVerified ? QStringLiteral("Verified") : QStringLiteral("Unverified");
             (void)app_.bootstrap().contact_manager().verify_contact_key(domain::UserId(conv.peerUserId.toStdString()),
                                                                         conv.isVerified);
+            std::vector<uint8_t> dummy_key(32, 0x01);
+            (void)app_.bootstrap().safety_number_engine().set_verification_state(
+                domain::UserId(conv.peerUserId.toStdString()), dummy_key, conv.isVerified);
             emit selectedConversationChanged();
             emit conversationsChanged();
             emit contactsChanged();
@@ -1072,29 +1292,39 @@ void WorkspaceViewModel::togglePeerVerified(const QString& peerUserId) {
 }
 
 void WorkspaceViewModel::togglePeerBlocked(const QString& peerUserId) {
-    for (auto& conv : conversations_) {
+    for (const auto& conv : conversations_) {
         if (conv.peerUserId == peerUserId ||
             (peerUserId.isEmpty() && conv.conversationId == selected_conversation_id_)) {
-            conv.isBlocked = !conv.isBlocked;
-            (void)app_.bootstrap().contact_manager().set_blocked(domain::UserId(conv.peerUserId.toStdString()),
-                                                                 conv.isBlocked);
-            emit selectedConversationChanged();
-            emit conversationsChanged();
-            emit contactsChanged();
+            (void)blockContact(conv.peerUserId, !conv.isBlocked);
             return;
         }
     }
 }
 
 bool WorkspaceViewModel::approveDevice(const QString& deviceId) {
-    if (deviceId.trimmed().isEmpty()) {
+    const QString cleaned = deviceId.trimmed();
+    if (cleaned.isEmpty()) {
         return false;
     }
     for (auto& dev : devices_) {
-        if (dev.deviceId == deviceId) {
+        if (dev.deviceId == cleaned) {
+            std::string mfa_token;
+            auto mfa_res =
+                app_.bootstrap().hardware_authenticator().prompt_for_hardware_mfa("approve:" + cleaned.toStdString());
+            if (mfa_res.is_ok()) {
+                mfa_token = mfa_res.value();
+            }
+
+            auto auth_res = app_.bootstrap().gateway().authorize_device_pairing(domain::DeviceId(cleaned.toStdString()),
+                                                                                "948201", mfa_token);
+            if (auth_res.is_error()) {
+                emit workspaceError(QString::fromStdString(auth_res.error().user_message()));
+                return false;
+            }
+
             dev.status = QStringLiteral("Authorized");
             dev.isVerified = true;
-            dev.lastSeenText = QStringLiteral("Approved just now");
+            dev.lastSeenText = QStringLiteral("Approved just now · FIDO2 Attested");
             emit devicesChanged();
             return true;
         }
@@ -1113,8 +1343,16 @@ bool WorkspaceViewModel::revokeDevice(const QString& deviceId) {
                 emit workspaceError(QStringLiteral("Cannot revoke the active workstation device from itself."));
                 return false;
             }
+
+            std::string mfa_token;
+            auto mfa_res =
+                app_.bootstrap().hardware_authenticator().prompt_for_hardware_mfa("revoke:" + cleaned.toStdString());
+            if (mfa_res.is_ok()) {
+                mfa_token = mfa_res.value();
+            }
+
             const auto revRes =
-                app_.bootstrap().device_manager().revoke_device(domain::DeviceId(cleaned.toStdString()));
+                app_.bootstrap().device_manager().revoke_device(domain::DeviceId(cleaned.toStdString()), mfa_token);
             if (revRes.is_error()) {
                 emit workspaceError(QString::fromStdString(revRes.error().user_message()));
                 return false;
@@ -1134,30 +1372,109 @@ QString WorkspaceViewModel::pairNewDevice(const QString& displayName) {
     if (cleaned.isEmpty()) {
         return QString();
     }
-    const QString newId = QStringLiteral("dev-node-0%1").arg(next_device_seq_++);
+
+    auto local_res = app_.bootstrap().device_manager().get_local_device();
+    domain::UserId uid = local_res.is_ok() ? local_res.value().user_id() : domain::UserId("usr-local-workstation");
+
+    auto pair_res =
+        app_.bootstrap().device_pairing_coordinator().initiate_companion_pairing(uid, cleaned.toStdString());
+
+    QString newId;
+    QString sasCode = QStringLiteral("492 810");
+    if (pair_res.is_ok()) {
+        const auto& session = pair_res.value();
+        newId = QString::fromStdString(session.device_id.value());
+        sasCode = QString::fromStdString(session.expected_sas.numeric_code());
+    } else {
+        newId = QStringLiteral("dev-node-0%1").arg(next_device_seq_++);
+    }
+
     devices_.push_back(DeviceEntry{
-        newId, cleaned, QStringLiteral("Pending X3DH Key Bundle Handshake"),
+        newId, cleaned, QStringLiteral("Pending X3DH Key Bundle Handshake · QR Generated"),
         QStringLiteral("ED25519-PUB-A910F442...8812C09E"), QStringLiteral("6612 90B4 3319 88A1 4402 19C4 7721 E009"),
         QStringLiteral("SPK-X25519-0001"), QStringLiteral("SIG-ED25519-5501E88A...9920B11C"), QStringLiteral("Pending"),
-        QStringLiteral("Pairing requested just now"), false, false});
+        QStringLiteral("Pairing requested just now (SAS: %1)").arg(sasCode), false, false});
     emit devicesChanged();
     return newId;
 }
 
+QVariantMap WorkspaceViewModel::hardwareAttestationInfo() const {
+    QVariantMap result;
+    auto& hw = app_.bootstrap().hardware_authenticator();
+    result.insert(QStringLiteral("available"), hw.is_hardware_authenticator_available());
+    auto att_res = hw.attest_device_authenticator();
+    if (att_res.is_ok()) {
+        const auto& rec = att_res.value();
+        result.insert(QStringLiteral("authenticatorType"),
+                      QString::fromUtf8(domain::to_string(rec.authenticator_type()).data(),
+                                        static_cast<qsizetype>(domain::to_string(rec.authenticator_type()).size())));
+        result.insert(QStringLiteral("aaguid"), QString::fromStdString(rec.aaguid()));
+        result.insert(QStringLiteral("attestationFormat"), QString::fromStdString(rec.attestation_format()));
+        result.insert(QStringLiteral("isVerified"), rec.is_verified());
+    } else {
+        result.insert(QStringLiteral("isVerified"), false);
+    }
+    return result;
+}
+
 void WorkspaceViewModel::rotateSignedPrekey() {
-    ++prekey_epoch_;
-    for (auto& dev : devices_) {
-        if (dev.isCurrentDevice) {
-            dev.signedPrekeyId = QStringLiteral("SPK-X25519-00%1").arg(prekey_epoch_);
-            dev.prekeySignatureHex =
-                QStringLiteral("SIG-ED25519-%1F8...A20%2").arg(prekey_epoch_ * 73).arg(prekey_epoch_);
-            dev.isVerified = true;
-            dev.lastSeenText = QStringLiteral("Prekey rotated & attested just now");
-            break;
+    auto rot_res = app_.bootstrap().device_manager().rotate_signed_prekey();
+    if (rot_res.is_ok()) {
+        auto dev_res = app_.bootstrap().device_manager().get_local_device();
+        if (dev_res.is_ok()) {
+            const auto& dev = dev_res.value();
+            for (auto& d : devices_) {
+                if (d.isCurrentDevice) {
+                    d.signedPrekeyId = QString::fromStdString(dev.crypto_identity().signed_prekey());
+                    d.prekeySignatureHex = QString::fromStdString(dev.crypto_identity().signature());
+                    d.isVerified = true;
+                    d.lastSeenText = QStringLiteral("Prekey rotated & attested just now");
+                    break;
+                }
+            }
+        }
+        (void)app_.bootstrap().hardware_authenticator().attest_device_authenticator();
+        refreshPrekeyInventory();
+    } else {
+        ++prekey_epoch_;
+        for (auto& dev : devices_) {
+            if (dev.isCurrentDevice) {
+                dev.signedPrekeyId = QStringLiteral("SPK-X25519-00%1").arg(prekey_epoch_);
+                dev.prekeySignatureHex =
+                    QStringLiteral("SIG-ED25519-%1F8...A20%2").arg(prekey_epoch_ * 73).arg(prekey_epoch_);
+                dev.isVerified = true;
+                dev.lastSeenText = QStringLiteral("Prekey rotated & attested just now");
+                break;
+            }
         }
     }
     emit localDeviceIdentityChanged();
     emit devicesChanged();
+}
+
+void WorkspaceViewModel::refreshPrekeyInventory() {
+    auto inv_res = app_.bootstrap().device_manager().check_prekey_inventory();
+    if (inv_res.is_ok()) {
+        local_prekey_count_ = static_cast<int>(inv_res.value().active_prekey_count());
+        if (inv_res.value().is_exhausted()) {
+            local_prekey_health_ = QStringLiteral("Exhausted");
+        } else if (inv_res.value().needs_replenishment()) {
+            local_prekey_health_ = QStringLiteral("Low");
+        } else {
+            local_prekey_health_ = QStringLiteral("Healthy");
+        }
+    }
+    emit localDeviceIdentityChanged();
+}
+
+bool WorkspaceViewModel::replenishPrekeys(int batchSize) {
+    const std::size_t batch = batchSize > 0 ? static_cast<std::size_t>(batchSize) : 50u;
+    auto rep_res = app_.bootstrap().device_manager().replenish_prekeys(batch);
+    if (rep_res.is_ok()) {
+        refreshPrekeyInventory();
+        return true;
+    }
+    return false;
 }
 
 void WorkspaceViewModel::regenerateTotpSecret() {
@@ -1208,8 +1525,9 @@ bool WorkspaceViewModel::addContact(const QString& handle, const QString& displa
     }
 
     const domain::UserId uid(peerUid.toStdString());
-    const std::string sNum =
-        safetyNumber.isEmpty() ? "12345 67890 12345 67890 12345 67890" : safetyNumber.toStdString();
+    const std::string sNum = safetyNumber.isEmpty()
+                                 ? "10928 38471 66251 89201 44712 09182 55910 28471 90284 71209 38471 09284"
+                                 : safetyNumber.toStdString();
     const auto createRes = app_.bootstrap().contact_manager().create_contact(uid, cleanedName.toStdString(), sNum,
                                                                              roleNote.toStdString(), 1);
 
@@ -1257,13 +1575,7 @@ bool WorkspaceViewModel::updateContactProfile(const QString& userId, const QStri
         return false;
     }
 
-    QString peerUid = userId.trimmed();
-    if (peerUid.startsWith('@')) {
-        peerUid = peerUid.mid(1);
-    }
-    if (!peerUid.contains('@')) {
-        peerUid += QStringLiteral("@securecloud.org");
-    }
+    const QString peerUid = resolveTargetPeerUserId(userId);
 
     const auto updateRes = app_.bootstrap().contact_manager().update_contact_alias(
         domain::UserId(peerUid.toStdString()), displayName.toStdString(), roleNote.toStdString());
@@ -1292,13 +1604,7 @@ bool WorkspaceViewModel::removeContact(const QString& userId) {
         return false;
     }
 
-    QString peerUid = userId.trimmed();
-    if (peerUid.startsWith('@')) {
-        peerUid = peerUid.mid(1);
-    }
-    if (!peerUid.contains('@')) {
-        peerUid += QStringLiteral("@securecloud.org");
-    }
+    const QString peerUid = resolveTargetPeerUserId(userId);
 
     const auto delRes = app_.bootstrap().contact_manager().remove_contact(domain::UserId(peerUid.toStdString()));
     if (delRes.is_error()) {
@@ -1328,7 +1634,8 @@ void WorkspaceViewModel::simulatePeerKeyChange(const QString& userId) {
         if (conv.peerUserId == userId || (userId.isEmpty() && conv.conversationId == selected_conversation_id_)) {
             conv.isVerified = false;
             conv.verificationStatus = QStringLiteral("KeyChanged");
-            conv.safetyNumber = QStringLiteral("99999 88888 77777 66666 55555 44444 (UNVERIFIED ROTATION)");
+            conv.safetyNumber = QStringLiteral(
+                "99999 88888 77777 66666 55555 44444 33333 22222 11111 00000 12345 67890 (UNVERIFIED ROTATION)");
             (void)app_.bootstrap().contact_manager().mark_contact_key_changed(
                 domain::UserId(conv.peerUserId.toStdString()), conv.safetyNumber.toStdString());
             emit selectedConversationChanged();
@@ -1340,18 +1647,240 @@ void WorkspaceViewModel::simulatePeerKeyChange(const QString& userId) {
 }
 
 void WorkspaceViewModel::acceptAndVerifyPeerKey(const QString& userId) {
-    for (auto& conv : conversations_) {
-        if (conv.peerUserId == userId || (userId.isEmpty() && conv.conversationId == selected_conversation_id_)) {
-            conv.isVerified = true;
-            conv.verificationStatus = QStringLiteral("Verified");
-            (void)app_.bootstrap().contact_manager().verify_contact_key(domain::UserId(conv.peerUserId.toStdString()),
-                                                                        true);
-            emit selectedConversationChanged();
-            emit conversationsChanged();
-            emit contactsChanged();
-            return;
+    (void)acknowledgeKeyChange(userId);
+}
+
+QString WorkspaceViewModel::resolveTargetPeerUserId(const QString& userId) const {
+    const QString cleaned = userId.trimmed();
+    if (cleaned.isEmpty()) {
+        return selectedPeerUserId();
+    }
+    for (const auto& conv : conversations_) {
+        if (!conv.isGroup && (conv.peerUserId == cleaned || conv.peerHandle == cleaned)) {
+            return conv.peerUserId;
         }
     }
+    if (app_.bootstrap().contact_manager().get_contact(domain::UserId(cleaned.toStdString())).is_ok()) {
+        return cleaned;
+    }
+    QString normalized = cleaned;
+    if (normalized.startsWith('@')) {
+        normalized = normalized.mid(1);
+    }
+    if (!normalized.contains('@') &&
+        app_.bootstrap()
+            .contact_manager()
+            .get_contact(domain::UserId((normalized + QStringLiteral("@securecloud.org")).toStdString()))
+            .is_ok()) {
+        return normalized + QStringLiteral("@securecloud.org");
+    }
+    return cleaned;
+}
+
+bool WorkspaceViewModel::addContactByHandle(const QString& handle, const QString& displayName,
+                                            const QString& roleNote) {
+    const QString cleanedHandle = handle.trimmed();
+    if (cleanedHandle.isEmpty()) {
+        emit workspaceError(QStringLiteral("Contact handle or query cannot be empty."));
+        return false;
+    }
+
+    auto& cm = app_.bootstrap().contact_manager();
+    const auto searchRes = cm.search_contacts(cleanedHandle.toStdString());
+    if (searchRes.is_ok() && !searchRes.value().empty()) {
+        const auto& entries = searchRes.value();
+        domain::DirectoryUserEntry selected = entries.front();
+        const std::string targetLower = cleanedHandle.toLower().toStdString();
+        for (const auto& entry : entries) {
+            const QString qHandle = QString::fromStdString(entry.handle()).toLower();
+            const QString qUid = QString::fromStdString(entry.user_id().value()).toLower();
+            if (qHandle.toStdString() == targetLower || qUid.toStdString() == targetLower) {
+                selected = entry;
+                break;
+            }
+        }
+
+        const auto addRes = cm.add_contact_from_directory(selected, displayName.trimmed().toStdString(),
+                                                          roleNote.trimmed().toStdString());
+        if (addRes.is_error()) {
+            emit workspaceError(QString::fromStdString(addRes.error().user_message()));
+            return false;
+        }
+
+        const auto& contact = addRes.value();
+        const QString peerUid = QString::fromStdString(contact.user_id().value());
+        const QString convId = QStringLiteral("conv-%1").arg(peerUid.toLower().remove('@').remove('.'));
+        const QString peerHandleStr = selected.handle().empty() ? peerUid : QString::fromStdString(selected.handle());
+        const QString aliasStr = QString::fromStdString(contact.alias());
+        const QString safetyNumStr = QString::fromStdString(contact.safety_number());
+
+        bool exists = false;
+        for (auto& conv : conversations_) {
+            if (!conv.isGroup && conv.peerUserId == peerUid) {
+                conv.peerDisplayName = aliasStr;
+                conv.peerHandle = peerHandleStr;
+                conv.safetyNumber = safetyNumStr;
+                conv.roleNote = QString::fromStdString(contact.role_note());
+                conv.authorizedDeviceCount = static_cast<int>(contact.authorized_device_count());
+                exists = true;
+                break;
+            }
+        }
+
+        if (!exists) {
+            conversations_.push_back(ConversationEntry{
+                convId,
+                peerUid,
+                aliasStr,
+                peerHandleStr,
+                QStringLiteral("Offline"),
+                contact.is_verified(),
+                contact.is_blocked(),
+                safetyNumStr,
+                QString::fromStdString(contact.role_note()),
+                QStringLiteral("Conversation opened."),
+                QStringLiteral("Just now"),
+                0,
+                1,
+                false,
+                {QStringLiteral("operator@securecloud.org"), peerUid},
+                static_cast<int>(contact.authorized_device_count()),
+                QString::fromUtf8(domain::to_string(contact.verification_status()).data(),
+                                  static_cast<qsizetype>(domain::to_string(contact.verification_status()).size()))});
+
+            domain::Conversation domainConv(
+                domain::ConversationId(convId.toStdString()), domain::ConversationType::Direct, aliasStr.toStdString(),
+                {domain::UserId("operator@securecloud.org"), contact.user_id()}, std::chrono::system_clock::now(),
+                std::chrono::system_clock::now(), 0, false);
+            (void)app_.bootstrap().local_store().save_conversation(domainConv);
+        }
+
+        emit contactsChanged();
+        emit conversationsChanged();
+        return true;
+    }
+
+    const QString fallbackName = displayName.trimmed().isEmpty() ? cleanedHandle : displayName.trimmed();
+    return addContact(cleanedHandle, fallbackName, roleNote);
+}
+
+bool WorkspaceViewModel::verifyContactSafetyNumber(const QString& userId, bool verified) {
+    const QString targetUid = resolveTargetPeerUserId(userId);
+    if (targetUid.isEmpty()) {
+        return false;
+    }
+
+    const auto res =
+        app_.bootstrap().contact_manager().verify_contact_key(domain::UserId(targetUid.toStdString()), verified);
+    if (res.is_error()) {
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+        return false;
+    }
+
+    for (auto& conv : conversations_) {
+        if (!conv.isGroup && conv.peerUserId == targetUid) {
+            conv.isVerified = verified;
+            conv.verificationStatus = verified ? QStringLiteral("Verified") : QStringLiteral("Unverified");
+        }
+    }
+
+    emit selectedConversationChanged();
+    emit conversationsChanged();
+    emit contactsChanged();
+    return true;
+}
+
+bool WorkspaceViewModel::blockContact(const QString& userId, bool blocked) {
+    const QString targetUid = resolveTargetPeerUserId(userId);
+    if (targetUid.isEmpty()) {
+        return false;
+    }
+
+    const auto res =
+        app_.bootstrap().contact_manager().set_contact_blocked(domain::UserId(targetUid.toStdString()), blocked);
+    if (res.is_error()) {
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+        return false;
+    }
+
+    for (auto& conv : conversations_) {
+        if (!conv.isGroup && conv.peerUserId == targetUid) {
+            conv.isBlocked = blocked;
+        }
+    }
+
+    emit selectedConversationChanged();
+    emit conversationsChanged();
+    emit contactsChanged();
+    return true;
+}
+
+void WorkspaceViewModel::syncContacts() {
+    auto& cm = app_.bootstrap().contact_manager();
+    const auto syncRes = cm.sync_contacts();
+    if (syncRes.is_error()) {
+        emit workspaceError(QString::fromStdString(syncRes.error().user_message()));
+    }
+
+    for (auto& conv : conversations_) {
+        if (conv.isGroup) {
+            continue;
+        }
+        const auto cRes = cm.get_contact(domain::UserId(conv.peerUserId.toStdString()));
+        if (cRes.is_ok()) {
+            const auto& c = cRes.value();
+            conv.authorizedDeviceCount = static_cast<int>(c.authorized_device_count());
+            conv.isBlocked = c.is_blocked();
+            conv.isVerified = c.is_verified();
+            const auto statusSv = domain::to_string(c.verification_status());
+            conv.verificationStatus = QString::fromUtf8(statusSv.data(), static_cast<qsizetype>(statusSv.size()));
+            if (!c.safety_number().empty()) {
+                conv.safetyNumber = QString::fromStdString(c.safety_number());
+            }
+            if (c.authorized_device_count() == 0) {
+                conv.presence = QStringLiteral("Offline");
+            }
+        }
+    }
+
+    emit selectedConversationChanged();
+    emit conversationsChanged();
+    emit contactsChanged();
+}
+
+bool WorkspaceViewModel::acknowledgeKeyChange(const QString& userId) {
+    const QString targetUid = resolveTargetPeerUserId(userId);
+    if (targetUid.isEmpty()) {
+        return false;
+    }
+
+    auto& cm = app_.bootstrap().contact_manager();
+    const domain::UserId uid(targetUid.toStdString());
+    auto res = cm.acknowledge_and_verify_key_change(uid);
+    if (res.is_error()) {
+        // Fallback for offline/locally simulated mock UI contacts
+        res = cm.verify_contact_key(uid, true);
+        if (res.is_error()) {
+            emit workspaceError(QString::fromStdString(res.error().user_message()));
+            return false;
+        }
+    }
+
+    const auto cRes = cm.get_contact(uid);
+    for (auto& conv : conversations_) {
+        if (!conv.isGroup && conv.peerUserId == targetUid) {
+            conv.isVerified = true;
+            conv.verificationStatus = QStringLiteral("Verified");
+            if (cRes.is_ok() && !cRes.value().safety_number().empty()) {
+                conv.safetyNumber = QString::fromStdString(cRes.value().safety_number());
+            }
+        }
+    }
+
+    emit selectedConversationChanged();
+    emit conversationsChanged();
+    emit contactsChanged();
+    return true;
 }
 
 QString WorkspaceViewModel::createDirectConversation(const QString& peerUserId) {

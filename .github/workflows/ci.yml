@@ -135,6 +135,7 @@ jobs:
     runs-on: windows-2022
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg_archives
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg_archives,readwrite"
       VCPKG_DOWNLOADS: ${{ github.workspace }}/.vcpkg_downloads
       SCCACHE_GHA_ENABLED: "true"
       ACTIONS_CACHE_SERVICE_V2: "on"
@@ -188,6 +189,36 @@ jobs:
           & sccache --start-server
           & sccache --show-stats
 
+      - name: Set up MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure Ninja build system path
+        shell: pwsh
+        run: |
+          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Ensure vcpkg baseline commit
+        shell: pwsh
+        run: |
+          git -C $env:VCPKG_INSTALLATION_ROOT cat-file -e b322364f06308bdd24823f9d8f03fe0cc86fd46f 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Fetching specific vcpkg baseline commit..."
+            git -C $env:VCPKG_INSTALLATION_ROOT fetch --depth=1 origin b322364f06308bdd24823f9d8f03fe0cc86fd46f
+          }
+
+      - name: Compute vcpkg & MSVC ABI cache key
+        id: vcpkg-abi
+        shell: pwsh
+        run: |
+          $clVer = (cl.exe 2>&1 | Select-Object -First 1).Trim()
+          $vcpkgCmakeSha = (git -C $env:VCPKG_INSTALLATION_ROOT rev-parse HEAD:scripts/cmake).Trim()
+          $tripletHash = (Get-FileHash "$env:VCPKG_INSTALLATION_ROOT/triplets/x64-windows.cmake" -Algorithm SHA256).Hash
+          $raw = "$clVer|$vcpkgCmakeSha|$tripletHash"
+          $stream = [IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($raw))
+          $abiKey = (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash.Substring(0, 16).ToLower()
+          "abi_key=$abiKey" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "Computed vcpkg/MSVC ABI key: $abiKey ($raw)"
+
       - name: Restore vcpkg binary archives and downloads
         id: vcpkg-cache
         uses: actions/cache/restore@v4
@@ -195,11 +226,11 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-v4-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v5-${{ hashFiles('vcpkg.json') }}-${{ steps.vcpkg-abi.outputs.abi_key }}
           restore-keys: |
+            vcpkg-msvc-v5-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-msvc-v5-
             vcpkg-msvc-v4-
-            vcpkg-msvc-v3-
-            vcpkg-msvc-
 
       - name: Ensure vcpkg cache directories exist
         shell: pwsh
@@ -239,23 +270,6 @@ jobs:
             }
           }
 
-      - name: Set up MSVC Developer Command Prompt
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Configure Ninja build system path
-        shell: pwsh
-        run: |
-          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Ensure vcpkg baseline commit
-        shell: pwsh
-        run: |
-          $hasCommit = git -C $env:VCPKG_INSTALLATION_ROOT cat-file -e b322364f06308bdd24823f9d8f03fe0cc86fd46f 2>$null; $LASTEXITCODE -eq 0
-          if (-not $hasCommit) {
-            Write-Host "Fetching specific vcpkg baseline commit..."
-            git -C $env:VCPKG_INSTALLATION_ROOT fetch --depth=1 origin b322364f06308bdd24823f9d8f03fe0cc86fd46f
-          }
-
       - name: Configure CMake with MSVC & vcpkg
         shell: pwsh
         run: |
@@ -279,7 +293,7 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-v4-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v5-${{ hashFiles('vcpkg.json') }}-${{ steps.vcpkg-abi.outputs.abi_key }}
 
       - name: Build All Targets
         shell: pwsh

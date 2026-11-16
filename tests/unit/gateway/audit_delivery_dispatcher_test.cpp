@@ -60,7 +60,7 @@ TEST(AuditDeliveryDispatcherTest, DispatchesAndAcknowledgesEvents) {
     event.set_event_type("security.token.rejected");
 
     std::vector<uint8_t> bytes(event.ByteSizeLong());
-    event.SerializeToArray(bytes.data(), static_cast<int>(bytes.size()));
+    ASSERT_TRUE(event.SerializeToArray(bytes.data(), static_cast<int>(bytes.size())));
 
     PendingRecord rec;
     rec.event_id = id;
@@ -90,7 +90,7 @@ TEST(AuditDeliveryDispatcherTest, RetriesOnTransientError) {
     const auto id = securecloud::audit::domain::EventId::generate_v7();
     event.set_event_id(id.to_string());
     std::vector<uint8_t> bytes(event.ByteSizeLong());
-    event.SerializeToArray(bytes.data(), static_cast<int>(bytes.size()));
+    ASSERT_TRUE(event.SerializeToArray(bytes.data(), static_cast<int>(bytes.size())));
 
     PendingRecord rec;
     rec.event_id = id;
