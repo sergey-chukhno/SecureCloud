@@ -649,7 +649,11 @@ Messaging operations should remain independently available.
 
 ### Audit unavailable
 
-The Gateway should not make ordinary successful requests dependent on synchronous Audit availability.
+The Gateway does not make ordinary successful or rejected client HTTP requests synchronously dependent on Audit availability.
+
+Mandatory perimeter audit events (token rejections, authorization denials, rate limiting) are accepted asynchronously into a Gateway-owned, per-instance append-only disk spool (`/var/spool/securecloud-gateway/audit`) with group-commit `fsync` ($\le 20\text{ ms}$) per **ADR-011**. Best-effort diagnostic events are buffered in memory.
+
+If the Audit Service or internal network is unavailable, spooled events remain stored on the local volume and are retried automatically using exponential backoff with jitter once Audit connectivity is restored. Audit unavailability does not alter Gateway HTTP readiness (`SERVING`).
 
 ### Internal network failure
 
@@ -665,7 +669,7 @@ In-flight requests may fail and be retried according to their idempotency semant
 
 ## 3.22 Statelessness
 
-The Gateway is designed to be stateless with respect to business data.
+The Gateway is designed to be stateless with respect to business data[cite: 25].
 
 It does not own:
 
@@ -674,19 +678,18 @@ It does not own:
 * files;
 * user credentials;
 * device registrations;
-* audit history.
+* audit history[cite: 25].
 
-It may maintain bounded process-local state for:
+Per **ADR-005 (§5 Amendment)** and **ADR-011**, the Gateway maintains bounded process-local and local-volume producer state for:
 
 * active connections;
 * rate limiting;
 * in-flight requests;
 * connection pools;
-* temporary streaming buffers.
+* temporary streaming buffers[cite: 25];
+* per-instance audit event delivery spooling (`/var/spool/securecloud-gateway/audit`).
 
-Such state must not be required for correctness.
-
-This allows multiple Gateway instances to operate interchangeably:
+Spooled audit events represent producer delivery state, not platform business state. Gateway instances remain horizontally interchangeable behind a load balancer without sticky sessions[cite: 25]:
 
 ```text id="q7t3f5"
                   Load Balancer

@@ -232,6 +232,11 @@ Examples:
 ```text
 gateway.request.rejected
 gateway.rate_limit.exceeded
+gateway.security.identity_header_stripped
+gateway.file.chunk_integrity_rejected
+gateway.dependency.circuit_opened
+gateway.lifecycle.started
+gateway.audit_producer.events_lost
 
 auth.login.succeeded
 auth.login.failed
@@ -265,7 +270,6 @@ emergency.action.executed
 Event types are part of the internal Audit Service contract.
 
 They must not be renamed without explicitly updating producers and consumers.
-
 ---
 
 # 5.9 Severity
@@ -818,10 +822,10 @@ Runtime Service database transaction
       │
       ├── Domain state change
       │
-      └── Audit event written to Outbox
+      └── Audit event written to Outbox / Spool
                 │
                 ▼
-         Outbox Publisher
+         Outbox Publisher / Gateway Dispatcher
                 │
                 ▼
            Audit Service
@@ -839,8 +843,9 @@ Runtime Service database transaction
        INSERT INTO ClickHouse
 ```
 
-The Audit Service does not become part of the synchronous critical path of normal Messaging, Files, or Auth operations.
+For Auth, Messaging, and Files, the audit event is written to the service's database transactional outbox. For the Gateway, mandatory events are written to the Gateway-owned local append-only `fsync` spool at `/var/spool/securecloud-gateway/audit` (**ADR-011**). Outbox/spool publishers then deliver batches asynchronously over gRPC to the Audit Service.
 
+The Audit Service does not become part of the synchronous critical path of normal Messaging, Files, or Auth operations.
 ---
 
 # 5.21 Batch Ingestion
@@ -930,13 +935,13 @@ If the Audit Service is temporarily unable to ingest events fast enough:
 Runtime Service
       │
       ▼
-Outbox remains durable
+Outbox / Spool remains durable
       │
       ▼
 Publisher retries later
 ```
 
-The runtime service's durable outbox is the primary protection against temporary Audit Service or ClickHouse unavailability.
+The runtime service's durable outbox (or Gateway local disk spool per **ADR-011**) is the primary protection against temporary Audit Service or ClickHouse unavailability.
 
 The Audit Service does not require an unbounded in-memory buffer.
 
@@ -1245,8 +1250,7 @@ This feature is explicitly deferred from the MVP.
 34. Events are partitioned monthly by `occurred_at`.
 35. Events are ordered primarily by occurrence time.
 36. Audit ingestion is asynchronous.
-37. Runtime services persist audit events through their durable outbox mechanisms.
-38. Audit ingestion uses bounded in-memory queues.
+37. Runtime services persist audit events through their durable outbox mechanisms (database transactional outboxes for Auth/Messaging/Files; per-instance append-only `fsync` spool for Gateway as per **ADR-011**).38. Audit ingestion uses bounded in-memory queues.
 39. ClickHouse inserts are batched.
 40. Batch size is limited to 1,000 events.
 41. Maximum batching delay is 100 milliseconds.

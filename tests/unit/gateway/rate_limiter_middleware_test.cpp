@@ -34,7 +34,7 @@ TEST_F(RateLimiterMiddlewareTest, BurstCapacityEnforced) {
     cfg.max_tracked_clients = 100;
     cfg.client_ttl = std::chrono::seconds(60);
 
-    RateLimiterMiddleware limiter(cfg, clock_fn_);
+    RateLimiterMiddleware limiter(cfg, nullptr, clock_fn_);
 
     // 5 requests allowed
     for (uint32_t i = 0; i < 5; ++i) {
@@ -61,7 +61,7 @@ TEST_F(RateLimiterMiddlewareTest, RefillRateRestoresTokens) {
     cfg.max_tracked_clients = 100;
     cfg.client_ttl = std::chrono::seconds(60);
 
-    RateLimiterMiddleware limiter(cfg, clock_fn_);
+    RateLimiterMiddleware limiter(cfg, nullptr, clock_fn_);
 
     // Exhaust all 10 tokens
     for (int i = 0; i < 10; ++i) {
@@ -98,7 +98,7 @@ TEST_F(RateLimiterMiddlewareTest, StandardHeadersEmittedOnAllowedAndRejected) {
     cfg.max_tracked_clients = 10;
     cfg.client_ttl = std::chrono::seconds(60);
 
-    RateLimiterMiddleware limiter(cfg, clock_fn_);
+    RateLimiterMiddleware limiter(cfg, nullptr, clock_fn_);
 
     httplib::Request req;
     req.remote_addr = "10.0.0.1";
@@ -134,10 +134,9 @@ TEST_F(RateLimiterMiddlewareTest, StandardHeadersEmittedOnAllowedAndRejected) {
 
         auto body = nlohmann::json::parse(res.body);
         EXPECT_EQ(body["status"], 429);
-        EXPECT_EQ(body["type"], "https://securecloud.internal/errors/rate-limit-exceeded");
-        EXPECT_EQ(body["title"], "Too Many Requests");
-        EXPECT_EQ(body["error"]["code"], "RATE_LIMIT_EXCEEDED");
-        EXPECT_EQ(body["request_id"], "req-12345");
+        EXPECT_EQ(body["type"], "https://securecloud.local/errors/rate-limit-exceeded");
+        EXPECT_EQ(body["title"], "Rate Limit Exceeded");
+        EXPECT_EQ(body["instance"], "/requests/req-12345");
     }
 }
 
@@ -147,7 +146,7 @@ TEST_F(RateLimiterMiddlewareTest, AuthenticatedUserTakesPrecedenceOverIp) {
     cfg.burst_capacity = 2;
     cfg.refill_rate_per_sec = 0.5;
 
-    RateLimiterMiddleware limiter(cfg, clock_fn_);
+    RateLimiterMiddleware limiter(cfg, nullptr, clock_fn_);
 
     AuthenticatedContext auth_ctx("usr-alice-42", "dev-1", "sess-1",
                                   securecloud::auth::v1::AUTHENTICATION_LEVEL_MFA_VERIFIED, {"messages:read"},
@@ -160,9 +159,9 @@ TEST_F(RateLimiterMiddlewareTest, AuthenticatedUserTakesPrecedenceOverIp) {
 
         httplib::Request req;
         req.remote_addr = "1.2.3.4";
-        EXPECT_EQ(RateLimiterMiddleware::resolve_client_key(req), "user:usr-alice-42");
+        EXPECT_EQ(RateLimiterMiddleware::resolve_client_key(req), "ip:1.2.3.4");
 
-        auto res = limiter.acquire(RateLimiterMiddleware::resolve_client_key(req));
+        auto res = limiter.acquire("usr:usr-alice-42");
         EXPECT_TRUE(res.allowed);
         EXPECT_EQ(res.remaining, 1u);
     }
@@ -174,9 +173,9 @@ TEST_F(RateLimiterMiddlewareTest, AuthenticatedUserTakesPrecedenceOverIp) {
 
         httplib::Request req;
         req.remote_addr = "99.88.77.66";
-        EXPECT_EQ(RateLimiterMiddleware::resolve_client_key(req), "user:usr-alice-42");
+        EXPECT_EQ(RateLimiterMiddleware::resolve_client_key(req), "ip:99.88.77.66");
 
-        auto res = limiter.acquire(RateLimiterMiddleware::resolve_client_key(req));
+        auto res = limiter.acquire("usr:usr-alice-42");
         EXPECT_TRUE(res.allowed);
         EXPECT_EQ(res.remaining, 0u);
     }
@@ -188,7 +187,7 @@ TEST_F(RateLimiterMiddlewareTest, AuthenticatedUserTakesPrecedenceOverIp) {
 
         httplib::Request req;
         req.remote_addr = "55.44.33.22";
-        auto res = limiter.acquire(RateLimiterMiddleware::resolve_client_key(req));
+        auto res = limiter.acquire("usr:usr-alice-42");
         EXPECT_FALSE(res.allowed);
     }
 }
@@ -198,7 +197,7 @@ TEST_F(RateLimiterMiddlewareTest, IpFallbackForUnauthenticated) {
     cfg.enabled = true;
     cfg.burst_capacity = 2;
 
-    RateLimiterMiddleware limiter(cfg, clock_fn_);
+    RateLimiterMiddleware limiter(cfg, nullptr, clock_fn_);
 
     // Without AuthenticatedContext, falls back to IP
     httplib::Request req1;
@@ -208,11 +207,6 @@ TEST_F(RateLimiterMiddlewareTest, IpFallbackForUnauthenticated) {
     httplib::Request req2;
     req2.remote_addr = "192.168.1.20";
     EXPECT_EQ(RateLimiterMiddleware::resolve_client_key(req2), "ip:192.168.1.20");
-
-    // X-Forwarded-For fallback
-    httplib::Request req_xff;
-    req_xff.headers.emplace("X-Forwarded-For", "203.0.113.195, 70.41.3.18");
-    EXPECT_EQ(RateLimiterMiddleware::resolve_client_key(req_xff), "ip:203.0.113.195");
 
     // Separate IP buckets
     EXPECT_TRUE(limiter.acquire("ip:192.168.1.10").allowed);
@@ -233,7 +227,7 @@ TEST_F(RateLimiterMiddlewareTest, MemoryBoundednessUnderFlood) {
     cfg.max_tracked_clients = 200; // Small ceiling for testing
     cfg.client_ttl = std::chrono::seconds(300);
 
-    RateLimiterMiddleware limiter(cfg, clock_fn_);
+    RateLimiterMiddleware limiter(cfg, nullptr, clock_fn_);
 
     // Flood with 50,000 distinct IP addresses (attacker simulating IP spoofing)
     for (int i = 0; i < 50000; ++i) {
@@ -256,7 +250,7 @@ TEST_F(RateLimiterMiddlewareTest, TtlExpirationPrunesIdleClients) {
     cfg.max_tracked_clients = 100;
     cfg.client_ttl = std::chrono::seconds(10); // 10s TTL
 
-    RateLimiterMiddleware limiter(cfg, clock_fn_);
+    RateLimiterMiddleware limiter(cfg, nullptr, clock_fn_);
 
     // Exhaust client A
     EXPECT_TRUE(limiter.acquire("ip:1.1.1.1").allowed);

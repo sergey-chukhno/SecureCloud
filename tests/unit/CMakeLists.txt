@@ -3768,3 +3768,124 @@ if(Qt6_FOUND)
         set_tests_properties(client_startup_smoke_test PROPERTIES ENVIRONMENT_MODIFICATION "${_TEST_ENV_MODS}")
     endif()
 endif()
+
+# Gateway Audit Event Factory & Local Validation Test Suite (AUDIT-012-T02)
+add_executable(securecloud_gateway_audit_event_factory_test
+        gateway/gateway_audit_event_factory_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_event_factory_test PRIVATE
+        securecloud::gateway_audit
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_event_factory_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Include-Path & ODR Collision Compile-Guard Test (AUDIT-012-T02)
+add_executable(securecloud_gateway_audit_header_collision_test
+        gateway/header_collision_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_header_collision_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_http
+        securecloud::auth
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_header_collision_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Pending Audit Store Unit Test Suite (AUDIT-012-T03)
+add_executable(securecloud_gateway_audit_pending_store_test
+        gateway/audit_pending_store_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_pending_store_test PRIVATE
+        securecloud::gateway_audit
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_pending_store_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Delivery Dispatcher Unit Test Suite (AUDIT-012-T04)
+add_executable(securecloud_gateway_audit_delivery_dispatcher_test
+        gateway/audit_delivery_dispatcher_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_delivery_dispatcher_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_grpc
+        securecloud::gateway_http
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_delivery_dispatcher_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Producer & Aggregation Window Unit Test Suite (AUDIT-012-T05)
+add_executable(securecloud_gateway_audit_producer_test
+        gateway/gateway_audit_producer_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_producer_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_http
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_producer_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Producer Metrics Unit Test Suite (AUDIT-012-T06)
+add_executable(securecloud_gateway_audit_producer_metrics_test
+        gateway/audit_producer_metrics_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_producer_metrics_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_http
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_producer_metrics_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Verification Unit Suite (AUDIT-012-T07)
+add_executable(securecloud_gateway_audit_verification_test
+        gateway/audit_verification_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_verification_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_http
+        securecloud::gateway_grpc
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_verification_test ${SECURECLOUD_TEST_PROPERTIES})

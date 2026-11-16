@@ -1263,3 +1263,21 @@ target_link_libraries(securecloud_audit_metrics_concurrency_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_metrics_concurrency_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Verification Integration Suite (AUDIT-012-T07)
+add_executable(securecloud_gateway_audit_integration_test
+        gateway_audit_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_integration_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_grpc
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_integration_test ${SECURECLOUD_TEST_PROPERTIES})
