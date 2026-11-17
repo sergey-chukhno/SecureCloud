@@ -20,6 +20,8 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     application::ClientResult<bool> probe_gateway(std::string_view path = "/health") override;
     application::ClientResult<std::string> send_message(const domain::ConversationId& conversation_id,
                                                         std::string_view encrypted_envelope) override;
+    application::ClientResult<std::string>
+    submit_encrypted_message(const application::interfaces::FanOutSubmissionRequest& request) override;
     application::ClientResult<std::vector<std::string>> sync_messages(std::string_view cursor) override;
     application::ClientResult<bool> validate_token(std::string_view token) override;
     application::ClientResult<void> disconnect() override;
@@ -68,11 +70,18 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     void set_simulated_authorization_mfa_requirement(bool require_mfa);
     void set_simulated_revocation_mfa_requirement(bool require_mfa);
     void set_simulated_failure(bool fail, std::string error_message = "Simulated network failure");
+    [[nodiscard]] const std::vector<application::interfaces::FanOutSubmissionRequest>&
+    submitted_fanouts() const noexcept {
+        return submitted_fanouts_;
+    }
+    void clear_submitted_fanouts() noexcept { submitted_fanouts_.clear(); }
 
   private:
     std::string endpoint_;
     bool connected_{false};
     uint64_t device_registration_counter_{1};
+    uint64_t message_submission_counter_{1};
+    std::vector<application::interfaces::FanOutSubmissionRequest> submitted_fanouts_;
 
     bool simulate_failure_{false};
     std::string failure_message_;

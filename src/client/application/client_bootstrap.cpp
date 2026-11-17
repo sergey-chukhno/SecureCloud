@@ -58,7 +58,8 @@ ClientBootstrap::create_with_adapters(ClientConfig config, std::unique_ptr<inter
 
 void ClientBootstrap::wire_managers() {
     auth_manager_ = std::make_unique<managers::AuthManager>(*gateway_, *secure_storage_);
-    messaging_manager_ = std::make_unique<managers::MessagingManager>(*gateway_, *local_store_, *crypto_provider_);
+    messaging_manager_ = std::make_unique<managers::MessagingManager>(*gateway_, *local_store_, *crypto_provider_,
+                                                                      nullptr, secure_storage_.get());
     safety_number_engine_ = std::make_unique<managers::SafetyNumberEngine>(*crypto_provider_, *secure_storage_);
     contact_manager_ = std::make_unique<managers::ContactManager>(*local_store_, *gateway_, *safety_number_engine_);
     device_manager_ = std::make_unique<managers::DeviceManager>(*gateway_, *secure_storage_, *crypto_provider_);

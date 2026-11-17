@@ -2,6 +2,7 @@
 
 #include "application/client_error.hpp"
 #include "domain/conversation_id.hpp"
+#include "domain/crypto/ratchet_models.hpp"
 #include "domain/device.hpp"
 #include "domain/device_id.hpp"
 #include "domain/directory_user_entry.hpp"
@@ -51,6 +52,14 @@ struct DeviceCryptoDirectoryEntry {
     std::chrono::system_clock::time_point signed_prekey_created_at{std::chrono::system_clock::now()};
 };
 
+struct FanOutSubmissionRequest {
+    domain::ConversationId conversation_id;
+    std::string idempotency_key;
+    std::vector<domain::crypto::PerDeviceDeliveryPayload> device_payloads;
+    std::optional<std::vector<uint8_t>> group_envelope_bytes;
+    int32_t priority{0};
+};
+
 class IGatewayClient {
   public:
     virtual ~IGatewayClient() = default;
@@ -58,6 +67,7 @@ class IGatewayClient {
     virtual ClientResult<bool> probe_gateway(std::string_view path = "/health") = 0;
     virtual ClientResult<std::string> send_message(const domain::ConversationId& conversation_id,
                                                    std::string_view encrypted_envelope) = 0;
+    virtual ClientResult<std::string> submit_encrypted_message(const FanOutSubmissionRequest& request) = 0;
     virtual ClientResult<std::vector<std::string>> sync_messages(std::string_view cursor) = 0;
     virtual ClientResult<bool> validate_token(std::string_view token) = 0;
     virtual ClientResult<void> disconnect() = 0;
