@@ -29,6 +29,8 @@ if(Qt6_FOUND)
         domain/crypto/skipped_keys_store.cpp
         domain/crypto/double_ratchet_engine.cpp
         domain/crypto/ratchet_session_state.cpp
+        domain/crypto/sender_key_models.cpp
+        domain/crypto/sender_key_engine.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)
     target_include_directories(securecloud_client_domain PUBLIC
