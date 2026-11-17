@@ -6,17 +6,32 @@
 #include "infrastructure/adapters/default_gateway_client.hpp"
 #include "infrastructure/adapters/memory_local_store.hpp"
 #include "infrastructure/adapters/memory_secure_storage.hpp"
+#include "infrastructure/adapters/openssl_crypto_provider.hpp"
 #include "infrastructure/adapters/simulated_hardware_authenticator.hpp"
+#include "infrastructure/adapters/sqlcipher_local_store.hpp"
 #include "infrastructure/adapters/stub_crypto_provider.hpp"
+
+#include <stdexcept>
 
 namespace securecloud::client::application {
 
 ClientBootstrap::ClientBootstrap(ClientConfig config)
     : config_(std::move(config)), gateway_(std::make_unique<infrastructure::adapters::DefaultGatewayClient>(config_)),
-      local_store_(std::make_unique<infrastructure::adapters::MemoryLocalStore>()),
       secure_storage_(std::make_unique<infrastructure::adapters::MemorySecureStorage>()),
-      crypto_provider_(std::make_unique<infrastructure::adapters::StubCryptoProvider>()),
       hardware_authenticator_(std::make_unique<infrastructure::adapters::SimulatedHardwareAuthenticator>()) {
+    if (!config_.database_path.empty()) {
+        crypto_provider_ = std::make_unique<infrastructure::adapters::OpenSslCryptoProvider>();
+        auto sql_store =
+            std::make_unique<infrastructure::adapters::SqlCipherLocalStore>(*secure_storage_, *crypto_provider_);
+        const auto open_res = sql_store->open(config_.database_path);
+        if (open_res.is_error()) {
+            throw std::runtime_error("Failed to open encrypted SQLCipher store: " + open_res.error().user_message());
+        }
+        local_store_ = std::move(sql_store);
+    } else {
+        crypto_provider_ = std::make_unique<infrastructure::adapters::StubCryptoProvider>();
+        local_store_ = std::make_unique<infrastructure::adapters::MemoryLocalStore>();
+    }
     wire_managers();
 }
 

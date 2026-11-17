@@ -31,7 +31,7 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew install openssl@3 protobuf grpc googletest llvm@18 ninja nlohmann-json cpp-httplib libpqxx libpq
+          brew install openssl@3 protobuf grpc googletest llvm@18 ninja nlohmann-json cpp-httplib libpqxx libpq sqlcipher
           echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
           echo "/opt/homebrew/opt/libpq/bin" >> $GITHUB_PATH
 
@@ -103,7 +103,7 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew install openssl@3 protobuf grpc googletest ninja nlohmann-json cpp-httplib libpqxx libpq
+          brew install openssl@3 protobuf grpc googletest ninja nlohmann-json cpp-httplib libpqxx libpq sqlcipher
           echo "/opt/homebrew/opt/openssl@3/bin" >> "$GITHUB_PATH"
           echo "/opt/homebrew/opt/libpq/bin" >> "$GITHUB_PATH"
 
@@ -392,6 +392,7 @@ jobs:
             mingw-w64-x86_64-openssl
             mingw-w64-x86_64-nlohmann-json
             mingw-w64-x86_64-libpqxx
+            mingw-w64-x86_64-sqlcipher
           )
 
           installed=0

@@ -52,8 +52,8 @@ With the completion of **Client Phase 2 (`CLIENT-005` through `CLIENT-008`)**, t
 
 | Ticket | Title | Status | Target Scope |
 |---|---|---|---|
-| **CLIENT-009-T01** | Conversation & Message Domain Persistence Enrichment & Participant Roles | **Planned** | `ParticipantRole` (`Admin`/`Member`), `GroupParticipant`, JSON round-trip for `Conversation` & `Message`, zero-plaintext storage invariant |
-| **CLIENT-009-T02** | Encrypted Local Database Adapter (`SqlCipherLocalStore`) & Keychain Master-Key Lifecycle | **Planned** | Disk-backed AEAD encrypted `ILocalStore` (`SCDB` v1, HKDF-SHA256 + AES-256-GCM via OpenSSL 3.x), `ISecureStorage` key lifecycle, atomic writes, `ClientBootstrap` wiring |
+| **CLIENT-009-T01** | Conversation & Message Domain Persistence Enrichment & Participant Roles | **Completed** | `ParticipantRole` (`Admin`/`Member`), `GroupParticipant`, JSON round-trip for `Conversation` & `Message`, zero-plaintext storage invariant |
+| **CLIENT-009-T02** | Encrypted Local Database Adapter (`SqlCipherLocalStore`) & Keychain Master-Key Lifecycle | **Completed** | Native SQLCipher encrypted `ILocalStore` (`PRAGMA key`, WAL mode, indexed SQLite tables), `ISecureStorage` 256-bit key lifecycle, `ClientBootstrap` wiring |
 | **CLIENT-009-T03** | Group Sender Keys Cryptographic Engine & Distribution Envelopes | **Planned** | `SenderKeyState`, `SenderKeyDistributionMessage`, `GroupEncryptedEnvelope` (`SCG` v1), `SenderKeyEngine` (symmetric KDF chain + Ed25519 sig + AES-256-GCM) |
 | **CLIENT-009-T04** | Production Direct & Group Fan-Out Pipeline, Role Governance & Sender Key Rotation | **Planned** | `MessagingManager` fan-out submission via `IGatewayClient`, pairwise Sender Key distribution & rotation on member removal/device revocation, `Admin` RBAC checks |
 | **CLIENT-009-T05** | `WorkspaceViewModel` Persistent History Hydration & Group Role / Rotation UI Wiring | **Planned** | Hydrate conversations/messages/contacts from `ILocalStore` on startup, bounded pagination loading, QML/ViewModel group role & key-epoch bindings |
@@ -86,9 +86,8 @@ To strictly avoid duplicating existing Phase 1, Phase 2, or backend code, every 
    - `WorkspaceViewModel` (`src/client/ui/workspace_view_model.hpp/.cpp`) already declares `createDirectConversation`, `createGroupConversation`, `addParticipantToActiveGroup`, `removeParticipantFromActiveGroup`, `leaveActiveGroup`, and group inspector properties (`selectedConversationIsGroup`, `selectedConversationParticipantCount`, `selectedConversationDeviceFanoutCount`, `selectedConversationParticipants`, `selectedGroupAllVerified`, `selectedGroupUnverifiedCount`).
 4. **Backend Authoritative Domain Semantics (`src/messaging/domain/`) — REFERENCE**:
    - `conversation_types.hpp`, `conversation_participant_entity.hpp`, and `group_metadata_entity.hpp` define canonical backend enums (`ConversationType::{Direct=1, Group=2}`, `GroupStatus::{Active=1, Closed=2}`, `MembershipStatus::{Active=1, Left=2, Removed=3}`, `ParticipantRole::{Member=1, Admin=2}`) and `membership_version` / `metadata_version`. Client `CLIENT-009` models must match these semantics without importing server targets into `src/client`.
-5. **Dependencies & CI Constraints (`vcpkg.json`, `SecureCloudDependencies.cmake`, `.github/workflows/ci.yml`)**:
-   - Notice that external `sqlcipher` / `sqlite3` packages are **not** present in `vcpkg.json`, Homebrew CI installs, or MSYS2 CI packages. OpenSSL 3.x EVP (`OpenSslCryptoProvider`) and `nlohmann::json` **are** already mandated and discovered across macOS, Windows MSVC, and MinGW.
-   - **Architectural Decision**: `SqlCipherLocalStore` implements the approved encrypted local store behind `ILocalStore` using an authenticated AEAD disk container (`SCDB` v1 format encrypted with `HKDF-SHA256` + `AES-256-GCM` via OpenSSL 3.x EVP and a master key persisted inside `ISecureStorage`), requiring zero new unapproved third-party dependencies in CI while satisfying every ADR-006/ADR-008/detailed-design encryption-at-rest and fail-closed guarantee. *(If a native C SQLCipher SQLite driver is later added to `vcpkg.json`/`ci.yml`, `SqlCipherLocalStore` sits cleanly behind `ILocalStore` with zero application/UI impact.)*
+5. **Dependencies & CI Integration (`vcpkg.json`, `SecureCloudDependencies.cmake`, `.github/workflows/ci.yml`)**:
+   - `sqlcipher` (`4.x`) is integrated across all four CI platforms (`brew install sqlcipher` on macOS, `libsqlcipher-dev` on Ubuntu/Debian, `mingw-w64-x86_64-sqlcipher` on MSYS2 MinGW64, and `vcpkg.json` `"sqlcipher"` on Windows MSVC) and exported via `securecloud::sqlcipher`, alongside OpenSSL 3.x EVP (`OpenSslCryptoProvider`) and `nlohmann::json`.
 
 ### 2.2 Identified Gaps That `CLIENT-009` Must Implement
 
@@ -154,25 +153,22 @@ To strictly avoid duplicating existing Phase 1, Phase 2, or backend code, every 
 - **Objective:** Implement `SqlCipherLocalStore` as the production disk-persisted, authenticated-encrypted implementation of `ILocalStore` with master keys sealed in `ISecureStorage`, replacing volatile `MemoryLocalStore` when persistent storage paths are configured.
 
 #### Architectural Scope:
-1. **Cryptographic Container Format (`SCDB` v1) & Fail-Closed Lifecycle**:
-   - Implement `SqlCipherLocalStore final : public application::interfaces::ILocalStore` (`src/client/infrastructure/adapters/sqlcipher_local_store.hpp/.cpp`).
-   - Constructor takes `interfaces::ISecureStorage& secure_storage, interfaces::ICryptoProvider& crypto_provider` (using `OpenSslCryptoProvider` in production, `StubCryptoProvider` disallowed for production disk unlock).
-   - Binary/container envelope:
-     - Header: 4-byte magic `"SCDB"`, format version `0x01`, random 16-byte per-save salt, 12-byte random IV, 16-byte AES-256-GCM authentication tag, ciphertext body.
-     - Key Derivation: `ISecureStorage` stores a 256-bit random master key under `"local_store.sqlcipher.master_key"` (`SecretString`); each save derives a subkey via `ICryptoProvider::hkdf_extract_and_expand(salt, master_key, "SecureCloud-SCDB-v1", 32)` and encrypts the serialized JSON store with AAD = `header[magic || version || salt || path_hash]`.
-     - Zeroization: Master key and derived `SecretString` buffers are scrubbed immediately after every cryptographic open/flush operation.
-2. **Atomic Durability & Fail-Closed Corruption Handling**:
-   - Writes go to `<db_path>.tmp`, flush, and atomically rename over `<db_path>` so crashes never leave half-written store files.
-   - Opening an existing database with a missing/wrong `ISecureStorage` key, truncated file, tampered ciphertext byte, or corrupted AAD tag **must fail closed** with `ClientError::storage(...)` / `ClientError::crypto(...)` and never fall back to unencrypted JSON.
-   - Maintain thread-safe `std::mutex` guarding conversations, messages (sorted chronologically with bounded `limit` slicing), and contacts (`save`/`get`/`list`/`delete`).
+1. **Native SQLCipher Engine & Fail-Closed Lifecycle**:
+   - Implement `SqlCipherLocalStore final : public application::interfaces::ILocalStore` (`src/client/infrastructure/adapters/sqlcipher_local_store.hpp/.cpp`) linked against `securecloud::sqlcipher`.
+   - Constructor takes `interfaces::ISecureStorage& secure_storage, interfaces::ICryptoProvider& crypto_provider`.
+   - Key Lifecycle: Generates a 256-bit CSPRNG master key (`RAND_bytes`, 64 hex chars) persisted in `ISecureStorage` under `"local_store.sqlcipher.master_key"`, applies `PRAGMA key = "x'<64-hex>'"` and `PRAGMA cipher_memory_security = ON`, and scrubs key buffers with `OPENSSL_cleanse`.
+   - Verifies page-1 decryption immediately via `SELECT count(*) FROM sqlite_master;` — opening an existing database with a missing/wrong `ISecureStorage` key, unencrypted SQLite file, or tampered page **fails closed** with `ClientError::crypto(...)`.
+2. **Indexed Schema & Transactional Durability**:
+   - Configures `PRAGMA foreign_keys = ON`, `PRAGMA journal_mode = WAL`, and `PRAGMA synchronous = NORMAL`.
+   - Creates indexed `conversations`, `messages` (`idx_messages_conv_time` on `(conversation_id, sent_at_ms ASC)`), and `contacts` tables with parameterized SQLite statements and transactional `delete_conversation`.
+   - Thread-safe `std::mutex` guarding all operations (`save`/`get`/`list`/`delete`/`update`).
 3. **Bootstrap & Config Support**:
-   - Add optional `local_store_path` setting to `ClientConfig` (when empty, `ClientBootstrap` uses `MemoryLocalStore` for headless tests; when configured, uses `SqlCipherLocalStore` and calls `open(local_store_path)`).
-   - Extend `ILocalStore::get_messages` / `SqlCipherLocalStore` query semantics for deterministic ordering.
+   - Reuses `ClientConfig::database_path` (`SECURECLOUD_DATABASE_PATH`): when empty, `ClientBootstrap` uses `MemoryLocalStore` + `StubCryptoProvider` for headless tests; when configured, instantiates `OpenSslCryptoProvider` + `SqlCipherLocalStore` and calls `open(config_.database_path)`.
 
 - **Deliverables:**
   - `src/client/infrastructure/adapters/sqlcipher_local_store.hpp` & `.cpp`
-  - Updated `src/client/application/client_config.hpp/.cpp` and `src/client/application/client_bootstrap.hpp/.cpp`
-  - Updated `src/client/CMakeLists.txt`
+  - Updated `src/client/application/client_bootstrap.cpp` & `src/client/CMakeLists.txt`
+  - Updated `vcpkg.json`, `cmake/modules/SecureCloudDependencies.cmake`, and `.github/workflows/ci.yml`
   - Unit & security tests: `tests/unit/client/sqlcipher_local_store_test.cpp`
 
 - **Acceptance Criteria:**
