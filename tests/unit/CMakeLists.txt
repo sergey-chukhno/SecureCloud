@@ -3735,6 +3735,7 @@ if(Qt6_FOUND)
         client/sqlcipher_local_store_test.cpp
         client/sender_key_engine_test.cpp
         client/group_messaging_pipeline_test.cpp
+        client/workspace_view_model_group_persistence_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

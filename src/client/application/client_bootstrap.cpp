@@ -40,13 +40,14 @@ ClientBootstrap::~ClientBootstrap() = default;
 ClientBootstrap::ClientBootstrap(ClientBootstrap&&) noexcept = default;
 ClientBootstrap& ClientBootstrap::operator=(ClientBootstrap&&) noexcept = default;
 
+ClientBootstrap::ClientBootstrap(AdapterInitTag, ClientConfig config) : config_(std::move(config)) {}
+
 std::unique_ptr<ClientBootstrap>
 ClientBootstrap::create_with_adapters(ClientConfig config, std::unique_ptr<interfaces::IGatewayClient> gateway,
                                       std::unique_ptr<interfaces::ILocalStore> local_store,
                                       std::unique_ptr<interfaces::ISecureStorage> secure_storage,
                                       std::unique_ptr<interfaces::ICryptoProvider> crypto_provider) {
-    auto bootstrap = std::unique_ptr<ClientBootstrap>(new ClientBootstrap(config));
-    bootstrap->config_ = std::move(config);
+    auto bootstrap = std::unique_ptr<ClientBootstrap>(new ClientBootstrap(AdapterInitTag{}, std::move(config)));
     bootstrap->gateway_ = std::move(gateway);
     bootstrap->local_store_ = std::move(local_store);
     bootstrap->secure_storage_ = std::move(secure_storage);
