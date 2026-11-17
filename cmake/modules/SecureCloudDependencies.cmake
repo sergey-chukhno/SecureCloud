@@ -388,7 +388,7 @@ else()
             "  Remediation:\n"
             "    - On macOS: Run 'brew install sqlcipher'\n"
             "    - On Ubuntu/Debian: Run 'apt-get install libsqlcipher-dev'\n"
-            "    - On MSYS2 MinGW64: Run 'pacman -S --needed mingw-w64-x86_64-sqlcipher'\n"
+            "    - On MSYS2 UCRT64: Run 'pacman -S --needed mingw-w64-ucrt-x86_64-sqlcipher'\n"
             "    - On MSVC / vcpkg:  Ensure vcpkg.json contains \"sqlcipher\""
         )
     endif()

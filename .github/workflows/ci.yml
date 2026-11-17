@@ -328,10 +328,10 @@ jobs:
           ctest --preset ci-windows-msvc --output-on-failure --parallel 4
 
   # ============================================================================
-  # Native Windows MinGW Build & Test Job (MSYS2 MINGW64 / GCC 15+)
+  # Native Windows MinGW Build & Test Job (MSYS2 UCRT64 / GCC 15+)
   # ============================================================================
   windows-mingw-build-test:
-    name: Windows (MinGW-w64 MINGW64 / GCC 15+)
+    name: Windows (MinGW-w64 UCRT64 / GCC 15+)
     runs-on: windows-2022
     steps:
       - name: Checkout repository
@@ -365,15 +365,15 @@ jobs:
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', process.env.ACTIONS_CACHE_SERVICE_V2 || 'on');
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
 
-      - name: Set up MSYS2 MINGW64 Environment
+      - name: Set up MSYS2 UCRT64 Environment
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           release: false
           update: false
           path-type: minimal
 
-      - name: Install MinGW64 Dependencies with Retries
+      - name: Install UCRT64 Dependencies with Retries
         shell: msys2 {0}
         run: |
           # Disable pacman low-speed timeout to prevent aborts on slow mirrors
@@ -381,23 +381,23 @@ jobs:
           grep -q "DisableDownloadTimeout" /etc/pacman.conf || sed -i '/\[options\]/a DisableDownloadTimeout' /etc/pacman.conf
 
           PACKAGES=(
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-lld
-            mingw-w64-x86_64-sccache
-            mingw-w64-x86_64-protobuf
-            mingw-w64-x86_64-grpc
-            mingw-w64-x86_64-gtest
-            mingw-w64-x86_64-openssl
-            mingw-w64-x86_64-nlohmann-json
-            mingw-w64-x86_64-libpqxx
-            mingw-w64-x86_64-sqlcipher
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-lld
+            mingw-w64-ucrt-x86_64-sccache
+            mingw-w64-ucrt-x86_64-protobuf
+            mingw-w64-ucrt-x86_64-grpc
+            mingw-w64-ucrt-x86_64-gtest
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-nlohmann-json
+            mingw-w64-ucrt-x86_64-libpqxx
+            mingw-w64-ucrt-x86_64-sqlcipher
           )
 
           installed=0
           for attempt in 1 2 3 4 5; do
-            echo "Attempt $attempt of 5: Installing MinGW64 packages..."
+            echo "Attempt $attempt of 5: Installing UCRT64 packages..."
             if pacman -Sy --needed --noconfirm --disable-download-timeout "${PACKAGES[@]}"; then
               installed=1
               break
@@ -407,7 +407,7 @@ jobs:
           done
 
           if [ $installed -ne 1 ]; then
-            echo "FATAL: Failed to install MinGW64 packages after 5 attempts."
+            echo "FATAL: Failed to install UCRT64 packages after 5 attempts."
             exit 1
           fi
 
