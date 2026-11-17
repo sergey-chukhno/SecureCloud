@@ -54,10 +54,10 @@ With the completion of **Client Phase 2 (`CLIENT-005` through `CLIENT-008`)**, t
 |---|---|---|---|
 | **CLIENT-009-T01** | Conversation & Message Domain Persistence Enrichment & Participant Roles | **Completed** | `ParticipantRole` (`Admin`/`Member`), `GroupParticipant`, JSON round-trip for `Conversation` & `Message`, zero-plaintext storage invariant |
 | **CLIENT-009-T02** | Encrypted Local Database Adapter (`SqlCipherLocalStore`) & Keychain Master-Key Lifecycle | **Completed** | Native SQLCipher encrypted `ILocalStore` (`PRAGMA key`, WAL mode, indexed SQLite tables), `ISecureStorage` 256-bit key lifecycle, `ClientBootstrap` wiring |
-| **CLIENT-009-T03** | Group Sender Keys Cryptographic Engine & Distribution Envelopes | **Planned** | `SenderKeyState`, `SenderKeyDistributionMessage`, `GroupEncryptedEnvelope` (`SCG` v1), `SenderKeyEngine` (symmetric KDF chain + Ed25519 sig + AES-256-GCM) |
-| **CLIENT-009-T04** | Production Direct & Group Fan-Out Pipeline, Role Governance & Sender Key Rotation | **Planned** | `MessagingManager` fan-out submission via `IGatewayClient`, pairwise Sender Key distribution & rotation on member removal/device revocation, `Admin` RBAC checks |
-| **CLIENT-009-T05** | `WorkspaceViewModel` Persistent History Hydration & Group Role / Rotation UI Wiring | **Planned** | Hydrate conversations/messages/contacts from `ILocalStore` on startup, bounded pagination loading, QML/ViewModel group role & key-epoch bindings |
-| **CLIENT-009-T06** | Direct, Group & SQLCipher Persistence Integration Suite & Walkthrough Report | **Planned** | Multi-workstation 1:1/group/restart E2E integration suite, zero-plaintext disk verification, 100% test/format/warning gate, `walkthrough-client-009.md` |
+| **CLIENT-009-T03** | Group Sender Keys Cryptographic Engine & Distribution Envelopes | **Completed** | `SenderKeyState`, `SenderKeyDistributionMessage`, `GroupEncryptedEnvelope` (`SCG` v1), `SenderKeyEngine` (symmetric KDF chain + Ed25519 sig + AES-256-GCM) |
+| **CLIENT-009-T04** | Production Direct & Group Fan-Out Pipeline, Role Governance & Sender Key Rotation | **Completed** | `MessagingManager` fan-out submission via `IGatewayClient`, pairwise Sender Key distribution & rotation on member removal/device revocation, `Admin` RBAC checks |
+| **CLIENT-009-T05** | `WorkspaceViewModel` Persistent History Hydration & Group Role / Rotation UI Wiring | **Completed** | Hydrate conversations/messages/contacts from `ILocalStore` on startup, bounded pagination loading, QML/ViewModel group role & key-epoch bindings |
+| **CLIENT-009-T06** | Direct, Group & SQLCipher Persistence Integration Suite & Walkthrough Report | **Completed** | Multi-workstation 1:1/group/restart E2E integration suite, zero-plaintext disk verification, 100% test/format/warning gate, `walkthrough-client-009.md` |
 
 ---
 
