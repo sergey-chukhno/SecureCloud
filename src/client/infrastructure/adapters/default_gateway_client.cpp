@@ -35,6 +35,23 @@ application::ClientResult<std::string> DefaultGatewayClient::send_message(const 
     return application::ClientResult<std::string>::ok("msg-server-assigned-id");
 }
 
+application::ClientResult<std::string>
+DefaultGatewayClient::submit_encrypted_message(const application::interfaces::FanOutSubmissionRequest& request) {
+    if (simulate_failure_) {
+        return application::ClientResult<std::string>::error(application::ClientError::network(failure_message_));
+    }
+    if (request.conversation_id.empty()) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::validation("Conversation ID cannot be empty"));
+    }
+    if (request.device_payloads.empty() && !request.group_envelope_bytes.has_value()) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::validation("Encrypted message submission requires ciphertext payloads"));
+    }
+    submitted_fanouts_.push_back(request);
+    return application::ClientResult<std::string>::ok("msg-srv-" + std::to_string(message_submission_counter_++));
+}
+
 application::ClientResult<std::vector<std::string>> DefaultGatewayClient::sync_messages(std::string_view /*cursor*/) {
     if (simulate_failure_) {
         return application::ClientResult<std::vector<std::string>>::error(

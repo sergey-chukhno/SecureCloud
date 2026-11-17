@@ -4,6 +4,7 @@
 #include "application/interfaces/i_crypto_provider.hpp"
 #include "application/interfaces/i_gateway_client.hpp"
 #include "application/interfaces/i_local_store.hpp"
+#include "application/interfaces/i_secure_storage.hpp"
 #include "domain/conversation.hpp"
 #include "domain/conversation_id.hpp"
 #include "domain/delivery_state.hpp"
@@ -12,6 +13,7 @@
 #include "domain/user_id.hpp"
 
 #include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -19,6 +21,7 @@
 namespace securecloud::client::domain::crypto {
 struct PerDeviceDeliveryPayload;
 struct EncryptedMessageEnvelope;
+struct SenderKeyDistributionMessage;
 } // namespace securecloud::client::domain::crypto
 
 namespace securecloud::client::application::managers {
@@ -29,7 +32,8 @@ class MessagingManager {
   public:
     MessagingManager(interfaces::IGatewayClient& gateway, interfaces::ILocalStore& local_store,
                      interfaces::ICryptoProvider& crypto_provider,
-                     RatchetSessionManager* ratchet_session_manager = nullptr);
+                     RatchetSessionManager* ratchet_session_manager = nullptr,
+                     interfaces::ISecureStorage* secure_storage = nullptr);
     ~MessagingManager() = default;
 
     MessagingManager(const MessagingManager&) = delete;
@@ -37,6 +41,7 @@ class MessagingManager {
 
     void set_ratchet_session_manager(RatchetSessionManager* ratchet_session_manager) noexcept;
     [[nodiscard]] RatchetSessionManager* ratchet_session_manager() noexcept;
+    void set_secure_storage(interfaces::ISecureStorage* secure_storage) noexcept;
 
     // Direct and Group Conversations
     ClientResult<domain::Conversation> open_direct_conversation(const domain::UserId& local_user,
@@ -49,8 +54,13 @@ class MessagingManager {
     ClientResult<domain::Conversation> get_conversation(const domain::ConversationId& conversation_id);
     ClientResult<void> add_group_participant(const domain::ConversationId& conversation_id,
                                              const domain::UserId& user_id);
+    ClientResult<void> add_group_participant(const domain::ConversationId& conversation_id,
+                                             const domain::UserId& actor_user_id, const domain::UserId& target_user_id);
     ClientResult<void> remove_group_participant(const domain::ConversationId& conversation_id,
                                                 const domain::UserId& user_id);
+    ClientResult<void> remove_group_participant(const domain::ConversationId& conversation_id,
+                                                const domain::UserId& actor_user_id,
+                                                const domain::UserId& target_user_id);
     ClientResult<void> leave_conversation(const domain::ConversationId& conversation_id,
                                           const domain::UserId& local_user_id);
     ClientResult<void> delete_conversation(const domain::ConversationId& conversation_id);
@@ -96,6 +106,23 @@ class MessagingManager {
                                                           int32_t priority = 0,
                                                           const std::string& sender_display_name = "");
 
+    // Group Sender Key Distribution & Encrypted Group Message Processing
+    ClientResult<std::vector<domain::crypto::PerDeviceDeliveryPayload>>
+    distribute_sender_key(const domain::ConversationId& conversation_id, const domain::UserId& sender_user_id,
+                          const domain::DeviceId& sender_device_id);
+
+    ClientResult<void>
+    process_inbound_sender_key_distribution(const domain::UserId& sender_user_id,
+                                            const domain::DeviceId& sender_device_id,
+                                            const domain::crypto::SenderKeyDistributionMessage& distribution);
+
+    ClientResult<domain::Message> process_inbound_group_message(const domain::ConversationId& conversation_id,
+                                                                const domain::UserId& sender_user_id,
+                                                                const domain::DeviceId& sender_device_id,
+                                                                std::span<const uint8_t> group_envelope_bytes,
+                                                                int32_t priority = 0,
+                                                                const std::string& sender_display_name = "");
+
   private:
     ClientResult<void> validate_recipients_can_receive(const domain::Conversation& conv,
                                                        const domain::UserId& sender_user_id) const;
@@ -104,6 +131,7 @@ class MessagingManager {
     interfaces::ILocalStore& local_store_;
     interfaces::ICryptoProvider& crypto_provider_;
     RatchetSessionManager* ratchet_session_manager_{nullptr};
+    interfaces::ISecureStorage* secure_storage_{nullptr};
 };
 
 } // namespace securecloud::client::application::managers

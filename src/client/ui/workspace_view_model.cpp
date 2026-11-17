@@ -41,7 +41,170 @@ WorkspaceViewModel::WorkspaceViewModel(application::ClientApplication& app, Navi
             emit self->contactsChanged();
         });
 
-    seedDefaultWorkspaceData();
+    const bool has_persistent_db = !app_.bootstrap().config().database_path.empty();
+    const auto persisted_convs = app_.bootstrap().messaging_manager().list_conversations();
+    if (has_persistent_db || (persisted_convs.is_ok() && !persisted_convs.value().empty())) {
+        hydrateFromLocalStore();
+    } else {
+        seedDefaultWorkspaceData();
+    }
+}
+
+domain::UserId WorkspaceViewModel::localUserId() const {
+    const auto& current = app_.bootstrap().auth_manager().current_user();
+    if (!current.value().empty()) {
+        return current;
+    }
+    return domain::UserId("operator@securecloud.org");
+}
+
+void WorkspaceViewModel::reloadFromLocalStore() {
+    hydrateFromLocalStore();
+    emit conversationsChanged();
+    emit activeMessagesChanged();
+    emit selectedConversationChanged();
+    emit contactsChanged();
+}
+
+void WorkspaceViewModel::hydrateFromLocalStore() {
+    conversations_.clear();
+    messages_.clear();
+    selected_conversation_id_.clear();
+
+    const domain::UserId self_uid = localUserId();
+    const auto convs_res = app_.bootstrap().messaging_manager().list_conversations();
+    if (convs_res.is_error()) {
+        return;
+    }
+
+    for (const auto& conv : convs_res.value()) {
+        const QString cid = QString::fromStdString(conv.conversation_id().value());
+        const bool is_group = (conv.type() == domain::ConversationType::Group);
+
+        std::vector<QString> participant_strs;
+        participant_strs.reserve(conv.participants().size());
+        int total_devices = 0;
+        QString direct_peer_uid;
+
+        for (const auto& p_uid : conv.participants()) {
+            const QString uid_q = QString::fromStdString(p_uid.value());
+            participant_strs.push_back(uid_q);
+            if (p_uid == self_uid) {
+                total_devices += 1;
+            } else {
+                if (direct_peer_uid.isEmpty()) {
+                    direct_peer_uid = uid_q;
+                }
+                const auto c_res = app_.bootstrap().contact_manager().get_contact(p_uid);
+                total_devices += c_res.is_ok() ? static_cast<int>(c_res.value().authorized_device_count()) : 1;
+            }
+        }
+        if (total_devices == 0) {
+            total_devices = 1;
+        }
+
+        QString display_name = QString::fromStdString(conv.title());
+        QString handle = is_group ? QStringLiteral("Group · %1 members").arg(participant_strs.size()) : QString();
+        QString presence = QStringLiteral("Offline");
+        bool verified = false;
+        bool blocked = false;
+        QString safety_number;
+        QString role_note =
+            is_group ? QStringLiteral("Encrypted Group · Sender Keys + Pairwise Double Ratchet") : QString();
+        QString ver_status = QStringLiteral("Unverified");
+
+        if (!is_group && !direct_peer_uid.isEmpty()) {
+            const auto c_res =
+                app_.bootstrap().contact_manager().get_contact(domain::UserId(direct_peer_uid.toStdString()));
+            if (c_res.is_ok()) {
+                const auto& contact = c_res.value();
+                if (display_name.isEmpty()) {
+                    display_name = QString::fromStdString(contact.alias());
+                }
+                handle = QStringLiteral("@%1").arg(QString::fromStdString(contact.alias()).toLower().replace(' ', '.'));
+                presence = QString::fromUtf8(domain::to_string(contact.presence_status()).data());
+                verified = contact.is_verified();
+                blocked = contact.is_blocked();
+                safety_number = QString::fromStdString(contact.safety_number());
+                role_note = QString::fromStdString(contact.role_note());
+                ver_status = QString::fromUtf8(domain::to_string(contact.verification_status()).data());
+            } else {
+                if (display_name.isEmpty()) {
+                    display_name = direct_peer_uid;
+                }
+                handle = QStringLiteral("@%1").arg(direct_peer_uid);
+            }
+        } else if (is_group) {
+            verified = true;
+            presence = QStringLiteral("Online");
+            safety_number = QStringLiteral("GROUP-ROOT-SAFETY-NUMBER");
+            ver_status = QStringLiteral("Verified");
+        }
+
+        const auto msgs_res =
+            app_.bootstrap().messaging_manager().get_conversation_messages(conv.conversation_id(), 100);
+        QString last_preview;
+        int last_priority = 1;
+        if (msgs_res.is_ok()) {
+            for (const auto& m : msgs_res.value()) {
+                const bool is_self = (m.sender_user_id() == self_uid);
+                const QString body = QString::fromStdString(m.encrypted_envelope_ref());
+                const QString sender_label =
+                    is_self ? QStringLiteral("You")
+                            : (m.sender_display_name().empty() ? QString::fromStdString(m.sender_user_id().value())
+                                                               : QString::fromStdString(m.sender_display_name()));
+                const int prio = (m.priority() >= 1 && m.priority() <= 3) ? m.priority() : 1;
+
+                messages_.push_back(MessageEntry{
+                    QString::fromStdString(m.message_id().value()),
+                    cid,
+                    sender_label,
+                    is_self,
+                    body,
+                    QStringLiteral("Persisted"),
+                    QStringLiteral("HISTORY"),
+                    QString::fromUtf8(domain::to_string(m.delivery_state()).data()),
+                    !m.attachment_name().empty(),
+                    QString(),
+                    QString::fromStdString(m.attachment_name()),
+                    m.attachment_size() > 0 ? formatFileSize(m.attachment_size()) : QString(),
+                    QStringLiteral("AES-256-GCM"),
+                    QString::fromStdString(m.attachment_hash()),
+                    prio,
+                    QString::fromStdString(m.idempotency_key()),
+                    m.emergency_acknowledged(),
+                });
+
+                last_preview = is_self ? QStringLiteral("YOU: %1").arg(body) : body;
+                last_priority = prio;
+            }
+        }
+
+        conversations_.push_back(ConversationEntry{
+            cid,
+            is_group ? QString::fromStdString(conv.conversation_id().value()) : direct_peer_uid,
+            display_name,
+            handle,
+            presence,
+            verified,
+            blocked,
+            safety_number,
+            role_note,
+            last_preview,
+            QStringLiteral("Synced"),
+            static_cast<int>(conv.unread_count()),
+            last_priority,
+            is_group,
+            std::move(participant_strs),
+            total_devices,
+            ver_status,
+            static_cast<int>(conv.sender_key_epoch()),
+        });
+    }
+
+    if (!conversations_.empty()) {
+        selected_conversation_id_ = conversations_.front().conversationId;
+    }
 }
 
 void WorkspaceViewModel::seedDefaultWorkspaceData() {
@@ -228,6 +391,10 @@ void WorkspaceViewModel::seedDefaultWorkspaceData() {
             conv.isGroup ? domain::ConversationType::Group : domain::ConversationType::Direct,
             conv.peerDisplayName.toStdString(), std::move(participants), std::chrono::system_clock::now(),
             std::chrono::system_clock::now(), static_cast<uint32_t>(conv.unreadCount), false);
+        if (conv.isGroup) {
+            domainConv.set_participant_role(localUserId(), domain::ParticipantRole::Admin);
+            domainConv.set_sender_key_epoch(static_cast<uint64_t>(std::max(1, conv.senderKeyEpoch)));
+        }
         (void)app_.bootstrap().local_store().save_conversation(domainConv);
     }
 
@@ -720,11 +887,26 @@ QVariantList WorkspaceViewModel::selectedConversationParticipants() const {
         return result;
     }
 
+    const domain::UserId self_uid = localUserId();
+    const QString self_uid_q = QString::fromStdString(self_uid.value());
+    const auto domain_conv_res = app_.bootstrap().messaging_manager().get_conversation(
+        domain::ConversationId(conv->conversationId.toStdString()));
+    const bool local_is_admin = localUserIsGroupAdmin();
+
     for (const auto& uidStr : conv->participantUserIds) {
         QVariantMap pItem;
         pItem.insert(QStringLiteral("userId"), uidStr);
-        const bool isSelf = (uidStr == QStringLiteral("operator@securecloud.org"));
+        const bool isSelf = (uidStr == self_uid_q || uidStr == QStringLiteral("operator@securecloud.org"));
         pItem.insert(QStringLiteral("isSelf"), isSelf);
+
+        QString roleStr = QStringLiteral("Member");
+        if (domain_conv_res.is_ok() && domain_conv_res.value().is_admin(domain::UserId(uidStr.toStdString()))) {
+            roleStr = QStringLiteral("Admin");
+        } else if (isSelf && conv->isGroup && !domain_conv_res.is_ok()) {
+            roleStr = QStringLiteral("Admin");
+        }
+        pItem.insert(QStringLiteral("role"), roleStr);
+        pItem.insert(QStringLiteral("canRemove"), local_is_admin && !isSelf);
 
         const auto cRes = app_.bootstrap().contact_manager().get_contact(domain::UserId(uidStr.toStdString()));
         if (cRes.is_ok()) {
@@ -793,6 +975,32 @@ int WorkspaceViewModel::selectedGroupUnverifiedCount() const {
         }
     }
     return unverified;
+}
+
+int WorkspaceViewModel::selectedGroupKeyEpoch() const {
+    const auto* conv = findConversation(selected_conversation_id_);
+    if (!conv || !conv->isGroup) {
+        return 0;
+    }
+    const auto domain_conv_res = app_.bootstrap().messaging_manager().get_conversation(
+        domain::ConversationId(conv->conversationId.toStdString()));
+    if (domain_conv_res.is_ok()) {
+        return static_cast<int>(domain_conv_res.value().sender_key_epoch());
+    }
+    return conv->senderKeyEpoch;
+}
+
+bool WorkspaceViewModel::localUserIsGroupAdmin() const {
+    const auto* conv = findConversation(selected_conversation_id_);
+    if (!conv || !conv->isGroup) {
+        return false;
+    }
+    const auto domain_conv_res = app_.bootstrap().messaging_manager().get_conversation(
+        domain::ConversationId(conv->conversationId.toStdString()));
+    if (domain_conv_res.is_ok()) {
+        return domain_conv_res.value().is_admin(localUserId());
+    }
+    return true;
 }
 
 bool WorkspaceViewModel::selectedPeerKeyChanged() const {
@@ -1929,14 +2137,17 @@ QString WorkspaceViewModel::createGroupConversation(const QString& groupTitle, c
         return QString();
     }
 
+    const domain::UserId creator_uid = localUserId();
+    const QString creator_q = QString::fromStdString(creator_uid.value());
+
     std::vector<domain::UserId> pVec;
     std::vector<QString> pUserIdsStr;
-    pUserIdsStr.push_back(QStringLiteral("operator@securecloud.org"));
+    pUserIdsStr.push_back(creator_q);
 
     int totalDeviceFanout = 1; // operator workstation
     for (const auto& var : participantUserIds) {
         const QString uidStr = var.toString().trimmed();
-        if (!uidStr.isEmpty() && uidStr != QStringLiteral("operator@securecloud.org")) {
+        if (!uidStr.isEmpty() && uidStr != creator_q) {
             pVec.emplace_back(uidStr.toStdString());
             pUserIdsStr.push_back(uidStr);
             const auto cRes = app_.bootstrap().contact_manager().get_contact(domain::UserId(uidStr.toStdString()));
@@ -1948,25 +2159,25 @@ QString WorkspaceViewModel::createGroupConversation(const QString& groupTitle, c
         }
     }
 
-    const auto createRes = app_.bootstrap().messaging_manager().create_group_conversation(
-        domain::UserId("operator@securecloud.org"), cleanedTitle.toStdString(), pVec);
+    const auto createRes =
+        app_.bootstrap().messaging_manager().create_group_conversation(creator_uid, cleanedTitle.toStdString(), pVec);
 
     if (createRes.is_error()) {
         emit workspaceError(QString::fromStdString(createRes.error().user_message()));
         return QString();
     }
 
-    const QString convId = QStringLiteral("conv-group-%1").arg(++next_msg_seq_);
+    const QString convId = QString::fromStdString(createRes.value().conversation_id().value());
     const int totalMembers = static_cast<int>(pUserIdsStr.size());
 
-    conversations_.insert(conversations_.begin(),
-                          ConversationEntry{convId, QStringLiteral("group-%1").arg(next_msg_seq_), cleanedTitle,
-                                            QStringLiteral("Group · %1 members").arg(totalMembers),
-                                            QStringLiteral("Online"), true, false,
-                                            QStringLiteral("GROUP-ROOT-SAFETY-NUMBER"),
-                                            QStringLiteral("Encrypted Group · Sender Keys + Pairwise Double Ratchet"),
-                                            QStringLiteral("Group conversation created."), QStringLiteral("Just now"),
-                                            0, 1, true, pUserIdsStr, totalDeviceFanout, QStringLiteral("Verified")});
+    conversations_.insert(
+        conversations_.begin(),
+        ConversationEntry{convId, convId, cleanedTitle, QStringLiteral("Group · %1 members").arg(totalMembers),
+                          QStringLiteral("Online"), true, false, QStringLiteral("GROUP-ROOT-SAFETY-NUMBER"),
+                          QStringLiteral("Encrypted Group · Sender Keys + Pairwise Double Ratchet"),
+                          QStringLiteral("Group conversation created."), QStringLiteral("Just now"), 0, 1, true,
+                          pUserIdsStr, totalDeviceFanout, QStringLiteral("Verified"),
+                          static_cast<int>(createRes.value().sender_key_epoch())});
 
     selectConversation(convId);
     return convId;
@@ -1990,8 +2201,13 @@ bool WorkspaceViewModel::addParticipantToActiveGroup(const QString& userId) {
         }
     }
 
-    (void)app_.bootstrap().messaging_manager().add_group_participant(
-        domain::ConversationId(conv->conversationId.toStdString()), domain::UserId(userId.toStdString()));
+    const auto addRes = app_.bootstrap().messaging_manager().add_group_participant(
+        domain::ConversationId(conv->conversationId.toStdString()), localUserId(),
+        domain::UserId(userId.toStdString()));
+    if (addRes.is_error()) {
+        emit workspaceError(QString::fromStdString(addRes.error().user_message()));
+        return false;
+    }
 
     conv->participantUserIds.push_back(userId);
     const auto cRes = app_.bootstrap().contact_manager().get_contact(domain::UserId(userId.toStdString()));
@@ -2030,8 +2246,21 @@ bool WorkspaceViewModel::removeParticipantFromActiveGroup(const QString& userId)
         return false;
     }
 
-    (void)app_.bootstrap().messaging_manager().remove_group_participant(
-        domain::ConversationId(conv->conversationId.toStdString()), domain::UserId(userId.toStdString()));
+    const auto remRes = app_.bootstrap().messaging_manager().remove_group_participant(
+        domain::ConversationId(conv->conversationId.toStdString()), localUserId(),
+        domain::UserId(userId.toStdString()));
+    if (remRes.is_error()) {
+        emit workspaceError(QString::fromStdString(remRes.error().user_message()));
+        return false;
+    }
+
+    const auto updatedConv = app_.bootstrap().messaging_manager().get_conversation(
+        domain::ConversationId(conv->conversationId.toStdString()));
+    if (updatedConv.is_ok()) {
+        conv->senderKeyEpoch = static_cast<int>(updatedConv.value().sender_key_epoch());
+    } else {
+        ++conv->senderKeyEpoch;
+    }
 
     conv->participantUserIds.erase(it);
     const auto cRes = app_.bootstrap().contact_manager().get_contact(domain::UserId(userId.toStdString()));
@@ -2061,7 +2290,7 @@ bool WorkspaceViewModel::leaveActiveGroup() {
     }
 
     (void)app_.bootstrap().messaging_manager().leave_conversation(
-        domain::ConversationId(conv->conversationId.toStdString()), domain::UserId("operator@securecloud.org"));
+        domain::ConversationId(conv->conversationId.toStdString()), localUserId());
 
     const QString leavingId = conv->conversationId;
     conversations_.erase(std::remove_if(conversations_.begin(), conversations_.end(),

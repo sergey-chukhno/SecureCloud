@@ -52,6 +52,8 @@ class WorkspaceViewModel : public QObject {
                    selectedConversationChanged)
     Q_PROPERTY(bool selectedGroupAllVerified READ selectedGroupAllVerified NOTIFY selectedConversationChanged)
     Q_PROPERTY(int selectedGroupUnverifiedCount READ selectedGroupUnverifiedCount NOTIFY selectedConversationChanged)
+    Q_PROPERTY(int selectedGroupKeyEpoch READ selectedGroupKeyEpoch NOTIFY selectedConversationChanged)
+    Q_PROPERTY(bool localUserIsGroupAdmin READ localUserIsGroupAdmin NOTIFY selectedConversationChanged)
 
     // ADR-008 Identity Key Change State & Warning Banner (CLIENT-004-T02)
     Q_PROPERTY(bool selectedPeerKeyChanged READ selectedPeerKeyChanged NOTIFY selectedConversationChanged)
@@ -124,6 +126,8 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] QVariantList selectedConversationParticipants() const;
     [[nodiscard]] bool selectedGroupAllVerified() const;
     [[nodiscard]] int selectedGroupUnverifiedCount() const;
+    [[nodiscard]] int selectedGroupKeyEpoch() const;
+    [[nodiscard]] bool localUserIsGroupAdmin() const;
 
     // ADR-008 Key Changed & Emergency State Getters
     [[nodiscard]] bool selectedPeerKeyChanged() const;
@@ -205,6 +209,7 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE void setSimulateDeliveryFailure(bool enabled);
     Q_INVOKABLE bool acknowledgeEmergencyMessage(const QString& messageId);
     Q_INVOKABLE void clearSearchQuery();
+    Q_INVOKABLE void reloadFromLocalStore();
 
   signals:
     void activeSectionChanged();
@@ -243,6 +248,7 @@ class WorkspaceViewModel : public QObject {
         std::vector<QString> participantUserIds;
         int authorizedDeviceCount{1};
         QString verificationStatus{QStringLiteral("Verified")};
+        int senderKeyEpoch{1};
     };
 
     struct MessageEntry {
@@ -295,6 +301,8 @@ class WorkspaceViewModel : public QObject {
     };
 
     void seedDefaultWorkspaceData();
+    void hydrateFromLocalStore();
+    [[nodiscard]] domain::UserId localUserId() const;
     [[nodiscard]] const ConversationEntry* findConversation(const QString& conversationId) const;
     [[nodiscard]] ConversationEntry* findConversationMutable(const QString& conversationId);
     [[nodiscard]] bool matchesQuery(const QString& candidate) const;

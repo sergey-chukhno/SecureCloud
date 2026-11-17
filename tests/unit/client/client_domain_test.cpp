@@ -223,6 +223,9 @@ class MockGatewayClient final : public IGatewayClient {
                                            std::string_view /*encrypted_envelope*/) override {
         return ClientResult<std::string>::ok("msg-server-assigned-id");
     }
+    ClientResult<std::string> submit_encrypted_message(const FanOutSubmissionRequest& /*request*/) override {
+        return ClientResult<std::string>::ok("msg-server-assigned-id");
+    }
     ClientResult<std::vector<std::string>> sync_messages(std::string_view /*cursor*/) override {
         return ClientResult<std::vector<std::string>>::ok({"msg-1", "msg-2"});
     }
