@@ -46,6 +46,8 @@ add_library(securecloud_messaging_config STATIC
     repository/scylla_idempotency_repository.cpp
     repository/scylla_messaging_audit_outbox_repository.cpp
     repository/in_memory_messaging_audit_outbox_repository.cpp
+    audit/canonical_audit_mapper.cpp
+    audit/messaging_audit_client.cpp
     service/conversation_authorization_service.cpp
     service/conversation_service.cpp
     db/migration_runner.cpp

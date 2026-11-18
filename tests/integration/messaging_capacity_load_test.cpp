@@ -911,7 +911,7 @@ TEST_F(MessagingCapacityLoadTest, ScyllaCqlAccessPatternAuditZeroAllowFilteringA
 
     // 4. Verify embedded schema migrations include secondary indexes for message_id lookups
     const auto migrations = db::ScyllaMigrationRunner::get_standard_migrations();
-    ASSERT_EQ(migrations.size(), 5U);
+    ASSERT_EQ(migrations.size(), 6U);
     EXPECT_NE(migrations[4].cql_content.find("idx_messages_by_id"), std::string::npos);
     EXPECT_NE(migrations[4].cql_content.find("idx_pending_deliveries_by_msg_id"), std::string::npos);
 
