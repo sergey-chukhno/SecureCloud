@@ -11,6 +11,7 @@ Item {
     property string cancelText: qsTr("Cancel")
     property bool isDanger: false
     property bool isOpen: false
+    property bool closeOnConfirm: true
     property Component customContent: null
 
     signal confirmed()
@@ -142,7 +143,9 @@ Item {
                     text: dialogRoot.confirmText
                     variant: dialogRoot.isDanger ? "Danger" : "Primary"
                     onClicked: {
-                        dialogRoot.isOpen = false
+                        if (dialogRoot.closeOnConfirm) {
+                            dialogRoot.isOpen = false
+                        }
                         dialogRoot.confirmed()
                     }
                 }

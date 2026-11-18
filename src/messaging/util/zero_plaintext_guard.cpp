@@ -14,8 +14,8 @@ namespace {
 [[nodiscard]] std::string to_lower_ascii(std::string_view input) {
     std::string out;
     out.reserve(input.size());
-    for (unsigned char ch : input) {
-        out.push_back(static_cast<char>(std::tolower(ch)));
+    for (char raw_ch : input) {
+        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(raw_ch))));
     }
     return out;
 }
@@ -54,7 +54,8 @@ namespace {
     // Reject contiguous base64/hex payloads >= 128 chars indicative of encoded ciphertext or raw keys
     constexpr std::size_t kMaxContiguousEncodedRun = 128;
     std::size_t run = 0;
-    for (unsigned char ch : value) {
+    for (char raw_ch : value) {
+        const unsigned char ch = static_cast<unsigned char>(raw_ch);
         const bool is_encoded_char =
             std::isalnum(ch) != 0 || ch == '+' || ch == '/' || ch == '=' || ch == '-' || ch == '_';
         if (is_encoded_char) {
@@ -70,7 +71,8 @@ namespace {
 }
 
 [[nodiscard]] bool is_forbidden_audit_value(std::string_view value) {
-    for (unsigned char ch : value) {
+    for (char raw_ch : value) {
+        const unsigned char ch = static_cast<unsigned char>(raw_ch);
         if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r') {
             return true;
         }
@@ -247,7 +249,8 @@ bool ZeroPlaintextGuard::is_safe_audit_payload(std::string_view payload_json, st
             return false;
         }
 
-        for (unsigned char ch : payload_json) {
+        for (char raw_ch : payload_json) {
+            const unsigned char ch = static_cast<unsigned char>(raw_ch);
             if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r') {
                 if (violation_reason != nullptr) {
                     *violation_reason = "Raw binary control bytes detected in audit payload_json";

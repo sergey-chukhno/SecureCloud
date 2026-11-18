@@ -1,8 +1,12 @@
 #include "application/managers/messaging_manager.hpp"
 
+#include "application/managers/ratchet_session_manager.hpp"
+#include "domain/crypto/ratchet_models.hpp"
+
 #include <algorithm>
 #include <chrono>
 #include <random>
+#include <span>
 #include <sstream>
 
 namespace securecloud::client::application::managers {
@@ -21,8 +25,18 @@ std::string generate_unique_id(std::string_view prefix) {
 } // namespace
 
 MessagingManager::MessagingManager(interfaces::IGatewayClient& gateway, interfaces::ILocalStore& local_store,
-                                   interfaces::ICryptoProvider& crypto_provider)
-    : gateway_(gateway), local_store_(local_store), crypto_provider_(crypto_provider) {}
+                                   interfaces::ICryptoProvider& crypto_provider,
+                                   RatchetSessionManager* ratchet_session_manager)
+    : gateway_(gateway), local_store_(local_store), crypto_provider_(crypto_provider),
+      ratchet_session_manager_(ratchet_session_manager) {}
+
+void MessagingManager::set_ratchet_session_manager(RatchetSessionManager* ratchet_session_manager) noexcept {
+    ratchet_session_manager_ = ratchet_session_manager;
+}
+
+RatchetSessionManager* MessagingManager::ratchet_session_manager() noexcept {
+    return ratchet_session_manager_;
+}
 
 ClientResult<domain::Conversation> MessagingManager::open_direct_conversation(const domain::UserId& local_user,
                                                                               const domain::UserId& peer_user,
@@ -178,19 +192,52 @@ ClientResult<domain::Message> MessagingManager::send_message(const domain::Conve
         return ClientResult<domain::Message>::error(ClientError::validation("Conversation ID cannot be empty"));
     }
 
-    const auto encrypt_res = crypto_provider_.encrypt_message(recipient_device_id, plaintext);
-    if (encrypt_res.is_error()) {
-        return ClientResult<domain::Message>::error(encrypt_res.error());
+    auto conv_lookup = local_store_.get_conversation(conversation_id);
+    if (conv_lookup.is_ok()) {
+        const auto guard_res = validate_recipients_can_receive(conv_lookup.value(), sender_user_id);
+        if (guard_res.is_error()) {
+            return ClientResult<domain::Message>::error(guard_res.error());
+        }
     }
 
-    const auto send_res = gateway_.send_message(conversation_id, encrypt_res.value());
+    std::string ciphertext;
+    if (ratchet_session_manager_ != nullptr) {
+        domain::UserId peer_user_id;
+        if (conv_lookup.is_ok()) {
+            for (const auto& p : conv_lookup.value().participants()) {
+                if (p != sender_user_id) {
+                    peer_user_id = p;
+                    break;
+                }
+            }
+        }
+        if (peer_user_id.empty()) {
+            peer_user_id = domain::UserId(std::string(recipient_device_id.str()));
+        }
+
+        std::span<const uint8_t> pt_bytes(reinterpret_cast<const uint8_t*>(plaintext.data()), plaintext.size());
+        auto enc_res =
+            ratchet_session_manager_->encrypt_payload_for_device(peer_user_id, recipient_device_id, pt_bytes);
+        if (enc_res.is_error()) {
+            return ClientResult<domain::Message>::error(enc_res.error());
+        }
+        ciphertext = enc_res.value().ciphertext_blob;
+    } else {
+        const auto encrypt_res = crypto_provider_.encrypt_message(recipient_device_id, plaintext);
+        if (encrypt_res.is_error()) {
+            return ClientResult<domain::Message>::error(encrypt_res.error());
+        }
+        ciphertext = encrypt_res.value();
+    }
+
+    const auto send_res = gateway_.send_message(conversation_id, ciphertext);
     if (send_res.is_error()) {
         return ClientResult<domain::Message>::error(send_res.error());
     }
 
     const domain::MessageId mid(send_res.value());
     domain::Message msg(mid, conversation_id, sender_user_id, sender_device_id, domain::DeliveryState::Accepted,
-                        std::chrono::system_clock::now(), encrypt_res.value(), 0);
+                        std::chrono::system_clock::now(), std::move(ciphertext), 0);
 
     const auto save_res = local_store_.save_message(msg);
     if (save_res.is_error()) {
@@ -222,21 +269,17 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
     const auto& conv = conv_res.value();
 
     // 2. ADR-008 & Security Guard: Inspect all recipient participants
-    for (const auto& participant_id : conv.participants()) {
-        if (participant_id == sender_user_id) {
-            continue;
-        }
-        auto contact_res = local_store_.get_contact(participant_id);
-        if (contact_res.is_ok()) {
-            const auto& contact = contact_res.value();
-            if (contact.verification_status() == domain::KeyVerificationStatus::KeyChanged) {
-                return ClientResult<domain::Message>::error(
-                    ClientError::validation("Outbound messaging suspended: recipient identity key changed (ADR-008)"));
-            }
-            if (contact.is_blocked()) {
-                return ClientResult<domain::Message>::error(
-                    ClientError::validation("Cannot send message: recipient is blocked"));
-            }
+    const auto guard_res = validate_recipients_can_receive(conv, sender_user_id);
+    if (guard_res.is_error()) {
+        return ClientResult<domain::Message>::error(guard_res.error());
+    }
+
+    // If RatchetSessionManager is active, advance Double Ratchet sessions for participants
+    if (ratchet_session_manager_ != nullptr) {
+        std::span<const uint8_t> pt_bytes(reinterpret_cast<const uint8_t*>(plaintext.data()), plaintext.size());
+        auto fan_res = ratchet_session_manager_->encrypt_fanout_for_participants(conv.participants(), pt_bytes);
+        if (fan_res.is_error()) {
+            return ClientResult<domain::Message>::error(fan_res.error());
         }
     }
 
@@ -277,6 +320,14 @@ ClientResult<domain::Message> MessagingManager::retry_failed_message(const domai
     if (msg.delivery_state() != domain::DeliveryState::Failed) {
         return ClientResult<domain::Message>::error(
             ClientError::validation("Cannot retry message that is not in Failed state"));
+    }
+
+    const auto conv_res = local_store_.get_conversation(conversation_id);
+    if (conv_res.is_ok()) {
+        const auto guard_res = validate_recipients_can_receive(conv_res.value(), msg.sender_user_id());
+        if (guard_res.is_error()) {
+            return ClientResult<domain::Message>::error(guard_res.error());
+        }
     }
 
     // Preserve original idempotency_key per detailed-design.md §2.8 and ADR-007
@@ -327,6 +378,132 @@ ClientResult<void> MessagingManager::discard_failed_message(const domain::Conver
 ClientResult<std::vector<domain::Message>>
 MessagingManager::get_conversation_messages(const domain::ConversationId& conversation_id, std::size_t limit) {
     return local_store_.get_messages(conversation_id, limit);
+}
+
+ClientResult<domain::Message> MessagingManager::process_inbound_message(
+    const domain::ConversationId& conversation_id, const domain::UserId& sender_user_id,
+    const domain::DeviceId& sender_device_id, const domain::crypto::PerDeviceDeliveryPayload& payload, int32_t priority,
+    const std::string& sender_display_name) {
+    if (conversation_id.empty() || sender_user_id.empty() || sender_device_id.empty()) {
+        return ClientResult<domain::Message>::error(
+            ClientError::validation("Conversation ID, Sender User ID, and Sender Device ID are required"));
+    }
+
+    const auto sender_contact = local_store_.get_contact(sender_user_id);
+    if (sender_contact.is_ok() && sender_contact.value().is_blocked()) {
+        return ClientResult<domain::Message>::error(
+            ClientError::validation("Inbound message dropped: sender is blocked"));
+    }
+
+    std::string decrypted_plaintext;
+    if (ratchet_session_manager_ != nullptr) {
+        auto dec_res = ratchet_session_manager_->decrypt_payload_from_device(sender_user_id, sender_device_id, payload);
+        if (dec_res.is_error()) {
+            return ClientResult<domain::Message>::error(dec_res.error());
+        }
+        decrypted_plaintext = dec_res.value().expose_unredacted_secret();
+    } else {
+        auto dec_res = crypto_provider_.decrypt_message(sender_device_id, payload.ciphertext_blob);
+        if (dec_res.is_error()) {
+            return ClientResult<domain::Message>::error(dec_res.error());
+        }
+        decrypted_plaintext = dec_res.value();
+    }
+
+    const domain::MessageId mid(generate_unique_id("msg-in"));
+    const std::string idem_key = generate_unique_id("idem-in");
+    const std::string disp_name = sender_display_name.empty() ? std::string(sender_user_id.str()) : sender_display_name;
+
+    domain::Message msg(mid, conversation_id, sender_user_id, sender_device_id, domain::DeliveryState::Delivered,
+                        std::chrono::system_clock::now(), std::move(decrypted_plaintext), priority, disp_name,
+                        idem_key);
+
+    const auto save_res = local_store_.save_message(msg);
+    if (save_res.is_error()) {
+        return ClientResult<domain::Message>::error(save_res.error());
+    }
+
+    auto conv_res = local_store_.get_conversation(conversation_id);
+    if (conv_res.is_ok()) {
+        auto conv = conv_res.value();
+        conv.set_last_activity_at(msg.sent_at());
+        conv.set_unread_count(conv.unread_count() + 1);
+        (void)local_store_.save_conversation(conv);
+    }
+
+    return ClientResult<domain::Message>::ok(std::move(msg));
+}
+
+ClientResult<domain::Message> MessagingManager::process_inbound_message(
+    const domain::ConversationId& conversation_id, const domain::UserId& sender_user_id,
+    const domain::DeviceId& sender_device_id, const domain::crypto::EncryptedMessageEnvelope& envelope,
+    int32_t priority, const std::string& sender_display_name) {
+    if (conversation_id.empty() || sender_user_id.empty() || sender_device_id.empty()) {
+        return ClientResult<domain::Message>::error(
+            ClientError::validation("Conversation ID, Sender User ID, and Sender Device ID are required"));
+    }
+
+    const auto sender_contact = local_store_.get_contact(sender_user_id);
+    if (sender_contact.is_ok() && sender_contact.value().is_blocked()) {
+        return ClientResult<domain::Message>::error(
+            ClientError::validation("Inbound message dropped: sender is blocked"));
+    }
+
+    if (!ratchet_session_manager_) {
+        return ClientResult<domain::Message>::error(
+            ClientError::crypto("RatchetSessionManager required to decrypt EncryptedMessageEnvelope"));
+    }
+
+    auto dec_res = ratchet_session_manager_->decrypt_from_device(sender_user_id, sender_device_id, envelope);
+    if (dec_res.is_error()) {
+        return ClientResult<domain::Message>::error(dec_res.error());
+    }
+
+    const std::string decrypted_plaintext = dec_res.value().expose_unredacted_secret();
+    const domain::MessageId mid(generate_unique_id("msg-in"));
+    const std::string idem_key = generate_unique_id("idem-in");
+    const std::string disp_name = sender_display_name.empty() ? std::string(sender_user_id.str()) : sender_display_name;
+
+    domain::Message msg(mid, conversation_id, sender_user_id, sender_device_id, domain::DeliveryState::Delivered,
+                        std::chrono::system_clock::now(), std::move(decrypted_plaintext), priority, disp_name,
+                        idem_key);
+
+    const auto save_res = local_store_.save_message(msg);
+    if (save_res.is_error()) {
+        return ClientResult<domain::Message>::error(save_res.error());
+    }
+
+    auto conv_res = local_store_.get_conversation(conversation_id);
+    if (conv_res.is_ok()) {
+        auto conv = conv_res.value();
+        conv.set_last_activity_at(msg.sent_at());
+        conv.set_unread_count(conv.unread_count() + 1);
+        (void)local_store_.save_conversation(conv);
+    }
+
+    return ClientResult<domain::Message>::ok(std::move(msg));
+}
+
+ClientResult<void> MessagingManager::validate_recipients_can_receive(const domain::Conversation& conv,
+                                                                     const domain::UserId& sender_user_id) const {
+    for (const auto& participant_id : conv.participants()) {
+        if (participant_id == sender_user_id) {
+            continue;
+        }
+        auto contact_res = local_store_.get_contact(participant_id);
+        if (contact_res.is_ok()) {
+            const auto& contact = contact_res.value();
+            if (contact.verification_status() == domain::KeyVerificationStatus::KeyChanged) {
+                return ClientResult<void>::error(
+                    ClientError::validation("Outbound messaging suspended: recipient identity key changed (ADR-008)"));
+            }
+            if (contact.is_blocked()) {
+                return ClientResult<void>::error(ClientError::validation("Cannot send message: recipient is blocked"));
+            }
+        }
+    }
+
+    return ClientResult<void>::ok();
 }
 
 } // namespace securecloud::client::application::managers

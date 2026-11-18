@@ -126,13 +126,13 @@ TEST(AuthAuditClientTest, SubmitBatch_EnforcesTimeoutDeadlineAndMapsPartialRejec
     const auto before_call = std::chrono::system_clock::now();
     EXPECT_CALL(*stub, BatchSubmitAuditEvents(_, _, _))
         .WillOnce(DoAll(
-            Invoke([&](grpc::ClientContext* ctx, const ::securecloud::audit::v1::BatchSubmitAuditEventsRequest& req,
-                       ::securecloud::audit::v1::BatchSubmitAuditEventsResponse*) {
+            [&](grpc::ClientContext* ctx, const ::securecloud::audit::v1::BatchSubmitAuditEventsRequest& req,
+                ::securecloud::audit::v1::BatchSubmitAuditEventsResponse*) {
                 EXPECT_EQ(req.events_size(), 2);
                 const auto deadline = ctx->deadline();
                 EXPECT_GE(deadline, before_call + std::chrono::milliseconds(1000));
                 EXPECT_LE(deadline, before_call + std::chrono::milliseconds(2500));
-            }),
+            },
             SetArgPointee<2>(mock_resp), Return(grpc::Status::OK)));
 
     AuthAuditClient client(cfg, stub);

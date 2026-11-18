@@ -135,8 +135,8 @@ int32_t compute_outbox_shard_id(std::string_view routing_key) noexcept {
     constexpr uint64_t kFnvPrime = 1099511628211ULL;
 
     uint64_t hash = kFnvOffsetBasis;
-    for (unsigned char ch : routing_key) {
-        hash ^= static_cast<uint64_t>(ch);
+    for (char raw_ch : routing_key) {
+        hash ^= static_cast<uint64_t>(static_cast<unsigned char>(raw_ch));
         hash *= kFnvPrime;
     }
     return static_cast<int32_t>(hash % static_cast<uint64_t>(kMessagingAuditOutboxShardCount));

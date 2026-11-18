@@ -2686,17 +2686,33 @@ Rectangle {
         title: qsTr("Add New Secure Contact")
         confirmText: qsTr("Add Contact")
         cancelText: qsTr("Cancel")
+        closeOnConfirm: false
         property string draftHandle: ""
         property string draftName: ""
         property string draftRole: ""
+        property string handleError: ""
+        property string nameError: ""
+
+        onCancelled: {
+            handleError = ""
+            nameError = ""
+        }
 
         onConfirmed: {
-            if (workspaceRoot.wvm && draftHandle.trim().length > 0 && draftName.trim().length > 0) {
-                workspaceRoot.wvm.addContact(draftHandle.trim(), draftName.trim(), draftRole.trim(), "")
-                draftHandle = ""
-                draftName = ""
-                draftRole = ""
+            handleError = draftHandle.trim().length === 0 ? qsTr("Need to provide peer handle or identity.") : ""
+            nameError = draftName.trim().length === 0 ? qsTr("Need to provide contact name.") : ""
+            if (handleError !== "" || nameError !== "") {
+                return
             }
+            if (workspaceRoot.wvm) {
+                workspaceRoot.wvm.addContactByHandle(draftHandle.trim(), draftName.trim(), draftRole.trim())
+            }
+            draftHandle = ""
+            draftName = ""
+            draftRole = ""
+            handleError = ""
+            nameError = ""
+            addContactDialog.close()
         }
 
         customContent: Component {
@@ -2709,7 +2725,11 @@ Rectangle {
                     label: qsTr("Peer Handle / Identity")
                     placeholderText: qsTr("@username or username@securecloud.org")
                     text: addContactDialog.draftHandle
-                    onTextChanged: addContactDialog.draftHandle = text
+                    errorMessage: addContactDialog.handleError
+                    onTextChanged: {
+                        addContactDialog.draftHandle = text
+                        if (text.trim().length > 0) addContactDialog.handleError = ""
+                    }
                 }
 
                 SCTextField {
@@ -2717,7 +2737,11 @@ Rectangle {
                     label: qsTr("Display Name")
                     placeholderText: qsTr("e.g. Eve Vance")
                     text: addContactDialog.draftName
-                    onTextChanged: addContactDialog.draftName = text
+                    errorMessage: addContactDialog.nameError
+                    onTextChanged: {
+                        addContactDialog.draftName = text
+                        if (text.trim().length > 0) addContactDialog.nameError = ""
+                    }
                 }
 
                 SCTextField {
@@ -2738,20 +2762,33 @@ Rectangle {
         title: qsTr("Edit Contact Profile")
         confirmText: qsTr("Save Changes")
         cancelText: qsTr("Cancel")
+        closeOnConfirm: false
         property string draftName: ""
         property string draftRole: ""
+        property string nameError: ""
 
         function openWithCurrentContact() {
             if (!workspaceRoot.wvm) return
             draftName = workspaceRoot.wvm.selectedPeerName
             draftRole = workspaceRoot.wvm.selectedPeerRoleNote
+            nameError = ""
             open()
         }
 
+        onCancelled: {
+            nameError = ""
+        }
+
         onConfirmed: {
-            if (workspaceRoot.wvm && draftName.trim().length > 0) {
+            if (draftName.trim().length === 0) {
+                nameError = qsTr("Need to provide contact name.")
+                return
+            }
+            if (workspaceRoot.wvm) {
                 workspaceRoot.wvm.updateContactProfile(workspaceRoot.wvm.selectedPeerUserId, draftName.trim(), draftRole.trim())
             }
+            nameError = ""
+            editContactDialog.close()
         }
 
         customContent: Component {
@@ -2764,7 +2801,11 @@ Rectangle {
                     label: qsTr("Display Name")
                     placeholderText: qsTr("Display alias")
                     text: editContactDialog.draftName
-                    onTextChanged: editContactDialog.draftName = text
+                    errorMessage: editContactDialog.nameError
+                    onTextChanged: {
+                        editContactDialog.draftName = text
+                        if (text.trim().length > 0) editContactDialog.nameError = ""
+                    }
                 }
 
                 SCTextField {

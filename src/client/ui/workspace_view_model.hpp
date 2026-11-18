@@ -79,6 +79,8 @@ class WorkspaceViewModel : public QObject {
     Q_PROPERTY(QVariantList devices READ devices NOTIFY devicesChanged)
     Q_PROPERTY(int pendingDeviceCount READ pendingDeviceCount NOTIFY devicesChanged)
     Q_PROPERTY(QVariantMap localDeviceIdentity READ localDeviceIdentity NOTIFY localDeviceIdentityChanged)
+    Q_PROPERTY(int prekeyCount READ prekeyCount NOTIFY localDeviceIdentityChanged)
+    Q_PROPERTY(QString prekeyHealthStatus READ prekeyHealthStatus NOTIFY localDeviceIdentityChanged)
     Q_PROPERTY(bool mfaRequiredOnLogin READ mfaRequiredOnLogin WRITE setMfaRequiredOnLogin NOTIFY mfaPolicyChanged)
     Q_PROPERTY(bool hardwareKeyEnforced READ hardwareKeyEnforced WRITE setHardwareKeyEnforced NOTIFY mfaPolicyChanged)
     Q_PROPERTY(QString totpEnrollmentSecret READ totpEnrollmentSecret NOTIFY mfaPolicyChanged)
@@ -145,11 +147,14 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] QVariantList devices() const;
     [[nodiscard]] int pendingDeviceCount() const noexcept;
     [[nodiscard]] QVariantMap localDeviceIdentity() const;
+    [[nodiscard]] int prekeyCount() const noexcept { return local_prekey_count_; }
+    [[nodiscard]] QString prekeyHealthStatus() const { return local_prekey_health_; }
     [[nodiscard]] bool mfaRequiredOnLogin() const noexcept { return mfa_required_on_login_; }
     void setMfaRequiredOnLogin(bool required);
     [[nodiscard]] bool hardwareKeyEnforced() const noexcept { return hardware_key_enforced_; }
     void setHardwareKeyEnforced(bool enforced);
     [[nodiscard]] QString totpEnrollmentSecret() const { return totp_enrollment_secret_; }
+    [[nodiscard]] Q_INVOKABLE QVariantMap hardwareAttestationInfo() const;
 
     // Existing Invokables
     Q_INVOKABLE void selectConversation(const QString& conversationId);
@@ -165,6 +170,8 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE bool revokeDevice(const QString& deviceId);
     Q_INVOKABLE QString pairNewDevice(const QString& displayName);
     Q_INVOKABLE void rotateSignedPrekey();
+    Q_INVOKABLE void refreshPrekeyInventory();
+    Q_INVOKABLE bool replenishPrekeys(int batchSize = 50);
     Q_INVOKABLE void regenerateTotpSecret();
     Q_INVOKABLE void resetForEmergencyWipe();
 
@@ -176,6 +183,14 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE bool removeContact(const QString& userId);
     Q_INVOKABLE void simulatePeerKeyChange(const QString& userId);
     Q_INVOKABLE void acceptAndVerifyPeerKey(const QString& userId);
+
+    // Contact Directory, Verification & Blocking (CLIENT-008-T05)
+    Q_INVOKABLE bool addContactByHandle(const QString& handle, const QString& displayName = QString(),
+                                        const QString& roleNote = QString());
+    Q_INVOKABLE bool verifyContactSafetyNumber(const QString& userId, bool verified);
+    Q_INVOKABLE bool blockContact(const QString& userId, bool blocked);
+    Q_INVOKABLE void syncContacts();
+    Q_INVOKABLE bool acknowledgeKeyChange(const QString& userId);
 
     // Group Conversations Management
     Q_INVOKABLE QString createDirectConversation(const QString& peerUserId);
@@ -283,6 +298,7 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] const ConversationEntry* findConversation(const QString& conversationId) const;
     [[nodiscard]] ConversationEntry* findConversationMutable(const QString& conversationId);
     [[nodiscard]] bool matchesQuery(const QString& candidate) const;
+    [[nodiscard]] QString resolveTargetPeerUserId(const QString& userId) const;
     static QString formatFileSize(qint64 bytes);
     static QString priorityToLabel(int priority);
 
@@ -297,6 +313,8 @@ class WorkspaceViewModel : public QObject {
     int next_file_seq_{10};
     int next_device_seq_{4};
     int prekey_epoch_{14};
+    int local_prekey_count_{100};
+    QString local_prekey_health_{QStringLiteral("Healthy")};
     bool mfa_required_on_login_{true};
     bool hardware_key_enforced_{true};
     bool is_loading_messages_{false};

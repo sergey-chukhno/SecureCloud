@@ -8,18 +8,37 @@ if(Qt6_FOUND)
         domain/message_id.cpp
         domain/delivery_state.cpp
         domain/crypto_identity.cpp
+        domain/prekey_bundle.cpp
+        domain/one_time_prekey_record.cpp
+        domain/prekey_inventory_status.cpp
+        domain/device_private_bundle.cpp
+        domain/device_trust_level.cpp
+        domain/device_platform_info.cpp
+        domain/hardware_attestation_record.cpp
+        domain/short_authentication_string.cpp
+        domain/pairing_challenge_payload.cpp
         domain/device.cpp
         domain/user.cpp
         domain/contact.cpp
+        domain/directory_user_entry.cpp
         domain/conversation.cpp
         domain/message.cpp
+        domain/crypto/x3dh_models.cpp
+        domain/crypto/x3dh_engine.cpp
+        domain/crypto/ratchet_models.cpp
+        domain/crypto/skipped_keys_store.cpp
+        domain/crypto/double_ratchet_engine.cpp
+        domain/crypto/ratchet_session_state.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)
     target_include_directories(securecloud_client_domain PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
     target_link_libraries(securecloud_client_domain PUBLIC
+        securecloud::common
+        securecloud::json
         securecloud::compiler_flags
+        OpenSSL::Crypto
     )
 
     # 2. Infrastructure Layer (Adapters, Networking via Gateway, Persistence)
@@ -30,6 +49,9 @@ if(Qt6_FOUND)
         infrastructure/adapters/memory_local_store.cpp
         infrastructure/adapters/memory_secure_storage.cpp
         infrastructure/adapters/stub_crypto_provider.cpp
+        infrastructure/adapters/openssl_crypto_provider.cpp
+        infrastructure/adapters/key_storage_helper.cpp
+        infrastructure/adapters/simulated_hardware_authenticator.cpp
     )
     add_library(securecloud::client_infra ALIAS securecloud_client_infra)
     target_include_directories(securecloud_client_infra PUBLIC
@@ -39,6 +61,7 @@ if(Qt6_FOUND)
         securecloud_client_domain
         securecloud::common
         securecloud::compiler_flags
+        OpenSSL::Crypto
         Qt6::Core
         Qt6::Network
     )
@@ -54,6 +77,10 @@ if(Qt6_FOUND)
         application/managers/messaging_manager.cpp
         application/managers/contact_manager.cpp
         application/managers/device_manager.cpp
+        application/managers/device_pairing_coordinator.cpp
+        application/managers/safety_number_engine.cpp
+        application/managers/prekey_lifecycle_coordinator.cpp
+        application/managers/ratchet_session_manager.cpp
         application/managers/file_manager.cpp
         application/managers/emergency_manager.cpp
         application/managers/sync_manager.cpp
