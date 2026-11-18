@@ -35,17 +35,15 @@ class IMessagingAuditOutboxRepository {
     virtual void enqueue_audit_event(const AuditOutboxRecord& record) = 0;
 
     virtual std::vector<AuditOutboxRecord> fetch_pending_events(const std::string& outbox_bucket, int32_t shard_id,
-                                                                size_t limit,
-                                                                std::chrono::seconds lease_duration) = 0;
+                                                                size_t limit, std::chrono::seconds lease_duration) = 0;
 
     virtual void mark_published(const std::string& outbox_bucket, int32_t shard_id,
                                 const std::chrono::system_clock::time_point& created_at,
                                 const std::string& event_id) = 0;
 
     virtual void record_failure(const std::string& outbox_bucket, int32_t shard_id,
-                                const std::chrono::system_clock::time_point& created_at,
-                                const std::string& event_id, const std::string& error_message,
-                                bool should_quarantine) = 0;
+                                const std::chrono::system_clock::time_point& created_at, const std::string& event_id,
+                                const std::string& error_message, bool should_quarantine) = 0;
 
     virtual size_t count_pending_backlog(const std::string& outbox_bucket, int32_t shard_id) = 0;
 };

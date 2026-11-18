@@ -256,7 +256,7 @@ class ReadReceiptServiceTest : public ::testing::Test {
             return revoked_devices_.find(id) == revoked_devices_.end();
         };
 
-        service_ = std::make_unique<ReadReceiptService>(delivery_repo_, membership_repo_, outbox_repo_,
+        service_ = std::make_unique<ReadReceiptService>(delivery_repo_, membership_repo_, outbox_repo_, nullptr,
                                                         device_status_checker_);
     }
 

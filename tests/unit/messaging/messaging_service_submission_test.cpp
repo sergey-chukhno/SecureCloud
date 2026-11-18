@@ -2,12 +2,16 @@
 #include "domain/conversation_types.hpp"
 #include "domain/message_entity.hpp"
 #include "domain/submission_types.hpp"
+#include "messaging/client/auth_crypto_directory_client_interface.hpp"
 #include "messaging/repository/delivery_state_repository_interface.hpp"
 #include "messaging/repository/idempotency_repository_interface.hpp"
 #include "messaging/repository/in_memory_conversation_repository.hpp"
 #include "messaging/repository/in_memory_membership_repository.hpp"
 #include "messaging/repository/message_repository_interface.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/repository/outbox_repository_interface.hpp"
+#include "messaging/service/e2e_envelope_validator.hpp"
+#include "messaging/service/recipient_device_resolution_service.hpp"
 #include "securecloud/grpc/caller_context.hpp"
 #include "securecloud/messaging/v1/messaging.grpc.pb.h"
 #include "service/conversation_authorization_service.hpp"
@@ -53,6 +57,8 @@ class ServerContextTestSpouse {
 namespace securecloud::messaging::service {
 namespace {
 
+using client::DeviceCryptoRecord;
+using client::IAuthCryptoDirectoryClient;
 using domain::ConversationEntity;
 using domain::ConversationId;
 using domain::ConversationOutboxEvent;
@@ -69,10 +75,6 @@ using domain::ParticipantRole;
 using domain::RecipientDeliveryState;
 using domain::SubmissionStatus;
 using domain::UserId;
-
-// ============================================================================
-// Test Mock Repositories
-// ============================================================================
 
 class MockMessageRepo : public repository::IMessageRepository {
   public:
@@ -125,6 +127,20 @@ class MockOutboxRepo : public repository::IOutboxRepository {
     std::vector<ConversationOutboxEvent> enqueued_events;
 };
 
+class MockMessagingAuditOutboxRepository : public repository::IMessagingAuditOutboxRepository {
+  public:
+    void enqueue_audit_event(const repository::AuditOutboxRecord&) override {}
+    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
+                                                                    std::chrono::seconds) override {
+        return {};
+    }
+    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
+                        const std::string&) override {}
+    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
+                        const std::string&, bool) override {}
+    size_t count_pending_backlog(const std::string&, int32_t) override { return 0; }
+};
+
 class MockIdempotencyRepo : public repository::IIdempotencyRepository {
   public:
     std::optional<IdempotencyRecord> find_submission(const DeviceId& sender_device_id,
@@ -145,9 +161,44 @@ class MockIdempotencyRepo : public repository::IIdempotencyRepository {
     std::unordered_map<std::string, IdempotencyRecord> records_;
 };
 
-// ============================================================================
-// Test Fixture
-// ============================================================================
+class MockAuthCryptoClient : public IAuthCryptoDirectoryClient {
+  public:
+    void set_user_devices(const UserId& user_id, std::vector<DeviceCryptoRecord> devices) {
+        user_devices_[user_id.str()] = std::move(devices);
+    }
+
+    client::Result<std::vector<DeviceCryptoRecord>, client::CryptoDirectoryError>
+    get_user_device_crypto_records(const domain::UserId& user_id,
+                                   std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) override {
+        (void)timeout;
+        auto it = user_devices_.find(user_id.str());
+        if (it != user_devices_.end()) {
+            return it->second;
+        }
+        return std::vector<DeviceCryptoRecord>{};
+    }
+
+    client::Result<DeviceCryptoRecord, client::CryptoDirectoryError>
+    get_device_crypto_identity(const domain::DeviceId& device_id,
+                               std::chrono::milliseconds timeout = std::chrono::milliseconds(2000)) override {
+        (void)timeout;
+        for (const auto& [_, devices] : user_devices_) {
+            for (const auto& dev : devices) {
+                if (dev.device_id == device_id) {
+                    return dev;
+                }
+            }
+        }
+        return client::CryptoDirectoryError{
+            .kind = client::CryptoDirectoryErrorKind::NotFound,
+            .message = "Device not found",
+            .grpc_code = ::grpc::StatusCode::NOT_FOUND,
+        };
+    }
+
+  private:
+    std::unordered_map<std::string, std::vector<DeviceCryptoRecord>> user_devices_;
+};
 
 class MessagingServiceSubmissionTest : public ::testing::Test {
   protected:
@@ -161,9 +212,15 @@ class MessagingServiceSubmissionTest : public ::testing::Test {
         message_repo_ = std::make_shared<MockMessageRepo>();
         delivery_repo_ = std::make_shared<MockDeliveryStateRepo>();
         outbox_repo_ = std::make_shared<MockOutboxRepo>();
+        audit_repo_ = std::make_shared<MockMessagingAuditOutboxRepository>();
+
+        auth_crypto_client_ = std::make_shared<MockAuthCryptoClient>();
+        resolution_service_ = std::make_shared<RecipientDeviceResolutionService>(auth_crypto_client_);
+        envelope_validator_ = std::make_shared<E2EEnvelopeValidator>(resolution_service_);
 
         submission_service_ = std::make_shared<MessageSubmissionService>(
-            auth_service_, sequence_allocator_, idempotency_guard_, message_repo_, delivery_repo_, outbox_repo_);
+            auth_service_, sequence_allocator_, idempotency_guard_, message_repo_, delivery_repo_, outbox_repo_,
+            audit_repo_, envelope_validator_, resolution_service_);
 
         service_impl_ = std::make_unique<MessagingServiceImpl>(nullptr, nullptr, nullptr, nullptr, submission_service_);
 
@@ -183,6 +240,20 @@ class MessagingServiceSubmissionTest : public ::testing::Test {
                                             now};
         memb_repo_->add_participant(p_alice);
         memb_repo_->add_participant(p_bob);
+
+        DeviceCryptoRecord alice_dev_rec;
+        alice_dev_rec.device_id = alice_device_;
+        alice_dev_rec.user_id = test_alice_;
+        alice_dev_rec.status = securecloud::auth::v1::DEVICE_STATUS_ACTIVE;
+        alice_dev_rec.identity_key = std::vector<uint8_t>(32, 0x11);
+        auth_crypto_client_->set_user_devices(test_alice_, {alice_dev_rec});
+
+        DeviceCryptoRecord bob_dev_rec;
+        bob_dev_rec.device_id = bob_device_;
+        bob_dev_rec.user_id = test_bob_;
+        bob_dev_rec.status = securecloud::auth::v1::DEVICE_STATUS_ACTIVE;
+        bob_dev_rec.identity_key = std::vector<uint8_t>(32, 0x22);
+        auth_crypto_client_->set_user_devices(test_bob_, {bob_dev_rec});
     }
 
     v1::SendMessageRequest make_valid_request(const std::string& token = "tok-1234567890abcdef") {
@@ -197,11 +268,12 @@ class MessagingServiceSubmissionTest : public ::testing::Test {
         target->set_recipient_device_id(bob_device_.str());
 
         auto* payload = target->mutable_encrypted_payload();
-        payload->set_ciphertext_blob("encrypted-ciphertext-bytes");
+        payload->set_ciphertext_blob(std::string(64, '\x88'));
         payload->set_ephemeral_public_key(std::string(32, '\xAA'));
         payload->set_initialization_vector(std::string(24, '\xBB'));
         payload->set_auth_tag(std::string(16, '\xCC'));
         payload->set_algorithm("XChaCha20-Poly1305");
+        payload->set_algorithm("AES-256-GCM");
 
         return req;
     }
@@ -215,6 +287,10 @@ class MessagingServiceSubmissionTest : public ::testing::Test {
     std::shared_ptr<MockMessageRepo> message_repo_;
     std::shared_ptr<MockDeliveryStateRepo> delivery_repo_;
     std::shared_ptr<MockOutboxRepo> outbox_repo_;
+    std::shared_ptr<MockMessagingAuditOutboxRepository> audit_repo_;
+    std::shared_ptr<MockAuthCryptoClient> auth_crypto_client_;
+    std::shared_ptr<RecipientDeviceResolutionService> resolution_service_;
+    std::shared_ptr<E2EEnvelopeValidator> envelope_validator_;
     std::shared_ptr<MessageSubmissionService> submission_service_;
     std::unique_ptr<MessagingServiceImpl> service_impl_;
 
@@ -224,10 +300,6 @@ class MessagingServiceSubmissionTest : public ::testing::Test {
     DeviceId alice_device_;
     DeviceId bob_device_;
 };
-
-// ============================================================================
-// Unit Tests
-// ============================================================================
 
 TEST_F(MessagingServiceSubmissionTest, NullSubmissionServiceReturnsUnimplemented) {
     MessagingServiceImpl unimpl_service(nullptr, nullptr, nullptr, nullptr, nullptr);
@@ -253,7 +325,7 @@ TEST_F(MessagingServiceSubmissionTest, NullRequestOrResponseReturnsInvalidArgume
 }
 
 TEST_F(MessagingServiceSubmissionTest, UnauthenticatedCallerRejected) {
-    ::grpc::ServerContext context; // No x-user-id metadata
+    ::grpc::ServerContext context;
     v1::SendMessageRequest req = make_valid_request();
     v1::SendMessageResponse resp;
 
@@ -267,7 +339,7 @@ TEST_F(MessagingServiceSubmissionTest, MissingDeviceIdRejected) {
     spouse.add_client_metadata("x-user-id", test_alice_.str());
 
     v1::SendMessageRequest req = make_valid_request();
-    req.clear_sender_device_id(); // Clear device ID in request as well
+    req.clear_sender_device_id();
     v1::SendMessageResponse resp;
 
     auto status = service_impl_->SendMessage(&context, &req, &resp);
@@ -307,7 +379,6 @@ TEST_F(MessagingServiceSubmissionTest, HappyPathSubmissionSuccess) {
     EXPECT_EQ(resp.initial_state(), v1::DELIVERY_STATE_QUEUED);
     EXPECT_EQ(resp.target_count(), 1u);
 
-    // Verify persistence
     EXPECT_EQ(message_repo_->saved_messages.size(), 1u);
     EXPECT_EQ(delivery_repo_->saved_pending.size(), 1u);
     EXPECT_EQ(outbox_repo_->enqueued_events.size(), 1u);
@@ -324,7 +395,6 @@ TEST_F(MessagingServiceSubmissionTest, DuplicateReplayReturnsCachedResponse) {
     auto status1 = service_impl_->SendMessage(&context1, &req, &resp1);
     ASSERT_TRUE(status1.ok());
 
-    // Resend exact same request
     ::grpc::ServerContext context2;
     ::grpc::testing::ServerContextTestSpouse spouse2(&context2);
     spouse2.add_client_metadata("x-user-id", test_alice_.str());
@@ -338,7 +408,6 @@ TEST_F(MessagingServiceSubmissionTest, DuplicateReplayReturnsCachedResponse) {
     EXPECT_EQ(resp1.conversation_id(), resp2.conversation_id());
     EXPECT_NEAR(resp1.accepted_at_unix_ms(), resp2.accepted_at_unix_ms(), 100);
 
-    // 0 duplicate secondary writes
     EXPECT_EQ(message_repo_->saved_messages.size(), 1u);
     EXPECT_EQ(delivery_repo_->saved_pending.size(), 1u);
     EXPECT_EQ(outbox_repo_->enqueued_events.size(), 1u);
@@ -355,14 +424,13 @@ TEST_F(MessagingServiceSubmissionTest, ConflictingIdempotencyKeyRejection) {
     auto status1 = service_impl_->SendMessage(&context1, &req1, &resp1);
     ASSERT_TRUE(status1.ok());
 
-    // Send differing payload with the same idempotency token
     ::grpc::ServerContext context2;
     ::grpc::testing::ServerContextTestSpouse spouse2(&context2);
     spouse2.add_client_metadata("x-user-id", test_alice_.str());
     spouse2.add_client_metadata("x-device-id", alice_device_.str());
 
     v1::SendMessageRequest req2 = make_valid_request("tok-conflict-test-123");
-    req2.mutable_delivery_targets(0)->mutable_encrypted_payload()->set_ciphertext_blob("different-ciphertext");
+    req2.mutable_delivery_targets(0)->mutable_encrypted_payload()->set_ciphertext_blob(std::string(64, '\x99'));
     v1::SendMessageResponse resp2;
 
     auto status2 = service_impl_->SendMessage(&context2, &req2, &resp2);
@@ -387,16 +455,13 @@ TEST_F(MessagingServiceSubmissionTest, NonParticipantRejectedWithPermissionDenie
 }
 
 TEST_F(MessagingServiceSubmissionTest, WorkerPoolCapacityExceededRejection) {
-    // Pool with 1 worker and 1 queued task capacity
     auto pool = std::make_shared<concurrency::BoundedWorkerPool>(1, 1, "test-sub-pool");
-
     auto busy_service = std::make_unique<MessagingServiceImpl>(pool, nullptr, nullptr, nullptr, submission_service_);
 
     std::atomic<bool> worker_blocked{true};
     std::promise<void> worker_running;
     auto worker_started = worker_running.get_future();
 
-    // 1. Occupy the single worker thread
     ASSERT_TRUE(pool->try_submit([&]() {
         worker_running.set_value();
         while (worker_blocked.load()) {
@@ -406,10 +471,8 @@ TEST_F(MessagingServiceSubmissionTest, WorkerPoolCapacityExceededRejection) {
 
     worker_started.wait();
 
-    // 2. Fill the single available queue slot
     ASSERT_TRUE(pool->try_submit([]() {}));
 
-    // 3. With worker busy and queue saturated, subsequent submission must fail fast with RESOURCE_EXHAUSTED
     ::grpc::ServerContext context;
     ::grpc::testing::ServerContextTestSpouse spouse(&context);
     spouse.add_client_metadata("x-user-id", test_alice_.str());
@@ -420,7 +483,6 @@ TEST_F(MessagingServiceSubmissionTest, WorkerPoolCapacityExceededRejection) {
     auto status = busy_service->SendMessage(&context, &req, &resp);
     EXPECT_EQ(status.error_code(), ::grpc::StatusCode::RESOURCE_EXHAUSTED);
 
-    // Unblock worker and clean up
     worker_blocked.store(false);
     pool->drain_and_stop();
 }

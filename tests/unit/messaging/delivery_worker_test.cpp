@@ -122,6 +122,30 @@ DeliveryTask create_test_task(const DeviceId& device_id, const MessageId& messag
     return task;
 }
 
+class MockMessagingAuditOutboxRepository final : public repository::IMessagingAuditOutboxRepository {
+  public:
+    void enqueue_audit_event(const repository::AuditOutboxRecord& record) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        enqueued_events_.push_back(record);
+    }
+
+    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
+                                                                    std::chrono::seconds) override {
+        return {};
+    }
+
+    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
+                        const std::string&) override {}
+
+    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
+                        const std::string&, bool) override {}
+
+    size_t count_pending_backlog(const std::string&, int32_t) override { return 0; }
+
+    std::mutex mutex_;
+    std::vector<repository::AuditOutboxRecord> enqueued_events_;
+};
+
 // ============================================================================
 // DeliveryWorker Test Suite
 // ============================================================================
@@ -133,6 +157,7 @@ class DeliveryWorkerTest : public ::testing::Test {
         connection_registry_ = std::make_shared<DeviceConnectionRegistry>();
         delivery_repo_ = std::make_shared<MockDeliveryStateRepository>();
         outbox_repo_ = std::make_shared<MockOutboxRepository>();
+        audit_repo_ = std::make_shared<MockMessagingAuditOutboxRepository>();
         retry_policy_ = std::make_shared<service::DeliveryRetryPolicy>();
 
         DeliveryWorkerConfig config;
@@ -141,13 +166,14 @@ class DeliveryWorkerTest : public ::testing::Test {
         config.worker_threads = 2;
 
         worker_ = std::make_unique<DeliveryWorker>(scheduler_, connection_registry_, delivery_repo_, outbox_repo_,
-                                                   retry_policy_, config);
+                                                   audit_repo_, retry_policy_, config);
     }
 
     std::shared_ptr<BoundedDeliveryScheduler> scheduler_;
     std::shared_ptr<DeviceConnectionRegistry> connection_registry_;
     std::shared_ptr<MockDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<MockOutboxRepository> outbox_repo_;
+    std::shared_ptr<MockMessagingAuditOutboxRepository> audit_repo_;
     std::shared_ptr<service::DeliveryRetryPolicy> retry_policy_;
     std::unique_ptr<DeliveryWorker> worker_;
 };
@@ -184,6 +210,11 @@ TEST_F(DeliveryWorkerTest, SuccessfulDeliveryUpdatesDurableStateAndEmitsOutboxAc
     ASSERT_EQ(outbox_repo_->enqueued_events_.size(), 1u);
     EXPECT_EQ(outbox_repo_->enqueued_events_[0].event_type, ConversationOutboxEventType::MessageDelivered);
     EXPECT_NE(outbox_repo_->enqueued_events_[0].payload_json.find(msg_id.to_string()), std::string::npos);
+
+    // Verify audit event
+    ASSERT_EQ(audit_repo_->enqueued_events_.size(), 1u);
+    EXPECT_EQ(audit_repo_->enqueued_events_[0].event_type, "message.delivered");
+    EXPECT_EQ(audit_repo_->enqueued_events_[0].severity, "INFO");
 }
 
 TEST_F(DeliveryWorkerTest, RecipientOfflineRevertsToQueuedWithoutRetryPenalty) {
@@ -295,6 +326,11 @@ TEST_F(DeliveryWorkerTest, TerminalFailureTransitionsToExpired) {
     ASSERT_GE(delivery_repo_->status_updates_.size(), 2u);
     EXPECT_EQ(delivery_repo_->status_updates_[0].state, DeliveryState::Delivering);
     EXPECT_EQ(delivery_repo_->status_updates_[1].state, DeliveryState::Expired);
+
+    // Verify audit event for terminal failure
+    ASSERT_EQ(audit_repo_->enqueued_events_.size(), 1u);
+    EXPECT_EQ(audit_repo_->enqueued_events_[0].event_type, "message.delivery.failed");
+    EXPECT_EQ(audit_repo_->enqueued_events_[0].severity, "WARNING");
 }
 
 TEST_F(DeliveryWorkerTest, WorkerThreadPoolProcessesTasksConcurrentlyAndStopsGracefully) {

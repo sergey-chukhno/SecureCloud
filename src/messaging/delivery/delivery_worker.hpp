@@ -2,6 +2,7 @@
 
 #include "delivery/bounded_delivery_scheduler.hpp"
 #include "delivery/device_connection_registry_interface.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "repository/delivery_state_repository_interface.hpp"
 #include "repository/outbox_repository_interface.hpp"
 #include "service/delivery_retry_policy.hpp"
@@ -30,6 +31,7 @@ class DeliveryWorker {
                    std::shared_ptr<IDeviceConnectionRegistry> connection_registry,
                    std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
                    std::shared_ptr<repository::IOutboxRepository> outbox_repo,
+                   std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo,
                    std::shared_ptr<service::DeliveryRetryPolicy> retry_policy, DeliveryWorkerConfig config = {});
 
     ~DeliveryWorker();
@@ -59,6 +61,7 @@ class DeliveryWorker {
     std::shared_ptr<IDeviceConnectionRegistry> connection_registry_;
     std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<repository::IOutboxRepository> outbox_repo_;
+    std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo_;
     std::shared_ptr<service::DeliveryRetryPolicy> retry_policy_;
     DeliveryWorkerConfig config_;
 

@@ -92,7 +92,8 @@ TEST(MessagingAuditEventTest, ZeroPlaintextGuardRejectsForbiddenKeysAndSecrets) 
     EXPECT_THROW(ZeroPlaintextGuard::validate_audit_payload(R"({"ciphertext":"aGVsbG8="})"), std::logic_error);
     EXPECT_THROW(ZeroPlaintextGuard::validate_audit_payload(R"({"ciphertext_blob":"deadbeef"})"), std::logic_error);
     EXPECT_THROW(ZeroPlaintextGuard::validate_audit_payload(R"({"ephemeral_public_key":"abcd"})"), std::logic_error);
-    EXPECT_THROW(ZeroPlaintextGuard::validate_audit_payload(R"({"nested":{"private_key":"secret"}})"), std::logic_error);
+    EXPECT_THROW(ZeroPlaintextGuard::validate_audit_payload(R"({"nested":{"private_key":"secret"}})"),
+                 std::logic_error);
     EXPECT_THROW(ZeroPlaintextGuard::validate_audit_payload(R"({"access_token":"xyz"})"), std::logic_error);
     EXPECT_THROW(ZeroPlaintextGuard::validate_audit_payload(R"({"ratchet_state":"abc"})"), std::logic_error);
     EXPECT_THROW(ZeroPlaintextGuard::validate_audit_payload(R"({"prekey_id":"123"})"), std::logic_error);

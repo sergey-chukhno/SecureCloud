@@ -24,6 +24,7 @@
 #include "messaging/repository/delivery_state_repository_interface.hpp"
 #include "messaging/repository/in_memory_conversation_repository.hpp"
 #include "messaging/repository/in_memory_membership_repository.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/repository/outbox_repository_interface.hpp"
 #include "securecloud/messaging/v1/messaging.grpc.pb.h"
 #include "securecloud/messaging/v1/messaging.pb.h"
@@ -328,6 +329,43 @@ class ThreadSafeOutboxRepository final : public repository::IOutboxRepository {
 };
 
 // ============================================================================
+// Thread-Safe Audit Outbox Repository
+// ============================================================================
+
+class ThreadSafeAuditOutboxRepository final : public repository::IMessagingAuditOutboxRepository {
+  public:
+    void enqueue_audit_event(const repository::AuditOutboxRecord& record) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        records_.push_back(record);
+    }
+
+    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
+                                                                    std::chrono::seconds) override {
+        return {};
+    }
+
+    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
+                        const std::string&) override {}
+
+    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
+                        const std::string&, bool) override {}
+
+    size_t count_pending_backlog(const std::string&, int32_t) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return records_.size();
+    }
+
+    size_t count() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return records_.size();
+    }
+
+  private:
+    mutable std::mutex mutex_;
+    std::vector<repository::AuditOutboxRecord> records_;
+};
+
+// ============================================================================
 // Integration Test Fixture
 // ============================================================================
 
@@ -386,11 +424,12 @@ class MessagingDeliveryStateReadReceiptsIntegrationTest : public ::testing::Test
         member_repo_ = std::make_shared<repository::InMemoryMembershipRepository>();
         delivery_repo_ = std::make_shared<ThreadSafeDeliveryStateRepository>();
         outbox_repo_ = std::make_shared<ThreadSafeOutboxRepository>();
+        audit_repo_ = std::make_shared<ThreadSafeAuditOutboxRepository>();
 
         delivery_service_ = std::make_shared<DeliveryService>(delivery_repo_, outbox_repo_);
 
         read_receipt_service_ = std::make_shared<ReadReceiptService>(
-            delivery_repo_, member_repo_, outbox_repo_,
+            delivery_repo_, member_repo_, outbox_repo_, audit_repo_,
             [this](const DeviceId& dev) { return active_devices_.find(dev) != active_devices_.end(); });
 
         messaging_service_ = std::make_unique<MessagingServiceImpl>(
@@ -533,6 +572,7 @@ class MessagingDeliveryStateReadReceiptsIntegrationTest : public ::testing::Test
     std::shared_ptr<repository::InMemoryMembershipRepository> member_repo_;
     std::shared_ptr<ThreadSafeDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<ThreadSafeOutboxRepository> outbox_repo_;
+    std::shared_ptr<ThreadSafeAuditOutboxRepository> audit_repo_;
 
     std::shared_ptr<DeliveryService> delivery_service_;
     std::shared_ptr<ReadReceiptService> read_receipt_service_;
@@ -1049,12 +1089,12 @@ TEST_F(MessagingDeliveryStateReadReceiptsIntegrationTest, Scenario12_ServiceRest
     stop_grpc_server();
     delivery_repo_ = std::make_shared<ThreadSafeDeliveryStateRepository>();
     delivery_repo_->restore_snapshot(durable_snapshot);
+    audit_repo_ = std::make_shared<ThreadSafeAuditOutboxRepository>();
 
     delivery_service_ = std::make_shared<DeliveryService>(delivery_repo_, outbox_repo_);
-    read_receipt_service_ =
-        std::make_shared<ReadReceiptService>(delivery_repo_, member_repo_, outbox_repo_, [this](const DeviceId& dev) {
-            return active_devices_.find(dev) != active_devices_.end();
-        });
+    read_receipt_service_ = std::make_shared<ReadReceiptService>(
+        delivery_repo_, member_repo_, outbox_repo_, audit_repo_,
+        [this](const DeviceId& dev) { return active_devices_.find(dev) != active_devices_.end(); });
 
     messaging_service_ = std::make_unique<MessagingServiceImpl>(submission_pool_, delivery_pool_, sync_pool_, nullptr,
                                                                 nullptr, delivery_service_, read_receipt_service_);

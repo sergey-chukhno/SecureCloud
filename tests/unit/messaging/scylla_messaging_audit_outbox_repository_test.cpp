@@ -64,20 +64,20 @@ TEST(ScyllaMessagingAuditOutboxRepositoryTest, FetchPendingAppliesWorkerLeasesAn
     const int64_t t2_ms = 1763020820000LL;
     const int64_t active_lease_ms = 1763020880000LL; // now + 30s (still leased)
 
-    const std::vector<std::string> cols = {"outbox_bucket",   "shard_id",        "created_at",      "event_id",
-                                           "event_type",      "severity",        "actor_user_id",   "actor_device_id",
-                                           "target_resource", "payload_proto_bin", "publish_status",  "attempt_count",
-                                           "last_attempt_at", "last_error",      "leased_until"};
+    const std::vector<std::string> cols = {"outbox_bucket",   "shard_id",          "created_at",     "event_id",
+                                           "event_type",      "severity",          "actor_user_id",  "actor_device_id",
+                                           "target_resource", "payload_proto_bin", "publish_status", "attempt_count",
+                                           "last_attempt_at", "last_error",        "leased_until"};
 
-    db::ScyllaRow row_unleased(
-        cols, {"2026111308", int32_t{4}, t1_ms, "01930000-0000-7000-8000-000000000021", "message.submitted", "INFO",
-               "user-1", "dev-1", "conv-1", std::vector<uint8_t>{0x01, 0x02}, "PENDING", int32_t{0},
-               db::ScyllaValue::null(), db::ScyllaValue::null(), db::ScyllaValue::null()});
+    db::ScyllaRow row_unleased(cols, {"2026111308", int32_t{4}, t1_ms, "01930000-0000-7000-8000-000000000021",
+                                      "message.submitted", "INFO", "user-1", "dev-1", "conv-1",
+                                      std::vector<uint8_t>{0x01, 0x02}, "PENDING", int32_t{0}, db::ScyllaValue::null(),
+                                      db::ScyllaValue::null(), db::ScyllaValue::null()});
 
-    db::ScyllaRow row_leased(
-        cols, {"2026111308", int32_t{4}, t2_ms, "01930000-0000-7000-8000-000000000022", "message.delivered", "INFO",
-               "user-1", "dev-2", "conv-1", std::vector<uint8_t>{0x03, 0x04}, "PENDING", int32_t{1},
-               db::ScyllaValue::null(), db::ScyllaValue::null(), active_lease_ms});
+    db::ScyllaRow row_leased(cols, {"2026111308", int32_t{4}, t2_ms, "01930000-0000-7000-8000-000000000022",
+                                    "message.delivered", "INFO", "user-1", "dev-2", "conv-1",
+                                    std::vector<uint8_t>{0x03, 0x04}, "PENDING", int32_t{1}, db::ScyllaValue::null(),
+                                    db::ScyllaValue::null(), active_lease_ms});
 
     session->set_prepared_result(db::PreparedStatementId{"audit_outbox_fetch_pending"},
                                  db::ScyllaQueryResult({row_unleased, row_leased}));
@@ -102,16 +102,14 @@ TEST(ScyllaMessagingAuditOutboxRepositoryTest, MarkPublishedRecordFailureAndCoun
 
     repo.mark_published("2026111308", 2, created_at, "01930000-0000-7000-8000-000000000031");
 
-    session->set_prepared_result(
-        db::PreparedStatementId{"audit_outbox_select_attempts"},
-        db::ScyllaQueryResult({db::ScyllaRow({"attempt_count"}, {int32_t{4}})}));
+    session->set_prepared_result(db::PreparedStatementId{"audit_outbox_select_attempts"},
+                                 db::ScyllaQueryResult({db::ScyllaRow({"attempt_count"}, {int32_t{4}})}));
 
     repo.record_failure("2026111308", 2, created_at, "01930000-0000-7000-8000-000000000032",
                         "gRPC UNAVAILABLE ciphertext=secret_leak", true);
 
-    session->set_prepared_result(
-        db::PreparedStatementId{"audit_outbox_count_pending"},
-        db::ScyllaQueryResult({db::ScyllaRow({"pending_count"}, {int64_t{17}})}));
+    session->set_prepared_result(db::PreparedStatementId{"audit_outbox_count_pending"},
+                                 db::ScyllaQueryResult({db::ScyllaRow({"pending_count"}, {int64_t{17}})}));
 
     EXPECT_EQ(repo.count_pending_backlog("2026111308", 2), 17U);
 

@@ -4023,3 +4023,4 @@ target_link_libraries(securecloud_scylla_messaging_audit_outbox_repository_test 
 )
 
 gtest_discover_tests(securecloud_scylla_messaging_audit_outbox_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+

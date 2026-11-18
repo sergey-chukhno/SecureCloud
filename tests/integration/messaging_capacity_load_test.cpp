@@ -29,6 +29,7 @@
 #include "messaging/repository/in_memory_conversation_repository.hpp"
 #include "messaging/repository/in_memory_membership_repository.hpp"
 #include "messaging/repository/message_repository_interface.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/repository/outbox_repository_interface.hpp"
 #include "messaging/repository/scylla_conversation_repository.hpp"
 #include "messaging/repository/scylla_delivery_state_repository.hpp"
@@ -422,6 +423,31 @@ class FastOutboxRepository final : public repository::IOutboxRepository {
     std::atomic<size_t> enqueued_{0};
 };
 
+class FastAuditOutboxRepository final : public repository::IMessagingAuditOutboxRepository {
+  public:
+    void enqueue_audit_event(const repository::AuditOutboxRecord& /*record*/) override {
+        enqueued_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
+                                                                    std::chrono::seconds) override {
+        return {};
+    }
+
+    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
+                        const std::string&) override {}
+
+    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
+                        const std::string&, bool) override {}
+
+    size_t count_pending_backlog(const std::string&, int32_t) override {
+        return enqueued_.load(std::memory_order_relaxed);
+    }
+
+  private:
+    std::atomic<size_t> enqueued_{0};
+};
+
 class FastSyncCursorRepository final : public repository::ISyncCursorRepository {
   public:
     std::optional<DeviceSyncCursor> get_sync_cursor(const DeviceId& dev, const ConversationId& conv) override {
@@ -574,6 +600,7 @@ class MessagingCapacityLoadTest : public ::testing::Test {
         delivery_repo_ = std::make_shared<MeteredDeliveryStateRepository>();
         idempotency_repo_ = std::make_shared<FastIdempotencyRepository>();
         outbox_repo_ = std::make_shared<FastOutboxRepository>();
+        audit_repo_ = std::make_shared<FastAuditOutboxRepository>();
         sync_cursor_repo_ = std::make_shared<FastSyncCursorRepository>();
         crypto_client_ = std::make_shared<FastAuthCryptoDirectoryClient>();
 
@@ -585,7 +612,7 @@ class MessagingCapacityLoadTest : public ::testing::Test {
         delivery_service_ = std::make_shared<service::DeliveryService>(delivery_repo_, outbox_repo_);
 
         submission_service_ = std::make_shared<service::MessageSubmissionService>(
-            authz_service_, seq_allocator_, idempotency_guard_, msg_repo_, delivery_repo_, outbox_repo_,
+            authz_service_, seq_allocator_, idempotency_guard_, msg_repo_, delivery_repo_, outbox_repo_, audit_repo_,
             envelope_validator_, device_resolver_);
 
         sync_cursor_mgr_ = std::make_shared<service::SyncCursorManager>(sync_cursor_repo_, msg_repo_, seq_allocator_);
@@ -599,6 +626,7 @@ class MessagingCapacityLoadTest : public ::testing::Test {
     std::shared_ptr<MeteredDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<FastIdempotencyRepository> idempotency_repo_;
     std::shared_ptr<FastOutboxRepository> outbox_repo_;
+    std::shared_ptr<FastAuditOutboxRepository> audit_repo_;
     std::shared_ptr<FastSyncCursorRepository> sync_cursor_repo_;
     std::shared_ptr<FastAuthCryptoDirectoryClient> crypto_client_;
 

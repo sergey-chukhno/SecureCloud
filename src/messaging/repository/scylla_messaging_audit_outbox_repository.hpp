@@ -29,8 +29,7 @@ class ScyllaMessagingAuditOutboxRepository : public IMessagingAuditOutboxReposit
                                                                       std::chrono::seconds lease_duration) override;
 
     void mark_published(const std::string& outbox_bucket, int32_t shard_id,
-                        const std::chrono::system_clock::time_point& created_at,
-                        const std::string& event_id) override;
+                        const std::chrono::system_clock::time_point& created_at, const std::string& event_id) override;
 
     void record_failure(const std::string& outbox_bucket, int32_t shard_id,
                         const std::chrono::system_clock::time_point& created_at, const std::string& event_id,

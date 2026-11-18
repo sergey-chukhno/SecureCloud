@@ -66,8 +66,8 @@ AuditOutboxRecord row_to_audit_outbox_record(const db::ScyllaRow& row) {
 
 } // namespace
 
-ScyllaMessagingAuditOutboxRepository::ScyllaMessagingAuditOutboxRepository(
-    std::shared_ptr<db::IScyllaSession> session, ClockFn clock_fn)
+ScyllaMessagingAuditOutboxRepository::ScyllaMessagingAuditOutboxRepository(std::shared_ptr<db::IScyllaSession> session,
+                                                                           ClockFn clock_fn)
     : session_(std::move(session)), clock_fn_(std::move(clock_fn)) {
     if (!session_) {
         throw std::invalid_argument("ScyllaMessagingAuditOutboxRepository requires non-null IScyllaSession");
@@ -79,39 +79,35 @@ ScyllaMessagingAuditOutboxRepository::ScyllaMessagingAuditOutboxRepository(
 }
 
 void ScyllaMessagingAuditOutboxRepository::init_prepared_statements() {
-    prep_enqueue_event_ = session_->prepare(
-        "audit_outbox_enqueue",
-        "INSERT INTO securecloud_messaging.messaging_audit_outbox "
-        "(outbox_bucket, shard_id, created_at, event_id, event_type, severity, "
-        "actor_user_id, actor_device_id, target_resource, payload_proto_bin, "
-        "publish_status, attempt_count, last_attempt_at, last_error, leased_until) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
+    prep_enqueue_event_ = session_->prepare("audit_outbox_enqueue",
+                                            "INSERT INTO securecloud_messaging.messaging_audit_outbox "
+                                            "(outbox_bucket, shard_id, created_at, event_id, event_type, severity, "
+                                            "actor_user_id, actor_device_id, target_resource, payload_proto_bin, "
+                                            "publish_status, attempt_count, last_attempt_at, last_error, leased_until) "
+                                            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);");
 
     prep_fetch_pending_ = session_->prepare(
-        "audit_outbox_fetch_pending",
-        "SELECT outbox_bucket, shard_id, created_at, event_id, event_type, severity, "
-        "actor_user_id, actor_device_id, target_resource, payload_proto_bin, "
-        "publish_status, attempt_count, last_attempt_at, last_error, leased_until "
-        "FROM securecloud_messaging.messaging_audit_outbox "
-        "WHERE outbox_bucket = ? AND shard_id = ? AND publish_status = 'PENDING' "
-        "LIMIT ? ALLOW FILTERING;");
+        "audit_outbox_fetch_pending", "SELECT outbox_bucket, shard_id, created_at, event_id, event_type, severity, "
+                                      "actor_user_id, actor_device_id, target_resource, payload_proto_bin, "
+                                      "publish_status, attempt_count, last_attempt_at, last_error, leased_until "
+                                      "FROM securecloud_messaging.messaging_audit_outbox "
+                                      "WHERE outbox_bucket = ? AND shard_id = ? AND publish_status = 'PENDING' "
+                                      "LIMIT ? ALLOW FILTERING;");
 
     prep_lease_event_ = session_->prepare(
-        "audit_outbox_lease_event",
-        "UPDATE securecloud_messaging.messaging_audit_outbox "
-        "SET leased_until = ? "
-        "WHERE outbox_bucket = ? AND shard_id = ? AND created_at = ? AND event_id = ?;");
+        "audit_outbox_lease_event", "UPDATE securecloud_messaging.messaging_audit_outbox "
+                                    "SET leased_until = ? "
+                                    "WHERE outbox_bucket = ? AND shard_id = ? AND created_at = ? AND event_id = ?;");
 
     prep_mark_published_ = session_->prepare(
-        "audit_outbox_mark_published",
-        "UPDATE securecloud_messaging.messaging_audit_outbox "
-        "SET publish_status = 'PUBLISHED', leased_until = null "
-        "WHERE outbox_bucket = ? AND shard_id = ? AND created_at = ? AND event_id = ?;");
+        "audit_outbox_mark_published", "UPDATE securecloud_messaging.messaging_audit_outbox "
+                                       "SET publish_status = 'PUBLISHED', leased_until = null "
+                                       "WHERE outbox_bucket = ? AND shard_id = ? AND created_at = ? AND event_id = ?;");
 
-    prep_select_attempt_count_ = session_->prepare(
-        "audit_outbox_select_attempts",
-        "SELECT attempt_count FROM securecloud_messaging.messaging_audit_outbox "
-        "WHERE outbox_bucket = ? AND shard_id = ? AND created_at = ? AND event_id = ?;");
+    prep_select_attempt_count_ =
+        session_->prepare("audit_outbox_select_attempts",
+                          "SELECT attempt_count FROM securecloud_messaging.messaging_audit_outbox "
+                          "WHERE outbox_bucket = ? AND shard_id = ? AND created_at = ? AND event_id = ?;");
 
     prep_record_failure_ = session_->prepare(
         "audit_outbox_record_failure",
@@ -119,10 +115,10 @@ void ScyllaMessagingAuditOutboxRepository::init_prepared_statements() {
         "SET publish_status = ?, attempt_count = ?, last_attempt_at = ?, last_error = ?, leased_until = null "
         "WHERE outbox_bucket = ? AND shard_id = ? AND created_at = ? AND event_id = ?;");
 
-    prep_count_pending_ = session_->prepare(
-        "audit_outbox_count_pending",
-        "SELECT COUNT(*) AS pending_count FROM securecloud_messaging.messaging_audit_outbox "
-        "WHERE outbox_bucket = ? AND shard_id = ? AND publish_status = 'PENDING' ALLOW FILTERING;");
+    prep_count_pending_ =
+        session_->prepare("audit_outbox_count_pending",
+                          "SELECT COUNT(*) AS pending_count FROM securecloud_messaging.messaging_audit_outbox "
+                          "WHERE outbox_bucket = ? AND shard_id = ? AND publish_status = 'PENDING' ALLOW FILTERING;");
 }
 
 void ScyllaMessagingAuditOutboxRepository::enqueue_audit_event(const AuditOutboxRecord& record) {
@@ -173,8 +169,9 @@ void ScyllaMessagingAuditOutboxRepository::enqueue_audit_event(const AuditOutbox
     session_->execute_prepared(prep_enqueue_event_, params, db::ConsistencyLevel::LocalQuorum);
 }
 
-std::vector<AuditOutboxRecord> ScyllaMessagingAuditOutboxRepository::fetch_pending_events(
-    const std::string& outbox_bucket, int32_t shard_id, size_t limit, std::chrono::seconds lease_duration) {
+std::vector<AuditOutboxRecord>
+ScyllaMessagingAuditOutboxRepository::fetch_pending_events(const std::string& outbox_bucket, int32_t shard_id,
+                                                           size_t limit, std::chrono::seconds lease_duration) {
     validate_partition_coords(outbox_bucket, shard_id);
     if (limit == 0) {
         return {};
@@ -250,8 +247,8 @@ void ScyllaMessagingAuditOutboxRepository::mark_published(const std::string& out
 
 void ScyllaMessagingAuditOutboxRepository::record_failure(const std::string& outbox_bucket, int32_t shard_id,
                                                           const std::chrono::system_clock::time_point& created_at,
-                                                          const std::string& event_id,
-                                                          const std::string& error_message, bool should_quarantine) {
+                                                          const std::string& event_id, const std::string& error_message,
+                                                          bool should_quarantine) {
     validate_partition_coords(outbox_bucket, shard_id);
     if (event_id.empty()) {
         throw std::invalid_argument("record_failure requires non-empty event_id");

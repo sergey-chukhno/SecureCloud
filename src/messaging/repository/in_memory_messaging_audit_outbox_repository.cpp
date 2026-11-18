@@ -46,8 +46,9 @@ void InMemoryMessagingAuditOutboxRepository::enqueue_audit_event(const AuditOutb
     records_[std::move(pk)] = std::move(stored);
 }
 
-std::vector<AuditOutboxRecord> InMemoryMessagingAuditOutboxRepository::fetch_pending_events(
-    const std::string& outbox_bucket, int32_t shard_id, size_t limit, std::chrono::seconds lease_duration) {
+std::vector<AuditOutboxRecord>
+InMemoryMessagingAuditOutboxRepository::fetch_pending_events(const std::string& outbox_bucket, int32_t shard_id,
+                                                             size_t limit, std::chrono::seconds lease_duration) {
     if (limit == 0) {
         return {};
     }
@@ -123,9 +124,10 @@ size_t InMemoryMessagingAuditOutboxRepository::count_pending_backlog(const std::
     return count;
 }
 
-std::optional<AuditOutboxRecord> InMemoryMessagingAuditOutboxRepository::find_record(
-    const std::string& outbox_bucket, int32_t shard_id, const std::chrono::system_clock::time_point& created_at,
-    const std::string& event_id) const {
+std::optional<AuditOutboxRecord>
+InMemoryMessagingAuditOutboxRepository::find_record(const std::string& outbox_bucket, int32_t shard_id,
+                                                    const std::chrono::system_clock::time_point& created_at,
+                                                    const std::string& event_id) const {
     std::lock_guard<std::mutex> lock(mutex_);
 
     PrimaryKey pk{outbox_bucket, shard_id, to_millis(created_at), event_id};

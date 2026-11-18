@@ -16,8 +16,9 @@ class InMemoryMessagingAuditOutboxRepository : public IMessagingAuditOutboxRepos
   public:
     using ClockFn = std::function<std::chrono::system_clock::time_point()>;
 
-    explicit InMemoryMessagingAuditOutboxRepository(
-        ClockFn clock_fn = []() { return std::chrono::system_clock::now(); });
+    explicit InMemoryMessagingAuditOutboxRepository(ClockFn clock_fn = []() {
+        return std::chrono::system_clock::now();
+    });
 
     void enqueue_audit_event(const AuditOutboxRecord& record) override;
 
@@ -26,8 +27,7 @@ class InMemoryMessagingAuditOutboxRepository : public IMessagingAuditOutboxRepos
                                                                       std::chrono::seconds lease_duration) override;
 
     void mark_published(const std::string& outbox_bucket, int32_t shard_id,
-                        const std::chrono::system_clock::time_point& created_at,
-                        const std::string& event_id) override;
+                        const std::chrono::system_clock::time_point& created_at, const std::string& event_id) override;
 
     void record_failure(const std::string& outbox_bucket, int32_t shard_id,
                         const std::chrono::system_clock::time_point& created_at, const std::string& event_id,

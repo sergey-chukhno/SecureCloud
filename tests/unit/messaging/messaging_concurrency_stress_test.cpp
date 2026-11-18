@@ -11,6 +11,7 @@
 #include "messaging/repository/in_memory_conversation_repository.hpp"
 #include "messaging/repository/in_memory_membership_repository.hpp"
 #include "messaging/repository/message_repository_interface.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/repository/outbox_repository_interface.hpp"
 #include "service/conversation_authorization_service.hpp"
 #include "service/delivery_service.hpp"
@@ -319,6 +320,20 @@ class ThreadSafeIdempotencyRepo final : public repository::IIdempotencyRepositor
     std::unordered_map<std::string, IdempotencyRecord> records_;
 };
 
+class ThreadSafeMessagingAuditOutboxRepository : public repository::IMessagingAuditOutboxRepository {
+  public:
+    void enqueue_audit_event(const repository::AuditOutboxRecord&) override {}
+    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
+                                                                    std::chrono::seconds) override {
+        return {};
+    }
+    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
+                        const std::string&) override {}
+    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
+                        const std::string&, bool) override {}
+    size_t count_pending_backlog(const std::string&, int32_t) override { return 0; }
+};
+
 // ============================================================================
 // Test Fixture for MSG-012-T01 Stress Harness
 // ============================================================================
@@ -335,12 +350,15 @@ class MessagingConcurrencyStressTest : public ::testing::Test {
         message_repo_ = std::make_shared<ThreadSafeMessageRepo>();
         delivery_repo_ = std::make_shared<ThreadSafeDeliveryStateRepo>();
         outbox_repo_ = std::make_shared<ThreadSafeOutboxRepo>();
+        audit_repo_ = std::make_shared<ThreadSafeMessagingAuditOutboxRepository>();
 
         submission_service_ = std::make_shared<MessageSubmissionService>(
-            auth_service_, sequence_allocator_, idempotency_guard_, message_repo_, delivery_repo_, outbox_repo_);
+            auth_service_, sequence_allocator_, idempotency_guard_, message_repo_, delivery_repo_, outbox_repo_,
+            audit_repo_, nullptr, nullptr);
 
         delivery_service_ = std::make_shared<DeliveryService>(delivery_repo_, outbox_repo_);
-        read_receipt_service_ = std::make_shared<ReadReceiptService>(delivery_repo_, membership_repo_, outbox_repo_);
+        read_receipt_service_ =
+            std::make_shared<ReadReceiptService>(delivery_repo_, membership_repo_, outbox_repo_, nullptr, nullptr);
 
         conv_id_ = ConversationId::generate_v7();
         alice_user_ = UserId("018f1234-5678-7000-8000-000000000001");
@@ -411,6 +429,7 @@ class MessagingConcurrencyStressTest : public ::testing::Test {
     std::shared_ptr<ThreadSafeMessageRepo> message_repo_;
     std::shared_ptr<ThreadSafeDeliveryStateRepo> delivery_repo_;
     std::shared_ptr<ThreadSafeOutboxRepo> outbox_repo_;
+    std::shared_ptr<ThreadSafeMessagingAuditOutboxRepository> audit_repo_;
 
     std::shared_ptr<MessageSubmissionService> submission_service_;
     std::shared_ptr<DeliveryService> delivery_service_;
