@@ -3,8 +3,10 @@
 #include "application/client_config.hpp"
 #include "application/interfaces/i_gateway_client.hpp"
 
+#include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace securecloud::client::infrastructure::adapters {
@@ -23,6 +25,22 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     application::ClientResult<std::string>
     submit_encrypted_message(const application::interfaces::FanOutSubmissionRequest& request) override;
     application::ClientResult<std::vector<std::string>> sync_messages(std::string_view cursor) override;
+    application::ClientResult<domain::DeliveryState> acknowledge_delivery(const domain::MessageId& message_id,
+                                                                          const domain::DeviceId& recipient_device_id,
+                                                                          int64_t delivered_at_ms) override;
+    application::ClientResult<domain::DeliveryState> send_read_receipt(const domain::ConversationId& conversation_id,
+                                                                       const domain::MessageId& message_id,
+                                                                       const domain::DeviceId& reader_device_id,
+                                                                       int64_t read_at_ms) override;
+    application::ClientResult<domain::MessageDeliveryStatusInfo>
+    get_message_delivery_status(const domain::ConversationId& conversation_id,
+                                const domain::MessageId& message_id) override;
+    application::ClientResult<domain::ConversationMessagesPage>
+    fetch_conversation_messages(const domain::ConversationId& conversation_id,
+                                const domain::DeviceId& recipient_device_id, uint64_t since_sequence,
+                                std::size_t max_results = 50) override;
+    uint64_t subscribe_realtime_events(RealtimeEventHandler handler) override;
+    void unsubscribe_realtime_events(uint64_t subscription_id) override;
     application::ClientResult<bool> validate_token(std::string_view token) override;
     application::ClientResult<void> disconnect() override;
 
@@ -75,6 +93,20 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
         return submitted_fanouts_;
     }
     void clear_submitted_fanouts() noexcept { submitted_fanouts_.clear(); }
+    void emit_realtime_event(const domain::RealtimeEvent& event);
+    void set_simulated_delivery_status(const domain::MessageId& message_id, domain::MessageDeliveryStatusInfo status);
+    void set_simulated_conversation_messages(const domain::ConversationId& conversation_id,
+                                             std::vector<domain::RealtimeEvent> events);
+    [[nodiscard]] const std::vector<domain::DeliveryAckRecord>& sent_delivery_acks() const noexcept {
+        return sent_delivery_acks_;
+    }
+    [[nodiscard]] const std::vector<domain::ReadReceiptRecord>& sent_read_receipts() const noexcept {
+        return sent_read_receipts_;
+    }
+    void clear_sent_receipts() noexcept {
+        sent_delivery_acks_.clear();
+        sent_read_receipts_.clear();
+    }
 
   private:
     std::string endpoint_;
@@ -98,6 +130,14 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     std::vector<domain::DirectoryUserEntry> simulated_directory_users_;
     bool require_mfa_for_authorization_{true};
     bool require_mfa_for_revocation_{false};
+
+    std::mutex event_mutex_;
+    uint64_t next_subscription_id_{1};
+    std::unordered_map<uint64_t, RealtimeEventHandler> event_subscribers_;
+    std::vector<domain::DeliveryAckRecord> sent_delivery_acks_;
+    std::vector<domain::ReadReceiptRecord> sent_read_receipts_;
+    std::unordered_map<domain::MessageId, domain::MessageDeliveryStatusInfo> simulated_delivery_statuses_;
+    std::unordered_map<domain::ConversationId, std::vector<domain::RealtimeEvent>> simulated_conversation_messages_;
 };
 
 } // namespace securecloud::client::infrastructure::adapters

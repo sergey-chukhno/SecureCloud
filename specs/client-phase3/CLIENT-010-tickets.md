@@ -33,7 +33,7 @@
 
 | Ticket | Title | Status | Target Scope |
 |---|---|---|---|
-| **CLIENT-010-T01** | Real-Time Event Models, Retry/Receipt Policy & `IGatewayClient` REST/Event Contracts | **Planned** | `RealtimeEvent`, `DeliveryAckEvent`, `ReadReceiptEvent`, `ReadReceiptPolicy`, `RetryPolicyConfig`, `IGatewayClient` REST endpoints (`ack`, `read`, `delivery-status`, `messages?since_sequence=`) & event subscription |
+| **CLIENT-010-T01** | Real-Time Event Models, Retry/Receipt Policy & `IGatewayClient` REST/Event Contracts | **Completed** | `RealtimeEvent`, `DeliveryAckEvent`, `ReadReceiptEvent`, `ReadReceiptPolicy`, `RetryPolicyConfig`, `IGatewayClient` REST endpoints (`ack`, `read`, `delivery-status`, `messages?since_sequence=`) & event subscription |
 | **CLIENT-010-T02** | Monotonic Delivery State Machine, Sequence Tracking & Idempotent Deduplication | **Planned** | Monotonic `DeliveryState` transitions (`LocalPending -> Submitting -> Accepted -> Delivering -> Delivered -> Read`, `Failed`), `server_sequence_number` tracking, `idempotency_key` deduplication |
 | **CLIENT-010-T03** | Exponential-Backoff Retry Engine with Mandatory Jitter & Expiration | **Planned** | `DeliveryRetryEngine`: bounded exponential backoff with jitter (`ADR-007 §13`), idempotent retry queue, deadline/attempt expiration to `DeliveryState::Failed` (`ADR-007 §14`) |
 | **CLIENT-010-T04** | Asynchronous Delivery Acknowledgements & Privacy-Gated Read Receipts | **Planned** | Auto-dispatch `POST /api/v1/messages/:id/ack` on inbound decrypt+persist (`ADR-007 §11`), privacy-gated `POST .../read` on `mark_conversation_read`, inbound status/receipt handling |
