@@ -28,6 +28,10 @@ application::ClientResult<std::string> DefaultGatewayClient::send_message(const 
     if (simulate_failure_) {
         return application::ClientResult<std::string>::error(application::ClientError::network(failure_message_));
     }
+    if (simulate_submission_failure_) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::network(submission_failure_message_));
+    }
     if (conversation_id.empty()) {
         return application::ClientResult<std::string>::error(
             application::ClientError::validation("Conversation ID cannot be empty"));
@@ -39,6 +43,10 @@ application::ClientResult<std::string>
 DefaultGatewayClient::submit_encrypted_message(const application::interfaces::FanOutSubmissionRequest& request) {
     if (simulate_failure_) {
         return application::ClientResult<std::string>::error(application::ClientError::network(failure_message_));
+    }
+    if (simulate_submission_failure_) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::network(submission_failure_message_));
     }
     if (request.conversation_id.empty()) {
         return application::ClientResult<std::string>::error(
@@ -433,6 +441,11 @@ DefaultGatewayClient::lookup_user_identity(const domain::UserId& user_id) {
 
     return application::ClientResult<domain::DirectoryUserEntry>::error(
         application::ClientError::validation("User identity not found in directory: " + user_id.value()));
+}
+
+void DefaultGatewayClient::set_simulated_submission_failure(bool fail, std::string error_message) {
+    simulate_submission_failure_ = fail;
+    submission_failure_message_ = std::move(error_message);
 }
 
 void DefaultGatewayClient::set_simulated_directory_users(std::vector<domain::DirectoryUserEntry> users) {

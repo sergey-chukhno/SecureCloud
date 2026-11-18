@@ -79,6 +79,7 @@ if(Qt6_FOUND)
         application/client_application.cpp
         application/managers/auth_manager.cpp
         application/managers/messaging_manager.cpp
+        application/managers/delivery_retry_engine.cpp
         application/managers/contact_manager.cpp
         application/managers/device_manager.cpp
         application/managers/device_pairing_coordinator.cpp

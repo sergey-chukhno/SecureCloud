@@ -401,6 +401,8 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
     const domain::MessageId mid(generate_unique_id("msg"));
     const std::string idem_key = generate_unique_id("idem");
     std::optional<uint64_t> group_epoch_used = std::nullopt;
+    domain::DeliveryState initial_state = domain::DeliveryState::Accepted;
+    std::optional<interfaces::FanOutSubmissionRequest> pending_retry_req;
 
     if (conv.type() == domain::ConversationType::Group && ratchet_session_manager_ != nullptr &&
         secure_storage_ != nullptr) {
@@ -456,7 +458,12 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
         };
         auto submit_res = gateway_.submit_encrypted_message(group_req);
         if (submit_res.is_error()) {
-            return ClientResult<domain::Message>::error(submit_res.error());
+            if (submit_res.error().category() == ClientErrorCategory::Network) {
+                initial_state = domain::DeliveryState::LocalPending;
+                pending_retry_req = std::move(group_req);
+            } else {
+                return ClientResult<domain::Message>::error(submit_res.error());
+            }
         }
         group_epoch_used = conv.sender_key_epoch();
     } else if (ratchet_session_manager_ != nullptr) {
@@ -475,7 +482,12 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
             };
             auto submit_res = gateway_.submit_encrypted_message(req);
             if (submit_res.is_error()) {
-                return ClientResult<domain::Message>::error(submit_res.error());
+                if (submit_res.error().category() == ClientErrorCategory::Network) {
+                    initial_state = domain::DeliveryState::LocalPending;
+                    pending_retry_req = std::move(req);
+                } else {
+                    return ClientResult<domain::Message>::error(submit_res.error());
+                }
             }
         }
     }
@@ -483,7 +495,7 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
     // 3. Construct Message with deterministic idempotency key and initial delivery state
     const std::string disp_name = sender_display_name.empty() ? std::string(sender_user_id.str()) : sender_display_name;
 
-    domain::Message msg(mid, conversation_id, sender_user_id, sender_device_id, domain::DeliveryState::Accepted,
+    domain::Message msg(mid, conversation_id, sender_user_id, sender_device_id, initial_state,
                         std::chrono::system_clock::now(), std::string(plaintext), priority, disp_name, idem_key,
                         /*emergency_acknowledged=*/false, attachment_name, attachment_size, attachment_hash);
     if (group_epoch_used.has_value()) {
@@ -493,6 +505,10 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
     const auto save_res = local_store_.save_message(msg);
     if (save_res.is_error()) {
         return ClientResult<domain::Message>::error(save_res.error());
+    }
+
+    if (pending_retry_req.has_value()) {
+        retry_engine_.enqueue(conversation_id, mid, std::move(*pending_retry_req));
     }
 
     // 4. Update Conversation last activity timestamp
@@ -579,10 +595,44 @@ ClientResult<void> MessagingManager::discard_failed_message(const domain::Conver
         return ClientResult<void>::error(msg_res.error());
     }
 
-    // Mark as failed/discarded
+    // Mark as failed/discarded and remove from retry queue
+    (void)retry_engine_.remove(message_id);
     auto msg = msg_res.value();
     msg.set_delivery_state(domain::DeliveryState::Failed);
     return local_store_.update_message(msg);
+}
+
+void MessagingManager::set_retry_policy(const domain::RetryPolicyConfig& config) {
+    retry_engine_.set_config(config);
+}
+
+std::size_t MessagingManager::pending_retry_count() const {
+    return retry_engine_.pending_count();
+}
+
+std::size_t MessagingManager::process_retry_queue(std::chrono::steady_clock::time_point now) {
+    return retry_engine_.process_due(
+        now,
+        [this](const interfaces::FanOutSubmissionRequest& req) -> ClientResult<std::string> {
+            auto res = gateway_.submit_encrypted_message(req);
+            if (res.is_ok()) {
+                // Find matching LocalPending message with this idempotency_key to mark Accepted
+                auto msgs_res = local_store_.get_messages(req.conversation_id, 200);
+                if (msgs_res.is_ok()) {
+                    for (const auto& m : msgs_res.value()) {
+                        if (m.idempotency_key() == req.idempotency_key) {
+                            (void)update_message_delivery_state(req.conversation_id, m.message_id(),
+                                                                domain::DeliveryState::Accepted);
+                            break;
+                        }
+                    }
+                }
+            }
+            return res;
+        },
+        [this](const domain::ConversationId& cid, const domain::MessageId& mid) {
+            (void)update_message_delivery_state(cid, mid, domain::DeliveryState::Failed);
+        });
 }
 
 ClientResult<std::vector<domain::Message>>

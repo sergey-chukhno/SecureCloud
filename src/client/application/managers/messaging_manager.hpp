@@ -5,6 +5,7 @@
 #include "application/interfaces/i_gateway_client.hpp"
 #include "application/interfaces/i_local_store.hpp"
 #include "application/interfaces/i_secure_storage.hpp"
+#include "application/managers/delivery_retry_engine.hpp"
 #include "domain/conversation.hpp"
 #include "domain/conversation_id.hpp"
 #include "domain/delivery_state.hpp"
@@ -91,6 +92,10 @@ class MessagingManager {
     ClientResult<void> discard_failed_message(const domain::ConversationId& conversation_id,
                                               const domain::MessageId& message_id);
 
+    void set_retry_policy(const domain::RetryPolicyConfig& config);
+    std::size_t process_retry_queue(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
+    [[nodiscard]] std::size_t pending_retry_count() const;
+
     ClientResult<std::vector<domain::Message>> get_conversation_messages(const domain::ConversationId& conversation_id,
                                                                          std::size_t limit = 50);
 
@@ -138,6 +143,7 @@ class MessagingManager {
     interfaces::ICryptoProvider& crypto_provider_;
     RatchetSessionManager* ratchet_session_manager_{nullptr};
     interfaces::ISecureStorage* secure_storage_{nullptr};
+    DeliveryRetryEngine retry_engine_;
 };
 
 } // namespace securecloud::client::application::managers

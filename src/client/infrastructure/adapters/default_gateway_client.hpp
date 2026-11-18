@@ -88,6 +88,7 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     void set_simulated_authorization_mfa_requirement(bool require_mfa);
     void set_simulated_revocation_mfa_requirement(bool require_mfa);
     void set_simulated_failure(bool fail, std::string error_message = "Simulated network failure");
+    void set_simulated_submission_failure(bool fail, std::string error_message = "Simulated submission failure");
     [[nodiscard]] const std::vector<application::interfaces::FanOutSubmissionRequest>&
     submitted_fanouts() const noexcept {
         return submitted_fanouts_;
@@ -117,6 +118,8 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
 
     bool simulate_failure_{false};
     std::string failure_message_;
+    bool simulate_submission_failure_{false};
+    std::string submission_failure_message_;
 
     std::optional<domain::PrekeyInventoryStatus> simulated_inventory_;
     std::optional<domain::DeviceAuthorizationStatus> simulated_reg_status_;

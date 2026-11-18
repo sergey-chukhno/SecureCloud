@@ -3739,6 +3739,7 @@ if(Qt6_FOUND)
         client/direct_and_group_messaging_integration_test.cpp
         client/realtime_gateway_contracts_test.cpp
         client/delivery_state_and_dedupe_test.cpp
+        client/delivery_retry_engine_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES
