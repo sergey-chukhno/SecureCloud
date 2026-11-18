@@ -69,6 +69,7 @@ void ClientBootstrap::wire_managers() {
     file_manager_ = std::make_unique<managers::FileManager>(*gateway_, *crypto_provider_);
     emergency_manager_ = std::make_unique<managers::EmergencyManager>(*local_store_, *secure_storage_);
     sync_manager_ = std::make_unique<managers::SyncManager>(*gateway_, config_);
+    sync_manager_->set_messaging_manager(messaging_manager_.get());
 }
 
 void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& user_id,

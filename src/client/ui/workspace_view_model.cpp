@@ -7,8 +7,10 @@
 #include "domain/conversation_id.hpp"
 #include "domain/crypto_identity.hpp"
 #include "domain/device_id.hpp"
+#include "domain/realtime_events.hpp"
 #include "domain/user_id.hpp"
 
+#include <QMetaObject>
 #include <QPointer>
 #include <unordered_set>
 
@@ -47,6 +49,27 @@ WorkspaceViewModel::WorkspaceViewModel(application::ClientApplication& app, Navi
         hydrateFromLocalStore();
     } else {
         seedDefaultWorkspaceData();
+    }
+
+    realtime_sub_id_ = app_.bootstrap().gateway().subscribe_realtime_events([self](const domain::RealtimeEvent& event) {
+        if (!self) {
+            return;
+        }
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, event]() {
+                if (self) {
+                    self->handleRealtimeEvent(event);
+                }
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+WorkspaceViewModel::~WorkspaceViewModel() {
+    if (realtime_sub_id_ != 0) {
+        app_.bootstrap().gateway().unsubscribe_realtime_events(realtime_sub_id_);
+        realtime_sub_id_ = 0;
     }
 }
 
@@ -1282,6 +1305,108 @@ void WorkspaceViewModel::setHardwareKeyEnforced(bool enforced) {
     emit mfaPolicyChanged();
 }
 
+bool WorkspaceViewModel::readReceiptsEnabled() const {
+    return app_.bootstrap().messaging_manager().read_receipts_enabled();
+}
+
+void WorkspaceViewModel::setReadReceiptsEnabled(bool enabled) {
+    if (readReceiptsEnabled() == enabled) {
+        return;
+    }
+    (void)app_.bootstrap().messaging_manager().set_read_receipts_enabled(enabled);
+    emit readReceiptsEnabledChanged();
+}
+
+void WorkspaceViewModel::handleRealtimeEvent(const domain::RealtimeEvent& event) {
+    auto proc_res = app_.bootstrap().messaging_manager().process_inbound_realtime_event(event);
+    if (proc_res.is_error()) {
+        return;
+    }
+
+    const QString convId = QString::fromStdString(event.conversation_id.value());
+    const QString msgId = QString::fromStdString(event.message_id.value());
+
+    switch (event.type) {
+    case domain::RealtimeEventType::DeliveryAck:
+    case domain::RealtimeEventType::ReadReceipt: {
+        const domain::DeliveryState target_state = (event.type == domain::RealtimeEventType::ReadReceipt)
+                                                       ? domain::DeliveryState::Read
+                                                       : domain::DeliveryState::Delivered;
+        const QString target_str = QString::fromStdString(std::string(domain::to_string(target_state)));
+        bool updated = false;
+        for (auto& msg : messages_) {
+            if (msg.conversationId == convId && msg.messageId == msgId) {
+                const auto cur = domain::delivery_state_from_string(msg.deliveryState.toStdString())
+                                     .value_or(domain::DeliveryState::Accepted);
+                if (domain::can_transition_delivery_state(cur, target_state) && cur != target_state) {
+                    msg.deliveryState = target_str;
+                    updated = true;
+                }
+                break;
+            }
+        }
+        if (updated && convId == selected_conversation_id_) {
+            emit activeMessagesChanged();
+        }
+        break;
+    }
+    case domain::RealtimeEventType::InboundDirectMessage:
+    case domain::RealtimeEventType::InboundGroupMessage: {
+        if (proc_res.value().has_value()) {
+            const auto& m = *proc_res.value();
+            const QString newMsgId = QString::fromStdString(m.message_id().value());
+            bool already_in_ui = false;
+            for (const auto& existing : messages_) {
+                if (existing.conversationId == convId && existing.messageId == newMsgId) {
+                    already_in_ui = true;
+                    break;
+                }
+            }
+            if (!already_in_ui) {
+                const QString text = QString::fromStdString(m.encrypted_envelope_ref());
+                messages_.push_back(MessageEntry{
+                    newMsgId, convId, QString::fromStdString(m.sender_display_name()),
+                    m.sender_user_id() == localUserId(), text, QStringLiteral("Just now"), QStringLiteral("TODAY"),
+                    QString::fromStdString(std::string(domain::to_string(m.delivery_state()))),
+                    m.emergency_acknowledged(), QString(), QString(), QString(), QString(), QString(), m.priority(),
+                    QString::fromStdString(m.idempotency_key()), false});
+                if (auto* conv = findConversationMutable(convId)) {
+                    conv->lastMessagePreview = text;
+                    conv->timestampText = QStringLiteral("Just now");
+                    if (convId != selected_conversation_id_) {
+                        ++conv->unreadCount;
+                    }
+                }
+                emit conversationsChanged();
+                if (convId == selected_conversation_id_) {
+                    emit activeMessagesChanged();
+                }
+            }
+        }
+        break;
+    }
+    case domain::RealtimeEventType::PresenceUpdate: {
+        const QString actorId = QString::fromStdString(event.actor_user_id.value());
+        const QString presenceStr = QString::fromStdString(std::string(domain::to_string(event.presence_status)));
+        bool changed = false;
+        for (auto& conv : conversations_) {
+            if (!conv.isGroup && conv.peerUserId == actorId && conv.presence != presenceStr) {
+                conv.presence = presenceStr;
+                changed = true;
+            }
+        }
+        if (changed) {
+            emit conversationsChanged();
+            emit selectedConversationChanged();
+            emit contactsChanged();
+        }
+        break;
+    }
+    case domain::RealtimeEventType::InboundSenderKeyDistribution:
+        break;
+    }
+}
+
 void WorkspaceViewModel::selectConversation(const QString& conversationId) {
     auto* conv = findConversationMutable(conversationId);
     if (!conv) {
@@ -1291,7 +1416,8 @@ void WorkspaceViewModel::selectConversation(const QString& conversationId) {
     if (conv->unreadCount > 0) {
         conv->unreadCount = 0;
         (void)app_.bootstrap().messaging_manager().mark_conversation_read(
-            domain::ConversationId(conv->conversationId.toStdString()));
+            domain::ConversationId(conv->conversationId.toStdString()), localUserId(),
+            app_.bootstrap().messaging_manager().local_device_id());
     }
     emit selectedConversationChanged();
     emit activeMessagesChanged();
@@ -1379,10 +1505,15 @@ bool WorkspaceViewModel::sendMessage(const QString& plaintext, int priority) {
         return false;
     }
 
-    messages_.push_back(MessageEntry{msgId, conv->conversationId, QStringLiteral("You"), true, trimmed,
-                                     QStringLiteral("Just now"), QStringLiteral("TODAY"), QStringLiteral("Delivered"),
-                                     false, QString(), QString(), QString(), QString(), QString(), effectivePriority,
-                                     idempotencyKey, false});
+    const QString authoritativeMsgId = QString::fromStdString(sendRes.value().message_id().value());
+    const QString authoritativeIdemKey = QString::fromStdString(sendRes.value().idempotency_key());
+    const QString initialDeliveryState =
+        QString::fromStdString(std::string(domain::to_string(sendRes.value().delivery_state())));
+
+    messages_.push_back(MessageEntry{authoritativeMsgId, conv->conversationId, QStringLiteral("You"), true, trimmed,
+                                     QStringLiteral("Just now"), QStringLiteral("TODAY"), initialDeliveryState, false,
+                                     QString(), QString(), QString(), QString(), QString(), effectivePriority,
+                                     authoritativeIdemKey, false});
 
     conv->lastMessagePreview = QStringLiteral("YOU: %1").arg(trimmed);
     conv->timestampText = QStringLiteral("Just now");
