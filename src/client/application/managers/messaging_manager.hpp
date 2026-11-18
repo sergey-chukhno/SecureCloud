@@ -10,9 +10,11 @@
 #include "domain/delivery_state.hpp"
 #include "domain/message.hpp"
 #include "domain/message_id.hpp"
+#include "domain/realtime_events.hpp"
 #include "domain/user_id.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -83,7 +85,8 @@ class MessagingManager {
 
     ClientResult<void> update_message_delivery_state(const domain::ConversationId& conversation_id,
                                                      const domain::MessageId& message_id,
-                                                     domain::DeliveryState new_state);
+                                                     domain::DeliveryState new_state,
+                                                     uint64_t server_sequence_number = 0);
 
     ClientResult<void> discard_failed_message(const domain::ConversationId& conversation_id,
                                               const domain::MessageId& message_id);
@@ -123,9 +126,12 @@ class MessagingManager {
                                                                 int32_t priority = 0,
                                                                 const std::string& sender_display_name = "");
 
+    ClientResult<std::optional<domain::Message>> process_inbound_realtime_event(const domain::RealtimeEvent& event);
+
   private:
     ClientResult<void> validate_recipients_can_receive(const domain::Conversation& conv,
                                                        const domain::UserId& sender_user_id) const;
+    ClientResult<domain::Message> persist_inbound_message(domain::Message msg);
 
     interfaces::IGatewayClient& gateway_;
     interfaces::ILocalStore& local_store_;
