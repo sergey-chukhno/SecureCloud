@@ -77,6 +77,7 @@ void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& u
                                                                                  *crypto_provider_, user_id, device_id);
     if (messaging_manager_) {
         messaging_manager_->set_ratchet_session_manager(ratchet_session_manager_.get());
+        messaging_manager_->set_local_device_id(device_id);
     }
     if (device_manager_) {
         device_manager_->set_ratchet_session_manager(ratchet_session_manager_.get());

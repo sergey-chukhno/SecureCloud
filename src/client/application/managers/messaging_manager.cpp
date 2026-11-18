@@ -91,7 +91,9 @@ MessagingManager::MessagingManager(interfaces::IGatewayClient& gateway, interfac
                                    RatchetSessionManager* ratchet_session_manager,
                                    interfaces::ISecureStorage* secure_storage)
     : gateway_(gateway), local_store_(local_store), crypto_provider_(crypto_provider),
-      ratchet_session_manager_(ratchet_session_manager), secure_storage_(secure_storage) {}
+      ratchet_session_manager_(ratchet_session_manager), secure_storage_(secure_storage) {
+    hydrate_read_receipt_policy();
+}
 
 void MessagingManager::set_ratchet_session_manager(RatchetSessionManager* ratchet_session_manager) noexcept {
     ratchet_session_manager_ = ratchet_session_manager;
@@ -103,6 +105,52 @@ RatchetSessionManager* MessagingManager::ratchet_session_manager() noexcept {
 
 void MessagingManager::set_secure_storage(interfaces::ISecureStorage* secure_storage) noexcept {
     secure_storage_ = secure_storage;
+    hydrate_read_receipt_policy();
+}
+
+void MessagingManager::set_local_device_id(const domain::DeviceId& device_id) {
+    local_device_id_ = device_id;
+}
+
+const domain::DeviceId& MessagingManager::local_device_id() const noexcept {
+    return local_device_id_;
+}
+
+void MessagingManager::hydrate_read_receipt_policy() {
+    if (!secure_storage_) {
+        return;
+    }
+    auto has_res = secure_storage_->has_secret(domain::ReadReceiptPolicy::kStorageKey);
+    if (has_res.is_ok() && has_res.value()) {
+        auto val_res = secure_storage_->get_secret(domain::ReadReceiptPolicy::kStorageKey);
+        if (val_res.is_ok()) {
+            const std::string raw = val_res.value().expose_unredacted_secret();
+            read_receipt_policy_.send_read_receipts_enabled = (raw != "false" && raw != "0");
+        }
+    }
+}
+
+ClientResult<void> MessagingManager::set_read_receipts_enabled(bool enabled) {
+    read_receipt_policy_.send_read_receipts_enabled = enabled;
+    if (!secure_storage_) {
+        return ClientResult<void>::ok();
+    }
+    return secure_storage_->store_secret(domain::ReadReceiptPolicy::kStorageKey,
+                                         common::configuration::SecretString(enabled ? "true" : "false"));
+}
+
+bool MessagingManager::read_receipts_enabled() const noexcept {
+    return read_receipt_policy_.send_read_receipts_enabled;
+}
+
+void MessagingManager::dispatch_delivery_ack_if_configured(const domain::MessageId& message_id) {
+    if (local_device_id_.empty() || message_id.empty()) {
+        return;
+    }
+    const int64_t now_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
+    (void)gateway_.acknowledge_delivery(message_id, local_device_id_, now_ms);
 }
 
 ClientResult<domain::Conversation> MessagingManager::open_direct_conversation(const domain::UserId& local_user,
@@ -292,7 +340,9 @@ ClientResult<void> MessagingManager::delete_conversation(const domain::Conversat
     return local_store_.delete_conversation(conversation_id);
 }
 
-ClientResult<void> MessagingManager::mark_conversation_read(const domain::ConversationId& conversation_id) {
+ClientResult<void> MessagingManager::mark_conversation_read(const domain::ConversationId& conversation_id,
+                                                            const domain::UserId& local_user_id,
+                                                            const domain::DeviceId& reader_device_id) {
     if (conversation_id.empty()) {
         return ClientResult<void>::error(ClientError::validation("Conversation ID cannot be empty"));
     }
@@ -304,7 +354,31 @@ ClientResult<void> MessagingManager::mark_conversation_read(const domain::Conver
 
     auto conv = conv_res.value();
     conv.set_unread_count(0);
-    return local_store_.save_conversation(conv);
+    auto save_conv_res = local_store_.save_conversation(conv);
+    if (save_conv_res.is_error()) {
+        return save_conv_res;
+    }
+
+    const domain::DeviceId effective_device_id = !reader_device_id.empty() ? reader_device_id : local_device_id_;
+    if (!read_receipt_policy_.send_read_receipts_enabled || effective_device_id.empty()) {
+        return ClientResult<void>::ok();
+    }
+
+    auto msgs_res = local_store_.get_messages(conversation_id, 200);
+    if (msgs_res.is_ok()) {
+        const int64_t now_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
+        for (const auto& msg : msgs_res.value()) {
+            const bool is_peer_msg = local_user_id.empty() || (msg.sender_user_id() != local_user_id);
+            if (is_peer_msg && msg.delivery_state() != domain::DeliveryState::Read) {
+                (void)update_message_delivery_state(conversation_id, msg.message_id(), domain::DeliveryState::Read);
+                (void)gateway_.send_read_receipt(conversation_id, msg.message_id(), effective_device_id, now_ms);
+            }
+        }
+    }
+
+    return ClientResult<void>::ok();
 }
 
 ClientResult<domain::Message> MessagingManager::send_message(const domain::ConversationId& conversation_id,
@@ -952,6 +1026,7 @@ MessagingManager::process_inbound_realtime_event(const domain::RealtimeEvent& ev
         if (!event.message_id.empty()) {
             auto existing = local_store_.get_message(event.conversation_id, event.message_id);
             if (existing.is_ok()) {
+                dispatch_delivery_ack_if_configured(existing.value().message_id());
                 return ClientResult<std::optional<domain::Message>>::ok(existing.value());
             }
         }
@@ -990,6 +1065,7 @@ MessagingManager::process_inbound_realtime_event(const domain::RealtimeEvent& ev
         if (saved.is_error()) {
             return ClientResult<std::optional<domain::Message>>::error(saved.error());
         }
+        dispatch_delivery_ack_if_configured(saved.value().message_id());
         return ClientResult<std::optional<domain::Message>>::ok(saved.value());
     }
     case domain::RealtimeEventType::InboundGroupMessage: {
@@ -1001,6 +1077,7 @@ MessagingManager::process_inbound_realtime_event(const domain::RealtimeEvent& ev
         if (!event.message_id.empty()) {
             auto existing = local_store_.get_message(event.conversation_id, event.message_id);
             if (existing.is_ok()) {
+                dispatch_delivery_ack_if_configured(existing.value().message_id());
                 return ClientResult<std::optional<domain::Message>>::ok(existing.value());
             }
         }
@@ -1052,6 +1129,7 @@ MessagingManager::process_inbound_realtime_event(const domain::RealtimeEvent& ev
         if (saved.is_error()) {
             return ClientResult<std::optional<domain::Message>>::error(saved.error());
         }
+        dispatch_delivery_ack_if_configured(saved.value().message_id());
         return ClientResult<std::optional<domain::Message>>::ok(saved.value());
     }
     case domain::RealtimeEventType::InboundSenderKeyDistribution: {

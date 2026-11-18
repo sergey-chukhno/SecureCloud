@@ -45,6 +45,11 @@ class MessagingManager {
     void set_ratchet_session_manager(RatchetSessionManager* ratchet_session_manager) noexcept;
     [[nodiscard]] RatchetSessionManager* ratchet_session_manager() noexcept;
     void set_secure_storage(interfaces::ISecureStorage* secure_storage) noexcept;
+    void set_local_device_id(const domain::DeviceId& device_id);
+    [[nodiscard]] const domain::DeviceId& local_device_id() const noexcept;
+
+    ClientResult<void> set_read_receipts_enabled(bool enabled);
+    [[nodiscard]] bool read_receipts_enabled() const noexcept;
 
     // Direct and Group Conversations
     ClientResult<domain::Conversation> open_direct_conversation(const domain::UserId& local_user,
@@ -67,7 +72,9 @@ class MessagingManager {
     ClientResult<void> leave_conversation(const domain::ConversationId& conversation_id,
                                           const domain::UserId& local_user_id);
     ClientResult<void> delete_conversation(const domain::ConversationId& conversation_id);
-    ClientResult<void> mark_conversation_read(const domain::ConversationId& conversation_id);
+    ClientResult<void> mark_conversation_read(const domain::ConversationId& conversation_id,
+                                              const domain::UserId& local_user_id = {},
+                                              const domain::DeviceId& reader_device_id = {});
 
     // Message Submission, ADR-008 Guard & Delivery Lifecycle
     ClientResult<domain::Message> send_message(const domain::ConversationId& conversation_id,
@@ -137,6 +144,8 @@ class MessagingManager {
     ClientResult<void> validate_recipients_can_receive(const domain::Conversation& conv,
                                                        const domain::UserId& sender_user_id) const;
     ClientResult<domain::Message> persist_inbound_message(domain::Message msg);
+    void dispatch_delivery_ack_if_configured(const domain::MessageId& message_id);
+    void hydrate_read_receipt_policy();
 
     interfaces::IGatewayClient& gateway_;
     interfaces::ILocalStore& local_store_;
@@ -144,6 +153,8 @@ class MessagingManager {
     RatchetSessionManager* ratchet_session_manager_{nullptr};
     interfaces::ISecureStorage* secure_storage_{nullptr};
     DeliveryRetryEngine retry_engine_;
+    domain::DeviceId local_device_id_;
+    domain::ReadReceiptPolicy read_receipt_policy_;
 };
 
 } // namespace securecloud::client::application::managers
