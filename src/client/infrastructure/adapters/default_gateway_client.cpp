@@ -28,6 +28,10 @@ application::ClientResult<std::string> DefaultGatewayClient::send_message(const 
     if (simulate_failure_) {
         return application::ClientResult<std::string>::error(application::ClientError::network(failure_message_));
     }
+    if (simulate_submission_failure_) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::network(submission_failure_message_));
+    }
     if (conversation_id.empty()) {
         return application::ClientResult<std::string>::error(
             application::ClientError::validation("Conversation ID cannot be empty"));
@@ -39,6 +43,10 @@ application::ClientResult<std::string>
 DefaultGatewayClient::submit_encrypted_message(const application::interfaces::FanOutSubmissionRequest& request) {
     if (simulate_failure_) {
         return application::ClientResult<std::string>::error(application::ClientError::network(failure_message_));
+    }
+    if (simulate_submission_failure_) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::network(submission_failure_message_));
     }
     if (request.conversation_id.empty()) {
         return application::ClientResult<std::string>::error(
@@ -435,8 +443,159 @@ DefaultGatewayClient::lookup_user_identity(const domain::UserId& user_id) {
         application::ClientError::validation("User identity not found in directory: " + user_id.value()));
 }
 
+void DefaultGatewayClient::set_simulated_submission_failure(bool fail, std::string error_message) {
+    simulate_submission_failure_ = fail;
+    submission_failure_message_ = std::move(error_message);
+}
+
 void DefaultGatewayClient::set_simulated_directory_users(std::vector<domain::DirectoryUserEntry> users) {
     simulated_directory_users_ = std::move(users);
+}
+
+application::ClientResult<domain::DeliveryState>
+DefaultGatewayClient::acknowledge_delivery(const domain::MessageId& message_id,
+                                           const domain::DeviceId& recipient_device_id, int64_t delivered_at_ms) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::DeliveryState>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (message_id.empty() || recipient_device_id.empty()) {
+        return application::ClientResult<domain::DeliveryState>::error(
+            application::ClientError::validation("Message ID and recipient device ID are required for delivery ack"));
+    }
+
+    sent_delivery_acks_.push_back(domain::DeliveryAckRecord{
+        .message_id = message_id,
+        .recipient_device_id = recipient_device_id,
+        .delivered_at_ms = delivered_at_ms,
+    });
+    return application::ClientResult<domain::DeliveryState>::ok(domain::DeliveryState::Delivered);
+}
+
+application::ClientResult<domain::DeliveryState>
+DefaultGatewayClient::send_read_receipt(const domain::ConversationId& conversation_id,
+                                        const domain::MessageId& message_id, const domain::DeviceId& reader_device_id,
+                                        int64_t read_at_ms) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::DeliveryState>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (conversation_id.empty() || message_id.empty() || reader_device_id.empty()) {
+        return application::ClientResult<domain::DeliveryState>::error(application::ClientError::validation(
+            "Conversation ID, message ID, and reader device ID are required for read receipt"));
+    }
+
+    sent_read_receipts_.push_back(domain::ReadReceiptRecord{
+        .conversation_id = conversation_id,
+        .message_id = message_id,
+        .reader_device_id = reader_device_id,
+        .read_at_ms = read_at_ms,
+    });
+    return application::ClientResult<domain::DeliveryState>::ok(domain::DeliveryState::Read);
+}
+
+application::ClientResult<domain::MessageDeliveryStatusInfo>
+DefaultGatewayClient::get_message_delivery_status(const domain::ConversationId& conversation_id,
+                                                  const domain::MessageId& message_id) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::MessageDeliveryStatusInfo>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (conversation_id.empty() || message_id.empty()) {
+        return application::ClientResult<domain::MessageDeliveryStatusInfo>::error(
+            application::ClientError::validation("Conversation ID and message ID are required"));
+    }
+
+    const auto it = simulated_delivery_statuses_.find(message_id);
+    if (it != simulated_delivery_statuses_.end()) {
+        return application::ClientResult<domain::MessageDeliveryStatusInfo>::ok(it->second);
+    }
+
+    return application::ClientResult<domain::MessageDeliveryStatusInfo>::ok(domain::MessageDeliveryStatusInfo{
+        .message_id = message_id,
+        .delivery_state = domain::DeliveryState::Accepted,
+        .server_sequence_number = 0,
+        .updated_at_ms = 0,
+    });
+}
+
+application::ClientResult<domain::ConversationMessagesPage>
+DefaultGatewayClient::fetch_conversation_messages(const domain::ConversationId& conversation_id,
+                                                  const domain::DeviceId& recipient_device_id, uint64_t since_sequence,
+                                                  std::size_t max_results) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::ConversationMessagesPage>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (conversation_id.empty() || recipient_device_id.empty()) {
+        return application::ClientResult<domain::ConversationMessagesPage>::error(
+            application::ClientError::validation("Conversation ID and recipient device ID are required"));
+    }
+
+    domain::ConversationMessagesPage page;
+    page.latest_sequence = since_sequence;
+
+    const auto it = simulated_conversation_messages_.find(conversation_id);
+    if (it == simulated_conversation_messages_.end()) {
+        return application::ClientResult<domain::ConversationMessagesPage>::ok(std::move(page));
+    }
+
+    const std::size_t limit = max_results == 0 ? 50 : max_results;
+    for (const auto& ev : it->second) {
+        if (ev.server_sequence_number > since_sequence) {
+            if (page.events.size() < limit) {
+                page.events.push_back(ev);
+                if (ev.server_sequence_number > page.latest_sequence) {
+                    page.latest_sequence = ev.server_sequence_number;
+                }
+            } else {
+                page.has_more = true;
+                break;
+            }
+        }
+    }
+
+    return application::ClientResult<domain::ConversationMessagesPage>::ok(std::move(page));
+}
+
+uint64_t DefaultGatewayClient::subscribe_realtime_events(RealtimeEventHandler handler) {
+    std::lock_guard<std::mutex> lock(event_mutex_);
+    const uint64_t id = next_subscription_id_++;
+    if (handler) {
+        event_subscribers_.emplace(id, std::move(handler));
+    }
+    return id;
+}
+
+void DefaultGatewayClient::unsubscribe_realtime_events(uint64_t subscription_id) {
+    std::lock_guard<std::mutex> lock(event_mutex_);
+    event_subscribers_.erase(subscription_id);
+}
+
+void DefaultGatewayClient::emit_realtime_event(const domain::RealtimeEvent& event) {
+    std::vector<RealtimeEventHandler> handlers;
+    {
+        std::lock_guard<std::mutex> lock(event_mutex_);
+        handlers.reserve(event_subscribers_.size());
+        for (const auto& [_, handler] : event_subscribers_) {
+            handlers.push_back(handler);
+        }
+    }
+    for (const auto& handler : handlers) {
+        if (handler) {
+            handler(event);
+        }
+    }
+}
+
+void DefaultGatewayClient::set_simulated_delivery_status(const domain::MessageId& message_id,
+                                                         domain::MessageDeliveryStatusInfo status) {
+    simulated_delivery_statuses_[message_id] = std::move(status);
+}
+
+void DefaultGatewayClient::set_simulated_conversation_messages(const domain::ConversationId& conversation_id,
+                                                               std::vector<domain::RealtimeEvent> events) {
+    simulated_conversation_messages_[conversation_id] = std::move(events);
 }
 
 } // namespace securecloud::client::infrastructure::adapters

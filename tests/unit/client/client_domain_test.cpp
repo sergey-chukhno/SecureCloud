@@ -229,6 +229,29 @@ class MockGatewayClient final : public IGatewayClient {
     ClientResult<std::vector<std::string>> sync_messages(std::string_view /*cursor*/) override {
         return ClientResult<std::vector<std::string>>::ok({"msg-1", "msg-2"});
     }
+    ClientResult<DeliveryState> acknowledge_delivery(const MessageId& /*message_id*/,
+                                                     const DeviceId& /*recipient_device_id*/,
+                                                     int64_t /*delivered_at_ms*/) override {
+        return ClientResult<DeliveryState>::ok(DeliveryState::Delivered);
+    }
+    ClientResult<DeliveryState> send_read_receipt(const ConversationId& /*conversation_id*/,
+                                                  const MessageId& /*message_id*/, const DeviceId& /*reader_device_id*/,
+                                                  int64_t /*read_at_ms*/) override {
+        return ClientResult<DeliveryState>::ok(DeliveryState::Read);
+    }
+    ClientResult<MessageDeliveryStatusInfo> get_message_delivery_status(const ConversationId& /*conversation_id*/,
+                                                                        const MessageId& message_id) override {
+        return ClientResult<MessageDeliveryStatusInfo>::ok(
+            MessageDeliveryStatusInfo{.message_id = message_id, .delivery_state = DeliveryState::Delivered});
+    }
+    ClientResult<ConversationMessagesPage> fetch_conversation_messages(const ConversationId& /*conversation_id*/,
+                                                                       const DeviceId& /*recipient_device_id*/,
+                                                                       uint64_t since_sequence,
+                                                                       std::size_t /*max_results*/) override {
+        return ClientResult<ConversationMessagesPage>::ok(ConversationMessagesPage{.latest_sequence = since_sequence});
+    }
+    uint64_t subscribe_realtime_events(RealtimeEventHandler /*handler*/) override { return 1; }
+    void unsubscribe_realtime_events(uint64_t /*subscription_id*/) override {}
     ClientResult<bool> validate_token(std::string_view token) override {
         return ClientResult<bool>::ok(!token.empty());
     }

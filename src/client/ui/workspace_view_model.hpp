@@ -10,6 +10,10 @@
 #include <cstdint>
 #include <vector>
 
+namespace securecloud::client::domain {
+struct RealtimeEvent;
+}
+
 namespace securecloud::client::ui {
 
 /**
@@ -65,6 +69,8 @@ class WorkspaceViewModel : public QObject {
     Q_PROPERTY(bool isLoadingMessages READ isLoadingMessages NOTIFY loadingMessagesChanged)
     Q_PROPERTY(bool deliveryFailureSimulated READ deliveryFailureSimulated WRITE setDeliveryFailureSimulated NOTIFY
                    deliveryFailureSimulatedChanged)
+    Q_PROPERTY(bool readReceiptsEnabled READ readReceiptsEnabled WRITE setReadReceiptsEnabled NOTIFY
+                   readReceiptsEnabledChanged)
 
     // Selected File Transfer Properties (when activeSection == "Files")
     Q_PROPERTY(QString selectedTransferId READ selectedTransferId NOTIFY selectedTransferChanged)
@@ -90,7 +96,7 @@ class WorkspaceViewModel : public QObject {
   public:
     WorkspaceViewModel(application::ClientApplication& app, NavigationController& nav_controller,
                        QObject* parent = nullptr);
-    ~WorkspaceViewModel() override = default;
+    ~WorkspaceViewModel() override;
 
     WorkspaceViewModel(const WorkspaceViewModel&) = delete;
     WorkspaceViewModel& operator=(const WorkspaceViewModel&) = delete;
@@ -136,6 +142,8 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] bool isLoadingMessages() const noexcept { return is_loading_messages_; }
     [[nodiscard]] bool deliveryFailureSimulated() const noexcept { return delivery_failure_simulated_; }
     void setDeliveryFailureSimulated(bool simulated);
+    [[nodiscard]] bool readReceiptsEnabled() const;
+    void setReadReceiptsEnabled(bool enabled);
 
     [[nodiscard]] QString selectedTransferId() const { return selected_transfer_id_; }
     [[nodiscard]] QVariantMap selectedTransferDetails() const;
@@ -227,6 +235,7 @@ class WorkspaceViewModel : public QObject {
     void mfaPolicyChanged();
     void loadingMessagesChanged();
     void deliveryFailureSimulatedChanged();
+    void readReceiptsEnabledChanged();
     void workspaceError(const QString& message);
 
   private:
@@ -302,6 +311,7 @@ class WorkspaceViewModel : public QObject {
 
     void seedDefaultWorkspaceData();
     void hydrateFromLocalStore();
+    void handleRealtimeEvent(const domain::RealtimeEvent& event);
     [[nodiscard]] domain::UserId localUserId() const;
     [[nodiscard]] const ConversationEntry* findConversation(const QString& conversationId) const;
     [[nodiscard]] ConversationEntry* findConversationMutable(const QString& conversationId);
@@ -327,6 +337,7 @@ class WorkspaceViewModel : public QObject {
     bool hardware_key_enforced_{true};
     bool is_loading_messages_{false};
     bool delivery_failure_simulated_{false};
+    uint64_t realtime_sub_id_{0};
     QString totp_enrollment_secret_{QStringLiteral("JBSWY3DPEHPK3PXP · SHA-256 (6-digit / 30s)")};
 
     std::vector<ConversationEntry> conversations_;

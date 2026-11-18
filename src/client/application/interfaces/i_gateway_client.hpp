@@ -9,10 +9,12 @@
 #include "domain/one_time_prekey_record.hpp"
 #include "domain/prekey_bundle.hpp"
 #include "domain/prekey_inventory_status.hpp"
+#include "domain/realtime_events.hpp"
 #include "domain/user_id.hpp"
 
 #include <chrono>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -62,6 +64,8 @@ struct FanOutSubmissionRequest {
 
 class IGatewayClient {
   public:
+    using RealtimeEventHandler = std::function<void(const domain::RealtimeEvent&)>;
+
     virtual ~IGatewayClient() = default;
 
     virtual ClientResult<bool> probe_gateway(std::string_view path = "/health") = 0;
@@ -69,6 +73,21 @@ class IGatewayClient {
                                                    std::string_view encrypted_envelope) = 0;
     virtual ClientResult<std::string> submit_encrypted_message(const FanOutSubmissionRequest& request) = 0;
     virtual ClientResult<std::vector<std::string>> sync_messages(std::string_view cursor) = 0;
+    virtual ClientResult<domain::DeliveryState> acknowledge_delivery(const domain::MessageId& message_id,
+                                                                     const domain::DeviceId& recipient_device_id,
+                                                                     int64_t delivered_at_ms) = 0;
+    virtual ClientResult<domain::DeliveryState> send_read_receipt(const domain::ConversationId& conversation_id,
+                                                                  const domain::MessageId& message_id,
+                                                                  const domain::DeviceId& reader_device_id,
+                                                                  int64_t read_at_ms) = 0;
+    virtual ClientResult<domain::MessageDeliveryStatusInfo>
+    get_message_delivery_status(const domain::ConversationId& conversation_id, const domain::MessageId& message_id) = 0;
+    virtual ClientResult<domain::ConversationMessagesPage>
+    fetch_conversation_messages(const domain::ConversationId& conversation_id,
+                                const domain::DeviceId& recipient_device_id, uint64_t since_sequence,
+                                std::size_t max_results = 50) = 0;
+    virtual uint64_t subscribe_realtime_events(RealtimeEventHandler handler) = 0;
+    virtual void unsubscribe_realtime_events(uint64_t subscription_id) = 0;
     virtual ClientResult<bool> validate_token(std::string_view token) = 0;
     virtual ClientResult<void> disconnect() = 0;
 

@@ -47,4 +47,37 @@ std::optional<DeliveryState> delivery_state_from_string(std::string_view str) no
     return std::nullopt;
 }
 
+int delivery_state_rank(DeliveryState state) noexcept {
+    switch (state) {
+    case DeliveryState::LocalPending:
+        return 0;
+    case DeliveryState::Submitting:
+        return 1;
+    case DeliveryState::Accepted:
+        return 2;
+    case DeliveryState::Delivering:
+        return 3;
+    case DeliveryState::Delivered:
+        return 4;
+    case DeliveryState::Read:
+        return 5;
+    case DeliveryState::Failed:
+        return -1;
+    }
+    return -1;
+}
+
+bool can_transition_delivery_state(DeliveryState current, DeliveryState next) noexcept {
+    if (current == next) {
+        return true;
+    }
+    if (current == DeliveryState::Failed) {
+        return next == DeliveryState::Submitting || next == DeliveryState::LocalPending;
+    }
+    if (next == DeliveryState::Failed) {
+        return current != DeliveryState::Delivered && current != DeliveryState::Read;
+    }
+    return delivery_state_rank(next) >= delivery_state_rank(current);
+}
+
 } // namespace securecloud::client::domain
