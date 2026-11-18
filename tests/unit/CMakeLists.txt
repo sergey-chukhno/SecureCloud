@@ -4061,3 +4061,4 @@ target_link_libraries(securecloud_messaging_canonical_audit_mapper_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_messaging_canonical_audit_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+

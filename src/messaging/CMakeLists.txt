@@ -48,6 +48,7 @@ add_library(securecloud_messaging_config STATIC
     repository/in_memory_messaging_audit_outbox_repository.cpp
     audit/canonical_audit_mapper.cpp
     audit/messaging_audit_client.cpp
+    audit/messaging_outbox_relay.cpp
     service/conversation_authorization_service.cpp
     service/conversation_service.cpp
     db/migration_runner.cpp
