@@ -39,7 +39,7 @@
 | **CLIENT-011-T03** | Resumable Transfer Checkpoints in `ILocalStore` & `SqlCipherLocalStore` | **Completed** | `file_transfers` table in `SqlCipherLocalStore`, `ILocalStore` transfer CRUD methods, zero-plaintext `.db` invariant |
 | **CLIENT-011-T04** | Production `FileManager` Resumable Upload/Download Pipeline & E2EE Key Distribution | **Completed** | Streaming upload/download in `FileManager`, `ISecureStorage` key storage (`file_transfer.key.<file_id>`), Pause/Resume/Cancel, ADR-008 guarded `FileAttachmentKeyEnvelope` dispatch via `MessagingManager`, atomic `.part` download verification |
 | **CLIENT-011-T05** | `WorkspaceViewModel` Vault Progress/Controls & QML Native File Picker / Progress UI | **Completed** | Startup hydration of `file_transfers`, `uploadLocalFile`, `downloadEncryptedFile`, `pauseFileTransfer`, `resumeFileTransfer`, `cancelFileTransfer`, `ProgressBar` & Qt Quick `FileDialog` in `WorkspacePlaceholder.qml` |
-| **CLIENT-011-T06** | Encrypted File Transfer & Streaming E2E Integration Suite & Walkthrough Report | **Planned** | 5-scenario E2E integration suite (`encrypted_file_transfer_integration_test.cpp`), 100% test/format/warning gate, `--smoke-test`, `walkthrough-client-011.md` |
+| **CLIENT-011-T06** | Encrypted File Transfer & Streaming E2E Integration Suite & Walkthrough Report | **Completed** | 5-scenario E2E integration suite (`encrypted_file_transfer_integration_test.cpp`), 100% test/format/warning gate, Tier 1 `--smoke-test` + Tier 2 `--capture-screenshots`, `walkthrough-client-011.md` (`>= 1,000` lines), `docs/pull_requests/CLIENT-011.md` |
 
 ---
 
