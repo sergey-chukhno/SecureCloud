@@ -86,12 +86,31 @@ TEST(DomainEntitiesTest, OutboxStatusEnumRoundtrip) {
     EXPECT_EQ(to_string(OutboxStatus::Pending), "PENDING");
     EXPECT_EQ(to_string(OutboxStatus::Published), "PUBLISHED");
     EXPECT_EQ(to_string(OutboxStatus::Failed), "FAILED");
+    EXPECT_EQ(to_string(OutboxStatus::Quarantined), "QUARANTINED");
 
     EXPECT_EQ(outbox_status_from_string("PENDING"), OutboxStatus::Pending);
     EXPECT_EQ(outbox_status_from_string("PUBLISHED"), OutboxStatus::Published);
     EXPECT_EQ(outbox_status_from_string("FAILED"), OutboxStatus::Failed);
+    EXPECT_EQ(outbox_status_from_string("QUARANTINED"), OutboxStatus::Quarantined);
 
     EXPECT_THROW(outbox_status_from_string("IN_PROGRESS"), InvalidEnumException);
+}
+
+TEST(DomainEntitiesTest, OutboxSeverityEnumRoundtrip) {
+    EXPECT_EQ(db::to_string(OutboxSeverity::Info), "INFO");
+    EXPECT_EQ(db::to_string(OutboxSeverity::Warning), "WARNING");
+    EXPECT_EQ(db::to_string(OutboxSeverity::Critical), "CRITICAL");
+
+    EXPECT_EQ(files::to_string(OutboxSeverity::Info), "INFO");
+    EXPECT_EQ(files::to_string(OutboxSeverity::Warning), "WARNING");
+    EXPECT_EQ(files::to_string(OutboxSeverity::Critical), "CRITICAL");
+
+    EXPECT_EQ(outbox_severity_from_string("INFO"), OutboxSeverity::Info);
+    EXPECT_EQ(outbox_severity_from_string("WARNING"), OutboxSeverity::Warning);
+    EXPECT_EQ(outbox_severity_from_string("CRITICAL"), OutboxSeverity::Critical);
+
+    EXPECT_THROW(outbox_severity_from_string("DEBUG"), InvalidEnumException);
+    EXPECT_THROW(outbox_severity_from_string(""), InvalidEnumException);
 }
 
 // --- 2. Timestamp ISO 8601 Tests ---
@@ -420,13 +439,17 @@ TEST(DomainEntitiesTest, MapFilesOutboxEntityRow) {
 
     EXPECT_EQ(outbox.event_id, "880e8400-e29b-41d4-a716-446655440000");
     EXPECT_EQ(outbox.aggregate_type, "FILE");
-    EXPECT_EQ(outbox.aggregate_id, "550e8400-e29b-41d4-a716-446655440000");
+    ASSERT_TRUE(outbox.aggregate_id.has_value());
+    EXPECT_EQ(*outbox.aggregate_id, "550e8400-e29b-41d4-a716-446655440000");
     EXPECT_EQ(outbox.event_type, "FILE_UPLOAD_COMPLETED");
     EXPECT_EQ(outbox.payload_json, "{\"file_id\":\"550e8400\",\"size\":10485760}");
     EXPECT_EQ(outbox.status, OutboxStatus::Pending);
+    EXPECT_EQ(outbox.severity, OutboxSeverity::Info);
     EXPECT_EQ(outbox.retry_count, 0);
     EXPECT_EQ(to_iso8601(outbox.created_at), "2026-09-25T10:05:00Z");
     EXPECT_FALSE(outbox.processed_at.has_value());
+    EXPECT_FALSE(outbox.last_error.has_value());
+    EXPECT_FALSE(outbox.leased_until.has_value());
 }
 
 TEST(DomainEntitiesTest, MapFilesOutboxEntityProcessed) {
@@ -448,6 +471,35 @@ TEST(DomainEntitiesTest, MapFilesOutboxEntityProcessed) {
     EXPECT_EQ(outbox.retry_count, 1);
     ASSERT_TRUE(outbox.processed_at.has_value());
     EXPECT_EQ(to_iso8601(*outbox.processed_at), "2026-09-25T10:06:00Z");
+}
+
+TEST(DomainEntitiesTest, MapFilesOutboxEntityV002FieldsAndNullAggregateId) {
+    RowBuilder builder;
+    builder.set("event_id", "990e8400-e29b-41d4-a716-446655440000")
+        .set("aggregate_type", "SYSTEM")
+        .set_null("aggregate_id")
+        .set("event_type", "FILES_ACCESS_DENIED")
+        .set("severity", "CRITICAL")
+        .set("payload_json", "{\"reason\":\"revoked_device\"}")
+        .set("status", "QUARANTINED")
+        .set("retry_count", "5")
+        .set("last_error", "Audit service rejected malformed payload")
+        .set("leased_until", "2026-09-25T10:07:30Z")
+        .set("created_at", "2026-09-25T10:05:00Z")
+        .set_null("processed_at");
+
+    pqxx::row row = builder.build();
+    FilesOutboxEntity outbox = files_outbox_from_row(row);
+
+    EXPECT_EQ(outbox.event_id, "990e8400-e29b-41d4-a716-446655440000");
+    EXPECT_FALSE(outbox.aggregate_id.has_value());
+    EXPECT_EQ(outbox.severity, OutboxSeverity::Critical);
+    EXPECT_EQ(outbox.status, OutboxStatus::Quarantined);
+    EXPECT_EQ(outbox.retry_count, 5);
+    ASSERT_TRUE(outbox.last_error.has_value());
+    EXPECT_EQ(*outbox.last_error, "Audit service rejected malformed payload");
+    ASSERT_TRUE(outbox.leased_until.has_value());
+    EXPECT_EQ(to_iso8601(*outbox.leased_until), "2026-09-25T10:07:30Z");
 }
 
 } // namespace

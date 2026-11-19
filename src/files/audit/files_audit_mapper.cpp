@@ -16,9 +16,14 @@ securecloud::audit::v1::AuditEventProto FilesAuditMapper::to_proto(const FilesOu
     proto.set_producer_service(securecloud::audit::v1::ProducerServiceProto::PRODUCER_SERVICE_FILES);
     proto.set_producer_instance("files-daemon");
 
-    // Default target
-    proto.set_target_type(securecloud::audit::v1::TargetTypeProto::TARGET_TYPE_FILE);
-    proto.set_target_id(entity.aggregate_id);
+    // Default target (nullable aggregate_id maps to SERVICE target)
+    if (entity.aggregate_id.has_value() && !entity.aggregate_id->empty()) {
+        proto.set_target_type(securecloud::audit::v1::TargetTypeProto::TARGET_TYPE_FILE);
+        proto.set_target_id(*entity.aggregate_id);
+    } else {
+        proto.set_target_type(securecloud::audit::v1::TargetTypeProto::TARGET_TYPE_SERVICE);
+        proto.set_target_id("files");
+    }
 
     // Default actor
     proto.set_actor_type(securecloud::audit::v1::ActorTypeProto::ACTOR_TYPE_USER);

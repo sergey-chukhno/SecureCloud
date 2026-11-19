@@ -24,7 +24,8 @@ struct MigrationResult {
 };
 
 /// Schema migration orchestrator for SecureCloud Files service.
-/// Ensures authoritative relational schema baseline (V001) is applied idempotently.
+/// Ensures authoritative relational schema baseline (V001) and outbox hardening (V002)
+/// are applied idempotently.
 class MigrationRunner {
   public:
     explicit MigrationRunner(std::shared_ptr<FilesDbConnectionPool> pool);
@@ -32,14 +33,21 @@ class MigrationRunner {
     /// Returns the authoritative embedded V001 schema DDL.
     static std::string_view get_v001_schema_sql() noexcept;
 
+    /// Returns the authoritative embedded V002 outbox hardening DDL (`AUDIT-015`).
+    static std::string_view get_v002_schema_sql() noexcept;
+
     /// Parses an SQL script and splits it into discrete executable statements.
     /// Filters out pure comments and empty statements.
     static std::vector<std::string> split_statements(std::string_view sql);
 
-    /// Validates DDL structural integrity: table existence, foreign keys, and indexes.
+    /// Validates V001 DDL structural integrity: table existence, foreign keys, and indexes.
     static bool validate_schema_ddl_syntax(std::string_view sql, std::vector<std::string>& out_missing_elements);
 
-    /// Runs all pending migrations against the database.
+    /// Validates V002 DDL structural integrity: nullable aggregate_id, severity, QUARANTINED status,
+    /// lease/error columns, and partial indexes.
+    static bool validate_v002_schema_ddl_syntax(std::string_view sql, std::vector<std::string>& out_missing_elements);
+
+    /// Runs all pending migrations (V001 -> V002) against the database idempotently.
     MigrationResult run_migrations();
 
     /// Applies a specific SQL migration by version.

@@ -1,5 +1,7 @@
 #include "files/db/migration_runner.hpp"
 
+#include "files/db/pqxx_compat.hpp"
+
 #include <algorithm>
 #include <iostream>
 #include <sstream>
@@ -108,6 +110,51 @@ CREATE INDEX IF NOT EXISTS idx_file_chunks_transfer ON file_chunks(transfer_id, 
 CREATE INDEX IF NOT EXISTS idx_files_outbox_pending ON files_outbox(created_at) WHERE status = 'PENDING';
 )SQL";
 
+constexpr std::string_view k_v002_sql = R"SQL(
+ALTER TABLE files_outbox
+    ALTER COLUMN aggregate_id DROP NOT NULL;
+
+ALTER TABLE files_outbox
+    ADD COLUMN IF NOT EXISTS severity VARCHAR(16) NOT NULL DEFAULT 'INFO';
+
+ALTER TABLE files_outbox
+    DROP CONSTRAINT IF EXISTS files_outbox_severity_check;
+
+ALTER TABLE files_outbox
+    ADD CONSTRAINT files_outbox_severity_check
+    CHECK (severity IN ('INFO', 'WARNING', 'SECURITY', 'CRITICAL'));
+
+ALTER TABLE files_outbox
+    DROP CONSTRAINT IF EXISTS files_outbox_status_check;
+
+ALTER TABLE files_outbox
+    ADD CONSTRAINT files_outbox_status_check
+    CHECK (status IN ('PENDING', 'PUBLISHED', 'FAILED', 'QUARANTINED'));
+
+ALTER TABLE files_outbox
+    DROP CONSTRAINT IF EXISTS files_outbox_retry_count_check;
+
+ALTER TABLE files_outbox
+    ADD CONSTRAINT files_outbox_retry_count_check
+    CHECK (retry_count >= 0);
+
+ALTER TABLE files_outbox
+    ADD COLUMN IF NOT EXISTS last_error TEXT NULL;
+
+ALTER TABLE files_outbox
+    ADD COLUMN IF NOT EXISTS leased_until TIMESTAMPTZ NULL;
+
+DROP INDEX IF EXISTS idx_files_outbox_pending;
+
+CREATE INDEX IF NOT EXISTS idx_files_outbox_pending
+    ON files_outbox (created_at ASC, leased_until)
+    WHERE status = 'PENDING';
+
+CREATE INDEX IF NOT EXISTS idx_files_outbox_cleanup
+    ON files_outbox (processed_at ASC)
+    WHERE status = 'PUBLISHED' AND processed_at IS NOT NULL;
+)SQL";
+
 std::string trim_string(std::string_view s) {
     auto start = s.find_first_not_of(" \t\r\n");
     if (start == std::string_view::npos) {
@@ -117,6 +164,42 @@ std::string trim_string(std::string_view s) {
     return std::string(s.substr(start, end - start + 1));
 }
 
+#if defined(SECURECLOUD_FILES_USE_REAL_PQXX) && __has_include(<pqxx/pqxx>)
+template <typename S> std::string extract_secret_value(const S& secret) {
+    if constexpr (requires { secret.reveal(); }) {
+        return std::string(secret.reveal());
+    } else if constexpr (requires { secret.unmask(); }) {
+        return std::string(secret.unmask());
+    } else if constexpr (requires { secret.value(); }) {
+        return std::string(secret.value());
+    } else if constexpr (requires { secret.get(); }) {
+        return std::string(secret.get());
+    } else {
+        return {};
+    }
+}
+
+std::string build_pg_conninfo(const ConnectionPoolConfig& cfg) {
+    std::ostringstream oss;
+    oss << "host=" << cfg.host << " port=" << cfg.port << " dbname=" << cfg.db_name << " user=" << cfg.db_user;
+    const std::string pwd = extract_secret_value(cfg.db_password);
+    if (!pwd.empty()) {
+        std::string escaped;
+        escaped.reserve(pwd.size());
+        for (char c : pwd) {
+            if (c == '\'' || c == '\\') {
+                escaped.push_back('\\');
+            }
+            escaped.push_back(c);
+        }
+        oss << " password='" << escaped << "'";
+    }
+    const auto connect_sec = std::max<int64_t>(1, cfg.connect_timeout.count() / 1000);
+    oss << " connect_timeout=" << connect_sec;
+    return oss.str();
+}
+#endif
+
 } // namespace
 
 MigrationRunner::MigrationRunner(std::shared_ptr<FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
@@ -125,17 +208,23 @@ std::string_view MigrationRunner::get_v001_schema_sql() noexcept {
     return k_v001_sql;
 }
 
+std::string_view MigrationRunner::get_v002_schema_sql() noexcept {
+    return k_v002_sql;
+}
+
 std::vector<std::string> MigrationRunner::split_statements(std::string_view sql) {
     std::vector<std::string> statements;
     std::istringstream stream{std::string(sql)};
     std::string line;
     std::string current_stmt;
+    bool in_dollar_quote = false;
 
     while (std::getline(stream, line)) {
-        // Strip line comments
-        auto comment_pos = line.find("--");
-        if (comment_pos != std::string::npos) {
-            line = line.substr(0, comment_pos);
+        if (!in_dollar_quote) {
+            auto comment_pos = line.find("--");
+            if (comment_pos != std::string::npos) {
+                line = line.substr(0, comment_pos);
+            }
         }
 
         std::string trimmed_line = trim_string(line);
@@ -143,13 +232,19 @@ std::vector<std::string> MigrationRunner::split_statements(std::string_view sql)
             continue;
         }
 
+        // Toggle dollar-quoting state on odd occurrences of "$$"
+        size_t pos = 0;
+        while ((pos = trimmed_line.find("$$", pos)) != std::string::npos) {
+            in_dollar_quote = !in_dollar_quote;
+            pos += 2;
+        }
+
         if (!current_stmt.empty()) {
             current_stmt += " ";
         }
         current_stmt += trimmed_line;
 
-        // Check if statement ends with semicolon
-        if (trimmed_line.ends_with(';')) {
+        if (!in_dollar_quote && trimmed_line.ends_with(';')) {
             std::string final_stmt = trim_string(current_stmt);
             if (!final_stmt.empty() && final_stmt != ";") {
                 statements.push_back(std::move(final_stmt));
@@ -202,39 +297,93 @@ bool MigrationRunner::validate_schema_ddl_syntax(std::string_view sql, std::vect
     return out_missing_elements.empty();
 }
 
+bool MigrationRunner::validate_v002_schema_ddl_syntax(std::string_view sql,
+                                                      std::vector<std::string>& out_missing_elements) {
+    out_missing_elements.clear();
+
+    const std::vector<std::string> required_clauses = {
+        "ALTER TABLE files_outbox",
+        "DROP NOT NULL",
+        "severity",
+        "QUARANTINED",
+        "last_error",
+        "leased_until",
+        "idx_files_outbox_pending",
+        "idx_files_outbox_cleanup",
+    };
+
+    for (const auto& clause : required_clauses) {
+        if (sql.find(clause) == std::string_view::npos) {
+            out_missing_elements.push_back("Missing V002 DDL element: " + clause);
+        }
+    }
+
+    return out_missing_elements.empty();
+}
+
 MigrationResult MigrationRunner::run_migrations() {
     MigrationResult result;
+
     if (std::find(applied_versions_.begin(), applied_versions_.end(), "V001") == applied_versions_.end()) {
-        bool ok = apply_migration("V001", "create_files_schema", get_v001_schema_sql());
-        if (ok) {
-            result.applied_versions.push_back("V001");
-            result.success = true;
-        } else {
+        if (!apply_migration("V001", "create_files_schema", get_v001_schema_sql())) {
             result.success = false;
             result.error_message = "Failed to apply V001 schema migration";
             return result;
         }
-    } else {
-        result.success = true; // Idempotent no-op
+        result.applied_versions.push_back("V001");
     }
 
+    if (std::find(applied_versions_.begin(), applied_versions_.end(), "V002") == applied_versions_.end()) {
+        if (!apply_migration("V002", "harden_files_outbox_table", get_v002_schema_sql())) {
+            result.success = false;
+            result.error_message = "Failed to apply V002 schema migration";
+            return result;
+        }
+        result.applied_versions.push_back("V002");
+    }
+
+    result.success = true;
     return result;
 }
 
 bool MigrationRunner::apply_migration(std::string_view version, std::string_view /*description*/,
                                       std::string_view sql) {
     if (std::find(applied_versions_.begin(), applied_versions_.end(), version) != applied_versions_.end()) {
-        return true; // Already applied
+        return true; // Idempotent no-op
     }
 
     std::vector<std::string> missing;
-    if (!validate_schema_ddl_syntax(sql, missing)) {
+    bool valid = true;
+    if (version == "V001") {
+        valid = validate_schema_ddl_syntax(sql, missing);
+    } else if (version == "V002") {
+        valid = validate_v002_schema_ddl_syntax(sql, missing);
+    }
+
+    if (!valid) {
         std::cerr << "[SecureCloud] [files] ERROR: Invalid schema DDL for version " << version << "\n";
         for (const auto& m : missing) {
             std::cerr << "  - " << m << "\n";
         }
         return false;
     }
+
+#if defined(SECURECLOUD_FILES_USE_REAL_PQXX) && __has_include(<pqxx/pqxx>)
+    if (pool_) {
+        try {
+            auto lease = pool_->acquire();
+            pqxx::connection conn(build_pg_conninfo(pool_->config()));
+            pqxx::work tx(conn);
+            for (const auto& stmt : split_statements(sql)) {
+                tx.exec(stmt);
+            }
+            tx.commit();
+        } catch (const std::exception& ex) {
+            std::cerr << "[SecureCloud] [files] ERROR applying migration " << version << ": " << ex.what() << "\n";
+            return false;
+        }
+    }
+#endif
 
     applied_versions_.emplace_back(version);
     return true;

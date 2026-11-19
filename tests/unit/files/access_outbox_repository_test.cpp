@@ -8,7 +8,9 @@
 
 #include <chrono>
 #include <gtest/gtest.h>
+#include <optional>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace securecloud::files {
@@ -59,7 +61,7 @@ FileAccessEntity make_sample_grant(std::string access_id, std::string file_id, s
     return a;
 }
 
-FilesOutboxEntity make_sample_event(std::string event_id, std::string aggregate_id,
+FilesOutboxEntity make_sample_event(std::string event_id, std::optional<std::string> aggregate_id,
                                     std::string event_type = "FILE_UPLOAD_COMPLETED",
                                     std::string payload = "{\"file_id\":\"f-1\",\"bytes\":1024}") {
     FilesOutboxEntity e;
@@ -346,17 +348,174 @@ TEST_F(AccessOutboxRepositoryTest, StageAndFetchPendingEvents) {
         tx.commit();
     }
 
-    auto pending = outbox_repo.fetch_pending_events(10);
-    ASSERT_EQ(pending.size(), 3);
-    EXPECT_EQ(pending[0].event_id, "evt-1");
-    EXPECT_EQ(pending[1].event_id, "evt-2");
-    EXPECT_EQ(pending[2].event_id, "evt-3");
-
-    // Test limit constraint
+    // First fetch respects limit=2 and leases the first two events
     auto limited = outbox_repo.fetch_pending_events(2);
     ASSERT_EQ(limited.size(), 2);
     EXPECT_EQ(limited[0].event_id, "evt-1");
     EXPECT_EQ(limited[1].event_id, "evt-2");
+
+    // Subsequent fetch returns only the remaining unleased event
+    auto remaining = outbox_repo.fetch_pending_events(10);
+    ASSERT_EQ(remaining.size(), 1);
+    EXPECT_EQ(remaining[0].event_id, "evt-3");
+}
+
+TEST_F(AccessOutboxRepositoryTest, StageEventWithNullAggregateIdAndSeverity) {
+    FilesOutboxRepository outbox_repo;
+    auto e = make_sample_event("evt-sys-1", std::nullopt, "FILES_SECURITY_ALERT");
+    e.aggregate_type = "SYSTEM";
+    e.severity = OutboxSeverity::Critical;
+
+    outbox_repo.stage_event(e);
+
+    auto found = outbox_repo.find_by_id("evt-sys-1");
+    ASSERT_TRUE(found.has_value());
+    EXPECT_FALSE(found->aggregate_id.has_value());
+    EXPECT_EQ(found->severity, OutboxSeverity::Critical);
+    EXPECT_EQ(found->status, OutboxStatus::Pending);
+}
+
+TEST_F(AccessOutboxRepositoryTest, FetchAndLeasePendingBatchDisjointAndReacquiresAfterExpiry) {
+    FilesOutboxRepository outbox_repo;
+
+    auto now = std::chrono::system_clock::now();
+    auto e1 = make_sample_event("evt-lease-1", "file-1");
+    e1.created_at = now - std::chrono::seconds(30);
+    auto e2 = make_sample_event("evt-lease-2", "file-2");
+    e2.created_at = now - std::chrono::seconds(20);
+    auto e3 = make_sample_event("evt-lease-3", "file-3");
+    e3.created_at = now - std::chrono::seconds(10);
+
+    outbox_repo.stage_event(e1);
+    outbox_repo.stage_event(e2);
+    outbox_repo.stage_event(e3);
+
+    // First worker leases 2 events with a 30-second lease
+    auto batch1 = outbox_repo.fetch_and_lease_pending_batch(2, std::chrono::seconds{30});
+    ASSERT_EQ(batch1.size(), 2);
+    EXPECT_EQ(batch1[0].event_id, "evt-lease-1");
+    EXPECT_EQ(batch1[1].event_id, "evt-lease-2");
+    EXPECT_TRUE(batch1[0].leased_until.has_value());
+    EXPECT_TRUE(batch1[1].leased_until.has_value());
+    EXPECT_EQ(batch1[0].status, OutboxStatus::Pending);
+
+    // Second concurrent worker immediately fetches with a 1-second lease: must receive only disjoint evt-lease-3
+    auto batch2 = outbox_repo.fetch_and_lease_pending_batch(10, std::chrono::seconds{1});
+    ASSERT_EQ(batch2.size(), 1);
+    EXPECT_EQ(batch2[0].event_id, "evt-lease-3");
+
+    // Once batch2's 1-second lease expires, evt-lease-3 can be leased again while batch1 remains leased
+    std::this_thread::sleep_for(std::chrono::milliseconds{1100});
+    auto batch3 = outbox_repo.fetch_and_lease_pending_batch(10, std::chrono::seconds{30});
+    ASSERT_EQ(batch3.size(), 1);
+    EXPECT_EQ(batch3[0].event_id, "evt-lease-3");
+}
+
+TEST_F(AccessOutboxRepositoryTest, RecordTransientFailureKeepsPendingAndClearsLease) {
+    FilesOutboxRepository outbox_repo;
+    auto e = make_sample_event("evt-transient", "file-transient");
+    outbox_repo.stage_event(e);
+
+    auto leased = outbox_repo.fetch_and_lease_pending_batch(1, std::chrono::seconds{60});
+    ASSERT_EQ(leased.size(), 1);
+    ASSERT_TRUE(leased[0].leased_until.has_value());
+
+    // Record transient failure: status remains PENDING, retry_count increments, lease cleared
+    EXPECT_TRUE(outbox_repo.record_transient_failure("evt-transient", "gRPC UNAVAILABLE: deadline exceeded"));
+
+    auto found = outbox_repo.find_by_id("evt-transient");
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(found->status, OutboxStatus::Pending);
+    EXPECT_EQ(found->retry_count, 1);
+    EXPECT_FALSE(found->leased_until.has_value());
+    ASSERT_TRUE(found->last_error.has_value());
+    EXPECT_EQ(*found->last_error, "gRPC UNAVAILABLE: deadline exceeded");
+
+    // Because lease was cleared and status is still PENDING, it is immediately re-leasable
+    auto reacquired = outbox_repo.fetch_and_lease_pending_batch(1, std::chrono::seconds{30});
+    ASSERT_EQ(reacquired.size(), 1);
+    EXPECT_EQ(reacquired[0].event_id, "evt-transient");
+
+    EXPECT_FALSE(outbox_repo.record_transient_failure("non-existent", "err"));
+}
+
+TEST_F(AccessOutboxRepositoryTest, MarkQuarantinedExcludesFromPendingAndLeasing) {
+    FilesOutboxRepository outbox_repo;
+    auto e = make_sample_event("evt-poison", "file-poison");
+    outbox_repo.stage_event(e);
+
+    auto leased = outbox_repo.fetch_and_lease_pending_batch(1, std::chrono::seconds{30});
+    ASSERT_EQ(leased.size(), 1);
+
+    EXPECT_TRUE(outbox_repo.mark_quarantined("evt-poison", "Max retries exceeded: invalid schema"));
+
+    auto found = outbox_repo.find_by_id("evt-poison");
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(found->status, OutboxStatus::Quarantined);
+    EXPECT_FALSE(found->leased_until.has_value());
+    ASSERT_TRUE(found->last_error.has_value());
+    EXPECT_EQ(*found->last_error, "Max retries exceeded: invalid schema");
+
+    // Quarantined events must never be returned as pending or counted in pending backlog
+    EXPECT_TRUE(outbox_repo.fetch_pending_events(10).empty());
+    EXPECT_TRUE(outbox_repo.fetch_and_lease_pending_batch(10, std::chrono::seconds{30}).empty());
+    EXPECT_EQ(outbox_repo.count_pending(), 0);
+
+    EXPECT_FALSE(outbox_repo.mark_quarantined("non-existent", "err"));
+}
+
+TEST_F(AccessOutboxRepositoryTest, PurgePublishedOlderThanDeletesOnlyExpiredPublishedEvents) {
+    FilesOutboxRepository outbox_repo;
+
+    auto now = std::chrono::system_clock::now();
+    auto old_pub = make_sample_event("evt-old-pub", "file-1");
+    auto recent_pub = make_sample_event("evt-recent-pub", "file-2");
+    auto old_pending = make_sample_event("evt-old-pending", "file-3");
+    old_pending.created_at = now - std::chrono::hours(48);
+
+    outbox_repo.stage_event(old_pub);
+    outbox_repo.stage_event(recent_pub);
+    outbox_repo.stage_event(old_pending);
+
+    ASSERT_TRUE(outbox_repo.mark_published("evt-old-pub"));
+    std::this_thread::sleep_for(std::chrono::milliseconds{1100});
+    auto cutoff = std::chrono::system_clock::now();
+    std::this_thread::sleep_for(std::chrono::milliseconds{1100});
+    ASSERT_TRUE(outbox_repo.mark_published("evt-recent-pub"));
+
+    auto purged_count = outbox_repo.purge_published_older_than(cutoff, 100);
+    EXPECT_EQ(purged_count, 1u);
+
+    EXPECT_FALSE(outbox_repo.find_by_id("evt-old-pub").has_value());
+    EXPECT_TRUE(outbox_repo.find_by_id("evt-recent-pub").has_value());
+    EXPECT_TRUE(outbox_repo.find_by_id("evt-old-pending").has_value());
+}
+
+TEST_F(AccessOutboxRepositoryTest, CountPendingAndOldestPendingAgeSeconds) {
+    FilesOutboxRepository outbox_repo;
+
+    EXPECT_EQ(outbox_repo.count_pending(), 0);
+    EXPECT_DOUBLE_EQ(outbox_repo.oldest_pending_age_seconds(), 0.0);
+
+    auto now = std::chrono::system_clock::now();
+    auto older = make_sample_event("evt-age-1", "file-1");
+    older.created_at = now - std::chrono::seconds(120);
+
+    auto newer = make_sample_event("evt-age-2", "file-2");
+    newer.created_at = now - std::chrono::seconds(20);
+
+    outbox_repo.stage_event(older);
+    outbox_repo.stage_event(newer);
+
+    EXPECT_EQ(outbox_repo.count_pending(), 2);
+    double age1 = outbox_repo.oldest_pending_age_seconds();
+    EXPECT_GE(age1, 110.0);
+
+    // Once the oldest event is published, age reflects the remaining pending event
+    ASSERT_TRUE(outbox_repo.mark_published("evt-age-1"));
+    EXPECT_EQ(outbox_repo.count_pending(), 1);
+    double age2 = outbox_repo.oldest_pending_age_seconds();
+    EXPECT_LT(age2, 60.0);
 }
 
 TEST_F(AccessOutboxRepositoryTest, MarkPublishedRemovesFromPending) {
@@ -430,12 +589,10 @@ TEST_F(AccessOutboxRepositoryTest, OutboxValidationFailures) {
     invalid.event_id = "evt-1";
     EXPECT_THROW(repo.stage_event(invalid), RepositoryException);
 
-    invalid.aggregate_id = "agg-1";
-    EXPECT_THROW(repo.stage_event(invalid), RepositoryException);
-
     invalid.event_type = "TYPE";
     EXPECT_THROW(repo.stage_event(invalid), RepositoryException); // missing payload_json
 
+    // aggregate_id is nullable since V002
     invalid.payload_json = "{}";
     EXPECT_NO_THROW(repo.stage_event(invalid));
 }

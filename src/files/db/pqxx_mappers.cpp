@@ -47,6 +47,14 @@ int hex_char_to_val(char c) {
     return -1;
 }
 
+const pqxx::field* find_optional_column(const pqxx::row& r, const char* name) noexcept {
+    try {
+        return &r[name];
+    } catch (...) {
+        return nullptr;
+    }
+}
+
 } // namespace
 
 // --- Strong Enum <-> String Conversions ---
@@ -193,6 +201,8 @@ std::string to_string(OutboxStatus status) {
         return "PUBLISHED";
     case OutboxStatus::Failed:
         return "FAILED";
+    case OutboxStatus::Quarantined:
+        return "QUARANTINED";
     }
     throw InvalidEnumException("Unknown OutboxStatus enum value: " + std::to_string(static_cast<int>(status)));
 }
@@ -204,7 +214,35 @@ OutboxStatus outbox_status_from_string(std::string_view str) {
         return OutboxStatus::Published;
     if (str == "FAILED")
         return OutboxStatus::Failed;
+    if (str == "QUARANTINED")
+        return OutboxStatus::Quarantined;
     throw InvalidEnumException("Invalid OutboxStatus string: " + std::string(str));
+}
+
+std::string to_string(OutboxSeverity severity) {
+    switch (severity) {
+    case OutboxSeverity::Info:
+        return "INFO";
+    case OutboxSeverity::Warning:
+        return "WARNING";
+    case OutboxSeverity::Security:
+        return "SECURITY";
+    case OutboxSeverity::Critical:
+        return "CRITICAL";
+    }
+    throw InvalidEnumException("Unknown OutboxSeverity enum value: " + std::to_string(static_cast<int>(severity)));
+}
+
+OutboxSeverity outbox_severity_from_string(std::string_view str) {
+    if (str == "INFO")
+        return OutboxSeverity::Info;
+    if (str == "WARNING")
+        return OutboxSeverity::Warning;
+    if (str == "SECURITY")
+        return OutboxSeverity::Security;
+    if (str == "CRITICAL")
+        return OutboxSeverity::Critical;
+    throw InvalidEnumException("Invalid OutboxSeverity string: " + std::string(str));
 }
 
 // --- Timestamp Conversions ---
@@ -506,14 +544,33 @@ FilesOutboxEntity files_outbox_from_row(const pqxx::row& row) {
     FilesOutboxEntity entity;
     entity.event_id = row["event_id"].as<std::string>();
     entity.aggregate_type = row["aggregate_type"].as<std::string>();
-    entity.aggregate_id = row["aggregate_id"].as<std::string>();
+
+    if (!row["aggregate_id"].is_null()) {
+        auto agg_id = row["aggregate_id"].as<std::string>();
+        if (!agg_id.empty()) {
+            entity.aggregate_id = std::move(agg_id);
+        }
+    }
+
     entity.event_type = row["event_type"].as<std::string>();
+
+    if (const auto* sev_field = find_optional_column(row, "severity"); sev_field && !sev_field->is_null()) {
+        entity.severity = outbox_severity_from_string(sev_field->as<std::string>());
+    }
+
     entity.payload_json = row["payload_json"].as<std::string>();
     entity.status = outbox_status_from_string(row["status"].as<std::string>());
     entity.retry_count = row["retry_count"].as<int32_t>();
     entity.created_at = from_iso8601(row["created_at"].as<std::string>());
+
     if (!row["processed_at"].is_null()) {
         entity.processed_at = from_iso8601(row["processed_at"].as<std::string>());
+    }
+    if (const auto* err_field = find_optional_column(row, "last_error"); err_field && !err_field->is_null()) {
+        entity.last_error = err_field->as<std::string>();
+    }
+    if (const auto* lease_field = find_optional_column(row, "leased_until"); lease_field && !lease_field->is_null()) {
+        entity.leased_until = from_iso8601(lease_field->as<std::string>());
     }
     return entity;
 }

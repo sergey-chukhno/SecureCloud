@@ -65,6 +65,8 @@ class field {
             return static_cast<uint32_t>(std::stoul(*value_));
         } else if constexpr (std::is_same_v<T, uint64_t>) {
             return static_cast<uint64_t>(std::stoull(*value_));
+        } else if constexpr (std::is_same_v<T, double>) {
+            return std::stod(*value_);
         } else if constexpr (std::is_same_v<T, bool>) {
             if (*value_ == "t" || *value_ == "true" || *value_ == "TRUE" || *value_ == "1") {
                 return true;
@@ -249,14 +251,17 @@ class MockStorage {
 
     struct StoredOutbox {
         std::string event_id;
-        std::string aggregate_type;
-        std::string aggregate_id;
+        std::string aggregate_type{"FILE"};
+        std::optional<std::string> aggregate_id;
         std::string event_type;
+        std::string severity{"INFO"};
         std::string payload_json;
-        std::string status;
+        std::string status{"PENDING"};
         int32_t retry_count{0};
         std::string created_at;
         std::optional<std::string> processed_at;
+        std::optional<std::string> last_error;
+        std::optional<std::string> leased_until;
     };
 
     std::mutex mutex_;
@@ -367,6 +372,47 @@ class work {
     }
 
   private:
+    static int64_t parse_iso_epoch_us(std::string_view str) {
+        if (str.size() < 19) {
+            return 0;
+        }
+        auto parse_digits = [](std::string_view s) -> int64_t {
+            int64_t v = 0;
+            for (char c : s) {
+                if (c < '0' || c > '9') {
+                    return 0;
+                }
+                v = v * 10 + (c - '0');
+            }
+            return v;
+        };
+        int64_t y = parse_digits(str.substr(0, 4));
+        int64_t m = parse_digits(str.substr(5, 2));
+        int64_t d = parse_digits(str.substr(8, 2));
+        int64_t hr = parse_digits(str.substr(11, 2));
+        int64_t mn = parse_digits(str.substr(14, 2));
+        int64_t sc = parse_digits(str.substr(17, 2));
+
+        y -= (m <= 2) ? 1 : 0;
+        const int64_t era = (y >= 0 ? y : y - 399) / 400;
+        const int64_t yoe = y - era * 400;
+        const int64_t doy = (153 * (m > 2 ? m - 3 : m + 9) + 2) / 5 + d - 1;
+        const int64_t doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        const int64_t days = era * 146097 + doe - 719468;
+
+        int64_t us = 0;
+        if (str.size() > 19 && str[19] == '.') {
+            size_t pos = 20;
+            int64_t factor = 100000;
+            while (pos < str.size() && str[pos] >= '0' && str[pos] <= '9' && factor > 0) {
+                us += (str[pos] - '0') * factor;
+                factor /= 10;
+                pos++;
+            }
+        }
+        return (days * 86400 + hr * 3600 + mn * 60 + sc) * 1000000 + us;
+    }
+
     template <typename T> static std::optional<std::string> to_string_param(const T& val) {
         if constexpr (std::is_same_v<T, std::nullopt_t>) {
             return std::nullopt;
@@ -516,11 +562,14 @@ class work {
         add("aggregate_type", o.aggregate_type);
         add("aggregate_id", o.aggregate_id);
         add("event_type", o.event_type);
+        add("severity", o.severity);
         add("payload_json", o.payload_json);
         add("status", o.status);
         add("retry_count", std::to_string(o.retry_count));
         add("created_at", o.created_at);
         add("processed_at", o.processed_at);
+        add("last_error", o.last_error);
+        add("leased_until", o.leased_until);
         return row(std::move(fields), std::move(map));
     }
 
@@ -846,7 +895,6 @@ class work {
 
             auto key = std::make_pair(c.transfer_id, c.chunk_index);
             if (staged_chunks_.find(key) != staged_chunks_.end() || store.chunks_.find(key) != store.chunks_.end()) {
-                // Conflict: DO NOTHING (affected rows = 0)
                 return result({}, 0);
             }
 
@@ -1090,25 +1138,78 @@ class work {
             return result(std::move(rows), rows.size());
         }
 
-        // 28. INSERT INTO files_outbox
+        // 28. INSERT INTO files_outbox (V002 12-column schema)
         if (query.find("INSERT INTO files_outbox") != std::string_view::npos) {
             MockStorage::StoredOutbox o;
             o.event_id = params[0].value_or("");
             o.aggregate_type = params[1].value_or("FILE");
-            o.aggregate_id = params[2].value_or("");
+            o.aggregate_id = params[2];
             o.event_type = params[3].value_or("");
-            o.payload_json = params[4].value_or("{}");
-            o.status = params[5].value_or("PENDING");
-            o.retry_count = std::stoi(params[6].value_or("0"));
-            o.created_at = params[7].value_or("");
-            o.processed_at = params[8];
+            o.severity = params[4].value_or("INFO");
+            o.payload_json = params[5].value_or("{}");
+            o.status = params[6].value_or("PENDING");
+            o.retry_count = std::stoi(params[7].value_or("0"));
+            o.created_at = params[8].value_or("");
+            o.processed_at = params[9];
+            o.last_error = params[10];
+            o.leased_until = params[11];
 
             staged_outbox_[o.event_id] = o;
             return result({}, 1);
         }
 
-        // 29. SELECT ... FROM files_outbox WHERE status = 'PENDING'
-        if (query.find("FROM files_outbox WHERE status = 'PENDING'") != std::string_view::npos) {
+        // 29. Atomic batch lease claim: WITH claimed AS (...) UPDATE files_outbox AS o SET leased_until = ... RETURNING
+        if (query.find("WITH claimed AS") != std::string_view::npos &&
+            query.find("UPDATE files_outbox") != std::string_view::npos) {
+            const std::string now_iso = params[0].value_or("");
+            const int64_t now_us = parse_iso_epoch_us(now_iso);
+            const size_t limit = params.size() > 1 ? static_cast<size_t>(std::stoull(params[1].value_or("50"))) : 50;
+            const std::string lease_until_iso = params.size() > 2 ? params[2].value_or("") : "";
+
+            std::map<std::string, MockStorage::StoredOutbox> all_outbox = store.outbox_;
+            for (const auto& [id, o] : staged_outbox_) {
+                all_outbox[id] = o;
+            }
+
+            std::vector<MockStorage::StoredOutbox> candidates;
+            for (const auto& [id, o] : all_outbox) {
+                if (o.status != "PENDING") {
+                    continue;
+                }
+                if (o.leased_until.has_value() && parse_iso_epoch_us(*o.leased_until) >= now_us) {
+                    continue;
+                }
+                candidates.push_back(o);
+            }
+
+            std::sort(candidates.begin(), candidates.end(), [](const auto& a, const auto& b) {
+                const int64_t ta = parse_iso_epoch_us(a.created_at);
+                const int64_t tb = parse_iso_epoch_us(b.created_at);
+                if (ta != tb) {
+                    return ta < tb;
+                }
+                return a.event_id < b.event_id;
+            });
+
+            if (candidates.size() > limit) {
+                candidates.resize(limit);
+            }
+
+            std::vector<row> rows;
+            rows.reserve(candidates.size());
+            for (auto& cand : candidates) {
+                cand.leased_until = lease_until_iso;
+                cand.retry_count += 1;
+                staged_outbox_[cand.event_id] = cand;
+                rows.push_back(build_outbox_row(cand));
+            }
+            return result(std::move(rows), rows.size());
+        }
+
+        // 30. Legacy SELECT ... FROM files_outbox WHERE status = 'PENDING'
+        if (query.find("FROM files_outbox WHERE status = 'PENDING'") != std::string_view::npos &&
+            query.find("COUNT(*)") == std::string_view::npos &&
+            query.find("MIN(created_at)") == std::string_view::npos) {
             size_t limit = params.empty() ? 100 : static_cast<size_t>(std::stoull(params[0].value_or("100")));
 
             std::map<std::string, MockStorage::StoredOutbox> all_outbox = store.outbox_;
@@ -1123,8 +1224,9 @@ class work {
                 }
             }
 
-            std::sort(pending.begin(), pending.end(),
-                      [](const auto& a, const auto& b) { return a.created_at < b.created_at; });
+            std::sort(pending.begin(), pending.end(), [](const auto& a, const auto& b) {
+                return parse_iso_epoch_us(a.created_at) < parse_iso_epoch_us(b.created_at);
+            });
 
             if (pending.size() > limit) {
                 pending.resize(limit);
@@ -1137,8 +1239,9 @@ class work {
             return result(std::move(rows), rows.size());
         }
 
-        // 30. UPDATE files_outbox SET status = 'PUBLISHED'
-        if (query.find("UPDATE files_outbox SET status = 'PUBLISHED'") != std::string_view::npos) {
+        // 31. UPDATE files_outbox SET status = 'PUBLISHED'
+        if (query.find("UPDATE files_outbox") != std::string_view::npos &&
+            query.find("status = 'PUBLISHED'") != std::string_view::npos) {
             std::string processed_at = params[0].value_or("");
             std::string event_id = params[1].value_or("");
 
@@ -1153,12 +1256,63 @@ class work {
             if (o) {
                 o->status = "PUBLISHED";
                 o->processed_at = processed_at;
+                o->leased_until = std::nullopt;
                 return result({}, 1);
             }
             return result({}, 0);
         }
 
-        // 31. UPDATE files_outbox SET status = 'FAILED'
+        // 32. record_transient_failure: UPDATE files_outbox SET status = 'PENDING', leased_until = NULL, last_error =
+        // $1
+        if (query.find("UPDATE files_outbox") != std::string_view::npos &&
+            query.find("status = 'PENDING'") != std::string_view::npos &&
+            query.find("last_error") != std::string_view::npos) {
+            std::string last_error = params[0].value_or("");
+            std::string event_id = params[1].value_or("");
+
+            MockStorage::StoredOutbox* o = nullptr;
+            if (staged_outbox_.find(event_id) != staged_outbox_.end()) {
+                o = &staged_outbox_[event_id];
+            } else if (store.outbox_.find(event_id) != store.outbox_.end()) {
+                staged_outbox_[event_id] = store.outbox_[event_id];
+                o = &staged_outbox_[event_id];
+            }
+
+            if (o && o->status == "PENDING") {
+                o->status = "PENDING";
+                o->leased_until = std::nullopt;
+                o->last_error = std::move(last_error);
+                return result({}, 1);
+            }
+            return result({}, 0);
+        }
+
+        // 33. mark_quarantined: UPDATE files_outbox SET status = 'QUARANTINED'
+        if (query.find("UPDATE files_outbox") != std::string_view::npos &&
+            query.find("status = 'QUARANTINED'") != std::string_view::npos) {
+            std::string processed_at = params[0].value_or("");
+            std::string last_error = params[1].value_or("");
+            std::string event_id = params[2].value_or("");
+
+            MockStorage::StoredOutbox* o = nullptr;
+            if (staged_outbox_.find(event_id) != staged_outbox_.end()) {
+                o = &staged_outbox_[event_id];
+            } else if (store.outbox_.find(event_id) != store.outbox_.end()) {
+                staged_outbox_[event_id] = store.outbox_[event_id];
+                o = &staged_outbox_[event_id];
+            }
+
+            if (o) {
+                o->status = "QUARANTINED";
+                o->processed_at = processed_at;
+                o->leased_until = std::nullopt;
+                o->last_error = std::move(last_error);
+                return result({}, 1);
+            }
+            return result({}, 0);
+        }
+
+        // 34. Legacy UPDATE files_outbox SET status = 'FAILED'
         if (query.find("UPDATE files_outbox SET status = 'FAILED'") != std::string_view::npos) {
             std::string event_id = params[0].value_or("");
 
@@ -1173,12 +1327,85 @@ class work {
             if (o) {
                 o->status = "FAILED";
                 o->retry_count++;
+                o->leased_until = std::nullopt;
                 return result({}, 1);
             }
             return result({}, 0);
         }
 
-        // 32. SELECT ... FROM files_outbox WHERE event_id = $1
+        // 35. Batched purge: DELETE FROM files_outbox WHERE ctid IN (...)
+        if (query.find("DELETE FROM files_outbox") != std::string_view::npos) {
+            const int64_t cutoff_us = parse_iso_epoch_us(params[0].value_or(""));
+            const size_t limit = params.size() > 1 ? static_cast<size_t>(std::stoull(params[1].value_or("500"))) : 500;
+
+            std::vector<std::string> to_delete;
+            for (const auto& [id, o] : store.outbox_) {
+                if (o.status == "PUBLISHED" && o.processed_at.has_value() &&
+                    parse_iso_epoch_us(*o.processed_at) < cutoff_us) {
+                    to_delete.push_back(id);
+                    if (to_delete.size() >= limit) {
+                        break;
+                    }
+                }
+            }
+
+            for (const auto& id : to_delete) {
+                store.outbox_.erase(id);
+                staged_outbox_.erase(id);
+            }
+            return result({}, to_delete.size());
+        }
+
+        // 36. SELECT COUNT(*) AS cnt FROM files_outbox WHERE status = 'PENDING'
+        if (query.find("SELECT COUNT(*)") != std::string_view::npos &&
+            query.find("FROM files_outbox WHERE status = 'PENDING'") != std::string_view::npos) {
+            std::map<std::string, MockStorage::StoredOutbox> all_outbox = store.outbox_;
+            for (const auto& [id, o] : staged_outbox_) {
+                all_outbox[id] = o;
+            }
+
+            size_t cnt = 0;
+            for (const auto& [id, o] : all_outbox) {
+                if (o.status == "PENDING") {
+                    cnt++;
+                }
+            }
+
+            std::vector<field> f;
+            std::map<std::string, size_t> map;
+            map["cnt"] = 0;
+            f.emplace_back(std::to_string(cnt), "cnt");
+            return result({row(std::move(f), std::move(map))}, 1);
+        }
+
+        // 37. SELECT MIN(created_at) AS oldest_created_at FROM files_outbox WHERE status = 'PENDING'
+        if (query.find("SELECT MIN(created_at)") != std::string_view::npos &&
+            query.find("FROM files_outbox WHERE status = 'PENDING'") != std::string_view::npos) {
+            std::map<std::string, MockStorage::StoredOutbox> all_outbox = store.outbox_;
+            for (const auto& [id, o] : staged_outbox_) {
+                all_outbox[id] = o;
+            }
+
+            std::optional<std::string> oldest_iso;
+            int64_t oldest_us = 0;
+            for (const auto& [id, o] : all_outbox) {
+                if (o.status == "PENDING") {
+                    const int64_t ts_us = parse_iso_epoch_us(o.created_at);
+                    if (!oldest_iso.has_value() || ts_us < oldest_us) {
+                        oldest_us = ts_us;
+                        oldest_iso = o.created_at;
+                    }
+                }
+            }
+
+            std::vector<field> f;
+            std::map<std::string, size_t> map;
+            map["oldest_created_at"] = 0;
+            f.emplace_back(oldest_iso, "oldest_created_at");
+            return result({row(std::move(f), std::move(map))}, 1);
+        }
+
+        // 38. SELECT ... FROM files_outbox WHERE event_id = $1
         if (query.find("FROM files_outbox WHERE event_id = $1") != std::string_view::npos) {
             std::string id = params.empty() ? "" : params[0].value_or("");
 
