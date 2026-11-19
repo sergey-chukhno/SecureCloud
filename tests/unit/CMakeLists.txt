@@ -3746,6 +3746,7 @@ if(Qt6_FOUND)
         client/file_gateway_contracts_test.cpp
         client/file_crypto_engine_test.cpp
         client/file_transfer_persistence_test.cpp
+        client/file_manager_pipeline_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES
