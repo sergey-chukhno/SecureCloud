@@ -12,9 +12,8 @@
 
 namespace securecloud::messaging::audit {
 
-// Forward declaration of the gRPC client interface (to be implemented in T04/T05 integration)
 class IMessagingAuditClient {
-public:
+  public:
     virtual ~IMessagingAuditClient() = default;
 
     struct BatchResult {
@@ -24,11 +23,9 @@ public:
         std::vector<std::string> rejected_event_ids;
     };
 
-    // Synchronous or blocking-asynchronous dispatch of a batch of events
     virtual BatchResult send_batch(const std::vector<securecloud::audit::v1::AuditEventProto>& events) = 0;
 };
 
-// Configuration properties for the Sharded Poller
 struct OutboxRelayConfig {
     uint32_t worker_threads{4};
     uint32_t total_shards{16};
@@ -43,25 +40,20 @@ struct OutboxRelayConfig {
  * @brief Asynchronous worker pool that relays messaging audit events to the central Audit Service.
  *
  * Implements a sharded polling strategy over ScyllaDB outbox partitions, enforcing
- * exponential backoff for transient failures and a quarantine engine for poison pills.
+ * exponential backoff for transient failures, a quarantine engine for poison pills,
+ * lock-free Prometheus telemetry, and Zero-PII structured JSON diagnostics (AUDIT-014-T06).
  */
 class MessagingOutboxRelay {
-public:
-    MessagingOutboxRelay(
-        std::shared_ptr<repository::IMessagingAuditOutboxRepository> repository,
-        std::shared_ptr<IMessagingAuditClient> audit_client,
-        OutboxRelayConfig config = {}
-    );
+  public:
+    MessagingOutboxRelay(std::shared_ptr<repository::IMessagingAuditOutboxRepository> repository,
+                         std::shared_ptr<IMessagingAuditClient> audit_client, OutboxRelayConfig config = {});
 
     ~MessagingOutboxRelay();
 
-    // Starts the background worker threads. Safe to call multiple times.
     void start();
-
-    // Gracefully stops workers, allowing in-flight batches to drain.
     void stop();
 
-private:
+  private:
     void worker_loop(uint32_t worker_index);
     bool process_shard(const std::string& bucket, int32_t shard_id);
 

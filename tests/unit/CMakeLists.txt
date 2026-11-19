@@ -4062,3 +4062,18 @@ target_link_libraries(securecloud_messaging_canonical_audit_mapper_test PRIVATE
 
 gtest_discover_tests(securecloud_messaging_canonical_audit_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Audit Producer Observability & Diagnostics Unit Test Suite (AUDIT-014-T06)
+add_executable(securecloud_messaging_audit_observability_test
+        messaging/messaging_audit_observability_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_audit_observability_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud_proto
+        nlohmann_json::nlohmann_json
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_audit_observability_test ${SECURECLOUD_TEST_PROPERTIES})

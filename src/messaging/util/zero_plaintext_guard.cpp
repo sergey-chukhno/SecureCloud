@@ -194,8 +194,8 @@ std::string ZeroPlaintextGuard::sanitize_error_message(std::string_view raw_erro
     }
 
     // List of sensitive prefix identifiers to redact in error messages
-    static constexpr std::array<std::string_view, 6> kSensitiveKeywords = {
-        "ciphertext=", "key=", "auth_tag=", "iv=", "secret=", "payload="};
+    static constexpr std::array<std::string_view, 8> kSensitiveKeywords = {
+        "ciphertext=", "key=", "auth_tag=", "iv=", "secret=", "payload=", "token=", "password="};
 
     std::string sanitized;
     sanitized.reserve(std::min(raw_error.size(), kMaxSanitizedErrorLength));
