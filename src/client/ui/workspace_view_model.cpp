@@ -7,11 +7,14 @@
 #include "domain/conversation_id.hpp"
 #include "domain/crypto_identity.hpp"
 #include "domain/device_id.hpp"
+#include "domain/file_transfer.hpp"
 #include "domain/realtime_events.hpp"
 #include "domain/user_id.hpp"
 
 #include <QMetaObject>
 #include <QPointer>
+#include <QUrl>
+#include <algorithm>
 #include <unordered_set>
 
 namespace securecloud::client::ui {
@@ -43,9 +46,25 @@ WorkspaceViewModel::WorkspaceViewModel(application::ClientApplication& app, Navi
             emit self->contactsChanged();
         });
 
+    app_.bootstrap().file_manager().set_progress_callback([self](const domain::FileTransferRecord& record) {
+        if (!self) {
+            return;
+        }
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, record]() {
+                if (self) {
+                    self->applyFileTransferUpdate(record);
+                }
+            },
+            Qt::AutoConnection);
+    });
+
     const bool has_persistent_db = !app_.bootstrap().config().database_path.empty();
     const auto persisted_convs = app_.bootstrap().messaging_manager().list_conversations();
-    if (has_persistent_db || (persisted_convs.is_ok() && !persisted_convs.value().empty())) {
+    const auto persisted_transfers = app_.bootstrap().file_manager().list_transfers();
+    if (has_persistent_db || (persisted_convs.is_ok() && !persisted_convs.value().empty()) ||
+        (persisted_transfers.is_ok() && !persisted_transfers.value().empty())) {
         hydrateFromLocalStore();
     } else {
         seedDefaultWorkspaceData();
@@ -67,6 +86,7 @@ WorkspaceViewModel::WorkspaceViewModel(application::ClientApplication& app, Navi
 }
 
 WorkspaceViewModel::~WorkspaceViewModel() {
+    app_.bootstrap().file_manager().set_progress_callback({});
     if (realtime_sub_id_ != 0) {
         app_.bootstrap().gateway().unsubscribe_realtime_events(realtime_sub_id_);
         realtime_sub_id_ = 0;
@@ -81,152 +101,226 @@ domain::UserId WorkspaceViewModel::localUserId() const {
     return domain::UserId("operator@securecloud.org");
 }
 
+domain::DeviceId WorkspaceViewModel::localDeviceId() const {
+    const auto local_res = app_.bootstrap().device_manager().get_local_device();
+    if (local_res.is_ok() && !local_res.value().device_id().empty()) {
+        return local_res.value().device_id();
+    }
+    return domain::DeviceId("dev-local-01");
+}
+
 void WorkspaceViewModel::reloadFromLocalStore() {
     hydrateFromLocalStore();
     emit conversationsChanged();
     emit activeMessagesChanged();
     emit selectedConversationChanged();
     emit contactsChanged();
+    emit fileTransfersChanged();
+    emit selectedTransferChanged();
 }
 
 void WorkspaceViewModel::hydrateFromLocalStore() {
     conversations_.clear();
     messages_.clear();
+    file_transfers_.clear();
     selected_conversation_id_.clear();
+    selected_transfer_id_.clear();
 
     const domain::UserId self_uid = localUserId();
     const auto convs_res = app_.bootstrap().messaging_manager().list_conversations();
-    if (convs_res.is_error()) {
-        return;
+    if (convs_res.is_ok()) {
+        for (const auto& conv : convs_res.value()) {
+            const QString cid = QString::fromStdString(conv.conversation_id().value());
+            const bool is_group = (conv.type() == domain::ConversationType::Group);
+
+            std::vector<QString> participant_strs;
+            participant_strs.reserve(conv.participants().size());
+            int total_devices = 0;
+            QString direct_peer_uid;
+
+            for (const auto& p_uid : conv.participants()) {
+                const QString uid_q = QString::fromStdString(p_uid.value());
+                participant_strs.push_back(uid_q);
+                if (p_uid == self_uid) {
+                    total_devices += 1;
+                } else {
+                    if (direct_peer_uid.isEmpty()) {
+                        direct_peer_uid = uid_q;
+                    }
+                    const auto c_res = app_.bootstrap().contact_manager().get_contact(p_uid);
+                    total_devices += c_res.is_ok() ? static_cast<int>(c_res.value().authorized_device_count()) : 1;
+                }
+            }
+            if (total_devices == 0) {
+                total_devices = 1;
+            }
+
+            QString display_name = QString::fromStdString(conv.title());
+            QString handle = is_group ? QStringLiteral("Group · %1 members").arg(participant_strs.size()) : QString();
+            QString presence = QStringLiteral("Offline");
+            bool verified = false;
+            bool blocked = false;
+            QString safety_number;
+            QString role_note =
+                is_group ? QStringLiteral("Encrypted Group · Sender Keys + Pairwise Double Ratchet") : QString();
+            QString ver_status = QStringLiteral("Unverified");
+
+            if (!is_group && !direct_peer_uid.isEmpty()) {
+                const auto c_res =
+                    app_.bootstrap().contact_manager().get_contact(domain::UserId(direct_peer_uid.toStdString()));
+                if (c_res.is_ok()) {
+                    const auto& contact = c_res.value();
+                    if (display_name.isEmpty()) {
+                        display_name = QString::fromStdString(contact.alias());
+                    }
+                    handle =
+                        QStringLiteral("@%1").arg(QString::fromStdString(contact.alias()).toLower().replace(' ', '.'));
+                    presence = QString::fromUtf8(domain::to_string(contact.presence_status()).data());
+                    verified = contact.is_verified();
+                    blocked = contact.is_blocked();
+                    safety_number = QString::fromStdString(contact.safety_number());
+                    role_note = QString::fromStdString(contact.role_note());
+                    ver_status = QString::fromUtf8(domain::to_string(contact.verification_status()).data());
+                } else {
+                    if (display_name.isEmpty()) {
+                        display_name = direct_peer_uid;
+                    }
+                    handle = QStringLiteral("@%1").arg(direct_peer_uid);
+                }
+            } else if (is_group) {
+                verified = true;
+                presence = QStringLiteral("Online");
+                safety_number = QStringLiteral("GROUP-ROOT-SAFETY-NUMBER");
+                ver_status = QStringLiteral("Verified");
+            }
+
+            conversations_.push_back(ConversationEntry{
+                cid,
+                is_group ? QString::fromStdString(conv.conversation_id().value()) : direct_peer_uid,
+                display_name,
+                handle,
+                presence,
+                verified,
+                blocked,
+                safety_number,
+                role_note,
+                QString(),
+                QStringLiteral("Synced"),
+                static_cast<int>(conv.unread_count()),
+                1,
+                is_group,
+                std::move(participant_strs),
+                total_devices,
+                ver_status,
+                static_cast<int>(conv.sender_key_epoch()),
+            });
+        }
     }
 
-    for (const auto& conv : convs_res.value()) {
-        const QString cid = QString::fromStdString(conv.conversation_id().value());
-        const bool is_group = (conv.type() == domain::ConversationType::Group);
+    const auto transfers_res = app_.bootstrap().file_manager().list_transfers();
+    if (transfers_res.is_ok()) {
+        for (const auto& rec : transfers_res.value()) {
+            file_transfers_.push_back(buildTransferEntry(rec));
+        }
+    }
 
-        std::vector<QString> participant_strs;
-        participant_strs.reserve(conv.participants().size());
-        int total_devices = 0;
-        QString direct_peer_uid;
+    if (convs_res.is_ok()) {
+        for (std::size_t idx = 0; idx < convs_res.value().size() && idx < conversations_.size(); ++idx) {
+            const auto& conv = convs_res.value()[idx];
+            auto& convEntry = conversations_[idx];
+            const auto msgs_res =
+                app_.bootstrap().messaging_manager().get_conversation_messages(conv.conversation_id(), 100);
+            QString last_preview;
+            int last_priority = 1;
+            if (msgs_res.is_ok()) {
+                for (const auto& m : msgs_res.value()) {
+                    const bool is_self = (m.sender_user_id() == self_uid);
+                    const QString sender_label =
+                        is_self ? QStringLiteral("You")
+                                : (m.sender_display_name().empty() ? QString::fromStdString(m.sender_user_id().value())
+                                                                   : QString::fromStdString(m.sender_display_name()));
+                    const int prio = (m.priority() >= 1 && m.priority() <= 3) ? m.priority() : 1;
 
-        for (const auto& p_uid : conv.participants()) {
-            const QString uid_q = QString::fromStdString(p_uid.value());
-            participant_strs.push_back(uid_q);
-            if (p_uid == self_uid) {
-                total_devices += 1;
-            } else {
-                if (direct_peer_uid.isEmpty()) {
-                    direct_peer_uid = uid_q;
+                    if (domain::FileAttachmentKeyEnvelope::is_file_attachment_envelope(m.encrypted_envelope_ref())) {
+                        const auto envOpt = domain::FileAttachmentKeyEnvelope::deserialize(m.encrypted_envelope_ref());
+                        if (envOpt.has_value()) {
+                            const auto& env = *envOpt;
+                            QString linkedTransferId;
+                            const QString envFileId = QString::fromStdString(env.file_id);
+                            for (const auto& tx : file_transfers_) {
+                                if (tx.fileId == envFileId) {
+                                    linkedTransferId = tx.transferId;
+                                    break;
+                                }
+                            }
+                            const QString fname = QString::fromStdString(env.file_name);
+                            const QString fsize = formatFileSize(static_cast<qint64>(env.plaintext_size_bytes));
+                            const QString csuite = QString::fromStdString(env.cipher_suite);
+                            const QString fhash = formatShortHash(
+                                !env.plaintext_sha256.empty() ? env.plaintext_sha256 : env.ciphertext_sha256);
+
+                            messages_.push_back(MessageEntry{
+                                QString::fromStdString(m.message_id().value()),
+                                convEntry.conversationId,
+                                sender_label,
+                                is_self,
+                                QStringLiteral("Encrypted File Attachment"),
+                                QStringLiteral("Persisted"),
+                                QStringLiteral("HISTORY"),
+                                QString::fromUtf8(domain::to_string(m.delivery_state()).data()),
+                                true,
+                                linkedTransferId,
+                                fname,
+                                fsize,
+                                csuite,
+                                fhash,
+                                prio,
+                                QString::fromStdString(m.idempotency_key()),
+                                m.emergency_acknowledged(),
+                            });
+
+                            last_preview = is_self ? QStringLiteral("YOU: Uploaded %1 (%2)").arg(fname, csuite)
+                                                   : QStringLiteral("Encrypted File: %1").arg(fname);
+                            last_priority = prio;
+                            continue;
+                        }
+                    }
+
+                    const QString body = QString::fromStdString(m.encrypted_envelope_ref());
+                    messages_.push_back(MessageEntry{
+                        QString::fromStdString(m.message_id().value()),
+                        convEntry.conversationId,
+                        sender_label,
+                        is_self,
+                        body,
+                        QStringLiteral("Persisted"),
+                        QStringLiteral("HISTORY"),
+                        QString::fromUtf8(domain::to_string(m.delivery_state()).data()),
+                        !m.attachment_name().empty(),
+                        QString(),
+                        QString::fromStdString(m.attachment_name()),
+                        m.attachment_size() > 0 ? formatFileSize(m.attachment_size()) : QString(),
+                        QStringLiteral("AES-256-GCM"),
+                        QString::fromStdString(m.attachment_hash()),
+                        prio,
+                        QString::fromStdString(m.idempotency_key()),
+                        m.emergency_acknowledged(),
+                    });
+
+                    last_preview = is_self ? QStringLiteral("YOU: %1").arg(body) : body;
+                    last_priority = prio;
                 }
-                const auto c_res = app_.bootstrap().contact_manager().get_contact(p_uid);
-                total_devices += c_res.is_ok() ? static_cast<int>(c_res.value().authorized_device_count()) : 1;
             }
+            convEntry.lastMessagePreview = last_preview;
+            convEntry.lastMessagePriority = last_priority;
         }
-        if (total_devices == 0) {
-            total_devices = 1;
-        }
-
-        QString display_name = QString::fromStdString(conv.title());
-        QString handle = is_group ? QStringLiteral("Group · %1 members").arg(participant_strs.size()) : QString();
-        QString presence = QStringLiteral("Offline");
-        bool verified = false;
-        bool blocked = false;
-        QString safety_number;
-        QString role_note =
-            is_group ? QStringLiteral("Encrypted Group · Sender Keys + Pairwise Double Ratchet") : QString();
-        QString ver_status = QStringLiteral("Unverified");
-
-        if (!is_group && !direct_peer_uid.isEmpty()) {
-            const auto c_res =
-                app_.bootstrap().contact_manager().get_contact(domain::UserId(direct_peer_uid.toStdString()));
-            if (c_res.is_ok()) {
-                const auto& contact = c_res.value();
-                if (display_name.isEmpty()) {
-                    display_name = QString::fromStdString(contact.alias());
-                }
-                handle = QStringLiteral("@%1").arg(QString::fromStdString(contact.alias()).toLower().replace(' ', '.'));
-                presence = QString::fromUtf8(domain::to_string(contact.presence_status()).data());
-                verified = contact.is_verified();
-                blocked = contact.is_blocked();
-                safety_number = QString::fromStdString(contact.safety_number());
-                role_note = QString::fromStdString(contact.role_note());
-                ver_status = QString::fromUtf8(domain::to_string(contact.verification_status()).data());
-            } else {
-                if (display_name.isEmpty()) {
-                    display_name = direct_peer_uid;
-                }
-                handle = QStringLiteral("@%1").arg(direct_peer_uid);
-            }
-        } else if (is_group) {
-            verified = true;
-            presence = QStringLiteral("Online");
-            safety_number = QStringLiteral("GROUP-ROOT-SAFETY-NUMBER");
-            ver_status = QStringLiteral("Verified");
-        }
-
-        const auto msgs_res =
-            app_.bootstrap().messaging_manager().get_conversation_messages(conv.conversation_id(), 100);
-        QString last_preview;
-        int last_priority = 1;
-        if (msgs_res.is_ok()) {
-            for (const auto& m : msgs_res.value()) {
-                const bool is_self = (m.sender_user_id() == self_uid);
-                const QString body = QString::fromStdString(m.encrypted_envelope_ref());
-                const QString sender_label =
-                    is_self ? QStringLiteral("You")
-                            : (m.sender_display_name().empty() ? QString::fromStdString(m.sender_user_id().value())
-                                                               : QString::fromStdString(m.sender_display_name()));
-                const int prio = (m.priority() >= 1 && m.priority() <= 3) ? m.priority() : 1;
-
-                messages_.push_back(MessageEntry{
-                    QString::fromStdString(m.message_id().value()),
-                    cid,
-                    sender_label,
-                    is_self,
-                    body,
-                    QStringLiteral("Persisted"),
-                    QStringLiteral("HISTORY"),
-                    QString::fromUtf8(domain::to_string(m.delivery_state()).data()),
-                    !m.attachment_name().empty(),
-                    QString(),
-                    QString::fromStdString(m.attachment_name()),
-                    m.attachment_size() > 0 ? formatFileSize(m.attachment_size()) : QString(),
-                    QStringLiteral("AES-256-GCM"),
-                    QString::fromStdString(m.attachment_hash()),
-                    prio,
-                    QString::fromStdString(m.idempotency_key()),
-                    m.emergency_acknowledged(),
-                });
-
-                last_preview = is_self ? QStringLiteral("YOU: %1").arg(body) : body;
-                last_priority = prio;
-            }
-        }
-
-        conversations_.push_back(ConversationEntry{
-            cid,
-            is_group ? QString::fromStdString(conv.conversation_id().value()) : direct_peer_uid,
-            display_name,
-            handle,
-            presence,
-            verified,
-            blocked,
-            safety_number,
-            role_note,
-            last_preview,
-            QStringLiteral("Synced"),
-            static_cast<int>(conv.unread_count()),
-            last_priority,
-            is_group,
-            std::move(participant_strs),
-            total_devices,
-            ver_status,
-            static_cast<int>(conv.sender_key_epoch()),
-        });
     }
 
     if (!conversations_.empty()) {
         selected_conversation_id_ = conversations_.front().conversationId;
+    }
+    if (!file_transfers_.empty()) {
+        selected_transfer_id_ = file_transfers_.front().transferId;
     }
 }
 
@@ -776,6 +870,199 @@ QVariantList WorkspaceViewModel::contacts() const {
     return result;
 }
 
+QString WorkspaceViewModel::normalizeLocalPath(const QString& pathOrUrl) {
+    const QString trimmed = pathOrUrl.trimmed();
+    if (trimmed.isEmpty()) {
+        return QString();
+    }
+    const QUrl url(trimmed);
+    if (url.isLocalFile()) {
+        return url.toLocalFile();
+    }
+    return trimmed;
+}
+
+QString WorkspaceViewModel::formatShortHash(const std::string& hexHash) {
+    if (hexHash.size() > 19U) {
+        return QString::fromStdString(hexHash.substr(0U, 8U) + "..." + hexHash.substr(hexHash.size() - 8U));
+    }
+    return QString::fromStdString(hexHash);
+}
+
+QString WorkspaceViewModel::resolvePeerDisplayName(const QString& conversationId,
+                                                   const domain::UserId& peerUserId) const {
+    for (const auto& conv : conversations_) {
+        if (conv.conversationId == conversationId && !conv.peerDisplayName.isEmpty()) {
+            return conv.peerDisplayName;
+        }
+    }
+    if (!peerUserId.empty()) {
+        const auto cRes = app_.bootstrap().contact_manager().get_contact(peerUserId);
+        if (cRes.is_ok() && !cRes.value().alias().empty()) {
+            return QString::fromStdString(cRes.value().alias());
+        }
+        return QString::fromStdString(peerUserId.value());
+    }
+    return QStringLiteral("Encrypted Peer");
+}
+
+WorkspaceViewModel::FileTransferEntry
+WorkspaceViewModel::buildTransferEntry(const domain::FileTransferRecord& record) const {
+    FileTransferEntry tx;
+    tx.transferId = QString::fromStdString(record.transfer_id);
+    tx.conversationId = QString::fromStdString(record.conversation_id.value());
+    tx.peerUserId = QString::fromStdString(record.peer_user_id.value());
+    tx.peerDisplayName = resolvePeerDisplayName(tx.conversationId, record.peer_user_id);
+    tx.fileName = QString::fromStdString(record.file_name);
+    const uint64_t rawBytes =
+        record.plaintext_size_bytes > 0ULL ? record.plaintext_size_bytes : record.encrypted_size_bytes;
+    tx.fileSizeBytes = static_cast<qint64>(rawBytes);
+    tx.fileSizeText = formatFileSize(tx.fileSizeBytes);
+    tx.cipherSuite = QString::fromStdString(record.cipher_suite);
+    tx.sha256Short =
+        formatShortHash(!record.plaintext_sha256.empty() ? record.plaintext_sha256 : record.ciphertext_sha256);
+    tx.direction = (record.direction == domain::FileTransferDirection::Outbound) ? QStringLiteral("Outbound")
+                                                                                 : QStringLiteral("Inbound");
+
+    const auto statusSv = domain::to_string(record.status);
+    tx.status = QString::fromUtf8(statusSv.data(), static_cast<qsizetype>(statusSv.size()));
+    switch (record.status) {
+    case domain::FileTransferStatus::Pending:
+        tx.statusText = (record.direction == domain::FileTransferDirection::Inbound)
+                            ? QStringLiteral("Ready to Download")
+                            : QStringLiteral("Pending");
+        break;
+    case domain::FileTransferStatus::InProgress:
+        tx.statusText = (record.direction == domain::FileTransferDirection::Outbound)
+                            ? QStringLiteral("Uploading Chunks")
+                            : QStringLiteral("Downloading Chunks");
+        break;
+    case domain::FileTransferStatus::Paused:
+        tx.statusText = QStringLiteral("Paused");
+        break;
+    case domain::FileTransferStatus::Finalizing:
+        tx.statusText = QStringLiteral("Finalizing & Verifying");
+        break;
+    case domain::FileTransferStatus::Completed:
+        tx.statusText = QStringLiteral("Encrypted & Verified");
+        break;
+    case domain::FileTransferStatus::Cancelled:
+        tx.statusText = QStringLiteral("Cancelled");
+        break;
+    case domain::FileTransferStatus::Failed:
+        tx.statusText = QStringLiteral("Failed");
+        break;
+    }
+
+    tx.timestampText = QStringLiteral("Just now");
+    tx.fileId = QString::fromStdString(record.file_id);
+    tx.localPath = QString::fromStdString(record.local_path);
+    tx.progressPercent = static_cast<int>(record.progress_percent());
+    tx.completedChunks = static_cast<int>(record.completed_chunks);
+    tx.totalChunks = static_cast<int>(record.total_chunks);
+    tx.errorMessage = QString::fromStdString(record.error_message);
+    tx.canPause = (record.status == domain::FileTransferStatus::InProgress);
+    tx.canResume = (record.status == domain::FileTransferStatus::Paused);
+    tx.canDownload = (record.direction == domain::FileTransferDirection::Inbound &&
+                      record.status == domain::FileTransferStatus::Pending);
+    tx.canCancel = (record.status != domain::FileTransferStatus::Cancelled);
+    return tx;
+}
+
+QVariantMap WorkspaceViewModel::buildTransferMap(const FileTransferEntry& tx, bool includeSelected) const {
+    QVariantMap item;
+    item.insert(QStringLiteral("transferId"), tx.transferId);
+    item.insert(QStringLiteral("conversationId"), tx.conversationId);
+    item.insert(QStringLiteral("peerUserId"), tx.peerUserId);
+    item.insert(QStringLiteral("peerDisplayName"), tx.peerDisplayName);
+    item.insert(QStringLiteral("fileName"), tx.fileName);
+    item.insert(QStringLiteral("fileSizeBytes"), tx.fileSizeBytes);
+    item.insert(QStringLiteral("fileSizeText"), tx.fileSizeText);
+    item.insert(QStringLiteral("cipherSuite"), tx.cipherSuite);
+    item.insert(QStringLiteral("sha256Short"), tx.sha256Short);
+    item.insert(QStringLiteral("direction"), tx.direction);
+    item.insert(QStringLiteral("statusText"), tx.statusText);
+    item.insert(QStringLiteral("timestampText"), tx.timestampText);
+    item.insert(QStringLiteral("fileId"), tx.fileId);
+    item.insert(QStringLiteral("localPath"), tx.localPath);
+    item.insert(QStringLiteral("status"), tx.status);
+    item.insert(QStringLiteral("progressPercent"), tx.progressPercent);
+    item.insert(QStringLiteral("completedChunks"), tx.completedChunks);
+    item.insert(QStringLiteral("totalChunks"), tx.totalChunks);
+    item.insert(
+        QStringLiteral("chunkSummaryText"),
+        tx.totalChunks > 0
+            ? QStringLiteral("%1 / %2 chunks · %3%").arg(tx.completedChunks).arg(tx.totalChunks).arg(tx.progressPercent)
+            : QStringLiteral("%1%").arg(tx.progressPercent));
+    item.insert(QStringLiteral("errorMessage"), tx.errorMessage);
+    item.insert(QStringLiteral("canPause"), tx.canPause);
+    item.insert(QStringLiteral("canResume"), tx.canResume);
+    item.insert(QStringLiteral("canDownload"), tx.canDownload);
+    item.insert(QStringLiteral("canCancel"), tx.canCancel);
+    if (includeSelected) {
+        item.insert(QStringLiteral("isSelected"), tx.transferId == selected_transfer_id_);
+    }
+    return item;
+}
+
+void WorkspaceViewModel::applyFileTransferUpdate(const domain::FileTransferRecord& record) {
+    FileTransferEntry updated = buildTransferEntry(record);
+    bool replaced = false;
+    for (auto& existing : file_transfers_) {
+        if (existing.transferId == updated.transferId) {
+            existing = updated;
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced) {
+        file_transfers_.insert(file_transfers_.begin(), updated);
+    }
+    if (selected_transfer_id_.isEmpty()) {
+        selected_transfer_id_ = updated.transferId;
+    }
+    emit fileTransfersChanged();
+    emit selectedTransferChanged();
+}
+
+void WorkspaceViewModel::appendDispatchedFileMessage(ConversationEntry& conv, const domain::Message& msg,
+                                                     const QString& transferId, const QString& fileName,
+                                                     const QString& fileSizeText, const QString& cipherSuite,
+                                                     const QString& sha256Short) {
+    const QString msgId = QString::fromStdString(msg.message_id().value());
+    for (const auto& existing : messages_) {
+        if (existing.conversationId == conv.conversationId && existing.messageId == msgId) {
+            return;
+        }
+    }
+
+    const int msgPrio = (msg.priority() >= 1 && msg.priority() <= 3) ? msg.priority() : composer_priority_;
+    const auto stateSv = domain::to_string(msg.delivery_state());
+    messages_.push_back(MessageEntry{
+        msgId,
+        conv.conversationId,
+        QStringLiteral("You"),
+        true,
+        QStringLiteral("Encrypted File Attachment"),
+        QStringLiteral("Just now"),
+        QStringLiteral("TODAY"),
+        QString::fromUtf8(stateSv.data(), static_cast<qsizetype>(stateSv.size())),
+        true,
+        transferId,
+        fileName,
+        fileSizeText,
+        cipherSuite,
+        sha256Short,
+        msgPrio,
+        QString::fromStdString(msg.idempotency_key()),
+        msg.emergency_acknowledged(),
+    });
+
+    conv.lastMessagePreview = QStringLiteral("YOU: Uploaded %1 (%2)").arg(fileName, cipherSuite);
+    conv.timestampText = QStringLiteral("Just now");
+    conv.lastMessagePriority = msgPrio;
+}
+
 QVariantList WorkspaceViewModel::fileTransfers() const {
     QVariantList result;
     for (const auto& tx : file_transfers_) {
@@ -783,21 +1070,7 @@ QVariantList WorkspaceViewModel::fileTransfers() const {
             !matchesQuery(tx.statusText)) {
             continue;
         }
-        QVariantMap item;
-        item.insert(QStringLiteral("transferId"), tx.transferId);
-        item.insert(QStringLiteral("conversationId"), tx.conversationId);
-        item.insert(QStringLiteral("peerUserId"), tx.peerUserId);
-        item.insert(QStringLiteral("peerDisplayName"), tx.peerDisplayName);
-        item.insert(QStringLiteral("fileName"), tx.fileName);
-        item.insert(QStringLiteral("fileSizeBytes"), tx.fileSizeBytes);
-        item.insert(QStringLiteral("fileSizeText"), tx.fileSizeText);
-        item.insert(QStringLiteral("cipherSuite"), tx.cipherSuite);
-        item.insert(QStringLiteral("sha256Short"), tx.sha256Short);
-        item.insert(QStringLiteral("direction"), tx.direction);
-        item.insert(QStringLiteral("statusText"), tx.statusText);
-        item.insert(QStringLiteral("timestampText"), tx.timestampText);
-        item.insert(QStringLiteral("isSelected"), tx.transferId == selected_transfer_id_);
-        result.append(item);
+        result.append(buildTransferMap(tx, true));
     }
     return result;
 }
@@ -1123,40 +1396,18 @@ QVariantList WorkspaceViewModel::sharedFilesForSelectedPeer() const {
         if (tx.conversationId != selected_conversation_id_) {
             continue;
         }
-        QVariantMap item;
-        item.insert(QStringLiteral("transferId"), tx.transferId);
-        item.insert(QStringLiteral("fileName"), tx.fileName);
-        item.insert(QStringLiteral("fileSizeText"), tx.fileSizeText);
-        item.insert(QStringLiteral("cipherSuite"), tx.cipherSuite);
-        item.insert(QStringLiteral("sha256Short"), tx.sha256Short);
-        item.insert(QStringLiteral("direction"), tx.direction);
-        item.insert(QStringLiteral("statusText"), tx.statusText);
-        item.insert(QStringLiteral("timestampText"), tx.timestampText);
-        result.append(item);
+        result.append(buildTransferMap(tx, false));
     }
     return result;
 }
 
 QVariantMap WorkspaceViewModel::selectedTransferDetails() const {
-    QVariantMap item;
     for (const auto& tx : file_transfers_) {
         if (tx.transferId == selected_transfer_id_) {
-            item.insert(QStringLiteral("transferId"), tx.transferId);
-            item.insert(QStringLiteral("conversationId"), tx.conversationId);
-            item.insert(QStringLiteral("peerUserId"), tx.peerUserId);
-            item.insert(QStringLiteral("peerDisplayName"), tx.peerDisplayName);
-            item.insert(QStringLiteral("fileName"), tx.fileName);
-            item.insert(QStringLiteral("fileSizeBytes"), tx.fileSizeBytes);
-            item.insert(QStringLiteral("fileSizeText"), tx.fileSizeText);
-            item.insert(QStringLiteral("cipherSuite"), tx.cipherSuite);
-            item.insert(QStringLiteral("sha256Short"), tx.sha256Short);
-            item.insert(QStringLiteral("direction"), tx.direction);
-            item.insert(QStringLiteral("statusText"), tx.statusText);
-            item.insert(QStringLiteral("timestampText"), tx.timestampText);
-            return item;
+            return buildTransferMap(tx, false);
         }
     }
-    return item;
+    return {};
 }
 
 void WorkspaceViewModel::setInspectorOpen(bool open) {
@@ -1363,16 +1614,63 @@ void WorkspaceViewModel::handleRealtimeEvent(const domain::RealtimeEvent& event)
                 }
             }
             if (!already_in_ui) {
+                const QString senderDisplay = m.sender_display_name().empty()
+                                                  ? QString::fromStdString(m.sender_user_id().value())
+                                                  : QString::fromStdString(m.sender_display_name());
+                const bool isSelf = (m.sender_user_id() == localUserId());
+                const auto stateSv = domain::to_string(m.delivery_state());
+                const QString stateStr = QString::fromUtf8(stateSv.data(), static_cast<qsizetype>(stateSv.size()));
+
+                if (domain::FileAttachmentKeyEnvelope::is_file_attachment_envelope(m.encrypted_envelope_ref())) {
+                    const auto ingestRes = app_.bootstrap().file_manager().ingest_inbound_key_envelope_json(
+                        m.conversation_id(), m.sender_user_id(), m.encrypted_envelope_ref());
+                    if (ingestRes.is_error()) {
+                        emit workspaceError(QString::fromStdString(ingestRes.error().user_message()));
+                        return;
+                    }
+
+                    const auto& rec = ingestRes.value();
+                    applyFileTransferUpdate(rec);
+
+                    const QString transferIdStr = QString::fromStdString(rec.transfer_id);
+                    const QString fname = QString::fromStdString(rec.file_name);
+                    const QString fsize = formatFileSize(static_cast<qint64>(rec.plaintext_size_bytes));
+                    const QString csuite = QString::fromStdString(rec.cipher_suite);
+                    const QString fhash =
+                        formatShortHash(!rec.plaintext_sha256.empty() ? rec.plaintext_sha256 : rec.ciphertext_sha256);
+
+                    messages_.push_back(MessageEntry{
+                        newMsgId, convId, senderDisplay, isSelf, QStringLiteral("Encrypted File Attachment"),
+                        QStringLiteral("Just now"), QStringLiteral("TODAY"), stateStr, true, transferIdStr, fname,
+                        fsize, csuite, fhash, m.priority(), QString::fromStdString(m.idempotency_key()),
+                        m.emergency_acknowledged()});
+
+                    if (auto* conv = findConversationMutable(convId)) {
+                        conv->lastMessagePreview = QStringLiteral("Encrypted File: %1").arg(fname);
+                        conv->timestampText = QStringLiteral("Just now");
+                        conv->lastMessagePriority = m.priority();
+                        if (convId != selected_conversation_id_) {
+                            ++conv->unreadCount;
+                        }
+                    }
+                    emit conversationsChanged();
+                    if (convId == selected_conversation_id_) {
+                        emit activeMessagesChanged();
+                    }
+                    break;
+                }
+
                 const QString text = QString::fromStdString(m.encrypted_envelope_ref());
                 messages_.push_back(MessageEntry{
-                    newMsgId, convId, QString::fromStdString(m.sender_display_name()),
-                    m.sender_user_id() == localUserId(), text, QStringLiteral("Just now"), QStringLiteral("TODAY"),
-                    QString::fromStdString(std::string(domain::to_string(m.delivery_state()))),
-                    m.emergency_acknowledged(), QString(), QString(), QString(), QString(), QString(), m.priority(),
-                    QString::fromStdString(m.idempotency_key()), false});
+                    newMsgId, convId, senderDisplay, isSelf, text, QStringLiteral("Just now"), QStringLiteral("TODAY"),
+                    stateStr, !m.attachment_name().empty(), QString(), QString::fromStdString(m.attachment_name()),
+                    m.attachment_size() > 0 ? formatFileSize(m.attachment_size()) : QString(),
+                    QStringLiteral("AES-256-GCM"), QString::fromStdString(m.attachment_hash()), m.priority(),
+                    QString::fromStdString(m.idempotency_key()), m.emergency_acknowledged()});
                 if (auto* conv = findConversationMutable(convId)) {
                     conv->lastMessagePreview = text;
                     conv->timestampText = QStringLiteral("Just now");
+                    conv->lastMessagePriority = m.priority();
                     if (convId != selected_conversation_id_) {
                         ++conv->unreadCount;
                     }
@@ -1592,17 +1890,200 @@ QString WorkspaceViewModel::stageEncryptedFileTransfer(const QString& fileName, 
     return transferId;
 }
 
-bool WorkspaceViewModel::cancelFileTransfer(const QString& transferId) {
-    if (transferId.trimmed().isEmpty()) {
+QString WorkspaceViewModel::uploadLocalFile(const QString& localFilePathOrUrl) {
+    const QString localPath = normalizeLocalPath(localFilePathOrUrl);
+    if (localPath.isEmpty()) {
+        emit workspaceError(QStringLiteral("No valid local file path selected for encrypted upload."));
+        return QString();
+    }
+
+    auto* conv = findConversationMutable(selected_conversation_id_);
+    if (!conv) {
+        emit workspaceError(QStringLiteral("Select a conversation before uploading an encrypted file."));
+        return QString();
+    }
+
+    application::managers::FileUploadRequest req;
+    req.conversation_id = domain::ConversationId(conv->conversationId.toStdString());
+    req.owner_user_id = localUserId();
+    req.owner_device_id = localDeviceId();
+    if (!conv->isGroup && !conv->peerUserId.trimmed().isEmpty()) {
+        req.peer_user_id = domain::UserId(conv->peerUserId.toStdString());
+    }
+    req.local_file_path = localPath.toStdString();
+    req.sender_display_name = "You";
+    req.priority = composer_priority_;
+    req.dispatch_key_envelope = true;
+
+    const auto upRes = app_.bootstrap().file_manager().start_upload(req);
+    if (upRes.is_error()) {
+        emit workspaceError(QString::fromStdString(upRes.error().user_message()));
+        return QString();
+    }
+
+    const auto& rec = upRes.value().record;
+    const QString transferId = QString::fromStdString(rec.transfer_id);
+    selected_transfer_id_ = transferId;
+    applyFileTransferUpdate(rec);
+
+    if (upRes.value().dispatched_message.has_value()) {
+        const auto tx = buildTransferEntry(rec);
+        appendDispatchedFileMessage(*conv, *upRes.value().dispatched_message, transferId, tx.fileName, tx.fileSizeText,
+                                    tx.cipherSuite, tx.sha256Short);
+        if (composer_priority_ != 1) {
+            composer_priority_ = 1;
+            emit composerPriorityChanged();
+        }
+        emit activeMessagesChanged();
+        emit conversationsChanged();
+        emit selectedConversationChanged();
+    }
+
+    return transferId;
+}
+
+bool WorkspaceViewModel::downloadEncryptedFile(const QString& transferId, const QString& destinationPathOrUrl) {
+    const QString trimmedId = transferId.trimmed();
+    const QString destPath = normalizeLocalPath(destinationPathOrUrl);
+    if (trimmedId.isEmpty() || destPath.isEmpty()) {
+        emit workspaceError(QStringLiteral("Transfer ID and destination file path are required to download."));
         return false;
     }
-    const auto cancelRes = app_.bootstrap().file_manager().cancel_transfer(transferId.toStdString());
+
+    const auto dlRes = app_.bootstrap().file_manager().start_download(trimmedId.toStdString(), destPath.toStdString());
+    if (dlRes.is_error()) {
+        const auto recRes = app_.bootstrap().file_manager().get_transfer(trimmedId.toStdString());
+        if (recRes.is_ok()) {
+            applyFileTransferUpdate(recRes.value());
+        }
+        emit workspaceError(QString::fromStdString(dlRes.error().user_message()));
+        return false;
+    }
+
+    applyFileTransferUpdate(dlRes.value());
+    return true;
+}
+
+bool WorkspaceViewModel::pauseFileTransfer(const QString& transferId) {
+    const QString trimmedId = transferId.trimmed();
+    if (trimmedId.isEmpty()) {
+        return false;
+    }
+
+    const auto pauseRes = app_.bootstrap().file_manager().pause_transfer(trimmedId.toStdString());
+    if (pauseRes.is_error()) {
+        emit workspaceError(QString::fromStdString(pauseRes.error().user_message()));
+        return false;
+    }
+
+    const auto recRes = app_.bootstrap().file_manager().get_transfer(trimmedId.toStdString());
+    if (recRes.is_ok()) {
+        if (recRes.value().status == domain::FileTransferStatus::Paused) {
+            applyFileTransferUpdate(recRes.value());
+        }
+        return true;
+    }
+
+    for (auto& tx : file_transfers_) {
+        if (tx.transferId == trimmedId) {
+            tx.status = QStringLiteral("Paused");
+            tx.statusText = QStringLiteral("Paused");
+            tx.canPause = false;
+            tx.canResume = true;
+            tx.canDownload = false;
+            tx.canCancel = true;
+            emit fileTransfersChanged();
+            emit selectedTransferChanged();
+            return true;
+        }
+    }
+    return false;
+}
+
+bool WorkspaceViewModel::resumeFileTransfer(const QString& transferId) {
+    const QString trimmedId = transferId.trimmed();
+    if (trimmedId.isEmpty()) {
+        return false;
+    }
+
+    const auto recRes = app_.bootstrap().file_manager().get_transfer(trimmedId.toStdString());
+    if (recRes.is_error()) {
+        emit workspaceError(QString::fromStdString(recRes.error().user_message()));
+        return false;
+    }
+
+    const auto& current = recRes.value();
+    if (current.direction == domain::FileTransferDirection::Outbound) {
+        const auto upRes = app_.bootstrap().file_manager().resume_upload(
+            trimmedId.toStdString(), localUserId(), localDeviceId(), "You", composer_priority_, true);
+        if (upRes.is_error()) {
+            const auto afterErr = app_.bootstrap().file_manager().get_transfer(trimmedId.toStdString());
+            if (afterErr.is_ok()) {
+                applyFileTransferUpdate(afterErr.value());
+            }
+            emit workspaceError(QString::fromStdString(upRes.error().user_message()));
+            return false;
+        }
+
+        const auto& rec = upRes.value().record;
+        applyFileTransferUpdate(rec);
+
+        if (upRes.value().dispatched_message.has_value()) {
+            const QString convId = QString::fromStdString(rec.conversation_id.value());
+            if (auto* conv = findConversationMutable(convId)) {
+                const auto tx = buildTransferEntry(rec);
+                appendDispatchedFileMessage(*conv, *upRes.value().dispatched_message, trimmedId, tx.fileName,
+                                            tx.fileSizeText, tx.cipherSuite, tx.sha256Short);
+                if (composer_priority_ != 1) {
+                    composer_priority_ = 1;
+                    emit composerPriorityChanged();
+                }
+                emit activeMessagesChanged();
+                emit conversationsChanged();
+                emit selectedConversationChanged();
+            }
+        }
+        return true;
+    }
+
+    const auto dlRes = app_.bootstrap().file_manager().resume_download(trimmedId.toStdString());
+    if (dlRes.is_error()) {
+        const auto afterErr = app_.bootstrap().file_manager().get_transfer(trimmedId.toStdString());
+        if (afterErr.is_ok()) {
+            applyFileTransferUpdate(afterErr.value());
+        }
+        emit workspaceError(QString::fromStdString(dlRes.error().user_message()));
+        return false;
+    }
+
+    applyFileTransferUpdate(dlRes.value());
+    return true;
+}
+
+bool WorkspaceViewModel::cancelFileTransfer(const QString& transferId) {
+    const QString trimmedId = transferId.trimmed();
+    if (trimmedId.isEmpty()) {
+        return false;
+    }
+    const auto cancelRes = app_.bootstrap().file_manager().cancel_transfer(trimmedId.toStdString());
     if (cancelRes.is_error()) {
         return false;
     }
+    const auto recRes = app_.bootstrap().file_manager().get_transfer(trimmedId.toStdString());
+    if (recRes.is_ok()) {
+        if (recRes.value().status == domain::FileTransferStatus::Cancelled) {
+            applyFileTransferUpdate(recRes.value());
+        }
+        return true;
+    }
     for (auto& tx : file_transfers_) {
-        if (tx.transferId == transferId) {
+        if (tx.transferId == trimmedId) {
+            tx.status = QStringLiteral("Cancelled");
             tx.statusText = QStringLiteral("Cancelled");
+            tx.canPause = false;
+            tx.canResume = false;
+            tx.canDownload = false;
+            tx.canCancel = false;
             emit fileTransfersChanged();
             emit selectedTransferChanged();
             return true;
