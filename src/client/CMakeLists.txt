@@ -23,6 +23,7 @@ if(Qt6_FOUND)
         domain/directory_user_entry.cpp
         domain/conversation.cpp
         domain/message.cpp
+        domain/file_transfer.cpp
         domain/crypto/x3dh_models.cpp
         domain/crypto/x3dh_engine.cpp
         domain/crypto/ratchet_models.cpp

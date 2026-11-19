@@ -34,7 +34,7 @@
 
 | Ticket | Title | Status | Target Scope |
 |---|---|---|---|
-| **CLIENT-011-T01** | File Transfer Domain Models, Key Envelope & `IGatewayClient` Files REST Contracts | **Planned** | `FileTransferDirection`, `FileTransferStatus`, `FileTransferRecord`, `FileAttachmentKeyEnvelope`, `IGatewayClient` & `DefaultGatewayClient` 7 Files REST contracts |
+| **CLIENT-011-T01** | File Transfer Domain Models, Key Envelope & `IGatewayClient` Files REST Contracts | **Completed** | `FileTransferDirection`, `FileTransferStatus`, `FileTransferRecord`, `FileAttachmentKeyEnvelope`, `IGatewayClient` & `DefaultGatewayClient` 7 Files REST contracts |
 | **CLIENT-011-T02** | Streaming AEAD Chunk Encryption/Decryption Engine & Dual SHA-256 Attestation | **Planned** | `FileCryptoEngine` (`4 MiB` wire chunks = `4 MiB - 28 B` plaintext + `12 B IV` + `16 B GCM tag`), HKDF per-chunk IV, AAD binding, `StreamingSha256` |
 | **CLIENT-011-T03** | Resumable Transfer Checkpoints in `ILocalStore` & `SqlCipherLocalStore` | **Planned** | `file_transfers` table in `SqlCipherLocalStore`, `ILocalStore` transfer CRUD methods, zero-plaintext `.db` invariant |
 | **CLIENT-011-T04** | Production `FileManager` Resumable Upload/Download Pipeline & E2EE Key Distribution | **Planned** | Streaming upload/download in `FileManager`, `ISecureStorage` key storage (`file_transfer.key.<file_id>`), Pause/Resume/Cancel, ADR-008 guarded `FileAttachmentKeyEnvelope` dispatch via `MessagingManager`, atomic `.part` download verification |

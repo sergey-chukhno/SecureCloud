@@ -317,6 +317,50 @@ class MockGatewayClient final : public IGatewayClient {
         return ClientResult<domain::DirectoryUserEntry>::ok(
             domain::DirectoryUserEntry(user_id, "@mock", "Mock User", std::vector<uint8_t>(32, 0x01), "FP_MOCK", 1));
     }
+
+    ClientResult<FileUploadInitResult> init_file_upload(const FileUploadInitRequest& request) override {
+        return ClientResult<FileUploadInitResult>::ok(FileUploadInitResult{
+            .upload_id = "upload-mock-001",
+            .file_id = request.file_id,
+            .status = "TRANSFER_STATUS_PENDING",
+        });
+    }
+
+    ClientResult<FileChunkUploadResult> upload_file_chunk(const FileChunkUploadRequest& request) override {
+        return ClientResult<FileChunkUploadResult>::ok(FileChunkUploadResult{
+            .upload_id = request.upload_id,
+            .chunk_index = request.chunk_index,
+            .accepted = true,
+            .received_sha256 = request.ciphertext_sha256,
+        });
+    }
+
+    ClientResult<FileUploadFinalizeResult> finalize_file_upload(const FileUploadFinalizeRequest& request) override {
+        return ClientResult<FileUploadFinalizeResult>::ok(FileUploadFinalizeResult{
+            .file_id = request.file_id,
+            .lifecycle_state = "FILE_LIFECYCLE_STATE_AVAILABLE",
+        });
+    }
+
+    ClientResult<void> cancel_file_upload(std::string_view /*upload_id*/, std::string_view /*reason*/) override {
+        return ClientResult<void>::ok();
+    }
+
+    ClientResult<RemoteFileMetadata> get_file_metadata(std::string_view file_id) override {
+        return ClientResult<RemoteFileMetadata>::ok(RemoteFileMetadata{
+            .file_id = std::string(file_id),
+            .lifecycle_state = "FILE_LIFECYCLE_STATE_AVAILABLE",
+        });
+    }
+
+    ClientResult<FileChunkDownloadResult> download_file_chunk(std::string_view file_id, uint32_t chunk_index) override {
+        return ClientResult<FileChunkDownloadResult>::ok(FileChunkDownloadResult{
+            .file_id = std::string(file_id),
+            .chunk_index = chunk_index,
+        });
+    }
+
+    ClientResult<void> delete_file(std::string_view /*file_id*/) override { return ClientResult<void>::ok(); }
 };
 
 TEST(ApplicationInterfacesTest, InterfacePolymorphismAndContracts) {

@@ -3,6 +3,8 @@
 #include "application/client_config.hpp"
 #include "application/interfaces/i_gateway_client.hpp"
 
+#include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -76,6 +78,26 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
 
     application::ClientResult<domain::DirectoryUserEntry> lookup_user_identity(const domain::UserId& user_id) override;
 
+    application::ClientResult<application::interfaces::FileUploadInitResult>
+    init_file_upload(const application::interfaces::FileUploadInitRequest& request) override;
+
+    application::ClientResult<application::interfaces::FileChunkUploadResult>
+    upload_file_chunk(const application::interfaces::FileChunkUploadRequest& request) override;
+
+    application::ClientResult<application::interfaces::FileUploadFinalizeResult>
+    finalize_file_upload(const application::interfaces::FileUploadFinalizeRequest& request) override;
+
+    application::ClientResult<void> cancel_file_upload(std::string_view upload_id,
+                                                       std::string_view reason = "") override;
+
+    application::ClientResult<application::interfaces::RemoteFileMetadata>
+    get_file_metadata(std::string_view file_id) override;
+
+    application::ClientResult<application::interfaces::FileChunkDownloadResult>
+    download_file_chunk(std::string_view file_id, uint32_t chunk_index) override;
+
+    application::ClientResult<void> delete_file(std::string_view file_id) override;
+
     // Test Hooks for deterministic simulation
     void set_simulated_inventory_status(domain::PrekeyInventoryStatus status);
     void set_simulated_registration_status(domain::DeviceAuthorizationStatus status, std::string pairing_code = "");
@@ -109,6 +131,16 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
         sent_read_receipts_.clear();
     }
 
+    // Encrypted File Transfer simulation & test hooks (CLIENT-011)
+    void set_simulated_file_transfer_failure(bool fail, std::string error_message = "Simulated file transfer failure");
+    void set_simulated_chunk_failure(std::optional<uint32_t> chunk_index,
+                                     std::string error_message = "Simulated chunk failure");
+    bool mutate_stored_file_chunk_for_test(std::string_view file_id, uint32_t chunk_index,
+                                           std::vector<uint8_t> tampered_bytes, bool recompute_server_sha256 = false);
+    [[nodiscard]] std::size_t uploaded_chunk_call_count(std::string_view file_id) const;
+    [[nodiscard]] bool has_stored_file(std::string_view file_id) const;
+    [[nodiscard]] std::vector<uint8_t> stored_file_raw_bytes(std::string_view file_id) const;
+
   private:
     std::string endpoint_;
     bool connected_{false};
@@ -141,6 +173,44 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     std::vector<domain::ReadReceiptRecord> sent_read_receipts_;
     std::unordered_map<domain::MessageId, domain::MessageDeliveryStatusInfo> simulated_delivery_statuses_;
     std::unordered_map<domain::ConversationId, std::vector<domain::RealtimeEvent>> simulated_conversation_messages_;
+
+    struct SimulatedStagedChunk {
+        std::vector<uint8_t> bytes;
+        std::string sha256_hex;
+    };
+
+    struct SimulatedUploadSession {
+        std::string upload_id;
+        std::string file_id;
+        domain::UserId owner_user_id;
+        domain::ConversationId conversation_id;
+        uint64_t encrypted_size_bytes{0};
+        uint32_t expected_chunk_count{0};
+        std::string encryption_version{"v1"};
+        int64_t created_at_unix_ms{0};
+        bool cancelled{false};
+        bool finalized{false};
+        std::unordered_map<uint32_t, SimulatedStagedChunk> chunks;
+    };
+
+    struct SimulatedStoredFile {
+        application::interfaces::RemoteFileMetadata metadata;
+        std::vector<std::vector<uint8_t>> chunks;
+        std::vector<std::string> chunk_sha256s;
+        bool deleted{false};
+    };
+
+    [[nodiscard]] std::optional<application::ClientError> check_file_network_failure_locked() const;
+
+    mutable std::mutex file_store_mutex_;
+    uint64_t file_upload_counter_{1};
+    bool simulate_file_transfer_failure_{false};
+    std::string file_transfer_failure_message_{"Simulated file transfer failure"};
+    std::optional<uint32_t> simulated_failed_chunk_index_;
+    std::string chunk_failure_message_{"Simulated chunk failure"};
+    std::unordered_map<std::string, SimulatedUploadSession> simulated_upload_sessions_;
+    std::unordered_map<std::string, SimulatedStoredFile> simulated_stored_files_;
+    std::unordered_map<std::string, std::size_t> uploaded_chunk_call_counts_;
 };
 
 } // namespace securecloud::client::infrastructure::adapters
