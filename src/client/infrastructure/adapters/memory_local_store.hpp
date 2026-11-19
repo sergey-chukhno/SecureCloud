@@ -3,6 +3,7 @@
 #include "application/interfaces/i_local_store.hpp"
 
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -33,6 +34,12 @@ class MemoryLocalStore final : public application::interfaces::ILocalStore {
     application::ClientResult<std::vector<domain::Contact>> list_contacts() override;
     application::ClientResult<void> delete_contact(const domain::UserId& user_id) override;
 
+    application::ClientResult<void> save_file_transfer(const domain::FileTransferRecord& record) override;
+    application::ClientResult<domain::FileTransferRecord> get_file_transfer(std::string_view transfer_id) override;
+    application::ClientResult<std::vector<domain::FileTransferRecord>>
+    list_file_transfers(const domain::ConversationId& conversation_id = {}) override;
+    application::ClientResult<void> delete_file_transfer(std::string_view transfer_id) override;
+
     void clear();
 
   private:
@@ -41,6 +48,7 @@ class MemoryLocalStore final : public application::interfaces::ILocalStore {
     std::unordered_map<domain::ConversationId, domain::Conversation> conversations_;
     std::unordered_map<domain::ConversationId, std::vector<domain::Message>> messages_;
     std::unordered_map<domain::UserId, domain::Contact> contacts_;
+    std::unordered_map<std::string, domain::FileTransferRecord> file_transfers_;
 };
 
 } // namespace securecloud::client::infrastructure::adapters

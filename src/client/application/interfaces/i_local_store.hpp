@@ -4,6 +4,7 @@
 #include "domain/contact.hpp"
 #include "domain/conversation.hpp"
 #include "domain/conversation_id.hpp"
+#include "domain/file_transfer.hpp"
 #include "domain/message.hpp"
 #include "domain/message_id.hpp"
 #include "domain/user_id.hpp"
@@ -37,6 +38,12 @@ class ILocalStore {
     virtual ClientResult<domain::Contact> get_contact(const domain::UserId& user_id) = 0;
     virtual ClientResult<std::vector<domain::Contact>> list_contacts() = 0;
     virtual ClientResult<void> delete_contact(const domain::UserId& user_id) = 0;
+
+    virtual ClientResult<void> save_file_transfer(const domain::FileTransferRecord& record) = 0;
+    virtual ClientResult<domain::FileTransferRecord> get_file_transfer(std::string_view transfer_id) = 0;
+    virtual ClientResult<std::vector<domain::FileTransferRecord>>
+    list_file_transfers(const domain::ConversationId& conversation_id = {}) = 0;
+    virtual ClientResult<void> delete_file_transfer(std::string_view transfer_id) = 0;
 };
 
 } // namespace securecloud::client::application::interfaces

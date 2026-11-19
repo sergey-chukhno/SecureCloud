@@ -64,6 +64,7 @@ application::ClientResult<void> MemoryLocalStore::delete_conversation(const doma
     }
     conversations_.erase(it);
     messages_.erase(id);
+    std::erase_if(file_transfers_, [&id](const auto& entry) { return entry.second.conversation_id == id; });
     return application::ClientResult<void>::ok();
 }
 
@@ -182,11 +183,85 @@ application::ClientResult<void> MemoryLocalStore::delete_contact(const domain::U
     return application::ClientResult<void>::ok();
 }
 
+application::ClientResult<void> MemoryLocalStore::save_file_transfer(const domain::FileTransferRecord& record) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    if (record.transfer_id.empty() || record.file_id.empty() || record.conversation_id.empty()) {
+        return application::ClientResult<void>::error(application::ClientError::validation(
+            "Transfer ID, file ID, and conversation ID are required for file transfer persistence"));
+    }
+    file_transfers_[record.transfer_id] = record;
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<domain::FileTransferRecord>
+MemoryLocalStore::get_file_transfer(std::string_view transfer_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<domain::FileTransferRecord>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (transfer_id.empty()) {
+        return application::ClientResult<domain::FileTransferRecord>::error(
+            application::ClientError::validation("Transfer ID cannot be empty"));
+    }
+    const auto it = file_transfers_.find(std::string(transfer_id));
+    if (it == file_transfers_.end()) {
+        return application::ClientResult<domain::FileTransferRecord>::error(
+            application::ClientError::storage("File transfer not found"));
+    }
+    return application::ClientResult<domain::FileTransferRecord>::ok(it->second);
+}
+
+application::ClientResult<std::vector<domain::FileTransferRecord>>
+MemoryLocalStore::list_file_transfers(const domain::ConversationId& conversation_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<std::vector<domain::FileTransferRecord>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    std::vector<domain::FileTransferRecord> result;
+    result.reserve(file_transfers_.size());
+    for (const auto& [_, rec] : file_transfers_) {
+        if (conversation_id.empty() || rec.conversation_id == conversation_id) {
+            result.push_back(rec);
+        }
+    }
+    std::sort(result.begin(), result.end(),
+              [](const domain::FileTransferRecord& a, const domain::FileTransferRecord& b) {
+                  if (a.updated_at_ms != b.updated_at_ms) {
+                      return a.updated_at_ms > b.updated_at_ms;
+                  }
+                  return a.transfer_id < b.transfer_id;
+              });
+    return application::ClientResult<std::vector<domain::FileTransferRecord>>::ok(std::move(result));
+}
+
+application::ClientResult<void> MemoryLocalStore::delete_file_transfer(std::string_view transfer_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    if (transfer_id.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Transfer ID cannot be empty"));
+    }
+    const auto it = file_transfers_.find(std::string(transfer_id));
+    if (it == file_transfers_.end()) {
+        return application::ClientResult<void>::error(application::ClientError::storage("File transfer not found"));
+    }
+    file_transfers_.erase(it);
+    return application::ClientResult<void>::ok();
+}
+
 void MemoryLocalStore::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     conversations_.clear();
     messages_.clear();
     contacts_.clear();
+    file_transfers_.clear();
 }
 
 } // namespace securecloud::client::infrastructure::adapters
