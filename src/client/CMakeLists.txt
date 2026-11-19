@@ -23,6 +23,7 @@ if(Qt6_FOUND)
         domain/directory_user_entry.cpp
         domain/conversation.cpp
         domain/message.cpp
+        domain/file_transfer.cpp
         domain/crypto/x3dh_models.cpp
         domain/crypto/x3dh_engine.cpp
         domain/crypto/ratchet_models.cpp
@@ -31,6 +32,7 @@ if(Qt6_FOUND)
         domain/crypto/ratchet_session_state.cpp
         domain/crypto/sender_key_models.cpp
         domain/crypto/sender_key_engine.cpp
+        domain/crypto/file_crypto_engine.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)
     target_include_directories(securecloud_client_domain PUBLIC

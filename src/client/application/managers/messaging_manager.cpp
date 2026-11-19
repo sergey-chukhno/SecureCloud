@@ -818,6 +818,19 @@ ClientResult<domain::Message> MessagingManager::process_inbound_message(
     return ClientResult<domain::Message>::ok(std::move(msg));
 }
 
+ClientResult<void> MessagingManager::check_conversation_send_eligibility(const domain::ConversationId& conversation_id,
+                                                                         const domain::UserId& sender_user_id) const {
+    if (conversation_id.empty() || sender_user_id.empty()) {
+        return ClientResult<void>::error(
+            ClientError::validation("Conversation ID and sender User ID are required for eligibility check"));
+    }
+    const auto conv_res = local_store_.get_conversation(conversation_id);
+    if (conv_res.is_error()) {
+        return ClientResult<void>::error(conv_res.error());
+    }
+    return validate_recipients_can_receive(conv_res.value(), sender_user_id);
+}
+
 ClientResult<void> MessagingManager::validate_recipients_can_receive(const domain::Conversation& conv,
                                                                      const domain::UserId& sender_user_id) const {
     for (const auto& participant_id : conv.participants()) {

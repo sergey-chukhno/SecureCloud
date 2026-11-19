@@ -1,13 +1,33 @@
 #include "infrastructure/adapters/default_gateway_client.hpp"
 
+#include "domain/crypto/file_crypto_engine.hpp"
 #include "domain/prekey_policy.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <iomanip>
+#include <span>
 #include <sstream>
 
 namespace securecloud::client::infrastructure::adapters {
+namespace {
+
+std::string to_lower_ascii(std::string_view sv) {
+    std::string out;
+    out.reserve(sv.size());
+    for (const char ch : sv) {
+        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    }
+    return out;
+}
+
+int64_t current_unix_ms() noexcept {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
+} // namespace
 
 DefaultGatewayClient::DefaultGatewayClient(const application::ClientConfig& config) {
     std::ostringstream oss;
@@ -596,6 +616,402 @@ void DefaultGatewayClient::set_simulated_delivery_status(const domain::MessageId
 void DefaultGatewayClient::set_simulated_conversation_messages(const domain::ConversationId& conversation_id,
                                                                std::vector<domain::RealtimeEvent> events) {
     simulated_conversation_messages_[conversation_id] = std::move(events);
+}
+
+std::optional<application::ClientError> DefaultGatewayClient::check_file_network_failure_locked() const {
+    if (simulate_failure_) {
+        return application::ClientError::network(failure_message_);
+    }
+    if (simulate_file_transfer_failure_) {
+        return application::ClientError::network(file_transfer_failure_message_);
+    }
+    return std::nullopt;
+}
+
+application::ClientResult<application::interfaces::FileUploadInitResult>
+DefaultGatewayClient::init_file_upload(const application::interfaces::FileUploadInitRequest& request) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<application::interfaces::FileUploadInitResult>::error(*err);
+    }
+
+    if (request.file_id.empty() || request.owner_user_id.empty() || request.owner_device_id.empty() ||
+        request.conversation_id.empty()) {
+        return application::ClientResult<application::interfaces::FileUploadInitResult>::error(
+            application::ClientError::validation(
+                "File ID, owner user ID, owner device ID, and conversation ID are required"));
+    }
+    if (request.encrypted_size_bytes == 0ULL || request.encrypted_size_bytes > domain::kMaxEncryptedFileSizeBytes) {
+        return application::ClientResult<application::interfaces::FileUploadInitResult>::error(
+            application::ClientError::validation("Encrypted file size is outside allowed bounds (1 B .. 5 GiB)"));
+    }
+    if (request.expected_chunk_count == 0U) {
+        return application::ClientResult<application::interfaces::FileUploadInitResult>::error(
+            application::ClientError::validation("Expected chunk count must be positive"));
+    }
+
+    const int64_t now_ms = current_unix_ms();
+    const std::string upload_id = "upload-srv-" + std::to_string(file_upload_counter_++);
+
+    SimulatedUploadSession session;
+    session.upload_id = upload_id;
+    session.file_id = request.file_id;
+    session.owner_user_id = request.owner_user_id;
+    session.conversation_id = request.conversation_id;
+    session.encrypted_size_bytes = request.encrypted_size_bytes;
+    session.expected_chunk_count = request.expected_chunk_count;
+    session.encryption_version = request.encryption_version.empty() ? "v1" : request.encryption_version;
+    session.created_at_unix_ms = now_ms;
+    simulated_upload_sessions_[upload_id] = std::move(session);
+
+    return application::ClientResult<application::interfaces::FileUploadInitResult>::ok(
+        application::interfaces::FileUploadInitResult{
+            .upload_id = upload_id,
+            .file_id = request.file_id,
+            .status = "TRANSFER_STATUS_PENDING",
+            .expires_at_unix_ms = now_ms + 3600000LL,
+        });
+}
+
+application::ClientResult<application::interfaces::FileChunkUploadResult>
+DefaultGatewayClient::upload_file_chunk(const application::interfaces::FileChunkUploadRequest& request) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(*err);
+    }
+    if (simulated_failed_chunk_index_.has_value() && *simulated_failed_chunk_index_ == request.chunk_index) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::network(chunk_failure_message_));
+    }
+
+    if (request.upload_id.empty()) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Upload ID is required for chunk upload"));
+    }
+
+    const auto session_it = simulated_upload_sessions_.find(request.upload_id);
+    if (session_it == simulated_upload_sessions_.end()) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Upload session not found: " + request.upload_id));
+    }
+
+    SimulatedUploadSession& session = session_it->second;
+    if (session.cancelled) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Upload session has been cancelled"));
+    }
+    if (session.finalized) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Upload session is already finalized"));
+    }
+    if (request.chunk_index >= session.expected_chunk_count) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Chunk index out of expected range"));
+    }
+    if (request.encrypted_data.empty() ||
+        request.encrypted_data.size() > static_cast<std::size_t>(domain::kMaxFileWireChunkSize)) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Encrypted chunk size is outside allowed bounds (1 B .. 8 MiB)"));
+    }
+
+    const auto digest_res = domain::crypto::StreamingSha256::digest_hex(request.encrypted_data);
+    if (digest_res.is_error()) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(digest_res.error());
+    }
+    const std::string& digest_hex = digest_res.value();
+    if (!request.ciphertext_sha256.empty() && to_lower_ascii(request.ciphertext_sha256) != digest_hex) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Chunk ciphertext SHA-256 mismatch at chunk index " +
+                                                 std::to_string(request.chunk_index)));
+    }
+
+    session.chunks[request.chunk_index] = SimulatedStagedChunk{
+        .bytes = request.encrypted_data,
+        .sha256_hex = digest_hex,
+    };
+    uploaded_chunk_call_counts_[session.file_id] += 1U;
+
+    return application::ClientResult<application::interfaces::FileChunkUploadResult>::ok(
+        application::interfaces::FileChunkUploadResult{
+            .upload_id = request.upload_id,
+            .chunk_index = request.chunk_index,
+            .accepted = true,
+            .received_sha256 = digest_hex,
+        });
+}
+
+application::ClientResult<application::interfaces::FileUploadFinalizeResult>
+DefaultGatewayClient::finalize_file_upload(const application::interfaces::FileUploadFinalizeRequest& request) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(*err);
+    }
+
+    if (request.upload_id.empty() || request.file_id.empty()) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Upload ID and file ID are required to finalize upload"));
+    }
+
+    const auto session_it = simulated_upload_sessions_.find(request.upload_id);
+    if (session_it == simulated_upload_sessions_.end()) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Upload session not found: " + request.upload_id));
+    }
+
+    SimulatedUploadSession& session = session_it->second;
+    if (session.file_id != request.file_id) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Upload session file ID mismatch"));
+    }
+    if (session.cancelled) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Cannot finalize cancelled upload session"));
+    }
+    if (session.finalized) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Upload session is already finalized"));
+    }
+
+    SimulatedStoredFile stored;
+    stored.chunks.reserve(session.expected_chunk_count);
+    stored.chunk_sha256s.reserve(session.expected_chunk_count);
+    domain::crypto::StreamingSha256 total_hasher;
+    uint64_t total_size_bytes = 0ULL;
+
+    for (uint32_t idx = 0; idx < session.expected_chunk_count; ++idx) {
+        const auto chunk_it = session.chunks.find(idx);
+        if (chunk_it == session.chunks.end()) {
+            return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+                application::ClientError::validation("Missing chunk index " + std::to_string(idx) +
+                                                     " during finalize"));
+        }
+        if (const auto upd = total_hasher.update(chunk_it->second.bytes); upd.is_error()) {
+            return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(upd.error());
+        }
+        total_size_bytes += static_cast<uint64_t>(chunk_it->second.bytes.size());
+        stored.chunks.push_back(chunk_it->second.bytes);
+        stored.chunk_sha256s.push_back(chunk_it->second.sha256_hex);
+    }
+
+    const auto finalized_sha256 = total_hasher.finalize_hex();
+    if (finalized_sha256.is_error()) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            finalized_sha256.error());
+    }
+    if (!request.expected_ciphertext_sha256.empty() &&
+        to_lower_ascii(request.expected_ciphertext_sha256) != finalized_sha256.value()) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Finalized ciphertext SHA-256 mismatch"));
+    }
+
+    const int64_t available_at_ms = current_unix_ms();
+    stored.metadata = application::interfaces::RemoteFileMetadata{
+        .file_id = session.file_id,
+        .owner_user_id = session.owner_user_id,
+        .conversation_id = session.conversation_id,
+        .lifecycle_state = "FILE_LIFECYCLE_STATE_AVAILABLE",
+        .encrypted_size_bytes = total_size_bytes,
+        .chunk_count = session.expected_chunk_count,
+        .encryption_version = session.encryption_version,
+        .ciphertext_integrity_hash = finalized_sha256.value(),
+        .created_at_unix_ms = session.created_at_unix_ms,
+        .available_at_unix_ms = available_at_ms,
+    };
+
+    simulated_stored_files_[session.file_id] = std::move(stored);
+    session.finalized = true;
+    session.chunks.clear();
+
+    return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::ok(
+        application::interfaces::FileUploadFinalizeResult{
+            .file_id = request.file_id,
+            .lifecycle_state = "FILE_LIFECYCLE_STATE_AVAILABLE",
+            .available_at_unix_ms = available_at_ms,
+        });
+}
+
+application::ClientResult<void> DefaultGatewayClient::cancel_file_upload(std::string_view upload_id,
+                                                                         std::string_view /*reason*/) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<void>::error(*err);
+    }
+    if (upload_id.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Upload ID is required to cancel upload"));
+    }
+
+    const auto session_it = simulated_upload_sessions_.find(std::string(upload_id));
+    if (session_it == simulated_upload_sessions_.end()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Upload session not found: " + std::string(upload_id)));
+    }
+    if (session_it->second.finalized) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Cannot cancel finalized upload session"));
+    }
+
+    session_it->second.cancelled = true;
+    session_it->second.chunks.clear();
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<application::interfaces::RemoteFileMetadata>
+DefaultGatewayClient::get_file_metadata(std::string_view file_id) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<application::interfaces::RemoteFileMetadata>::error(*err);
+    }
+    if (file_id.empty()) {
+        return application::ClientResult<application::interfaces::RemoteFileMetadata>::error(
+            application::ClientError::validation("File ID is required for metadata lookup"));
+    }
+
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    if (it == simulated_stored_files_.end() || it->second.deleted) {
+        return application::ClientResult<application::interfaces::RemoteFileMetadata>::error(
+            application::ClientError::validation("File not found or deleted: " + std::string(file_id)));
+    }
+    return application::ClientResult<application::interfaces::RemoteFileMetadata>::ok(it->second.metadata);
+}
+
+application::ClientResult<application::interfaces::FileChunkDownloadResult>
+DefaultGatewayClient::download_file_chunk(std::string_view file_id, uint32_t chunk_index) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<application::interfaces::FileChunkDownloadResult>::error(*err);
+    }
+    if (simulated_failed_chunk_index_.has_value() && *simulated_failed_chunk_index_ == chunk_index) {
+        return application::ClientResult<application::interfaces::FileChunkDownloadResult>::error(
+            application::ClientError::network(chunk_failure_message_));
+    }
+    if (file_id.empty()) {
+        return application::ClientResult<application::interfaces::FileChunkDownloadResult>::error(
+            application::ClientError::validation("File ID is required for chunk download"));
+    }
+
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    if (it == simulated_stored_files_.end() || it->second.deleted) {
+        return application::ClientResult<application::interfaces::FileChunkDownloadResult>::error(
+            application::ClientError::validation("File not found or deleted: " + std::string(file_id)));
+    }
+    if (chunk_index >= it->second.chunks.size()) {
+        return application::ClientResult<application::interfaces::FileChunkDownloadResult>::error(
+            application::ClientError::validation("Requested chunk index out of range"));
+    }
+
+    return application::ClientResult<application::interfaces::FileChunkDownloadResult>::ok(
+        application::interfaces::FileChunkDownloadResult{
+            .file_id = std::string(file_id),
+            .chunk_index = chunk_index,
+            .encrypted_data = it->second.chunks[chunk_index],
+            .ciphertext_sha256 = it->second.chunk_sha256s[chunk_index],
+        });
+}
+
+application::ClientResult<void> DefaultGatewayClient::delete_file(std::string_view file_id) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<void>::error(*err);
+    }
+    if (file_id.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("File ID is required for deletion"));
+    }
+
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    if (it == simulated_stored_files_.end() || it->second.deleted) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("File not found or already deleted: " + std::string(file_id)));
+    }
+
+    it->second.deleted = true;
+    it->second.metadata.lifecycle_state = "FILE_LIFECYCLE_STATE_DELETED";
+    it->second.chunks.clear();
+    it->second.chunk_sha256s.clear();
+    return application::ClientResult<void>::ok();
+}
+
+void DefaultGatewayClient::set_simulated_file_transfer_failure(bool fail, std::string error_message) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    simulate_file_transfer_failure_ = fail;
+    file_transfer_failure_message_ = std::move(error_message);
+}
+
+void DefaultGatewayClient::set_simulated_chunk_failure(std::optional<uint32_t> chunk_index, std::string error_message) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    simulated_failed_chunk_index_ = chunk_index;
+    chunk_failure_message_ = std::move(error_message);
+}
+
+bool DefaultGatewayClient::mutate_stored_file_chunk_for_test(std::string_view file_id, uint32_t chunk_index,
+                                                             std::vector<uint8_t> tampered_bytes,
+                                                             bool recompute_server_sha256) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    if (it == simulated_stored_files_.end() || it->second.deleted || chunk_index >= it->second.chunks.size()) {
+        return false;
+    }
+
+    it->second.chunks[chunk_index] = std::move(tampered_bytes);
+    uint64_t new_total = 0ULL;
+    for (const auto& chunk : it->second.chunks) {
+        new_total += static_cast<uint64_t>(chunk.size());
+    }
+    it->second.metadata.encrypted_size_bytes = new_total;
+
+    if (recompute_server_sha256) {
+        const auto chunk_sha = domain::crypto::StreamingSha256::digest_hex(it->second.chunks[chunk_index]);
+        if (chunk_sha.is_error()) {
+            return false;
+        }
+        it->second.chunk_sha256s[chunk_index] = chunk_sha.value();
+
+        domain::crypto::StreamingSha256 total_hasher;
+        for (const auto& chunk : it->second.chunks) {
+            if (total_hasher.update(chunk).is_error()) {
+                return false;
+            }
+        }
+        const auto total_sha = total_hasher.finalize_hex();
+        if (total_sha.is_error()) {
+            return false;
+        }
+        it->second.metadata.ciphertext_integrity_hash = total_sha.value();
+    }
+
+    return true;
+}
+
+std::size_t DefaultGatewayClient::uploaded_chunk_call_count(std::string_view file_id) const {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    const auto it = uploaded_chunk_call_counts_.find(std::string(file_id));
+    return it == uploaded_chunk_call_counts_.end() ? 0U : it->second;
+}
+
+bool DefaultGatewayClient::has_stored_file(std::string_view file_id) const {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    return it != simulated_stored_files_.end() && !it->second.deleted;
+}
+
+std::vector<uint8_t> DefaultGatewayClient::stored_file_raw_bytes(std::string_view file_id) const {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    if (it == simulated_stored_files_.end() || it->second.deleted) {
+        return {};
+    }
+
+    std::size_t total_size = 0U;
+    for (const auto& chunk : it->second.chunks) {
+        total_size += chunk.size();
+    }
+    std::vector<uint8_t> combined;
+    combined.reserve(total_size);
+    for (const auto& chunk : it->second.chunks) {
+        combined.insert(combined.end(), chunk.begin(), chunk.end());
+    }
+    return combined;
 }
 
 } // namespace securecloud::client::infrastructure::adapters

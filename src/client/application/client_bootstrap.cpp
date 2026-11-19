@@ -66,7 +66,8 @@ void ClientBootstrap::wire_managers() {
     device_manager_ = std::make_unique<managers::DeviceManager>(*gateway_, *secure_storage_, *crypto_provider_);
     device_pairing_coordinator_ = std::make_unique<managers::DevicePairingCoordinator>(
         *gateway_, *secure_storage_, *crypto_provider_, *device_manager_);
-    file_manager_ = std::make_unique<managers::FileManager>(*gateway_, *crypto_provider_);
+    file_manager_ = std::make_unique<managers::FileManager>(*gateway_, *crypto_provider_, local_store_.get(),
+                                                            secure_storage_.get(), messaging_manager_.get());
     emergency_manager_ = std::make_unique<managers::EmergencyManager>(*local_store_, *secure_storage_);
     sync_manager_ = std::make_unique<managers::SyncManager>(*gateway_, config_);
     sync_manager_->set_messaging_manager(messaging_manager_.get());
@@ -85,6 +86,9 @@ void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& u
     }
     if (contact_manager_) {
         contact_manager_->set_ratchet_session_manager(ratchet_session_manager_.get());
+    }
+    if (file_manager_) {
+        file_manager_->set_local_identity(user_id, device_id);
     }
 }
 

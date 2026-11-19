@@ -44,6 +44,12 @@ class SqlCipherLocalStore final : public application::interfaces::ILocalStore {
     application::ClientResult<std::vector<domain::Contact>> list_contacts() override;
     application::ClientResult<void> delete_contact(const domain::UserId& user_id) override;
 
+    application::ClientResult<void> save_file_transfer(const domain::FileTransferRecord& record) override;
+    application::ClientResult<domain::FileTransferRecord> get_file_transfer(std::string_view transfer_id) override;
+    application::ClientResult<std::vector<domain::FileTransferRecord>>
+    list_file_transfers(const domain::ConversationId& conversation_id = {}) override;
+    application::ClientResult<void> delete_file_transfer(std::string_view transfer_id) override;
+
     [[nodiscard]] bool is_open() const noexcept;
 
   private:

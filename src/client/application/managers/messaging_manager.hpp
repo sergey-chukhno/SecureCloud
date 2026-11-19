@@ -140,6 +140,9 @@ class MessagingManager {
 
     ClientResult<std::optional<domain::Message>> process_inbound_realtime_event(const domain::RealtimeEvent& event);
 
+    [[nodiscard]] ClientResult<void> check_conversation_send_eligibility(const domain::ConversationId& conversation_id,
+                                                                         const domain::UserId& sender_user_id) const;
+
   private:
     ClientResult<void> validate_recipients_can_receive(const domain::Conversation& conv,
                                                        const domain::UserId& sender_user_id) const;

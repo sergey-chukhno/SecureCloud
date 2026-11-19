@@ -11,8 +11,9 @@
 #include <vector>
 
 namespace securecloud::client::domain {
+struct FileTransferRecord;
 struct RealtimeEvent;
-}
+} // namespace securecloud::client::domain
 
 namespace securecloud::client::ui {
 
@@ -175,6 +176,10 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE void toggleInspector();
     Q_INVOKABLE bool sendMessage(const QString& plaintext, int priority = 0);
     Q_INVOKABLE QString stageEncryptedFileTransfer(const QString& fileName, qint64 fileSizeBytes = 2457600);
+    Q_INVOKABLE QString uploadLocalFile(const QString& localFilePathOrUrl);
+    Q_INVOKABLE bool downloadEncryptedFile(const QString& transferId, const QString& destinationPathOrUrl);
+    Q_INVOKABLE bool pauseFileTransfer(const QString& transferId);
+    Q_INVOKABLE bool resumeFileTransfer(const QString& transferId);
     Q_INVOKABLE bool cancelFileTransfer(const QString& transferId);
     Q_INVOKABLE void togglePeerVerified(const QString& peerUserId);
     Q_INVOKABLE void togglePeerBlocked(const QString& peerUserId);
@@ -293,6 +298,17 @@ class WorkspaceViewModel : public QObject {
         QString direction;  // "Outbound" or "Inbound"
         QString statusText; // "Encrypted & Verified", "Streaming Chunks", "Cancelled"
         QString timestampText;
+        QString fileId{};
+        QString localPath{};
+        QString status{QStringLiteral("Completed")};
+        int progressPercent{100};
+        int completedChunks{1};
+        int totalChunks{1};
+        QString errorMessage{};
+        bool canPause{false};
+        bool canResume{false};
+        bool canDownload{false};
+        bool canCancel{true};
     };
 
     struct DeviceEntry {
@@ -312,11 +328,21 @@ class WorkspaceViewModel : public QObject {
     void seedDefaultWorkspaceData();
     void hydrateFromLocalStore();
     void handleRealtimeEvent(const domain::RealtimeEvent& event);
+    void applyFileTransferUpdate(const domain::FileTransferRecord& record);
+    [[nodiscard]] FileTransferEntry buildTransferEntry(const domain::FileTransferRecord& record) const;
+    [[nodiscard]] QVariantMap buildTransferMap(const FileTransferEntry& tx, bool includeSelected) const;
+    [[nodiscard]] QString resolvePeerDisplayName(const QString& conversationId, const domain::UserId& peerUserId) const;
+    void appendDispatchedFileMessage(ConversationEntry& conv, const domain::Message& msg, const QString& transferId,
+                                     const QString& fileName, const QString& fileSizeText, const QString& cipherSuite,
+                                     const QString& sha256Short);
     [[nodiscard]] domain::UserId localUserId() const;
+    [[nodiscard]] domain::DeviceId localDeviceId() const;
     [[nodiscard]] const ConversationEntry* findConversation(const QString& conversationId) const;
     [[nodiscard]] ConversationEntry* findConversationMutable(const QString& conversationId);
     [[nodiscard]] bool matchesQuery(const QString& candidate) const;
     [[nodiscard]] QString resolveTargetPeerUserId(const QString& userId) const;
+    static QString normalizeLocalPath(const QString& pathOrUrl);
+    static QString formatShortHash(const std::string& hexHash);
     static QString formatFileSize(qint64 bytes);
     static QString priorityToLabel(int priority);
 

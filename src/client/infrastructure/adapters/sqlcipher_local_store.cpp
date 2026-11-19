@@ -158,6 +158,17 @@ application::ClientResult<void> SqlCipherLocalStore::initialize_schema_locked() 
             user_id TEXT PRIMARY KEY,
             payload_json TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS file_transfers (
+            transfer_id TEXT PRIMARY KEY,
+            conversation_id TEXT NOT NULL,
+            updated_at_ms INTEGER NOT NULL,
+            payload_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_file_transfers_updated
+            ON file_transfers(updated_at_ms DESC);
+        CREATE INDEX IF NOT EXISTS idx_file_transfers_conv_updated
+            ON file_transfers(conversation_id, updated_at_ms DESC);
     )sql";
     return exec_sql_locked(kSchemaSql);
 }
@@ -402,6 +413,21 @@ application::ClientResult<void> SqlCipherLocalStore::delete_conversation(const d
         }
         sqlite3_bind_text(del_msgs.get(), 1, id.value().c_str(), static_cast<int>(id.value().size()), SQLITE_TRANSIENT);
         if (sqlite3_step(del_msgs.get()) != SQLITE_DONE) {
+            (void)exec_sql_locked("ROLLBACK;");
+            return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+        }
+    }
+
+    {
+        StmtGuard del_transfers;
+        if (sqlite3_prepare_v2(db_, "DELETE FROM file_transfers WHERE conversation_id = ?1;", -1, del_transfers.out(),
+                               nullptr) != SQLITE_OK) {
+            (void)exec_sql_locked("ROLLBACK;");
+            return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+        }
+        sqlite3_bind_text(del_transfers.get(), 1, id.value().c_str(), static_cast<int>(id.value().size()),
+                          SQLITE_TRANSIENT);
+        if (sqlite3_step(del_transfers.get()) != SQLITE_DONE) {
             (void)exec_sql_locked("ROLLBACK;");
             return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
         }
@@ -694,6 +720,153 @@ application::ClientResult<void> SqlCipherLocalStore::delete_contact(const domain
     }
     if (sqlite3_changes(db_) == 0) {
         return application::ClientResult<void>::error(application::ClientError::storage("Contact not found"));
+    }
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<void> SqlCipherLocalStore::save_file_transfer(const domain::FileTransferRecord& record) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    if (record.transfer_id.empty() || record.file_id.empty() || record.conversation_id.empty()) {
+        return application::ClientResult<void>::error(application::ClientError::validation(
+            "Transfer ID, file ID, and conversation ID are required for file transfer persistence"));
+    }
+
+    static constexpr const char* kSql = R"sql(
+        INSERT INTO file_transfers (transfer_id, conversation_id, updated_at_ms, payload_json)
+        VALUES (?1, ?2, ?3, ?4)
+        ON CONFLICT(transfer_id) DO UPDATE SET
+            conversation_id = excluded.conversation_id,
+            updated_at_ms = excluded.updated_at_ms,
+            payload_json = excluded.payload_json;
+    )sql";
+
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    const std::string& cid = record.conversation_id.value();
+    const std::string json = record.to_json();
+
+    sqlite3_bind_text(stmt.get(), 1, record.transfer_id.c_str(), static_cast<int>(record.transfer_id.size()),
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 2, cid.c_str(), static_cast<int>(cid.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt.get(), 3, static_cast<sqlite3_int64>(record.updated_at_ms));
+    sqlite3_bind_text(stmt.get(), 4, json.c_str(), static_cast<int>(json.size()), SQLITE_TRANSIENT);
+
+    if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<domain::FileTransferRecord>
+SqlCipherLocalStore::get_file_transfer(std::string_view transfer_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<domain::FileTransferRecord>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (transfer_id.empty()) {
+        return application::ClientResult<domain::FileTransferRecord>::error(
+            application::ClientError::validation("Transfer ID cannot be empty"));
+    }
+
+    static constexpr const char* kSql = "SELECT payload_json FROM file_transfers WHERE transfer_id = ?1;";
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<domain::FileTransferRecord>::error(
+            application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    sqlite3_bind_text(stmt.get(), 1, transfer_id.data(), static_cast<int>(transfer_id.size()), SQLITE_TRANSIENT);
+    const int rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_ROW) {
+        auto rec_opt = domain::FileTransferRecord::from_json(column_text_string(stmt.get(), 0));
+        if (!rec_opt.has_value()) {
+            return application::ClientResult<domain::FileTransferRecord>::error(
+                application::ClientError::storage("Corrupt file transfer JSON in SQLCipher store"));
+        }
+        return application::ClientResult<domain::FileTransferRecord>::ok(std::move(*rec_opt));
+    }
+    if (rc == SQLITE_DONE) {
+        return application::ClientResult<domain::FileTransferRecord>::error(
+            application::ClientError::storage("File transfer not found"));
+    }
+    return application::ClientResult<domain::FileTransferRecord>::error(
+        application::ClientError::storage(sqlite3_errmsg(db_)));
+}
+
+application::ClientResult<std::vector<domain::FileTransferRecord>>
+SqlCipherLocalStore::list_file_transfers(const domain::ConversationId& conversation_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<std::vector<domain::FileTransferRecord>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+
+    static constexpr const char* kSqlAll =
+        "SELECT payload_json FROM file_transfers ORDER BY updated_at_ms DESC, transfer_id ASC;";
+    static constexpr const char* kSqlByConv = "SELECT payload_json FROM file_transfers WHERE conversation_id = ?1 "
+                                              "ORDER BY updated_at_ms DESC, transfer_id ASC;";
+
+    const char* sql = conversation_id.empty() ? kSqlAll : kSqlByConv;
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, sql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<std::vector<domain::FileTransferRecord>>::error(
+            application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    if (!conversation_id.empty()) {
+        sqlite3_bind_text(stmt.get(), 1, conversation_id.value().c_str(),
+                          static_cast<int>(conversation_id.value().size()), SQLITE_TRANSIENT);
+    }
+
+    std::vector<domain::FileTransferRecord> result;
+    while (true) {
+        const int rc = sqlite3_step(stmt.get());
+        if (rc == SQLITE_ROW) {
+            auto rec_opt = domain::FileTransferRecord::from_json(column_text_string(stmt.get(), 0));
+            if (!rec_opt.has_value()) {
+                return application::ClientResult<std::vector<domain::FileTransferRecord>>::error(
+                    application::ClientError::storage("Corrupt file transfer JSON in SQLCipher store"));
+            }
+            result.push_back(std::move(*rec_opt));
+        } else if (rc == SQLITE_DONE) {
+            break;
+        } else {
+            return application::ClientResult<std::vector<domain::FileTransferRecord>>::error(
+                application::ClientError::storage(sqlite3_errmsg(db_)));
+        }
+    }
+    return application::ClientResult<std::vector<domain::FileTransferRecord>>::ok(std::move(result));
+}
+
+application::ClientResult<void> SqlCipherLocalStore::delete_file_transfer(std::string_view transfer_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    if (transfer_id.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Transfer ID cannot be empty"));
+    }
+
+    static constexpr const char* kSql = "DELETE FROM file_transfers WHERE transfer_id = ?1;";
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    sqlite3_bind_text(stmt.get(), 1, transfer_id.data(), static_cast<int>(transfer_id.size()), SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+    if (sqlite3_changes(db_) == 0) {
+        return application::ClientResult<void>::error(application::ClientError::storage("File transfer not found"));
     }
     return application::ClientResult<void>::ok();
 }

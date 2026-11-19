@@ -6,6 +6,7 @@
 #include "domain/device.hpp"
 #include "domain/device_id.hpp"
 #include "domain/directory_user_entry.hpp"
+#include "domain/file_transfer.hpp"
 #include "domain/one_time_prekey_record.hpp"
 #include "domain/prekey_bundle.hpp"
 #include "domain/prekey_inventory_status.hpp"
@@ -60,6 +61,70 @@ struct FanOutSubmissionRequest {
     std::vector<domain::crypto::PerDeviceDeliveryPayload> device_payloads;
     std::optional<std::vector<uint8_t>> group_envelope_bytes;
     int32_t priority{0};
+};
+
+struct FileUploadInitRequest {
+    std::string file_id;
+    domain::UserId owner_user_id;
+    domain::DeviceId owner_device_id;
+    domain::ConversationId conversation_id;
+    uint64_t encrypted_size_bytes{0};
+    uint32_t expected_chunk_count{0};
+    std::string encryption_version{"v1"};
+    std::string client_crypto_metadata;
+};
+
+struct FileUploadInitResult {
+    std::string upload_id;
+    std::string file_id;
+    std::string status{"TRANSFER_STATUS_PENDING"};
+    int64_t expires_at_unix_ms{0};
+};
+
+struct FileChunkUploadRequest {
+    std::string upload_id;
+    uint32_t chunk_index{0};
+    std::vector<uint8_t> encrypted_data;
+    std::string ciphertext_sha256;
+};
+
+struct FileChunkUploadResult {
+    std::string upload_id;
+    uint32_t chunk_index{0};
+    bool accepted{false};
+    std::string received_sha256;
+};
+
+struct FileUploadFinalizeRequest {
+    std::string upload_id;
+    std::string file_id;
+    std::string expected_ciphertext_sha256;
+};
+
+struct FileUploadFinalizeResult {
+    std::string file_id;
+    std::string lifecycle_state{"FILE_LIFECYCLE_STATE_AVAILABLE"};
+    int64_t available_at_unix_ms{0};
+};
+
+struct RemoteFileMetadata {
+    std::string file_id;
+    domain::UserId owner_user_id;
+    domain::ConversationId conversation_id;
+    std::string lifecycle_state;
+    uint64_t encrypted_size_bytes{0};
+    uint32_t chunk_count{0};
+    std::string encryption_version{"v1"};
+    std::string ciphertext_integrity_hash;
+    int64_t created_at_unix_ms{0};
+    int64_t available_at_unix_ms{0};
+};
+
+struct FileChunkDownloadResult {
+    std::string file_id;
+    uint32_t chunk_index{0};
+    std::vector<uint8_t> encrypted_data;
+    std::string ciphertext_sha256;
 };
 
 class IGatewayClient {
@@ -119,6 +184,21 @@ class IGatewayClient {
                                                                                          std::size_t limit = 20) = 0;
 
     virtual ClientResult<domain::DirectoryUserEntry> lookup_user_identity(const domain::UserId& user_id) = 0;
+
+    virtual ClientResult<FileUploadInitResult> init_file_upload(const FileUploadInitRequest& request) = 0;
+
+    virtual ClientResult<FileChunkUploadResult> upload_file_chunk(const FileChunkUploadRequest& request) = 0;
+
+    virtual ClientResult<FileUploadFinalizeResult> finalize_file_upload(const FileUploadFinalizeRequest& request) = 0;
+
+    virtual ClientResult<void> cancel_file_upload(std::string_view upload_id, std::string_view reason = "") = 0;
+
+    virtual ClientResult<RemoteFileMetadata> get_file_metadata(std::string_view file_id) = 0;
+
+    virtual ClientResult<FileChunkDownloadResult> download_file_chunk(std::string_view file_id,
+                                                                      uint32_t chunk_index) = 0;
+
+    virtual ClientResult<void> delete_file(std::string_view file_id) = 0;
 };
 
 } // namespace securecloud::client::application::interfaces
