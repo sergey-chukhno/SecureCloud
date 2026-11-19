@@ -4077,3 +4077,35 @@ target_link_libraries(securecloud_messaging_audit_observability_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_messaging_audit_observability_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Asynchronous Outbox Relay Unit Test Suite (AUDIT-014-T07)
+add_executable(securecloud_messaging_outbox_relay_test
+        messaging/messaging_outbox_relay_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_outbox_relay_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud_proto
+        securecloud::json
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_outbox_relay_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Zero-Plaintext Audit Security Negative Test Suite (AUDIT-014-T07)
+add_executable(securecloud_zero_plaintext_audit_security_test
+        messaging/zero_plaintext_audit_security_test.cpp
+)
+
+target_link_libraries(securecloud_zero_plaintext_audit_security_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud_proto
+        securecloud::json
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_zero_plaintext_audit_security_test ${SECURECLOUD_TEST_PROPERTIES})

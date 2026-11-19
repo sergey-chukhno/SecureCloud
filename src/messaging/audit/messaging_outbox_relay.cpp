@@ -72,6 +72,20 @@ int32_t infer_grpc_status_code(const IMessagingAuditClient::BatchResult& result)
     return 13; // INTERNAL
 }
 
+void record_acknowledged_event(repository::IMessagingAuditOutboxRepository& repository, MessagingAuditMetrics& metrics,
+                               const std::string& bucket, int32_t shard_id, const repository::AuditOutboxRecord& record,
+                               std::chrono::system_clock::time_point ack_time) {
+    repository.mark_published(bucket, shard_id, record.created_at, record.event_id);
+    metrics.increment_published(record.event_type);
+
+    if (record.created_at.time_since_epoch().count() > 0 && ack_time >= record.created_at) {
+        const double latency_sec = std::chrono::duration<double>(ack_time - record.created_at).count();
+        metrics.record_delivery_latency(latency_sec);
+    } else {
+        metrics.record_delivery_latency(0.0);
+    }
+}
+
 } // namespace
 
 MessagingOutboxRelay::MessagingOutboxRelay(std::shared_ptr<repository::IMessagingAuditOutboxRepository> repository,
@@ -190,26 +204,17 @@ bool MessagingOutboxRelay::process_shard(const std::string& bucket, int32_t shar
     // 2. Network Dispatch Phase
     metrics.record_batch_size(batch.size());
     const auto result = audit_client_->send_batch(batch);
+    const auto ack_time = std::chrono::system_clock::now();
 
     // 3. Acknowledgement & Quarantine Engine
     if (result.success && result.rejected_event_ids.empty()) {
-        const auto ack_time = std::chrono::system_clock::now();
-
         for (const auto* record_ptr : valid_records) {
-            const auto& record = *record_ptr;
-            repository_->mark_published(bucket, shard_id, record.created_at, record.event_id);
-            metrics.increment_published(record.event_type);
-
-            if (record.created_at.time_since_epoch().count() > 0 && ack_time >= record.created_at) {
-                const double latency_sec = std::chrono::duration<double>(ack_time - record.created_at).count();
-                metrics.record_delivery_latency(latency_sec);
-            } else {
-                metrics.record_delivery_latency(0.0);
-            }
+            record_acknowledged_event(*repository_, metrics, bucket, shard_id, *record_ptr, ack_time);
         }
     } else {
         const AuditRetryReason retry_reason = classify_retry_reason(result.error_message);
         const int32_t grpc_code = infer_grpc_status_code(result);
+        const bool has_partial_rejections = !result.rejected_event_ids.empty();
         std::chrono::milliseconds batch_backoff{0};
 
         for (const auto* record_ptr : valid_records) {
@@ -218,12 +223,16 @@ bool MessagingOutboxRelay::process_shard(const std::string& bucket, int32_t shar
                 std::find(result.rejected_event_ids.begin(), result.rejected_event_ids.end(), record.event_id) !=
                 result.rejected_event_ids.end();
 
-            if (is_explicitly_rejected || (!result.is_transient_error && !result.success)) {
+            if (is_explicitly_rejected || (!has_partial_rejections && !result.is_transient_error && !result.success)) {
+                // Fatal rejection (explicit poison pill or entire batch rejected with non-transient error)
                 const std::string reason = "Permanent rejection: " + result.error_message;
                 repository_->record_failure(bucket, shard_id, record.created_at, record.event_id, reason, true);
                 metrics.increment_quarantined(AuditQuarantineReason::InvalidArgument);
                 AuditDiagnostics::log_quarantine_event(bucket, shard_id, record.event_id, record.event_type,
                                                        record.attempt_count + 1, reason);
+            } else if (has_partial_rejections && !result.is_transient_error) {
+                // BatchSubmitAuditEvents accepted the non-rejected records in the batch
+                record_acknowledged_event(*repository_, metrics, bucket, shard_id, record, ack_time);
             } else if (result.is_transient_error) {
                 const int32_t current_attempt = record.attempt_count + 1;
                 const bool should_quarantine = (current_attempt >= config_.max_retries);

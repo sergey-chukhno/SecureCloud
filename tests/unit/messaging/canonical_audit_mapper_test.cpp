@@ -1,20 +1,21 @@
-#include <gtest/gtest.h>
 #include "audit/canonical_audit_mapper.hpp"
 #include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "securecloud/audit/v1/audit.pb.h"
+
 #include <chrono>
+#include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
 namespace securecloud::messaging::audit::test {
 
-using securecloud::audit::v1::AuditEventProto;
-using securecloud::audit::v1::SEVERITY_INFO;
-using securecloud::audit::v1::SEVERITY_CRITICAL;
-using securecloud::audit::v1::SEVERITY_UNSPECIFIED;
-using securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING;
-using securecloud::audit::v1::ACTOR_TYPE_USER;
 using securecloud::audit::v1::ACTOR_TYPE_DEVICE;
+using securecloud::audit::v1::ACTOR_TYPE_USER;
+using securecloud::audit::v1::AuditEventProto;
+using securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING;
+using securecloud::audit::v1::SEVERITY_CRITICAL;
+using securecloud::audit::v1::SEVERITY_INFO;
+using securecloud::audit::v1::SEVERITY_UNSPECIFIED;
 using securecloud::audit::v1::TARGET_TYPE_CONVERSATION;
 
 class CanonicalAuditMapperTest : public ::testing::Test {

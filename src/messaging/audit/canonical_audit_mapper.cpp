@@ -1,20 +1,25 @@
 #include "canonical_audit_mapper.hpp"
-#include <nlohmann/json.hpp> // Supposé via le target securecloud::json
+
 #include <chrono>
+#include <nlohmann/json.hpp> // Supposé via le target securecloud::json
 
 namespace securecloud::messaging::audit {
 
-using securecloud::audit::v1::AuditEventProto;
-using securecloud::audit::v1::SeverityProto;
-using securecloud::audit::v1::ProducerServiceProto;
 using securecloud::audit::v1::ActorTypeProto;
+using securecloud::audit::v1::AuditEventProto;
+using securecloud::audit::v1::ProducerServiceProto;
+using securecloud::audit::v1::SeverityProto;
 
 namespace {
 SeverityProto parse_severity(const std::string& sev) {
-    if (sev == "INFO") return securecloud::audit::v1::SEVERITY_INFO;
-    if (sev == "WARNING") return securecloud::audit::v1::SEVERITY_WARNING;
-    if (sev == "SECURITY") return securecloud::audit::v1::SEVERITY_SECURITY;
-    if (sev == "CRITICAL") return securecloud::audit::v1::SEVERITY_CRITICAL;
+    if (sev == "INFO")
+        return securecloud::audit::v1::SEVERITY_INFO;
+    if (sev == "WARNING")
+        return securecloud::audit::v1::SEVERITY_WARNING;
+    if (sev == "SECURITY")
+        return securecloud::audit::v1::SEVERITY_SECURITY;
+    if (sev == "CRITICAL")
+        return securecloud::audit::v1::SEVERITY_CRITICAL;
     return securecloud::audit::v1::SEVERITY_UNSPECIFIED;
 }
 } // namespace

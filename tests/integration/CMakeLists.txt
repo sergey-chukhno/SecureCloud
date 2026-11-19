@@ -1301,3 +1301,26 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_auth_outbox_transaction_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Asynchronous Audit Outbox & Fault Injection Integration Suite (AUDIT-014-T07)
+add_executable(securecloud_messaging_audit_outbox_integration_test
+        messaging_audit_outbox_integration_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_audit_outbox_integration_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud::json
+        securecloud_proto
+        gRPC::grpc++
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_messaging_audit_outbox_integration_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_messaging_audit_outbox_integration_test ${SECURECLOUD_TEST_PROPERTIES})

@@ -218,9 +218,9 @@ TEST_F(MessagingAuditObservabilityTest, LockFreeMetricsAndPrometheusExposition) 
 }
 
 TEST_F(MessagingAuditObservabilityTest, StructuredDiagnosticsSanitizesSensitiveData) {
-    AuditDiagnostics::log_quarantine_event(
-        "2026-11-19-08", 5, "evt-123", "message.submitted", 5,
-        "Rejected payload: ciphertext=deadbeef01020304 secret=super_secret_key token=abc123xyz Bearer eyJsecretJwtToken");
+    AuditDiagnostics::log_quarantine_event("2026-11-19-08", 5, "evt-123", "message.submitted", 5,
+                                           "Rejected payload: ciphertext=deadbeef01020304 secret=super_secret_key "
+                                           "token=abc123xyz Bearer eyJsecretJwtToken");
 
     const auto emitted = logs();
     ASSERT_EQ(emitted.size(), 1U);

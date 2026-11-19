@@ -91,14 +91,10 @@ void AuditDiagnostics::reset_log_sink() {
 
 void AuditDiagnostics::log_relay_state_change(std::string_view state, uint32_t worker_threads, uint32_t total_shards) {
     nlohmann::json log_entry = {
-        {"timestamp", current_utc_iso8601()},
-        {"level", "INFO"},
-        {"service", "securecloud-messaging"},
-        {"component", "audit_relay"},
-        {"event", "relay.state_changed"},
-        {"state", sanitize_diagnostic_text(state)},
-        {"worker_threads", worker_threads},
-        {"total_shards", total_shards},
+        {"timestamp", current_utc_iso8601()}, {"level", "INFO"},
+        {"service", "securecloud-messaging"}, {"component", "audit_relay"},
+        {"event", "relay.state_changed"},     {"state", sanitize_diagnostic_text(state)},
+        {"worker_threads", worker_threads},   {"total_shards", total_shards},
     };
     emit_json(log_entry, false);
 }

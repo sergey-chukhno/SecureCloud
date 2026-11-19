@@ -1,14 +1,16 @@
 #include "messaging_audit_client.hpp"
+
 #include <fstream>
-#include <sstream>
 #include <iostream>
+#include <sstream>
 
 namespace securecloud::messaging::audit {
 
 namespace {
 std::string read_file(const std::string& filepath) {
     std::ifstream ifs(filepath);
-    if (!ifs.is_open()) return "";
+    if (!ifs.is_open())
+        return "";
     std::ostringstream oss;
     oss << ifs.rdbuf();
     return oss.str();
@@ -31,7 +33,8 @@ MessagingAuditClient::MessagingAuditClient(const AuditClientConfig& config) {
 }
 
 bool MessagingAuditClient::publish_batch(const std::vector<securecloud::audit::v1::AuditEventProto>& events) {
-    if (events.empty()) return true;
+    if (events.empty())
+        return true;
 
     securecloud::audit::v1::BatchSubmitAuditEventsRequest request;
     for (const auto& ev : events) {
@@ -50,7 +53,8 @@ bool MessagingAuditClient::publish_batch(const std::vector<securecloud::audit::v
     }
 
     if (response.rejected_count() > 0) {
-        std::cerr << "[AuditClient] Warning: " << response.rejected_count() << " events rejected by ingestion server." << std::endl;
+        std::cerr << "[AuditClient] Warning: " << response.rejected_count() << " events rejected by ingestion server."
+                  << std::endl;
         // Depending on strictness, we might return false here or track quarantine metrics.
         return false;
     }

@@ -19,11 +19,7 @@ constexpr std::array<std::string_view, 9> kEventTypeLabels = {
 };
 
 constexpr std::array<std::string_view, 5> kSeverityLabels = {
-    "INFO",
-    "WARNING",
-    "SECURITY",
-    "CRITICAL",
-    "UNSPECIFIED",
+    "INFO", "WARNING", "SECURITY", "CRITICAL", "UNSPECIFIED",
 };
 
 constexpr std::array<std::string_view, 4> kRetryReasonLabels = {
@@ -254,14 +250,15 @@ std::string MessagingAuditMetrics::to_prometheus_text() const {
         for (size_t j = 0; j < kNumSeverities; ++j) {
             const uint64_t val = staged_[i][j].load(std::memory_order_relaxed);
             if (val > 0 || (i == 0 && j == 0)) {
-                ss << "messaging_audit_events_staged_total{event_type=\"" << kEventTypeLabels[i]
-                   << "\",severity=\"" << kSeverityLabels[j] << "\"} " << val << "\n";
+                ss << "messaging_audit_events_staged_total{event_type=\"" << kEventTypeLabels[i] << "\",severity=\""
+                   << kSeverityLabels[j] << "\"} " << val << "\n";
             }
         }
     }
 
     // 2. messaging_audit_events_published_total
-    ss << "# HELP messaging_audit_events_published_total Monotonic count of audit events acknowledged by Audit Service.\n";
+    ss << "# HELP messaging_audit_events_published_total Monotonic count of audit events acknowledged by Audit "
+          "Service.\n";
     ss << "# TYPE messaging_audit_events_published_total counter\n";
     for (size_t i = 0; i < kNumEventTypes; ++i) {
         const uint64_t val = published_[i].load(std::memory_order_relaxed);
