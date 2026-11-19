@@ -1,14 +1,12 @@
 #include "infrastructure/adapters/default_gateway_client.hpp"
 
+#include "domain/crypto/file_crypto_engine.hpp"
 #include "domain/prekey_policy.hpp"
 
 #include <algorithm>
-#include <array>
 #include <cctype>
 #include <chrono>
 #include <iomanip>
-#include <memory>
-#include <openssl/evp.h>
 #include <span>
 #include <sstream>
 
@@ -27,62 +25,6 @@ std::string to_lower_ascii(std::string_view sv) {
 int64_t current_unix_ms() noexcept {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
         .count();
-}
-
-std::string bytes_to_hex(std::span<const uint8_t> bytes) {
-    static constexpr std::array<char, 16> kHex = {'0', '1', '2', '3', '4', '5', '6', '7',
-                                                  '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'};
-    std::string hex;
-    hex.reserve(bytes.size() * 2U);
-    for (const uint8_t b : bytes) {
-        hex.push_back(kHex[static_cast<std::size_t>((b >> 4U) & 0x0FU)]);
-        hex.push_back(kHex[static_cast<std::size_t>(b & 0x0FU)]);
-    }
-    return hex;
-}
-
-class Sha256Hasher final {
-  public:
-    Sha256Hasher() : ctx_(EVP_MD_CTX_new(), &EVP_MD_CTX_free) {
-        ok_ = ctx_ != nullptr && EVP_DigestInit_ex(ctx_.get(), EVP_sha256(), nullptr) == 1;
-    }
-
-    bool update(std::span<const uint8_t> data) noexcept {
-        if (!ok_) {
-            return false;
-        }
-        if (data.empty()) {
-            return true;
-        }
-        ok_ = EVP_DigestUpdate(ctx_.get(), data.data(), data.size()) == 1;
-        return ok_;
-    }
-
-    std::optional<std::string> finalize_hex() {
-        if (!ok_) {
-            return std::nullopt;
-        }
-        std::array<uint8_t, EVP_MAX_MD_SIZE> digest{};
-        unsigned int digest_len = 0;
-        if (EVP_DigestFinal_ex(ctx_.get(), digest.data(), &digest_len) != 1 || digest_len != 32U) {
-            ok_ = false;
-            return std::nullopt;
-        }
-        ok_ = false;
-        return bytes_to_hex(std::span<const uint8_t>(digest.data(), digest_len));
-    }
-
-  private:
-    std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> ctx_;
-    bool ok_{false};
-};
-
-std::optional<std::string> compute_sha256_hex(std::span<const uint8_t> data) {
-    Sha256Hasher hasher;
-    if (!hasher.update(data)) {
-        return std::nullopt;
-    }
-    return hasher.finalize_hex();
 }
 
 } // namespace
@@ -772,12 +714,12 @@ DefaultGatewayClient::upload_file_chunk(const application::interfaces::FileChunk
             application::ClientError::validation("Encrypted chunk size is outside allowed bounds (1 B .. 8 MiB)"));
     }
 
-    const auto digest_opt = compute_sha256_hex(request.encrypted_data);
-    if (!digest_opt.has_value()) {
-        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
-            application::ClientError::crypto("Failed to compute chunk SHA-256 digest"));
+    const auto digest_res = domain::crypto::StreamingSha256::digest_hex(request.encrypted_data);
+    if (digest_res.is_error()) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(digest_res.error());
     }
-    if (!request.ciphertext_sha256.empty() && to_lower_ascii(request.ciphertext_sha256) != *digest_opt) {
+    const std::string& digest_hex = digest_res.value();
+    if (!request.ciphertext_sha256.empty() && to_lower_ascii(request.ciphertext_sha256) != digest_hex) {
         return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
             application::ClientError::validation("Chunk ciphertext SHA-256 mismatch at chunk index " +
                                                  std::to_string(request.chunk_index)));
@@ -785,7 +727,7 @@ DefaultGatewayClient::upload_file_chunk(const application::interfaces::FileChunk
 
     session.chunks[request.chunk_index] = SimulatedStagedChunk{
         .bytes = request.encrypted_data,
-        .sha256_hex = *digest_opt,
+        .sha256_hex = digest_hex,
     };
     uploaded_chunk_call_counts_[session.file_id] += 1U;
 
@@ -794,7 +736,7 @@ DefaultGatewayClient::upload_file_chunk(const application::interfaces::FileChunk
             .upload_id = request.upload_id,
             .chunk_index = request.chunk_index,
             .accepted = true,
-            .received_sha256 = *digest_opt,
+            .received_sha256 = digest_hex,
         });
 }
 
@@ -833,7 +775,7 @@ DefaultGatewayClient::finalize_file_upload(const application::interfaces::FileUp
     SimulatedStoredFile stored;
     stored.chunks.reserve(session.expected_chunk_count);
     stored.chunk_sha256s.reserve(session.expected_chunk_count);
-    Sha256Hasher total_hasher;
+    domain::crypto::StreamingSha256 total_hasher;
     uint64_t total_size_bytes = 0ULL;
 
     for (uint32_t idx = 0; idx < session.expected_chunk_count; ++idx) {
@@ -843,9 +785,8 @@ DefaultGatewayClient::finalize_file_upload(const application::interfaces::FileUp
                 application::ClientError::validation("Missing chunk index " + std::to_string(idx) +
                                                      " during finalize"));
         }
-        if (!total_hasher.update(chunk_it->second.bytes)) {
-            return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
-                application::ClientError::crypto("Failed to hash finalized file chunks"));
+        if (const auto upd = total_hasher.update(chunk_it->second.bytes); upd.is_error()) {
+            return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(upd.error());
         }
         total_size_bytes += static_cast<uint64_t>(chunk_it->second.bytes.size());
         stored.chunks.push_back(chunk_it->second.bytes);
@@ -853,12 +794,12 @@ DefaultGatewayClient::finalize_file_upload(const application::interfaces::FileUp
     }
 
     const auto finalized_sha256 = total_hasher.finalize_hex();
-    if (!finalized_sha256.has_value()) {
+    if (finalized_sha256.is_error()) {
         return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
-            application::ClientError::crypto("Failed to finalize file SHA-256 digest"));
+            finalized_sha256.error());
     }
     if (!request.expected_ciphertext_sha256.empty() &&
-        to_lower_ascii(request.expected_ciphertext_sha256) != *finalized_sha256) {
+        to_lower_ascii(request.expected_ciphertext_sha256) != finalized_sha256.value()) {
         return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
             application::ClientError::validation("Finalized ciphertext SHA-256 mismatch"));
     }
@@ -872,7 +813,7 @@ DefaultGatewayClient::finalize_file_upload(const application::interfaces::FileUp
         .encrypted_size_bytes = total_size_bytes,
         .chunk_count = session.expected_chunk_count,
         .encryption_version = session.encryption_version,
-        .ciphertext_integrity_hash = *finalized_sha256,
+        .ciphertext_integrity_hash = finalized_sha256.value(),
         .created_at_unix_ms = session.created_at_unix_ms,
         .available_at_unix_ms = available_at_ms,
     };
@@ -1020,23 +961,23 @@ bool DefaultGatewayClient::mutate_stored_file_chunk_for_test(std::string_view fi
     it->second.metadata.encrypted_size_bytes = new_total;
 
     if (recompute_server_sha256) {
-        const auto chunk_sha = compute_sha256_hex(it->second.chunks[chunk_index]);
-        if (!chunk_sha.has_value()) {
+        const auto chunk_sha = domain::crypto::StreamingSha256::digest_hex(it->second.chunks[chunk_index]);
+        if (chunk_sha.is_error()) {
             return false;
         }
-        it->second.chunk_sha256s[chunk_index] = *chunk_sha;
+        it->second.chunk_sha256s[chunk_index] = chunk_sha.value();
 
-        Sha256Hasher total_hasher;
+        domain::crypto::StreamingSha256 total_hasher;
         for (const auto& chunk : it->second.chunks) {
-            if (!total_hasher.update(chunk)) {
+            if (total_hasher.update(chunk).is_error()) {
                 return false;
             }
         }
         const auto total_sha = total_hasher.finalize_hex();
-        if (!total_sha.has_value()) {
+        if (total_sha.is_error()) {
             return false;
         }
-        it->second.metadata.ciphertext_integrity_hash = *total_sha;
+        it->second.metadata.ciphertext_integrity_hash = total_sha.value();
     }
 
     return true;
