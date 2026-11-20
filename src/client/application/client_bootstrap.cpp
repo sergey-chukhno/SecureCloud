@@ -70,7 +70,10 @@ void ClientBootstrap::wire_managers() {
                                                             secure_storage_.get(), messaging_manager_.get());
     emergency_manager_ = std::make_unique<managers::EmergencyManager>(*local_store_, *secure_storage_);
     sync_manager_ = std::make_unique<managers::SyncManager>(*gateway_, config_);
+    sync_manager_->set_local_store(local_store_.get());
     sync_manager_->set_messaging_manager(messaging_manager_.get());
+    sync_manager_->set_contact_manager(contact_manager_.get());
+    sync_manager_->set_file_manager(file_manager_.get());
 }
 
 void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& user_id,
@@ -89,6 +92,9 @@ void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& u
     }
     if (file_manager_) {
         file_manager_->set_local_identity(user_id, device_id);
+    }
+    if (sync_manager_) {
+        sync_manager_->set_local_identity(user_id, device_id);
     }
 }
 
