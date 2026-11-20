@@ -7,6 +7,7 @@
 #include "domain/file_transfer.hpp"
 #include "domain/message.hpp"
 #include "domain/message_id.hpp"
+#include "domain/offline_sync_models.hpp"
 #include "domain/user_id.hpp"
 
 #include <cstddef>
@@ -44,6 +45,17 @@ class ILocalStore {
     virtual ClientResult<std::vector<domain::FileTransferRecord>>
     list_file_transfers(const domain::ConversationId& conversation_id = {}) = 0;
     virtual ClientResult<void> delete_file_transfer(std::string_view transfer_id) = 0;
+
+    virtual ClientResult<void> save_outbox_record(const domain::OfflineOutboxRecord& record) = 0;
+    virtual ClientResult<domain::OfflineOutboxRecord> get_outbox_record(std::string_view outbox_id) = 0;
+    virtual ClientResult<std::vector<domain::OfflineOutboxRecord>> list_outbox_records(std::size_t limit = 500) = 0;
+    virtual ClientResult<void> delete_outbox_record(std::string_view outbox_id) = 0;
+
+    virtual ClientResult<domain::SyncCursorRecord> save_sync_cursor(const domain::SyncCursorRecord& cursor) = 0;
+    virtual ClientResult<domain::SyncCursorRecord> get_sync_cursor(const domain::DeviceId& device_id,
+                                                                   const domain::ConversationId& conversation_id) = 0;
+    virtual ClientResult<std::vector<domain::SyncCursorRecord>>
+    list_sync_cursors(const domain::DeviceId& device_id) = 0;
 };
 
 } // namespace securecloud::client::application::interfaces
