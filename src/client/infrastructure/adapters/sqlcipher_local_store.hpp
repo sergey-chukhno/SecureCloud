@@ -50,10 +50,25 @@ class SqlCipherLocalStore final : public application::interfaces::ILocalStore {
     list_file_transfers(const domain::ConversationId& conversation_id = {}) override;
     application::ClientResult<void> delete_file_transfer(std::string_view transfer_id) override;
 
+    application::ClientResult<void> save_outbox_record(const domain::OfflineOutboxRecord& record) override;
+    application::ClientResult<domain::OfflineOutboxRecord> get_outbox_record(std::string_view outbox_id) override;
+    application::ClientResult<std::vector<domain::OfflineOutboxRecord>>
+    list_outbox_records(std::size_t limit = 500) override;
+    application::ClientResult<void> delete_outbox_record(std::string_view outbox_id) override;
+
+    application::ClientResult<domain::SyncCursorRecord>
+    save_sync_cursor(const domain::SyncCursorRecord& cursor) override;
+    application::ClientResult<domain::SyncCursorRecord>
+    get_sync_cursor(const domain::DeviceId& device_id, const domain::ConversationId& conversation_id) override;
+    application::ClientResult<std::vector<domain::SyncCursorRecord>>
+    list_sync_cursors(const domain::DeviceId& device_id) override;
+
     [[nodiscard]] bool is_open() const noexcept;
 
   private:
     application::ClientResult<void> exec_sql_locked(const char* sql);
+    application::ClientResult<void> exec_delete_for_conversation_locked(const char* sql,
+                                                                        const domain::ConversationId& id);
     application::ClientResult<void> initialize_schema_locked();
     void close_locked() noexcept;
 

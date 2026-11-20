@@ -65,6 +65,8 @@ application::ClientResult<void> MemoryLocalStore::delete_conversation(const doma
     conversations_.erase(it);
     messages_.erase(id);
     std::erase_if(file_transfers_, [&id](const auto& entry) { return entry.second.conversation_id == id; });
+    std::erase_if(outbox_records_, [&id](const auto& entry) { return entry.second.conversation_id == id; });
+    std::erase_if(sync_cursors_, [&id](const auto& entry) { return entry.second.conversation_id == id; });
     return application::ClientResult<void>::ok();
 }
 
@@ -256,12 +258,173 @@ application::ClientResult<void> MemoryLocalStore::delete_file_transfer(std::stri
     return application::ClientResult<void>::ok();
 }
 
+application::ClientResult<void> MemoryLocalStore::save_outbox_record(const domain::OfflineOutboxRecord& record) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    if (record.outbox_id.empty() || record.conversation_id.empty() || record.payload_json.empty()) {
+        return application::ClientResult<void>::error(application::ClientError::validation(
+            "Outbox ID, conversation ID, and payload JSON are required for outbox persistence"));
+    }
+    outbox_records_[record.outbox_id] = record;
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<domain::OfflineOutboxRecord> MemoryLocalStore::get_outbox_record(std::string_view outbox_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<domain::OfflineOutboxRecord>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (outbox_id.empty()) {
+        return application::ClientResult<domain::OfflineOutboxRecord>::error(
+            application::ClientError::validation("Outbox ID cannot be empty"));
+    }
+    const auto it = outbox_records_.find(std::string(outbox_id));
+    if (it == outbox_records_.end()) {
+        return application::ClientResult<domain::OfflineOutboxRecord>::error(
+            application::ClientError::storage("Outbox record not found"));
+    }
+    return application::ClientResult<domain::OfflineOutboxRecord>::ok(it->second);
+}
+
+application::ClientResult<std::vector<domain::OfflineOutboxRecord>>
+MemoryLocalStore::list_outbox_records(std::size_t limit) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<std::vector<domain::OfflineOutboxRecord>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    std::vector<domain::OfflineOutboxRecord> result;
+    result.reserve(outbox_records_.size());
+    for (const auto& [_, rec] : outbox_records_) {
+        result.push_back(rec);
+    }
+    std::sort(result.begin(), result.end(),
+              [](const domain::OfflineOutboxRecord& a, const domain::OfflineOutboxRecord& b) {
+                  if (a.priority != b.priority) {
+                      return a.priority > b.priority;
+                  }
+                  if (a.created_at_ms != b.created_at_ms) {
+                      return a.created_at_ms < b.created_at_ms;
+                  }
+                  return a.outbox_id < b.outbox_id;
+              });
+    const std::size_t effective_limit = limit == 0U ? 500U : limit;
+    if (result.size() > effective_limit) {
+        result.resize(effective_limit);
+    }
+    return application::ClientResult<std::vector<domain::OfflineOutboxRecord>>::ok(std::move(result));
+}
+
+application::ClientResult<void> MemoryLocalStore::delete_outbox_record(std::string_view outbox_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    if (outbox_id.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Outbox ID cannot be empty"));
+    }
+    const auto it = outbox_records_.find(std::string(outbox_id));
+    if (it == outbox_records_.end()) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Outbox record not found"));
+    }
+    outbox_records_.erase(it);
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<domain::SyncCursorRecord>
+MemoryLocalStore::save_sync_cursor(const domain::SyncCursorRecord& cursor) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (cursor.device_id.empty()) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::validation("Device ID is required for save_sync_cursor"));
+    }
+
+    const std::string key = cursor.device_id.value() + "|" + cursor.conversation_id.value();
+    const auto it = sync_cursors_.find(key);
+    if (it == sync_cursors_.end()) {
+        sync_cursors_.emplace(key, cursor);
+        return application::ClientResult<domain::SyncCursorRecord>::ok(cursor);
+    }
+
+    domain::SyncCursorRecord effective = it->second;
+    (void)effective.advance_monotonically(cursor.last_delivered_sequence, cursor.last_sync_timestamp_ms);
+    if (cursor.last_delivered_sequence == it->second.last_delivered_sequence &&
+        cursor.last_sync_timestamp_ms > effective.last_sync_timestamp_ms) {
+        effective.last_sync_timestamp_ms = cursor.last_sync_timestamp_ms;
+    }
+    if (cursor.sync_version > effective.sync_version) {
+        effective.sync_version = cursor.sync_version;
+    }
+    it->second = effective;
+    return application::ClientResult<domain::SyncCursorRecord>::ok(std::move(effective));
+}
+
+application::ClientResult<domain::SyncCursorRecord>
+MemoryLocalStore::get_sync_cursor(const domain::DeviceId& device_id, const domain::ConversationId& conversation_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (device_id.empty()) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::validation("Device ID is required for get_sync_cursor"));
+    }
+
+    const std::string key = device_id.value() + "|" + conversation_id.value();
+    const auto it = sync_cursors_.find(key);
+    if (it != sync_cursors_.end()) {
+        return application::ClientResult<domain::SyncCursorRecord>::ok(it->second);
+    }
+    return application::ClientResult<domain::SyncCursorRecord>::ok(domain::SyncCursorRecord{
+        .device_id = device_id,
+        .conversation_id = conversation_id,
+        .last_delivered_sequence = 0ULL,
+        .last_sync_timestamp_ms = 0LL,
+        .sync_version = 1,
+    });
+}
+
+application::ClientResult<std::vector<domain::SyncCursorRecord>>
+MemoryLocalStore::list_sync_cursors(const domain::DeviceId& device_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<std::vector<domain::SyncCursorRecord>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (device_id.empty()) {
+        return application::ClientResult<std::vector<domain::SyncCursorRecord>>::error(
+            application::ClientError::validation("Device ID is required for list_sync_cursors"));
+    }
+
+    std::vector<domain::SyncCursorRecord> result;
+    for (const auto& [_, cursor] : sync_cursors_) {
+        if (cursor.device_id == device_id) {
+            result.push_back(cursor);
+        }
+    }
+    std::sort(result.begin(), result.end(), [](const domain::SyncCursorRecord& a, const domain::SyncCursorRecord& b) {
+        return a.conversation_id.value() < b.conversation_id.value();
+    });
+    return application::ClientResult<std::vector<domain::SyncCursorRecord>>::ok(std::move(result));
+}
+
 void MemoryLocalStore::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     conversations_.clear();
     messages_.clear();
     contacts_.clear();
     file_transfers_.clear();
+    outbox_records_.clear();
+    sync_cursors_.clear();
 }
 
 } // namespace securecloud::client::infrastructure::adapters

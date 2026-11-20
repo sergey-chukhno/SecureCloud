@@ -103,6 +103,14 @@ class MessagingManager {
     std::size_t process_retry_queue(std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now());
     [[nodiscard]] std::size_t pending_retry_count() const;
 
+    // Durable Offline Outbox & Connectivity Coordination (CLIENT-012-T03)
+    void set_offline_mode(bool offline) noexcept;
+    [[nodiscard]] bool is_offline_mode() const noexcept;
+    std::size_t hydrate_offline_outbox();
+    std::size_t flush_offline_outbox(std::chrono::system_clock::time_point now = std::chrono::system_clock::now(),
+                                     bool ignore_backoff = true);
+    [[nodiscard]] std::size_t pending_outbox_count() const;
+
     ClientResult<std::vector<domain::Message>> get_conversation_messages(const domain::ConversationId& conversation_id,
                                                                          std::size_t limit = 50);
 
@@ -147,8 +155,10 @@ class MessagingManager {
     ClientResult<void> validate_recipients_can_receive(const domain::Conversation& conv,
                                                        const domain::UserId& sender_user_id) const;
     ClientResult<domain::Message> persist_inbound_message(domain::Message msg);
-    void dispatch_delivery_ack_if_configured(const domain::MessageId& message_id);
+    void dispatch_delivery_ack_if_configured(const domain::ConversationId& conversation_id,
+                                             const domain::MessageId& message_id);
     void hydrate_read_receipt_policy();
+    void purge_queued_read_receipts();
 
     interfaces::IGatewayClient& gateway_;
     interfaces::ILocalStore& local_store_;
@@ -158,6 +168,7 @@ class MessagingManager {
     DeliveryRetryEngine retry_engine_;
     domain::DeviceId local_device_id_;
     domain::ReadReceiptPolicy read_receipt_policy_;
+    bool offline_mode_{false};
 };
 
 } // namespace securecloud::client::application::managers

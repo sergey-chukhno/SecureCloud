@@ -3749,6 +3749,12 @@ if(Qt6_FOUND)
         client/file_manager_pipeline_test.cpp
         client/workspace_view_model_files_test.cpp
         client/encrypted_file_transfer_integration_test.cpp
+        client/offline_sync_contracts_test.cpp
+        client/offline_outbox_persistence_test.cpp
+        client/offline_outbox_replay_test.cpp
+        client/catchup_sync_reconciliation_test.cpp
+        client/workspace_view_model_offline_sync_test.cpp
+        client/offline_catchup_sync_integration_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

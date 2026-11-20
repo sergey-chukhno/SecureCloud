@@ -7,6 +7,7 @@
 #include "domain/device_id.hpp"
 #include "domain/directory_user_entry.hpp"
 #include "domain/file_transfer.hpp"
+#include "domain/offline_sync_models.hpp"
 #include "domain/one_time_prekey_record.hpp"
 #include "domain/prekey_bundle.hpp"
 #include "domain/prekey_inventory_status.hpp"
@@ -151,6 +152,11 @@ class IGatewayClient {
     fetch_conversation_messages(const domain::ConversationId& conversation_id,
                                 const domain::DeviceId& recipient_device_id, uint64_t since_sequence,
                                 std::size_t max_results = 50) = 0;
+    virtual ClientResult<domain::SyncCursorRecord> get_sync_cursor(const domain::DeviceId& device_id,
+                                                                   const domain::ConversationId& conversation_id) = 0;
+    virtual ClientResult<domain::SyncCursorRecord> update_sync_cursor(const domain::SyncCursorRecord& cursor) = 0;
+    virtual ClientResult<std::vector<domain::RemoteConversationSummary>>
+    list_remote_conversations(const domain::UserId& user_id, std::size_t max_results = 100) = 0;
     virtual uint64_t subscribe_realtime_events(RealtimeEventHandler handler) = 0;
     virtual void unsubscribe_realtime_events(uint64_t subscription_id) = 0;
     virtual ClientResult<bool> validate_token(std::string_view token) = 0;

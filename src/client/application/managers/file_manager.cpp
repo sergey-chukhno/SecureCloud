@@ -983,6 +983,52 @@ ClientResult<domain::FileTransferRecord> FileManager::resume_transfer(std::strin
     return resume_download(transfer_id);
 }
 
+ClientResult<std::size_t> FileManager::resume_interrupted_transfers() {
+    if (const auto deps = ensure_stateful_storage(); deps.is_error()) {
+        return ClientResult<std::size_t>::error(deps.error());
+    }
+
+    const auto list_res = local_store_->list_file_transfers();
+    if (list_res.is_error()) {
+        return ClientResult<std::size_t>::error(list_res.error());
+    }
+
+    std::size_t resumed_count = 0U;
+    for (const auto& record : list_res.value()) {
+        {
+            std::lock_guard<std::mutex> lock(control_mutex_);
+            if (active_transfers_.contains(record.transfer_id)) {
+                continue;
+            }
+        }
+
+        if (record.status == domain::FileTransferStatus::Completed ||
+            record.status == domain::FileTransferStatus::Cancelled ||
+            record.status == domain::FileTransferStatus::Failed) {
+            continue;
+        }
+        // Respect explicit user pause (Paused with empty error_message)
+        if (record.status == domain::FileTransferStatus::Paused && record.error_message.empty()) {
+            continue;
+        }
+        // Never auto-download an inbound key envelope before the user selects a destination path
+        if (record.direction == domain::FileTransferDirection::Inbound && record.local_path.empty()) {
+            continue;
+        }
+
+        const auto resume_res = resume_transfer(record.transfer_id);
+        if (resume_res.is_ok()) {
+            ++resumed_count;
+            continue;
+        }
+        if (resume_res.error().category() == ClientErrorCategory::Network) {
+            break;
+        }
+    }
+
+    return ClientResult<std::size_t>::ok(resumed_count);
+}
+
 ClientResult<void> FileManager::pause_transfer(std::string_view transfer_id) {
     if (transfer_id.empty()) {
         return ClientResult<void>::error(ClientError::validation("Transfer ID cannot be empty"));

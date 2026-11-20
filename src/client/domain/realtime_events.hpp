@@ -7,6 +7,7 @@
 #include "domain/delivery_state.hpp"
 #include "domain/device_id.hpp"
 #include "domain/message_id.hpp"
+#include "domain/offline_sync_models.hpp"
 #include "domain/user_id.hpp"
 
 #include <chrono>
@@ -64,7 +65,9 @@ struct RealtimeEvent {
 struct ConversationMessagesPage {
     std::vector<RealtimeEvent> events;
     bool has_more{false};
+    uint64_t next_sequence{0};
     uint64_t latest_sequence{0};
+    std::optional<SyncCursorRecord> cursor{std::nullopt};
 };
 
 struct RetryPolicyConfig {

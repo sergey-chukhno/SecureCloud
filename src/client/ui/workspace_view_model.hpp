@@ -73,6 +73,13 @@ class WorkspaceViewModel : public QObject {
     Q_PROPERTY(bool readReceiptsEnabled READ readReceiptsEnabled WRITE setReadReceiptsEnabled NOTIFY
                    readReceiptsEnabledChanged)
 
+    // Offline Operation & Catch-Up Sync State (CLIENT-012-T05)
+    Q_PROPERTY(QString connectivityState READ connectivityState NOTIFY connectivityStateChanged)
+    Q_PROPERTY(bool isOffline READ isOffline NOTIFY connectivityStateChanged)
+    Q_PROPERTY(bool isSyncing READ isSyncing NOTIFY connectivityStateChanged)
+    Q_PROPERTY(int pendingOutboxCount READ pendingOutboxCount NOTIFY pendingOutboxCountChanged)
+    Q_PROPERTY(QString syncStatusSummary READ syncStatusSummary NOTIFY connectivityStateChanged)
+
     // Selected File Transfer Properties (when activeSection == "Files")
     Q_PROPERTY(QString selectedTransferId READ selectedTransferId NOTIFY selectedTransferChanged)
     Q_PROPERTY(QVariantMap selectedTransferDetails READ selectedTransferDetails NOTIFY selectedTransferChanged)
@@ -145,6 +152,13 @@ class WorkspaceViewModel : public QObject {
     void setDeliveryFailureSimulated(bool simulated);
     [[nodiscard]] bool readReceiptsEnabled() const;
     void setReadReceiptsEnabled(bool enabled);
+
+    // Offline Operation & Catch-Up Sync Getters (CLIENT-012-T05)
+    [[nodiscard]] QString connectivityState() const;
+    [[nodiscard]] bool isOffline() const;
+    [[nodiscard]] bool isSyncing() const;
+    [[nodiscard]] int pendingOutboxCount() const;
+    [[nodiscard]] QString syncStatusSummary() const;
 
     [[nodiscard]] QString selectedTransferId() const { return selected_transfer_id_; }
     [[nodiscard]] QVariantMap selectedTransferDetails() const;
@@ -223,6 +237,8 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE bool acknowledgeEmergencyMessage(const QString& messageId);
     Q_INVOKABLE void clearSearchQuery();
     Q_INVOKABLE void reloadFromLocalStore();
+    Q_INVOKABLE void setSimulatedOfflineMode(bool offline);
+    Q_INVOKABLE bool triggerCatchUpSync();
 
   signals:
     void activeSectionChanged();
@@ -241,6 +257,8 @@ class WorkspaceViewModel : public QObject {
     void loadingMessagesChanged();
     void deliveryFailureSimulatedChanged();
     void readReceiptsEnabledChanged();
+    void connectivityStateChanged();
+    void pendingOutboxCountChanged();
     void workspaceError(const QString& message);
 
   private:
@@ -364,6 +382,7 @@ class WorkspaceViewModel : public QObject {
     bool is_loading_messages_{false};
     bool delivery_failure_simulated_{false};
     uint64_t realtime_sub_id_{0};
+    uint64_t connectivity_sub_id_{0};
     QString totp_enrollment_secret_{QStringLiteral("JBSWY3DPEHPK3PXP · SHA-256 (6-digit / 30s)")};
 
     std::vector<ConversationEntry> conversations_;

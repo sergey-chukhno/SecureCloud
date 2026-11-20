@@ -250,6 +250,18 @@ class MockGatewayClient final : public IGatewayClient {
                                                                        std::size_t /*max_results*/) override {
         return ClientResult<ConversationMessagesPage>::ok(ConversationMessagesPage{.latest_sequence = since_sequence});
     }
+    ClientResult<SyncCursorRecord> get_sync_cursor(const DeviceId& device_id,
+                                                   const ConversationId& conversation_id) override {
+        return ClientResult<SyncCursorRecord>::ok(
+            SyncCursorRecord{.device_id = device_id, .conversation_id = conversation_id});
+    }
+    ClientResult<SyncCursorRecord> update_sync_cursor(const SyncCursorRecord& cursor) override {
+        return ClientResult<SyncCursorRecord>::ok(cursor);
+    }
+    ClientResult<std::vector<RemoteConversationSummary>>
+    list_remote_conversations(const UserId& /*user_id*/, std::size_t /*max_results*/) override {
+        return ClientResult<std::vector<RemoteConversationSummary>>::ok({});
+    }
     uint64_t subscribe_realtime_events(RealtimeEventHandler /*handler*/) override { return 1; }
     void unsubscribe_realtime_events(uint64_t /*subscription_id*/) override {}
     ClientResult<bool> validate_token(std::string_view token) override {

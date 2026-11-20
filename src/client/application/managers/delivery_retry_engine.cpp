@@ -34,10 +34,13 @@ std::chrono::milliseconds DeliveryRetryEngine::compute_backoff(uint32_t attempt)
 
 void DeliveryRetryEngine::enqueue(domain::ConversationId conversation_id, domain::MessageId message_id,
                                   interfaces::FanOutSubmissionRequest request,
-                                  std::chrono::steady_clock::time_point now) {
+                                  std::chrono::steady_clock::time_point now, std::string outbox_id) {
     std::lock_guard<std::mutex> lock(mutex_);
+    if (outbox_id.empty()) {
+        outbox_id = "msg-" + message_id.value();
+    }
     for (const auto& existing : queue_) {
-        if (existing.message_id == message_id) {
+        if ((!outbox_id.empty() && existing.outbox_id == outbox_id) || existing.message_id == message_id) {
             return;
         }
     }
@@ -52,15 +55,32 @@ void DeliveryRetryEngine::enqueue(domain::ConversationId conversation_id, domain
     const auto delay =
         std::chrono::milliseconds(static_cast<int64_t>(std::llround(std::max(1.0, capped_ms * dist(rng_)))));
 
+    const int32_t prio = request.priority;
     queue_.push_back(RetryQueueEntry{
         .conversation_id = std::move(conversation_id),
         .message_id = std::move(message_id),
         .request = std::move(request),
+        .priority = prio,
+        .outbox_id = std::move(outbox_id),
         .attempt_count = initial_attempt,
         .enqueued_at = now,
         .next_retry_at = now + delay,
         .expires_at = now + config_.expiration_ttl,
     });
+}
+
+void DeliveryRetryEngine::hydrate_entry(RetryQueueEntry entry) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (entry.outbox_id.empty()) {
+        entry.outbox_id = "msg-" + entry.message_id.value();
+    }
+    for (const auto& existing : queue_) {
+        if ((!entry.outbox_id.empty() && existing.outbox_id == entry.outbox_id) ||
+            (entry.outbox_id.empty() && existing.message_id == entry.message_id)) {
+            return;
+        }
+    }
+    queue_.push_back(std::move(entry));
 }
 
 bool DeliveryRetryEngine::remove(const domain::MessageId& message_id) {
@@ -72,13 +92,22 @@ bool DeliveryRetryEngine::remove(const domain::MessageId& message_id) {
     return queue_.size() != prev_size;
 }
 
+bool DeliveryRetryEngine::remove_by_outbox_id(std::string_view outbox_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto prev_size = queue_.size();
+    queue_.erase(std::remove_if(queue_.begin(), queue_.end(),
+                                [&](const RetryQueueEntry& e) { return e.outbox_id == outbox_id; }),
+                 queue_.end());
+    return queue_.size() != prev_size;
+}
+
 std::size_t DeliveryRetryEngine::pending_count() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return queue_.size();
 }
 
 std::size_t DeliveryRetryEngine::process_due(std::chrono::steady_clock::time_point now, const SubmitFn& submit_fn,
-                                             const ExpireFn& expire_fn) {
+                                             const ExpireFn& expire_fn, const UpdateFn& update_fn) {
     std::vector<RetryQueueEntry> due;
     std::vector<RetryQueueEntry> expired;
     domain::RetryPolicyConfig cfg;
@@ -100,6 +129,19 @@ std::size_t DeliveryRetryEngine::process_due(std::chrono::steady_clock::time_poi
         }
         queue_ = std::move(remaining);
     }
+
+    std::sort(due.begin(), due.end(), [](const RetryQueueEntry& a, const RetryQueueEntry& b) {
+        if (a.priority != b.priority) {
+            return a.priority > b.priority;
+        }
+        if (a.enqueued_at != b.enqueued_at) {
+            return a.enqueued_at < b.enqueued_at;
+        }
+        if (a.outbox_id != b.outbox_id) {
+            return a.outbox_id < b.outbox_id;
+        }
+        return a.message_id.value() < b.message_id.value();
+    });
 
     std::size_t completed_count = 0;
     for (const auto& exp : expired) {
@@ -129,6 +171,9 @@ std::size_t DeliveryRetryEngine::process_due(std::chrono::steady_clock::time_poi
 
         const auto delay = compute_backoff(entry.attempt_count);
         entry.next_retry_at = now + delay;
+        if (update_fn) {
+            update_fn(entry, res.error());
+        }
         std::lock_guard<std::mutex> lock(mutex_);
         queue_.push_back(std::move(entry));
     }

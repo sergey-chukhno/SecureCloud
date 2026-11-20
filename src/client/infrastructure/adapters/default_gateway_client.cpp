@@ -553,29 +553,142 @@ DefaultGatewayClient::fetch_conversation_messages(const domain::ConversationId& 
     }
 
     domain::ConversationMessagesPage page;
+    page.next_sequence = since_sequence;
     page.latest_sequence = since_sequence;
 
     const auto it = simulated_conversation_messages_.find(conversation_id);
     if (it == simulated_conversation_messages_.end()) {
+        const std::string cursor_key = recipient_device_id.value() + "|" + conversation_id.value();
+        const auto cur_it = simulated_sync_cursors_.find(cursor_key);
+        if (cur_it != simulated_sync_cursors_.end()) {
+            page.cursor = cur_it->second;
+        }
         return application::ClientResult<domain::ConversationMessagesPage>::ok(std::move(page));
     }
 
-    const std::size_t limit = max_results == 0 ? 50 : max_results;
+    std::vector<domain::RealtimeEvent> matching;
+    matching.reserve(it->second.size());
     for (const auto& ev : it->second) {
         if (ev.server_sequence_number > since_sequence) {
-            if (page.events.size() < limit) {
-                page.events.push_back(ev);
-                if (ev.server_sequence_number > page.latest_sequence) {
-                    page.latest_sequence = ev.server_sequence_number;
-                }
-            } else {
-                page.has_more = true;
-                break;
-            }
+            matching.push_back(ev);
         }
+    }
+    std::sort(matching.begin(), matching.end(), [](const domain::RealtimeEvent& a, const domain::RealtimeEvent& b) {
+        return a.server_sequence_number < b.server_sequence_number;
+    });
+
+    const std::size_t limit = max_results == 0 ? 50 : max_results;
+    const std::size_t take_count = std::min(matching.size(), limit);
+    page.events.reserve(take_count);
+    for (std::size_t i = 0; i < take_count; ++i) {
+        page.events.push_back(matching[i]);
+        if (matching[i].server_sequence_number > page.latest_sequence) {
+            page.latest_sequence = matching[i].server_sequence_number;
+        }
+    }
+    page.has_more = (matching.size() > take_count);
+    page.next_sequence = page.events.empty() ? since_sequence : page.events.back().server_sequence_number;
+
+    const std::string cursor_key = recipient_device_id.value() + "|" + conversation_id.value();
+    const auto cur_it = simulated_sync_cursors_.find(cursor_key);
+    if (cur_it != simulated_sync_cursors_.end()) {
+        page.cursor = cur_it->second;
+    } else if (!page.events.empty()) {
+        page.cursor = domain::SyncCursorRecord{
+            .device_id = recipient_device_id,
+            .conversation_id = conversation_id,
+            .last_delivered_sequence = page.next_sequence,
+            .last_sync_timestamp_ms = current_unix_ms(),
+            .sync_version = 1,
+        };
     }
 
     return application::ClientResult<domain::ConversationMessagesPage>::ok(std::move(page));
+}
+
+application::ClientResult<domain::SyncCursorRecord>
+DefaultGatewayClient::get_sync_cursor(const domain::DeviceId& device_id,
+                                      const domain::ConversationId& conversation_id) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (device_id.empty()) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::validation("Device ID is required for get_sync_cursor"));
+    }
+
+    const std::string cursor_key = device_id.value() + "|" + conversation_id.value();
+    const auto it = simulated_sync_cursors_.find(cursor_key);
+    if (it != simulated_sync_cursors_.end()) {
+        return application::ClientResult<domain::SyncCursorRecord>::ok(it->second);
+    }
+
+    return application::ClientResult<domain::SyncCursorRecord>::ok(domain::SyncCursorRecord{
+        .device_id = device_id,
+        .conversation_id = conversation_id,
+        .last_delivered_sequence = 0,
+        .last_sync_timestamp_ms = 0,
+        .sync_version = 1,
+    });
+}
+
+application::ClientResult<domain::SyncCursorRecord>
+DefaultGatewayClient::update_sync_cursor(const domain::SyncCursorRecord& cursor) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (cursor.device_id.empty()) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::validation("Device ID is required for update_sync_cursor"));
+    }
+
+    const std::string cursor_key = cursor.device_id.value() + "|" + cursor.conversation_id.value();
+    auto it = simulated_sync_cursors_.find(cursor_key);
+    if (it == simulated_sync_cursors_.end()) {
+        domain::SyncCursorRecord stored = cursor;
+        if (stored.last_sync_timestamp_ms <= 0) {
+            stored.last_sync_timestamp_ms = current_unix_ms();
+        }
+        simulated_sync_cursors_[cursor_key] = stored;
+        return application::ClientResult<domain::SyncCursorRecord>::ok(std::move(stored));
+    }
+
+    const int64_t ts_ms = cursor.last_sync_timestamp_ms > 0 ? cursor.last_sync_timestamp_ms : current_unix_ms();
+    (void)it->second.advance_monotonically(cursor.last_delivered_sequence, ts_ms);
+    if (cursor.sync_version > it->second.sync_version) {
+        it->second.sync_version = cursor.sync_version;
+    }
+    return application::ClientResult<domain::SyncCursorRecord>::ok(it->second);
+}
+
+application::ClientResult<std::vector<domain::RemoteConversationSummary>>
+DefaultGatewayClient::list_remote_conversations(const domain::UserId& user_id, std::size_t max_results) {
+    if (simulate_failure_) {
+        return application::ClientResult<std::vector<domain::RemoteConversationSummary>>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (user_id.empty()) {
+        return application::ClientResult<std::vector<domain::RemoteConversationSummary>>::error(
+            application::ClientError::validation("User ID is required for list_remote_conversations"));
+    }
+
+    const std::size_t limit = max_results == 0 ? 100U : max_results;
+    std::vector<domain::RemoteConversationSummary> out;
+    out.reserve(std::min(limit, simulated_remote_conversations_.size()));
+    for (const auto& conv : simulated_remote_conversations_) {
+        if (out.size() >= limit) {
+            break;
+        }
+        const bool is_creator = (conv.creator_user_id == user_id);
+        const bool is_participant = std::find(conv.participant_user_ids.begin(), conv.participant_user_ids.end(),
+                                              user_id) != conv.participant_user_ids.end();
+        if (is_creator || is_participant || conv.participant_user_ids.empty()) {
+            out.push_back(conv);
+        }
+    }
+    return application::ClientResult<std::vector<domain::RemoteConversationSummary>>::ok(std::move(out));
 }
 
 uint64_t DefaultGatewayClient::subscribe_realtime_events(RealtimeEventHandler handler) {
@@ -616,6 +729,16 @@ void DefaultGatewayClient::set_simulated_delivery_status(const domain::MessageId
 void DefaultGatewayClient::set_simulated_conversation_messages(const domain::ConversationId& conversation_id,
                                                                std::vector<domain::RealtimeEvent> events) {
     simulated_conversation_messages_[conversation_id] = std::move(events);
+}
+
+void DefaultGatewayClient::set_simulated_sync_cursor(const domain::SyncCursorRecord& cursor) {
+    const std::string cursor_key = cursor.device_id.value() + "|" + cursor.conversation_id.value();
+    simulated_sync_cursors_[cursor_key] = cursor;
+}
+
+void DefaultGatewayClient::set_simulated_remote_conversations(
+    std::vector<domain::RemoteConversationSummary> conversations) {
+    simulated_remote_conversations_ = std::move(conversations);
 }
 
 std::optional<application::ClientError> DefaultGatewayClient::check_file_network_failure_locked() const {

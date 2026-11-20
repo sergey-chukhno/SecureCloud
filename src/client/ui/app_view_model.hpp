@@ -5,12 +5,14 @@
 
 #include <QObject>
 #include <QString>
+#include <cstdint>
 
 namespace securecloud::client::ui {
 
 class AppViewModel : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY connectionStatusChanged)
+    Q_PROPERTY(QString connectivityState READ connectivityState NOTIFY connectionStatusChanged)
     Q_PROPERTY(QString sessionStatusText READ sessionStatusText NOTIFY connectionStatusChanged)
     Q_PROPERTY(QString securityStatusText READ securityStatusText NOTIFY connectionStatusChanged)
     Q_PROPERTY(QString securityBadgeType READ securityBadgeType NOTIFY connectionStatusChanged)
@@ -25,12 +27,13 @@ class AppViewModel : public QObject {
 
   public:
     AppViewModel(application::ClientApplication& app, NavigationController& nav_controller, QObject* parent = nullptr);
-    ~AppViewModel() override = default;
+    ~AppViewModel() override;
 
     AppViewModel(const AppViewModel&) = delete;
     AppViewModel& operator=(const AppViewModel&) = delete;
 
     [[nodiscard]] QString connectionStatus() const;
+    [[nodiscard]] QString connectivityState() const;
     [[nodiscard]] QString sessionStatusText() const;
     [[nodiscard]] QString securityStatusText() const;
     [[nodiscard]] QString securityBadgeType() const;
@@ -73,6 +76,7 @@ class AppViewModel : public QObject {
     QString pending_password_{};
     bool is_authenticating_{false};
     bool is_identity_verified_{false};
+    uint64_t connectivity_sub_id_{0};
 };
 
 } // namespace securecloud::client::ui

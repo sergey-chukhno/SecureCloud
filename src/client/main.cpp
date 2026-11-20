@@ -232,6 +232,19 @@ int main(int argc, char* argv[]) {
         captureWindow(QStringLiteral("workspace-failed-retry-light-1200x800.png"), 1200, 800);
         workspaceViewModel.setSimulateDeliveryFailure(false);
 
+        // 6e-2. Offline Operation Banner & Durable Outbox Queueing (CLIENT-012, Dark & Light 1200x800)
+        workspaceViewModel.setActiveSection(QStringLiteral("Messages"));
+        workspaceViewModel.selectConversation(QStringLiteral("conv-frances"));
+        workspaceViewModel.setSimulatedOfflineMode(true);
+        (void)workspaceViewModel.sendMessage(
+            QStringLiteral("Encrypted field update drafted offline — queued in SQLCipher outbox."), 1);
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("workspace-offline-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("workspace-offline-light-1200x800.png"), 1200, 800);
+        workspaceViewModel.setSimulatedOfflineMode(false);
+
         // 6f. 1-to-1 Corina McCoy Chat & Full Inspector at Compact 1000x680 (verifying no truncation or overflow)
         workspaceViewModel.setActiveSection(QStringLiteral("Messages"));
         workspaceViewModel.selectConversation(QStringLiteral("conv-corina"));
