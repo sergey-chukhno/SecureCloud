@@ -81,6 +81,7 @@ class FileManager {
                                                             std::string_view destination_path);
     ClientResult<domain::FileTransferRecord> resume_download(std::string_view transfer_id);
     ClientResult<domain::FileTransferRecord> resume_transfer(std::string_view transfer_id);
+    ClientResult<std::size_t> resume_interrupted_transfers();
 
     ClientResult<void> pause_transfer(std::string_view transfer_id);
     ClientResult<void> cancel_transfer(std::string_view transfer_id);
