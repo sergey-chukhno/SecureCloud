@@ -104,6 +104,17 @@ class SharedGatewayAdapter final : public IGatewayClient {
                                                                        std::size_t max_results) override {
         return inner_->fetch_conversation_messages(conversation_id, recipient_device_id, since_sequence, max_results);
     }
+    ClientResult<SyncCursorRecord> get_sync_cursor(const DeviceId& device_id,
+                                                   const ConversationId& conversation_id) override {
+        return inner_->get_sync_cursor(device_id, conversation_id);
+    }
+    ClientResult<SyncCursorRecord> update_sync_cursor(const SyncCursorRecord& cursor) override {
+        return inner_->update_sync_cursor(cursor);
+    }
+    ClientResult<std::vector<RemoteConversationSummary>> list_remote_conversations(const UserId& user_id,
+                                                                                   std::size_t max_results) override {
+        return inner_->list_remote_conversations(user_id, max_results);
+    }
     uint64_t subscribe_realtime_events(RealtimeEventHandler handler) override {
         return inner_->subscribe_realtime_events(std::move(handler));
     }

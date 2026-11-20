@@ -41,6 +41,12 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     fetch_conversation_messages(const domain::ConversationId& conversation_id,
                                 const domain::DeviceId& recipient_device_id, uint64_t since_sequence,
                                 std::size_t max_results = 50) override;
+    application::ClientResult<domain::SyncCursorRecord>
+    get_sync_cursor(const domain::DeviceId& device_id, const domain::ConversationId& conversation_id) override;
+    application::ClientResult<domain::SyncCursorRecord>
+    update_sync_cursor(const domain::SyncCursorRecord& cursor) override;
+    application::ClientResult<std::vector<domain::RemoteConversationSummary>>
+    list_remote_conversations(const domain::UserId& user_id, std::size_t max_results = 100) override;
     uint64_t subscribe_realtime_events(RealtimeEventHandler handler) override;
     void unsubscribe_realtime_events(uint64_t subscription_id) override;
     application::ClientResult<bool> validate_token(std::string_view token) override;
@@ -120,6 +126,8 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     void set_simulated_delivery_status(const domain::MessageId& message_id, domain::MessageDeliveryStatusInfo status);
     void set_simulated_conversation_messages(const domain::ConversationId& conversation_id,
                                              std::vector<domain::RealtimeEvent> events);
+    void set_simulated_sync_cursor(const domain::SyncCursorRecord& cursor);
+    void set_simulated_remote_conversations(std::vector<domain::RemoteConversationSummary> conversations);
     [[nodiscard]] const std::vector<domain::DeliveryAckRecord>& sent_delivery_acks() const noexcept {
         return sent_delivery_acks_;
     }
@@ -173,6 +181,8 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     std::vector<domain::ReadReceiptRecord> sent_read_receipts_;
     std::unordered_map<domain::MessageId, domain::MessageDeliveryStatusInfo> simulated_delivery_statuses_;
     std::unordered_map<domain::ConversationId, std::vector<domain::RealtimeEvent>> simulated_conversation_messages_;
+    std::unordered_map<std::string, domain::SyncCursorRecord> simulated_sync_cursors_;
+    std::vector<domain::RemoteConversationSummary> simulated_remote_conversations_;
 
     struct SimulatedStagedChunk {
         std::vector<uint8_t> bytes;
