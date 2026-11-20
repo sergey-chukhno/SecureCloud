@@ -711,6 +711,34 @@ Rectangle {
                             }
                         }
 
+                        SCButton {
+                            id: connectivityModeToggleBtn
+                            objectName: "connectivityModeToggleBtn"
+                            text: {
+                                if (!workspaceRoot.wvm) return qsTr("Online")
+                                if (workspaceRoot.wvm.isSyncing) return qsTr("Syncing...")
+                                if (workspaceRoot.wvm.isOffline) {
+                                    return workspaceRoot.wvm.pendingOutboxCount > 0
+                                           ? qsTr("Offline (%1)").arg(workspaceRoot.wvm.pendingOutboxCount)
+                                           : qsTr("Offline")
+                                }
+                                return workspaceRoot.wvm.pendingOutboxCount > 0
+                                       ? qsTr("Online (%1 queued)").arg(workspaceRoot.wvm.pendingOutboxCount)
+                                       : qsTr("Online")
+                            }
+                            iconName: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline)
+                                      ? "alert-triangle"
+                                      : ((workspaceRoot.wvm && workspaceRoot.wvm.isSyncing) ? "refresh" : "shield-check")
+                            variant: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline) ? "Secondary" : "Ghost"
+                            buttonHeight: 30
+                            horizontalPadding: 10
+                            onClicked: {
+                                if (workspaceRoot.wvm) {
+                                    workspaceRoot.wvm.setSimulatedOfflineMode(!workspaceRoot.wvm.isOffline)
+                                }
+                            }
+                        }
+
                         SCIconButton {
                             iconName: "paperclip"
                             variant: "Secondary"
@@ -726,6 +754,76 @@ Rectangle {
                                          ? qsTr("Hide Peer Security Inspector")
                                          : qsTr("Show Peer Security Inspector")
                             onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.toggleInspector()
+                        }
+                    }
+                }
+
+                // CLIENT-012-T05: Offline Operation & Catch-Up Sync Banner
+                Rectangle {
+                    id: connectivityOfflineBanner
+                    objectName: "connectivityOfflineBanner"
+                    visible: workspaceRoot.wvm
+                             ? (workspaceRoot.wvm.isOffline || workspaceRoot.wvm.isSyncing || workspaceRoot.wvm.pendingOutboxCount > 0)
+                             : false
+                    Layout.fillWidth: true
+                    implicitHeight: offlineBannerRow.implicitHeight + (Theme.space8 * 2)
+                    color: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline)
+                           ? (Theme.isDark ? "rgba(245, 158, 11, 0.16)" : "#FEF3C7")
+                           : (Theme.isDark ? "rgba(59, 130, 246, 0.16)" : "#DBEAFE")
+                    border.color: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline)
+                                  ? Theme.statusWarning
+                                  : Theme.accentPrimary
+                    border.width: 1
+
+                    RowLayout {
+                        id: offlineBannerRow
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: Theme.space12
+                        anchors.rightMargin: Theme.space12
+                        spacing: Theme.space8
+
+                        SCIcon {
+                            name: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline) ? "alert-triangle" : "refresh"
+                            size: 16
+                            color: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline)
+                                   ? Theme.statusWarning
+                                   : Theme.accentPrimary
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        Label {
+                            text: workspaceRoot.wvm ? workspaceRoot.wvm.syncStatusSummary : ""
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontCaption
+                            font.bold: true
+                            color: Theme.textPrimary
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        SCButton {
+                            objectName: "reconnectAndSyncBtn"
+                            visible: workspaceRoot.wvm ? (workspaceRoot.wvm.isOffline || workspaceRoot.wvm.pendingOutboxCount > 0) : false
+                            enabled: workspaceRoot.wvm ? !workspaceRoot.wvm.isSyncing : false
+                            text: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline)
+                                  ? qsTr("Reconnect & Sync")
+                                  : qsTr("Sync Now")
+                            iconName: "refresh"
+                            variant: "Primary"
+                            buttonHeight: 28
+                            horizontalPadding: 10
+                            onClicked: {
+                                if (workspaceRoot.wvm) {
+                                    if (workspaceRoot.wvm.isOffline) {
+                                        workspaceRoot.wvm.setSimulatedOfflineMode(false)
+                                    } else {
+                                        workspaceRoot.wvm.triggerCatchUpSync()
+                                    }
+                                }
+                            }
                         }
                     }
                 }

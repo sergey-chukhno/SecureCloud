@@ -8,8 +8,10 @@
 #include "domain/crypto_identity.hpp"
 #include "domain/device_id.hpp"
 #include "domain/file_transfer.hpp"
+#include "domain/offline_sync_models.hpp"
 #include "domain/realtime_events.hpp"
 #include "domain/user_id.hpp"
+#include "infrastructure/adapters/default_gateway_client.hpp"
 
 #include <QMetaObject>
 #include <QPointer>
@@ -83,6 +85,23 @@ WorkspaceViewModel::WorkspaceViewModel(application::ClientApplication& app, Navi
             },
             Qt::QueuedConnection);
     });
+
+    connectivity_sub_id_ =
+        app_.bootstrap().sync_manager().subscribe_connectivity_state([self](domain::ConnectivityState) {
+            if (!self) {
+                return;
+            }
+            QMetaObject::invokeMethod(
+                self.data(),
+                [self]() {
+                    if (!self) {
+                        return;
+                    }
+                    emit self->connectivityStateChanged();
+                    emit self->pendingOutboxCountChanged();
+                },
+                Qt::AutoConnection);
+        });
 }
 
 WorkspaceViewModel::~WorkspaceViewModel() {
@@ -90,6 +109,10 @@ WorkspaceViewModel::~WorkspaceViewModel() {
     if (realtime_sub_id_ != 0) {
         app_.bootstrap().gateway().unsubscribe_realtime_events(realtime_sub_id_);
         realtime_sub_id_ = 0;
+    }
+    if (connectivity_sub_id_ != 0) {
+        app_.bootstrap().sync_manager().unsubscribe_connectivity_state(connectivity_sub_id_);
+        connectivity_sub_id_ = 0;
     }
 }
 
@@ -110,13 +133,96 @@ domain::DeviceId WorkspaceViewModel::localDeviceId() const {
 }
 
 void WorkspaceViewModel::reloadFromLocalStore() {
+    const QString prev_conv_id = selected_conversation_id_;
+    const QString prev_tx_id = selected_transfer_id_;
     hydrateFromLocalStore();
+    if (!prev_conv_id.isEmpty() && findConversation(prev_conv_id) != nullptr) {
+        selected_conversation_id_ = prev_conv_id;
+    }
+    if (!prev_tx_id.isEmpty()) {
+        for (const auto& tx : file_transfers_) {
+            if (tx.transferId == prev_tx_id) {
+                selected_transfer_id_ = prev_tx_id;
+                break;
+            }
+        }
+    }
     emit conversationsChanged();
     emit activeMessagesChanged();
     emit selectedConversationChanged();
     emit contactsChanged();
     emit fileTransfersChanged();
     emit selectedTransferChanged();
+    emit pendingOutboxCountChanged();
+    emit connectivityStateChanged();
+}
+
+QString WorkspaceViewModel::connectivityState() const {
+    const auto sv = domain::to_string(app_.bootstrap().sync_manager().connectivity_state());
+    return QString::fromUtf8(sv.data(), static_cast<qsizetype>(sv.size()));
+}
+
+bool WorkspaceViewModel::isOffline() const {
+    return app_.bootstrap().sync_manager().connectivity_state() == domain::ConnectivityState::Offline;
+}
+
+bool WorkspaceViewModel::isSyncing() const {
+    return app_.bootstrap().sync_manager().connectivity_state() == domain::ConnectivityState::Syncing;
+}
+
+int WorkspaceViewModel::pendingOutboxCount() const {
+    return static_cast<int>(app_.bootstrap().messaging_manager().pending_outbox_count());
+}
+
+QString WorkspaceViewModel::syncStatusSummary() const {
+    const int pending = pendingOutboxCount();
+    const auto state = app_.bootstrap().sync_manager().connectivity_state();
+    if (state == domain::ConnectivityState::Offline) {
+        return QStringLiteral("Offline Mode — Messages & receipts are encrypted and queued locally (%1 in outbox)")
+            .arg(pending);
+    }
+    if (state == domain::ConnectivityState::Syncing) {
+        return QStringLiteral("Catch-Up Sync Active — Reconciling encrypted outbox & missed sequence delta...");
+    }
+    if (pending > 0) {
+        return QStringLiteral("Online — %1 encrypted item(s) awaiting outbox sync").arg(pending);
+    }
+    return QStringLiteral("Online — Encrypted vault synchronized");
+}
+
+void WorkspaceViewModel::setSimulatedOfflineMode(bool offline) {
+    app_.bootstrap().sync_manager().set_local_identity(localUserId(), localDeviceId());
+    if (auto* gw = dynamic_cast<infrastructure::adapters::DefaultGatewayClient*>(&app_.bootstrap().gateway());
+        gw != nullptr) {
+        gw->set_simulated_failure(offline, "Simulated offline mode");
+        gw->set_simulated_submission_failure(offline, "Simulated offline mode");
+    }
+
+    const auto res = app_.bootstrap().sync_manager().set_simulated_offline(offline);
+    if (!offline) {
+        reloadFromLocalStore();
+    } else {
+        emit connectivityStateChanged();
+        emit pendingOutboxCountChanged();
+    }
+    if (res.is_error()) {
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+    }
+}
+
+bool WorkspaceViewModel::triggerCatchUpSync() {
+    app_.bootstrap().sync_manager().set_local_identity(localUserId(), localDeviceId());
+    if (app_.bootstrap().sync_manager().is_simulated_offline()) {
+        setSimulatedOfflineMode(false);
+        return !isOffline();
+    }
+    const auto res = app_.bootstrap().sync_manager().execute_catch_up_sync(localUserId(), localDeviceId());
+    reloadFromLocalStore();
+    if (res.is_error()) {
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+        return false;
+    }
+    return true;
 }
 
 void WorkspaceViewModel::hydrateFromLocalStore() {
@@ -1825,6 +1931,7 @@ bool WorkspaceViewModel::sendMessage(const QString& plaintext, int priority) {
     emit activeMessagesChanged();
     emit conversationsChanged();
     emit selectedConversationChanged();
+    emit pendingOutboxCountChanged();
     return true;
 }
 

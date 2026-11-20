@@ -724,6 +724,33 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
                 }
             }
         }
+    } else if (offline_mode_) {
+        const auto enc_res = crypto_provider_.encrypt_message(sender_device_id, plaintext);
+        if (enc_res.is_error()) {
+            return ClientResult<domain::Message>::error(enc_res.error());
+        }
+        domain::UserId recipient_uid = sender_user_id;
+        for (const auto& p : conv.participants()) {
+            if (p != sender_user_id) {
+                recipient_uid = p;
+                break;
+            }
+        }
+        interfaces::FanOutSubmissionRequest req{
+            .conversation_id = conversation_id,
+            .idempotency_key = idem_key,
+            .device_payloads = {domain::crypto::PerDeviceDeliveryPayload{
+                .recipient_user_id = recipient_uid,
+                .recipient_device_id = sender_device_id,
+                .ciphertext_blob = enc_res.value(),
+                .algorithm = "AES-256-GCM",
+            }},
+            .group_envelope_bytes = std::nullopt,
+            .priority = priority,
+        };
+        initial_state = domain::DeliveryState::LocalPending;
+        pending_retry_req = std::move(req);
+        queued_error = "Queued while offline";
     }
 
     // 3. Construct Message with deterministic idempotency key and initial delivery state
