@@ -773,6 +773,7 @@ TEST(FilesServiceImplFinalizeTest, ReturnsUnavailableWhenServiceNull) {
     FilesServiceImpl service({}, "gateway");
     v1::FinalizeFileUploadRequest req;
     req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
     v1::FinalizeFileUploadResponse resp;
     TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
 
@@ -808,6 +809,7 @@ TEST(FilesServiceImplFinalizeTest, MapsEntityNotFoundToNotFound) {
 
     v1::FinalizeFileUploadRequest req;
     req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
 
     v1::FinalizeFileUploadResponse resp;
     TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
@@ -824,6 +826,7 @@ TEST(FilesServiceImplFinalizeTest, MapsPreconditionFailureToFailedPrecondition) 
 
     v1::FinalizeFileUploadRequest req;
     req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
 
     v1::FinalizeFileUploadResponse resp;
     TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
@@ -840,6 +843,7 @@ TEST(FilesServiceImplFinalizeTest, MapsIntegrityMismatchToFailedPrecondition) {
 
     v1::FinalizeFileUploadRequest req;
     req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
 
     v1::FinalizeFileUploadResponse resp;
     TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
