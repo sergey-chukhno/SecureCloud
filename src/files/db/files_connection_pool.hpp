@@ -155,4 +155,9 @@ class FilesDbConnectionPool {
     std::unique_ptr<IDbConnection> health_connection_;
 };
 
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+/// Shared in-memory connection pool used by repository unit-test builds.
+[[nodiscard]] std::shared_ptr<FilesDbConnectionPool> test_files_db_connection_pool();
+#endif
+
 } // namespace securecloud::files::db

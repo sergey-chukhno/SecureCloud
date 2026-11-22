@@ -8,9 +8,14 @@
 namespace securecloud::files {
 
 FileVersionRepository::FileVersionRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
-    : pool_(std::move(pool)) {}
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()){}
+#else
+    : pool_(std::move(pool)) {
+}
+#endif
 
-void FileVersionRepository::create_version(const FileVersionEntity& version, pqxx::work& tx) {
+      void FileVersionRepository::create_version(const FileVersionEntity& version, pqxx::work& tx) {
     if (version.version_id.empty() || version.file_id.empty()) {
         throw RepositoryException("Version ID and File ID must not be empty");
     }

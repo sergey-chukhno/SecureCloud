@@ -7,9 +7,15 @@
 
 namespace securecloud::files {
 
-FileChunkRepository::FileChunkRepository(std::shared_ptr<db::FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
+FileChunkRepository::FileChunkRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()){}
+#else
+    : pool_(std::move(pool)) {
+}
+#endif
 
-ChunkRecordResult FileChunkRepository::record_chunk(const FileChunkEntity& chunk, pqxx::work& tx) {
+      ChunkRecordResult FileChunkRepository::record_chunk(const FileChunkEntity& chunk, pqxx::work& tx) {
     if (chunk.chunk_id.empty() || chunk.transfer_id.empty()) {
         throw RepositoryException("Chunk ID and Transfer ID must not be empty");
     }

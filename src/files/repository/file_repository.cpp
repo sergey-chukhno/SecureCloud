@@ -4,9 +4,16 @@
 
 namespace securecloud::files {
 
-FileRepository::FileRepository(std::shared_ptr<db::FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
+FileRepository::FileRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()){}
+#else
+    : pool_(std::move(pool)) {
+}
+#endif
 
-void FileRepository::create_file(const FileEntity& file, const EncryptedFileMetadataEntity& metadata, pqxx::work& tx) {
+      void FileRepository::create_file(const FileEntity& file, const EncryptedFileMetadataEntity& metadata,
+                                       pqxx::work& tx) {
     if (file.file_id.empty()) {
         throw RepositoryException("File ID cannot be empty");
     }

@@ -27,10 +27,14 @@
 #include "securecloud/audit/v1/audit.pb.h"
 #include "securecloud/files/v1/files.grpc.pb.h"
 #include "securecloud/files/v1/files.pb.h"
+#include "securecloud/security/mtls_config.hpp"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <cstdint>
+#include <filesystem>
 #include <gmock/gmock.h>
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
@@ -39,7 +43,9 @@
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
+#include <random>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <vector>
@@ -80,6 +86,36 @@ inline void ensure_integration_winsock() noexcept {}
 
 namespace securecloud::files::integration {
 namespace {
+
+std::string make_test_uuid_v7() {
+    static thread_local std::mt19937_64 rng{std::random_device{}()};
+    const auto now_ms = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
+    std::array<uint8_t, 16> bytes{};
+    for (size_t i = 0; i < 6; ++i) {
+        bytes[5 - i] = static_cast<uint8_t>((now_ms >> (i * 8)) & 0xFFu);
+    }
+    const uint64_t r1 = rng();
+    const uint64_t r2 = rng();
+    bytes[6] = static_cast<uint8_t>(0x70u | ((r1 >> 56) & 0x0Fu));
+    bytes[7] = static_cast<uint8_t>((r1 >> 48) & 0xFFu);
+    bytes[8] = static_cast<uint8_t>(0x80u | ((r2 >> 56) & 0x3Fu));
+    bytes[9] = static_cast<uint8_t>((r2 >> 48) & 0xFFu);
+    for (size_t i = 10; i < 16; ++i) {
+        bytes[i] = static_cast<uint8_t>((r2 >> ((15 - i) * 8)) & 0xFFu);
+    }
+    constexpr char hex[] = "0123456789abcdef";
+    std::string result;
+    result.reserve(36);
+    for (size_t i = 0; i < bytes.size(); ++i) {
+        if (i == 4 || i == 6 || i == 8 || i == 10)
+            result.push_back('-');
+        result.push_back(hex[bytes[i] >> 4]);
+        result.push_back(hex[bytes[i] & 0x0Fu]);
+    }
+    return result;
+}
 
 gateway::http::AuthenticatedContext make_test_context(std::string user_id = "alice-uuid",
                                                       std::string device_id = "device-uuid-1") {
@@ -133,6 +169,7 @@ class InMemoryOutboxRepository : public FilesOutboxRepository {
     std::vector<FilesOutboxEntity> staged_;
     std::vector<std::string> published_;
     std::vector<std::string> failed_;
+    std::vector<std::string> quarantined_;
 
     void stage_event(const FilesOutboxEntity& event) override {
         std::lock_guard<std::mutex> lock(mtx_);
@@ -159,6 +196,12 @@ class InMemoryOutboxRepository : public FilesOutboxRepository {
     bool mark_failed(const std::string& event_id) override {
         std::lock_guard<std::mutex> lock(mtx_);
         failed_.push_back(event_id);
+        return true;
+    }
+
+    bool mark_quarantined(const std::string& event_id, std::string_view /*sanitized_reason*/) override {
+        std::lock_guard<std::mutex> lock(mtx_);
+        quarantined_.push_back(event_id);
         return true;
     }
 };
@@ -408,9 +451,17 @@ class FilesE2EGatewayAuditIntegrationTest : public ::testing::Test {
 
         // 1. Start Mock Audit Service on random ephemeral port
         audit_service_ = std::make_unique<MockAuditIngestionService>();
+        const std::filesystem::path pki_root(SECURECLOUD_DEV_PKI_DIR);
+        const common::security::SecurityCredentialsConfig audit_server_credentials{
+            .ca_cert_path = pki_root / "ca" / "ca.crt",
+            .service_cert_path = pki_root / "services" / "audit" / "audit.crt",
+            .service_key_path = pki_root / "services" / "audit" / "audit.key",
+        };
         ::grpc::ServerBuilder audit_builder;
         int audit_port = 0;
-        audit_builder.AddListeningPort("127.0.0.1:0", ::grpc::InsecureServerCredentials(), &audit_port);
+        audit_builder.AddListeningPort(
+            "127.0.0.1:0", common::security::MtlsCredentialLoader::create_server_credentials(audit_server_credentials),
+            &audit_port);
         audit_builder.RegisterService(audit_service_.get());
         audit_server_ = audit_builder.BuildAndStart();
         ASSERT_NE(audit_server_, nullptr);
@@ -726,27 +777,32 @@ TEST_F(FilesE2EGatewayAuditIntegrationTest, Scenario5_DeletionAndMetadataLifecyc
 // Test 6: Transactional Outbox Audit Dispatch Verification
 // ============================================================================
 TEST_F(FilesE2EGatewayAuditIntegrationTest, Scenario6_OutboxAuditDispatchVerification) {
-    // Connect gRPC Audit Client to Mock Audit Service
+    // Connect the production mTLS Audit client to the mock Audit service.
     audit::GrpcAuditClientConfig audit_cfg;
     audit_cfg.target_endpoint = audit_address_;
-    audit_cfg.use_tls = false;
+    const std::filesystem::path pki_root(SECURECLOUD_DEV_PKI_DIR);
+    audit_cfg.tls_credentials = {
+        .ca_cert_path = pki_root / "ca" / "ca.crt",
+        .service_cert_path = pki_root / "services" / "files" / "files.crt",
+        .service_key_path = pki_root / "services" / "files" / "files.key",
+    };
     auto audit_client = std::make_shared<audit::GrpcAuditClient>(audit_cfg);
 
     // Stage sample outbox events into repository
     FilesOutboxEntity ev1;
-    ev1.event_id = "evt-outbox-1";
-    ev1.aggregate_id = "file-e2e-1";
+    ev1.event_id = make_test_uuid_v7();
+    ev1.aggregate_id = make_test_uuid_v7();
     ev1.event_type = "FILE_CREATED";
     ev1.created_at = std::chrono::system_clock::now();
-    ev1.payload_json = "{\"owner_user_id\":\"alice-uuid\",\"file_size\":1024}";
+    ev1.payload_json = "{\"owner_user_id\":\"" + make_test_uuid_v7() + "\",\"file_size\":1024}";
     outbox_repo_->stage_event(ev1);
 
     FilesOutboxEntity ev2;
-    ev2.event_id = "evt-outbox-2";
-    ev2.aggregate_id = "file-e2e-1";
+    ev2.event_id = make_test_uuid_v7();
+    ev2.aggregate_id = make_test_uuid_v7();
     ev2.event_type = "FILE_FINALIZED";
     ev2.created_at = std::chrono::system_clock::now();
-    ev2.payload_json = "{\"owner_user_id\":\"alice-uuid\",\"file_size\":1024}";
+    ev2.payload_json = "{\"owner_user_id\":\"" + make_test_uuid_v7() + "\",\"file_size\":1024}";
     outbox_repo_->stage_event(ev2);
 
     // Instantiate Outbox Relay Worker

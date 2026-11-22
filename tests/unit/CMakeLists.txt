@@ -1594,10 +1594,9 @@ add_executable(securecloud_files_service_impl_test
 )
 
 target_link_libraries(securecloud_files_service_impl_test PRIVATE
-    securecloud::files_service
+    securecloud::files_service_test
     securecloud::files_storage
-    securecloud::files_db
-    securecloud::files_config
+    securecloud::files_db_test
     securecloud::common
     securecloud::compiler_flags
     GTest::gtest_main
@@ -4109,3 +4108,21 @@ target_link_libraries(securecloud_zero_plaintext_audit_security_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_zero_plaintext_audit_security_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files mTLS gRPC Audit Client Unit Test Suite (AUDIT-015-T04)
+add_executable(securecloud_files_grpc_audit_client_test
+        files/files_grpc_audit_client_test.cpp
+)
+
+target_link_libraries(securecloud_files_grpc_audit_client_test PRIVATE
+        securecloud::files_audit
+        securecloud::files_config
+        securecloud::common
+        securecloud::compiler_flags
+        securecloud_proto
+        OpenSSL::Crypto
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_grpc_audit_client_test ${SECURECLOUD_TEST_PROPERTIES})

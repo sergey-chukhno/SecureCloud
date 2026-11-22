@@ -24,13 +24,13 @@ struct FilesOutboxRelayConfig {
 /**
  * @brief Transactional outbox background relay worker for Files Service.
  *
- * Continuously monitors PostgreSQL `files_outbox`, batches pending events,
- * transforms them into AuditEventProto messages without leaking sensitive plaintext,
- * and publishes them via IFilesAuditClient with at-least-once delivery semantics.
+ * Continuously polls `files_outbox`, maps and pre-flight validates events locally
+ * (failing corrupted rows fast into QUARANTINED), dispatches valid batches via
+ * IFilesAuditClient, and transitions rows to PUBLISHED / PENDING (transient) / QUARANTINED.
  */
 class FilesOutboxRelay {
   public:
-    FilesOutboxRelay(std::shared_ptr<FilesOutboxRepository> outbox_repo,
+    FilesOutboxRelay(std::shared_ptr<IFilesOutboxRepository> outbox_repo,
                      std::shared_ptr<IFilesAuditClient> audit_client, FilesOutboxRelayConfig config = {});
     ~FilesOutboxRelay();
 
@@ -43,14 +43,14 @@ class FilesOutboxRelay {
     void stop();
     [[nodiscard]] bool is_running() const noexcept;
 
-    /// Synchronously polls and dispatches a single batch of events.
-    /// Returns the number of events polled and attempted.
+    /// Synchronously polls, pre-flight validates, and dispatches a single batch of events.
+    /// Returns the number of outbox rows processed (quarantined locally or dispatched).
     size_t poll_and_dispatch(size_t batch_size);
 
   private:
     void run();
 
-    std::shared_ptr<FilesOutboxRepository> outbox_repo_;
+    std::shared_ptr<IFilesOutboxRepository> outbox_repo_;
     std::shared_ptr<IFilesAuditClient> audit_client_;
     FilesOutboxRelayConfig config_;
 

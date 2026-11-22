@@ -1,6 +1,6 @@
 #include "files/db/files_connection_pool.hpp"
-#include "files/db/pqxx_compat.hpp"
 
+#include "files/db/pqxx_compat.hpp"
 #include "securecloud/health/transport_probe.hpp"
 
 #include <iostream>
@@ -58,6 +58,10 @@ void ConnectionPoolConfig::validate() const {
 DefaultDbConnection::DefaultDbConnection(std::string id, const ConnectionPoolConfig& config)
     : id_(std::move(id)), host_(config.host), port_(config.port), timeout_(config.connect_timeout) {
 
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+    is_open_ = true;
+    native_conn_ = std::make_unique<pqxx::connection>();
+#else
     // Basic connectivity probe on construction
     is_open_ = common::health::probe_tcp_connectivity(host_, port_, timeout_);
 
@@ -67,6 +71,7 @@ DefaultDbConnection::DefaultDbConnection(std::string id, const ConnectionPoolCon
                                " password=" + config.db_password.expose_unredacted_secret(); // CORRECTION ICI
         native_conn_ = std::make_unique<pqxx::connection>(conn_str);
     }
+#endif
 }
 
 DefaultDbConnection::~DefaultDbConnection() {
@@ -85,10 +90,15 @@ void DefaultDbConnection::close() noexcept {
 }
 
 bool DefaultDbConnection::execute_ping(std::chrono::milliseconds timeout) {
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+    (void)timeout;
+    return is_open_;
+#else
     if (!is_open_) {
         return false;
     }
     return common::health::probe_tcp_connectivity(host_, port_, timeout);
+#endif
 }
 
 const std::string& DefaultDbConnection::connection_id() const noexcept {
@@ -307,5 +317,19 @@ size_t FilesDbConnectionPool::waiting_threads() const noexcept {
 const ConnectionPoolConfig& FilesDbConnectionPool::config() const noexcept {
     return config_;
 }
+
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+std::shared_ptr<FilesDbConnectionPool> test_files_db_connection_pool() {
+    static const auto pool = [] {
+        ConnectionPoolConfig config;
+        config.min_connections = 1;
+        config.max_connections = 4;
+        config.host = "mock-pqxx";
+        config.port = 5433;
+        return std::make_shared<FilesDbConnectionPool>(config);
+    }();
+    return pool;
+}
+#endif
 
 } // namespace securecloud::files::db

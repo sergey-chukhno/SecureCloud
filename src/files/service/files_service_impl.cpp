@@ -214,14 +214,15 @@ FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ctx, const v1::
         return auth_status;
     }
 
-    auto caller_ctx = extract_caller_context(client_metadata, peer_identity, request->owner_user_id());
-    RpcScopeLogger logger("CreateFileUpload", caller_ctx.user_id);
-
     if (!request || !response) {
+        RpcScopeLogger logger("CreateFileUpload", peer_identity);
         auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid request or response pointer");
         logger.finish(status);
         return status;
     }
+
+    auto caller_ctx = extract_caller_context(client_metadata, peer_identity, request->owner_user_id());
+    RpcScopeLogger logger("CreateFileUpload", caller_ctx.user_id);
 
     BulkheadPermit upload_permit;
     if (deps_.upload_bulkhead) {
@@ -577,6 +578,12 @@ FilesServiceImpl::FinalizeFileUpload(const grpc::AuthContext* auth_ctx, const v1
         return status;
     }
 
+    if (!is_valid_uuid(request->file_id())) {
+        auto status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "Invalid file_id format");
+        logger.finish(status);
+        return status;
+    }
+
     BulkheadPermit upload_permit;
     if (deps_.upload_bulkhead) {
         upload_permit = deps_.upload_bulkhead->acquire_with_default_timeout();
@@ -879,6 +886,18 @@ grpc::Status FilesServiceImpl::DownloadChunk(const grpc::AuthContext* auth_ctx, 
         return status;
     } catch (const EntityNotFoundException& ex) {
         auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const FileNotFoundException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::NOT_FOUND, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const InvalidDownloadPreconditionException& ex) {
+        auto status = grpc::Status(grpc::StatusCode::FAILED_PRECONDITION, ex.what());
+        logger.finish(status);
+        return status;
+    } catch (const std::out_of_range& ex) {
+        auto status = grpc::Status(grpc::StatusCode::OUT_OF_RANGE, ex.what());
         logger.finish(status);
         return status;
     } catch (const std::exception& ex) {

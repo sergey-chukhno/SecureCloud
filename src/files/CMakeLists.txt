@@ -75,6 +75,10 @@ if(BUILD_TESTING)
             ${CMAKE_SOURCE_DIR}/src
     )
 
+    target_compile_definitions(securecloud_files_db_test PUBLIC
+            SECURECLOUD_FILES_TEST_PQXX
+    )
+
     target_link_libraries(securecloud_files_db_test PUBLIC
             securecloud::files_config
             securecloud::common
@@ -159,11 +163,36 @@ if(BUILD_TESTING)
     )
 endif()
 
-add_library(securecloud_files_audit STATIC
+# Thin Pimpl wrapper isolating `securecloud::audit_domain` from `src/files/` include paths
+# so `src/auth/domain/audit_event.hpp` and `src/audit/domain/audit_event.hpp` never collide.
+add_library(securecloud_files_audit_validator STATIC
+        audit/files_audit_proto_validator.cpp
+)
+
+add_library(securecloud::files_audit_validator ALIAS securecloud_files_audit_validator)
+
+target_include_directories(securecloud_files_audit_validator PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+)
+
+target_link_libraries(securecloud_files_audit_validator
+        PUBLIC
+        securecloud_proto
+        securecloud::compiler_flags
+        PRIVATE
+        securecloud::audit_domain
+)
+
+set(SECURECLOUD_FILES_AUDIT_SOURCES
         audit/grpc_audit_client.cpp
         audit/files_audit_mapper.cpp
         audit/files_outbox_relay.cpp
 )
+
+# `securecloud_files_audit` MUST NEVER link `securecloud::files_db` or `securecloud::auth`
+# (which exports `src/auth/domain/audit_event.hpp` and `src/auth/domain/enums.hpp`).
+add_library(securecloud_files_audit STATIC ${SECURECLOUD_FILES_AUDIT_SOURCES})
 
 add_library(securecloud::files_audit ALIAS securecloud_files_audit)
 
@@ -172,13 +201,20 @@ target_include_directories(securecloud_files_audit PUBLIC
         ${CMAKE_SOURCE_DIR}/src
 )
 
-target_link_libraries(securecloud_files_audit PUBLIC
-        securecloud::files_db
+target_compile_definitions(securecloud_files_audit PUBLIC
+        SECURECLOUD_FILES_USE_REAL_PQXX
+)
+
+target_link_libraries(securecloud_files_audit
+        PUBLIC
         securecloud::files_config
         securecloud::common
         securecloud::compiler_flags
         securecloud_proto
         securecloud::json
+        securecloud::libpqxx
+        PRIVATE
+        securecloud::files_audit_validator
 )
 
 add_library(securecloud_files_health STATIC

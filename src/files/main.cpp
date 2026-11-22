@@ -103,17 +103,15 @@ int run_service() {
     health_manager.set_live(true);
     health_evaluator.evaluate_once();
 
-    // Initialize Outbox Repository and Relay background worker
+    // Initialize Outbox Repository and Relay background worker (fail-closed mTLS)
     auto outbox_repo = std::make_shared<securecloud::files::FilesOutboxRepository>(db_pool);
-    std::string audit_endpoint = env_source.get("SECURECLOUD_AUDIT_ENDPOINT").value_or("localhost:50054");
-    bool use_tls = !config.common.tls_credentials.ca_cert_path.empty();
+    std::string audit_endpoint = env_source.get("SECURECLOUD_AUDIT_ENDPOINT").value_or("audit:50055");
+    std::string audit_peer_san = env_source.get("SECURECLOUD_AUDIT_EXPECTED_SAN").value_or("audit");
     securecloud::files::audit::GrpcAuditClientConfig audit_config{
         .target_endpoint = audit_endpoint,
-        .ca_cert_path = config.common.tls_credentials.ca_cert_path.string(),
-        .client_cert_path = config.common.tls_credentials.service_cert_path.string(),
-        .client_key_path = config.common.tls_credentials.service_key_path.string(),
         .timeout = std::chrono::milliseconds(2000),
-        .use_tls = use_tls,
+        .tls_credentials = config.common.tls_credentials,
+        .expected_peer_san = audit_peer_san,
     };
     auto audit_client = std::make_shared<securecloud::files::audit::GrpcAuditClient>(audit_config);
     securecloud::files::audit::FilesOutboxRelay outbox_relay(outbox_repo, audit_client);

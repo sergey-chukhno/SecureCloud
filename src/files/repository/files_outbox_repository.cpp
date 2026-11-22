@@ -49,9 +49,14 @@ template <typename Fn> auto with_autonomous_tx(const std::shared_ptr<db::FilesDb
 } // namespace
 
 FilesOutboxRepository::FilesOutboxRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
-    : pool_(std::move(pool)) {}
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()){}
+#else
+    : pool_(std::move(pool)) {
+}
+#endif
 
-void FilesOutboxRepository::stage_event(const FilesOutboxEntity& event, pqxx::work& tx) {
+      void FilesOutboxRepository::stage_event(const FilesOutboxEntity& event, pqxx::work& tx) {
     if (event.event_id.empty()) {
         throw RepositoryException("Event ID cannot be empty");
     }

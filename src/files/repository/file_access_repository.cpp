@@ -6,9 +6,15 @@
 
 namespace securecloud::files {
 
-FileAccessRepository::FileAccessRepository(std::shared_ptr<db::FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
+FileAccessRepository::FileAccessRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()){}
+#else
+    : pool_(std::move(pool)) {
+}
+#endif
 
-void FileAccessRepository::grant_access(const FileAccessEntity& grant, pqxx::work& tx) {
+      void FileAccessRepository::grant_access(const FileAccessEntity& grant, pqxx::work& tx) {
     if (grant.access_id.empty()) {
         throw RepositoryException("Access ID cannot be empty");
     }
