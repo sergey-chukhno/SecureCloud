@@ -1,5 +1,6 @@
 #include "files/service/file_finalization_service.hpp"
 
+#include "files/db/files_connection_pool.hpp"
 #include "files/domain/metadata_validator.hpp"
 
 #include <iostream>
@@ -73,7 +74,10 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(const Fina
         }
     } cleaner{session_locks_mutex_, session_locks_, request.upload_id, session_lock};
 
-    pqxx::work tx;
+    auto conn = pool_->acquire();
+
+    auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+    pqxx::work tx(default_conn.native_handle());
 
     // 1. Fetch transfer session
     auto transfer_opt = transfer_repo_->find_by_id(request.upload_id, tx);
@@ -228,7 +232,10 @@ FinalizeUploadResultDto FileFinalizationService::finalize_file_upload(const Fina
     } catch (const UniqueConstraintViolationException&) {
         tx.abort();
         // Concurrent finalization race: another concurrent request finalized this session
-        pqxx::work retry_tx;
+        auto retry_conn = pool_->acquire();
+        auto& retry_default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*retry_conn);
+        pqxx::work retry_tx(retry_default_conn.native_handle());
+
         auto active_ver = version_repo_->find_active_version(file_opt->file_id, retry_tx);
         if (active_ver) {
             retry_tx.commit();

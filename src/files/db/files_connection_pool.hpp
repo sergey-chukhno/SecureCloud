@@ -15,6 +15,11 @@
 #include <string>
 #include <vector>
 
+// Forward declaration for native libpqxx connection
+namespace pqxx {
+class connection;
+}
+
 namespace securecloud::files::db {
 
 // --- Pool Exception Hierarchy ---
@@ -70,7 +75,7 @@ using ConnectionFactory =
 /// Default connection implementation executing TCP reachability / ping checks
 class DefaultDbConnection : public IDbConnection {
   public:
-    DefaultDbConnection(std::string id, std::string host, uint16_t port, std::chrono::milliseconds connect_timeout);
+    DefaultDbConnection(std::string id, const ConnectionPoolConfig& config);
     ~DefaultDbConnection() override;
 
     [[nodiscard]] bool is_open() const noexcept override;
@@ -78,12 +83,16 @@ class DefaultDbConnection : public IDbConnection {
     [[nodiscard]] bool execute_ping(std::chrono::milliseconds timeout) override;
     [[nodiscard]] const std::string& connection_id() const noexcept override;
 
+    [[nodiscard]] pqxx::connection& native_handle();
+
   private:
     std::string id_;
     std::string host_;
     uint16_t port_;
     std::chrono::milliseconds timeout_;
     bool is_open_{true};
+
+    std::unique_ptr<pqxx::connection> native_conn_;
 };
 
 /// Thread-safe bounded PostgreSQL connection pool with move-only RAII leases and dedicated health probe

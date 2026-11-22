@@ -5,6 +5,7 @@
 #include <charconv>
 #include <cstdio>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 
 namespace securecloud::files::db {
@@ -47,11 +48,12 @@ int hex_char_to_val(char c) {
     return -1;
 }
 
-const pqxx::field* find_optional_column(const pqxx::row& r, const char* name) noexcept {
+// Fix: Return std::optional<pqxx::field> by value instead of a dangling pointer to a temporary
+std::optional<pqxx::field> find_optional_column(const pqxx::row& r, const char* name) noexcept {
     try {
-        return &r[name];
+        return r[name];
     } catch (...) {
-        return nullptr;
+        return std::nullopt;
     }
 }
 
@@ -287,17 +289,12 @@ std::chrono::system_clock::time_point from_iso8601(std::string_view str) {
         throw TimestampParseException("Empty timestamp string");
     }
 
-    // Expected format: YYYY-MM-DD[T ]HH:MM:SS[.ffffff][Z|(+|-)HH[:MM]]
     if (str.size() < 19) {
         throw TimestampParseException("Timestamp string too short: " + std::string(str));
     }
 
-    int year = 0;
-    unsigned month = 0;
-    unsigned day = 0;
-    int hour = 0;
-    int minute = 0;
-    int second = 0;
+    int year = 0, hour = 0, minute = 0, second = 0;
+    unsigned month = 0, day = 0;
 
     auto parse_int = [](std::string_view s) -> int {
         int val = 0;
@@ -342,7 +339,6 @@ std::chrono::system_clock::time_point from_iso8601(std::string_view str) {
     size_t pos = 19;
     int64_t microsec = 0;
 
-    // Optional fractional seconds
     if (pos < str.size() && str[pos] == '.') {
         pos++;
         size_t frac_start = pos;
@@ -354,7 +350,6 @@ std::chrono::system_clock::time_point from_iso8601(std::string_view str) {
             throw TimestampParseException("Missing fractional digits after decimal point: " + std::string(str));
         }
 
-        // Standardize to 6 digits (microseconds)
         int64_t factor = 100000;
         for (size_t i = 0; i < frac_part.size() && i < 6; ++i) {
             microsec += (frac_part[i] - '0') * factor;
@@ -554,7 +549,8 @@ FilesOutboxEntity files_outbox_from_row(const pqxx::row& row) {
 
     entity.event_type = row["event_type"].as<std::string>();
 
-    if (const auto* sev_field = find_optional_column(row, "severity"); sev_field && !sev_field->is_null()) {
+    // Fix: Remove pointer dereference matching updated std::optional return type
+    if (auto sev_field = find_optional_column(row, "severity"); sev_field && !sev_field->is_null()) {
         entity.severity = outbox_severity_from_string(sev_field->as<std::string>());
     }
 
@@ -566,10 +562,11 @@ FilesOutboxEntity files_outbox_from_row(const pqxx::row& row) {
     if (!row["processed_at"].is_null()) {
         entity.processed_at = from_iso8601(row["processed_at"].as<std::string>());
     }
-    if (const auto* err_field = find_optional_column(row, "last_error"); err_field && !err_field->is_null()) {
+    // Fix: Remove pointer dereferences here as well
+    if (auto err_field = find_optional_column(row, "last_error"); err_field && !err_field->is_null()) {
         entity.last_error = err_field->as<std::string>();
     }
-    if (const auto* lease_field = find_optional_column(row, "leased_until"); lease_field && !lease_field->is_null()) {
+    if (auto lease_field = find_optional_column(row, "leased_until"); lease_field && !lease_field->is_null()) {
         entity.leased_until = from_iso8601(lease_field->as<std::string>());
     }
     return entity;

@@ -1,5 +1,7 @@
 #include "files/repository/files_outbox_repository.hpp"
 
+#include "files/db/files_connection_pool.hpp"
+
 #include <algorithm>
 #include <cctype>
 #include <sstream>
@@ -31,56 +33,18 @@ std::string sanitize_diagnostic_message(std::string_view raw) {
     return out;
 }
 
-#if defined(SECURECLOUD_FILES_USE_REAL_PQXX) && __has_include(<pqxx/pqxx>)
-template <typename S> std::string extract_secret_value(const S& secret) {
-    if constexpr (requires { secret.reveal(); }) {
-        return std::string(secret.reveal());
-    } else if constexpr (requires { secret.unmask(); }) {
-        return std::string(secret.unmask());
-    } else if constexpr (requires { secret.value(); }) {
-        return std::string(secret.value());
-    } else if constexpr (requires { secret.get(); }) {
-        return std::string(secret.get());
-    } else {
-        return {};
-    }
-}
-
-std::string build_pg_conninfo(const db::ConnectionPoolConfig& cfg) {
-    std::ostringstream oss;
-    oss << "host=" << cfg.host << " port=" << cfg.port << " dbname=" << cfg.db_name << " user=" << cfg.db_user;
-    const std::string pwd = extract_secret_value(cfg.db_password);
-    if (!pwd.empty()) {
-        std::string escaped;
-        escaped.reserve(pwd.size());
-        for (char c : pwd) {
-            if (c == '\'' || c == '\\') {
-                escaped.push_back('\\');
-            }
-            escaped.push_back(c);
-        }
-        oss << " password='" << escaped << "'";
-    }
-    const auto connect_sec = std::max<int64_t>(1, cfg.connect_timeout.count() / 1000);
-    oss << " connect_timeout=" << connect_sec;
-    return oss.str();
-}
-
 template <typename Fn> auto with_autonomous_tx(const std::shared_ptr<db::FilesDbConnectionPool>& pool, Fn&& fn) {
     if (!pool) {
-        throw RepositoryException("FilesDbConnectionPool is required when SECURECLOUD_FILES_USE_REAL_PQXX is enabled");
+        throw RepositoryException("Connection pool not initialized");
     }
     auto lease = pool->acquire();
-    pqxx::connection conn(build_pg_conninfo(pool->config()));
-    pqxx::work tx(conn);
+    auto* pg_conn = dynamic_cast<db::DefaultDbConnection*>(lease.get());
+    if (!pg_conn) {
+        throw RepositoryException("Database connection is not a PostgreSQL connection");
+    }
+    pqxx::work tx(pg_conn->native_handle());
     return fn(tx);
 }
-#else
-template <typename Fn> auto with_autonomous_tx(const std::shared_ptr<db::FilesDbConnectionPool>& /*pool*/, Fn&& fn) {
-    pqxx::work tx;
-    return fn(tx);
-}
-#endif
 
 } // namespace
 
@@ -117,13 +81,14 @@ void FilesOutboxRepository::stage_event(const FilesOutboxEntity& event, pqxx::wo
                                 ? std::chrono::system_clock::now()
                                 : event.created_at;
 
-    tx.exec_params("INSERT INTO files_outbox ("
-                   "event_id, aggregate_type, aggregate_id, event_type, severity, payload_json, "
-                   "status, retry_count, created_at, processed_at, last_error, leased_until"
-                   ") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
-                   event.event_id, event.aggregate_type.empty() ? "FILE" : event.aggregate_type, normalized_agg_id,
-                   event.event_type, db::to_string(event.severity), event.payload_json, db::to_string(event.status),
-                   event.retry_count, db::to_iso8601(created_tp), processed_str, event.last_error, leased_until_str);
+    tx.exec("INSERT INTO files_outbox ("
+            "event_id, aggregate_type, aggregate_id, event_type, severity, payload_json, "
+            "status, retry_count, created_at, processed_at, last_error, leased_until"
+            ") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)",
+            pqxx::params{event.event_id, event.aggregate_type.empty() ? "FILE" : event.aggregate_type,
+                         normalized_agg_id, event.event_type, db::to_string(event.severity), event.payload_json,
+                         db::to_string(event.status), event.retry_count, db::to_iso8601(created_tp), processed_str,
+                         event.last_error, leased_until_str});
 }
 
 void FilesOutboxRepository::stage_event(const FilesOutboxEntity& event) {
@@ -145,24 +110,24 @@ FilesOutboxRepository::fetch_and_lease_pending_batch(size_t limit, std::chrono::
         const std::string now_iso = db::to_iso8601(now);
         const std::string lease_until_iso = db::to_iso8601(now + effective_lease);
 
-        auto res = tx.exec_params("WITH claimed AS ("
-                                  "  SELECT event_id "
-                                  "  FROM files_outbox "
-                                  "  WHERE status = 'PENDING' "
-                                  "    AND (leased_until IS NULL OR leased_until < $1::timestamptz) "
-                                  "  ORDER BY created_at ASC "
-                                  "  LIMIT $2 "
-                                  "  FOR UPDATE SKIP LOCKED"
-                                  ") "
-                                  "UPDATE files_outbox AS o "
-                                  "SET leased_until = $3::timestamptz, "
-                                  "    retry_count = o.retry_count + 1 "
-                                  "FROM claimed "
-                                  "WHERE o.event_id = claimed.event_id "
-                                  "RETURNING o.event_id, o.aggregate_type, o.aggregate_id, o.event_type, o.severity, "
-                                  "          o.payload_json, o.status, o.retry_count, o.created_at, o.processed_at, "
-                                  "          o.last_error, o.leased_until",
-                                  now_iso, static_cast<int64_t>(limit), lease_until_iso);
+        auto res = tx.exec("WITH claimed AS ("
+                           "  SELECT event_id "
+                           "  FROM files_outbox "
+                           "  WHERE status = 'PENDING' "
+                           "    AND (leased_until IS NULL OR leased_until < $1::timestamptz) "
+                           "  ORDER BY created_at ASC "
+                           "  LIMIT $2 "
+                           "  FOR UPDATE SKIP LOCKED"
+                           ") "
+                           "UPDATE files_outbox AS o "
+                           "SET leased_until = $3::timestamptz, "
+                           "    retry_count = o.retry_count + 1 "
+                           "FROM claimed "
+                           "WHERE o.event_id = claimed.event_id "
+                           "RETURNING o.event_id, o.aggregate_type, o.aggregate_id, o.event_type, o.severity, "
+                           "          o.payload_json, o.status, o.retry_count, o.created_at, o.processed_at, "
+                           "          o.last_error, o.leased_until",
+                           pqxx::params{now_iso, static_cast<int64_t>(limit), lease_until_iso});
 
         std::vector<FilesOutboxEntity> events;
         events.reserve(res.size());
@@ -183,24 +148,24 @@ std::vector<FilesOutboxEntity> FilesOutboxRepository::fetch_pending_events(size_
     const std::string now_iso = db::to_iso8601(now);
     const std::string lease_until_iso = db::to_iso8601(now + k_default_lease_duration);
 
-    auto res = tx.exec_params("WITH claimed AS ("
-                              "  SELECT event_id "
-                              "  FROM files_outbox "
-                              "  WHERE status = 'PENDING' "
-                              "    AND (leased_until IS NULL OR leased_until < $1::timestamptz) "
-                              "  ORDER BY created_at ASC "
-                              "  LIMIT $2 "
-                              "  FOR UPDATE SKIP LOCKED"
-                              ") "
-                              "UPDATE files_outbox AS o "
-                              "SET leased_until = $3::timestamptz, "
-                              "    retry_count = o.retry_count + 1 "
-                              "FROM claimed "
-                              "WHERE o.event_id = claimed.event_id "
-                              "RETURNING o.event_id, o.aggregate_type, o.aggregate_id, o.event_type, o.severity, "
-                              "          o.payload_json, o.status, o.retry_count, o.created_at, o.processed_at, "
-                              "          o.last_error, o.leased_until",
-                              now_iso, static_cast<int64_t>(limit), lease_until_iso);
+    auto res = tx.exec("WITH claimed AS ("
+                       "  SELECT event_id "
+                       "  FROM files_outbox "
+                       "  WHERE status = 'PENDING' "
+                       "    AND (leased_until IS NULL OR leased_until < $1::timestamptz) "
+                       "  ORDER BY created_at ASC "
+                       "  LIMIT $2 "
+                       "  FOR UPDATE SKIP LOCKED"
+                       ") "
+                       "UPDATE files_outbox AS o "
+                       "SET leased_until = $3::timestamptz, "
+                       "    retry_count = o.retry_count + 1 "
+                       "FROM claimed "
+                       "WHERE o.event_id = claimed.event_id "
+                       "RETURNING o.event_id, o.aggregate_type, o.aggregate_id, o.event_type, o.severity, "
+                       "          o.payload_json, o.status, o.retry_count, o.created_at, o.processed_at, "
+                       "          o.last_error, o.leased_until",
+                       pqxx::params{now_iso, static_cast<int64_t>(limit), lease_until_iso});
 
     std::vector<FilesOutboxEntity> events;
     events.reserve(res.size());
@@ -220,10 +185,10 @@ bool FilesOutboxRepository::mark_published(const std::string& event_id, pqxx::wo
     }
 
     const auto now_iso = db::to_iso8601(std::chrono::system_clock::now());
-    auto res = tx.exec_params("UPDATE files_outbox "
-                              "SET status = 'PUBLISHED', processed_at = $1::timestamptz, leased_until = NULL "
-                              "WHERE event_id = $2",
-                              now_iso, event_id);
+    auto res = tx.exec("UPDATE files_outbox "
+                       "SET status = 'PUBLISHED', processed_at = $1::timestamptz, leased_until = NULL "
+                       "WHERE event_id = $2",
+                       pqxx::params{now_iso, event_id});
 
     return res.affected_rows() > 0;
 }
@@ -250,10 +215,10 @@ bool FilesOutboxRepository::record_transient_failure(const std::string& event_id
     const std::string clean_err = sanitize_diagnostic_message(sanitized_error);
 
     return with_autonomous_tx(pool_, [&](pqxx::work& tx) {
-        auto res = tx.exec_params("UPDATE files_outbox "
-                                  "SET status = 'PENDING', leased_until = NULL, last_error = $1 "
-                                  "WHERE event_id = $2 AND status = 'PENDING'",
-                                  clean_err, event_id);
+        auto res = tx.exec("UPDATE files_outbox "
+                           "SET status = 'PENDING', leased_until = NULL, last_error = $1 "
+                           "WHERE event_id = $2 AND status = 'PENDING'",
+                           pqxx::params{clean_err, event_id});
         const bool updated = res.affected_rows() > 0;
         if (updated) {
             tx.commit();
@@ -271,11 +236,11 @@ bool FilesOutboxRepository::mark_quarantined(const std::string& event_id, std::s
     const std::string now_iso = db::to_iso8601(std::chrono::system_clock::now());
 
     return with_autonomous_tx(pool_, [&](pqxx::work& tx) {
-        auto res = tx.exec_params("UPDATE files_outbox "
-                                  "SET status = 'QUARANTINED', processed_at = $1::timestamptz, "
-                                  "    leased_until = NULL, last_error = $2 "
-                                  "WHERE event_id = $3",
-                                  now_iso, clean_reason, event_id);
+        auto res = tx.exec("UPDATE files_outbox "
+                           "SET status = 'QUARANTINED', processed_at = $1::timestamptz, "
+                           "    leased_until = NULL, last_error = $2 "
+                           "WHERE event_id = $3",
+                           pqxx::params{now_iso, clean_reason, event_id});
         const bool updated = res.affected_rows() > 0;
         if (updated) {
             tx.commit();
@@ -289,10 +254,10 @@ bool FilesOutboxRepository::mark_failed(const std::string& event_id, pqxx::work&
         return false;
     }
 
-    auto res = tx.exec_params("UPDATE files_outbox "
-                              "SET status = 'FAILED', retry_count = retry_count + 1, leased_until = NULL "
-                              "WHERE event_id = $1",
-                              event_id);
+    auto res = tx.exec("UPDATE files_outbox "
+                       "SET status = 'FAILED', retry_count = retry_count + 1, leased_until = NULL "
+                       "WHERE event_id = $1",
+                       pqxx::params{event_id});
 
     return res.affected_rows() > 0;
 }
@@ -320,15 +285,15 @@ size_t FilesOutboxRepository::purge_published_older_than(std::chrono::system_clo
     const std::string cutoff_iso = db::to_iso8601(cutoff);
 
     return with_autonomous_tx(pool_, [&](pqxx::work& tx) -> size_t {
-        auto res = tx.exec_params("DELETE FROM files_outbox "
-                                  "WHERE ctid IN ("
-                                  "  SELECT ctid FROM files_outbox "
-                                  "  WHERE status = 'PUBLISHED' "
-                                  "    AND processed_at IS NOT NULL "
-                                  "    AND processed_at < $1::timestamptz "
-                                  "  LIMIT $2"
-                                  ")",
-                                  cutoff_iso, static_cast<int64_t>(batch_size));
+        auto res = tx.exec("DELETE FROM files_outbox "
+                           "WHERE ctid IN ("
+                           "  SELECT ctid FROM files_outbox "
+                           "  WHERE status = 'PUBLISHED' "
+                           "    AND processed_at IS NOT NULL "
+                           "    AND processed_at < $1::timestamptz "
+                           "  LIMIT $2"
+                           ")",
+                           pqxx::params{cutoff_iso, static_cast<int64_t>(batch_size)});
         const size_t deleted = res.affected_rows();
         tx.commit();
         return deleted;
@@ -363,10 +328,10 @@ std::optional<FilesOutboxEntity> FilesOutboxRepository::find_by_id(const std::st
         return std::nullopt;
     }
 
-    auto res = tx.exec_params("SELECT event_id, aggregate_type, aggregate_id, event_type, severity, payload_json, "
-                              "       status, retry_count, created_at, processed_at, last_error, leased_until "
-                              "FROM files_outbox WHERE event_id = $1",
-                              event_id);
+    auto res = tx.exec("SELECT event_id, aggregate_type, aggregate_id, event_type, severity, payload_json, "
+                       "       status, retry_count, created_at, processed_at, last_error, leased_until "
+                       "FROM files_outbox WHERE event_id = $1",
+                       pqxx::params{event_id});
 
     if (res.empty()) {
         return std::nullopt;

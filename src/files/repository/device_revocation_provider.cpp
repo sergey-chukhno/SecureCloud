@@ -3,6 +3,7 @@
 #include "files/db/pqxx_compat.hpp"
 
 #include <mutex>
+#include <stdexcept>
 
 namespace securecloud::files {
 
@@ -25,13 +26,18 @@ bool DeviceRevocationProvider::is_device_revoked(const std::string& device_id) {
     // 2. Query database if connection pool is available
     if (pool_) {
         try {
-            pqxx::work tx;
-            // Check if device is marked revoked in devices table (if present)
-            // or in file_access table grants
+            auto lease = pool_->acquire();
+
+            auto* pg_conn = dynamic_cast<db::DefaultDbConnection*>(lease.get());
+            if (!pg_conn) {
+                throw std::runtime_error("Database connection is not a PostgreSQL connection");
+            }
+
+            pqxx::work tx(pg_conn->native_handle());
+
             auto res =
-                tx.exec_params("SELECT 1 FROM file_access WHERE grantee_device_id = $1 AND revoked_at IS NOT NULL "
-                               "LIMIT 1",
-                               device_id);
+                tx.exec("SELECT 1 FROM file_access WHERE grantee_device_id = $1 AND revoked_at IS NOT NULL LIMIT 1",
+                        pqxx::params{device_id});
 
             if (!res.empty()) {
                 // Cache the revocation status

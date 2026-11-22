@@ -1,5 +1,6 @@
 #include "files/service/upload_session_manager.hpp"
 
+#include "files/db/files_connection_pool.hpp"
 #include "files/domain/metadata_validator.hpp"
 
 #include <algorithm>
@@ -45,7 +46,11 @@ std::optional<UploadSession> UploadSessionManager::create_session(const v1::Crea
                 .expires_at = expires_at,
             };
             if (pool_) {
-                pqxx::work tx;
+                auto conn = pool_->acquire();
+
+                auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+                pqxx::work tx(default_conn.native_handle());
+
                 transfer_repo_->create_transfer(transfer, tx);
                 tx.commit();
             } else {

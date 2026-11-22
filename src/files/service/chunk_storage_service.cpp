@@ -1,5 +1,6 @@
 #include "files/service/chunk_storage_service.hpp"
 
+#include "files/db/files_connection_pool.hpp"
 #include "files/domain/metadata_validator.hpp"
 
 #include <algorithm>
@@ -48,7 +49,10 @@ ChunkStoreResult ChunkStorageService::store_chunk(const ChunkPayloadDto& chunk_d
     auto now = std::chrono::system_clock::now();
 
     if (pool_) {
-        pqxx::work tx;
+        auto conn = pool_->acquire();
+
+        auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+        pqxx::work tx(default_conn.native_handle());
 
         auto transfer_opt = transfer_repo_->find_by_id(chunk_dto.upload_id, tx);
         if (!transfer_opt) {

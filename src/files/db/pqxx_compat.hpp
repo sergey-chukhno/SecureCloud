@@ -11,13 +11,28 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
-#if defined(SECURECLOUD_FILES_USE_REAL_PQXX) && __has_include(<pqxx/pqxx>)
+// Cross-platform safeguard for __has_include macro
+#if defined(SECURECLOUD_FILES_USE_REAL_PQXX)
+#if defined(__has_include)
+#if __has_include(<pqxx/pqxx>)
 #include <pqxx/pqxx>
+#define PQXX_COMPAT_USE_REAL
+#endif
 #else
+#include <pqxx/pqxx> // Fallback for older compilers lacking __has_include
+#define PQXX_COMPAT_USE_REAL
+#endif
+#endif
+
+#if !defined(PQXX_COMPAT_USE_REAL)
 
 namespace pqxx {
+
+/// Utility for delayed static_assert evaluation (MSVC/Clang/GCC compatible)
+template <class> inline constexpr bool always_false_v = false;
 
 /// Standard pqxx exception hierarchy when libpqxx is not bundled
 class failure : public std::runtime_error {
@@ -76,7 +91,7 @@ class field {
             }
             throw std::runtime_error("Invalid boolean value in field: " + *value_);
         } else {
-            static_assert(!sizeof(T), "Unsupported type for pqxx::field::as<T>()");
+            static_assert(always_false_v<T>, "Unsupported type for pqxx::field::as<T>()");
         }
     }
 
@@ -1433,4 +1448,4 @@ class work {
 
 } // namespace pqxx
 
-#endif
+#endif // PQXX_COMPAT_USE_REAL

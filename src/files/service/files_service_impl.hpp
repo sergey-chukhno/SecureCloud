@@ -21,12 +21,15 @@
 #include "files/service/file_capability_manager.hpp"
 #include "files/service/file_finalization_service.hpp"
 #include "files/service/file_lifecycle_service.hpp"
+#include "files/service/files_audit_event_publisher.hpp"
+#include "files/service/files_caller_context.hpp"
 #include "files/service/metadata_manager.hpp"
 #include "files/service/object_assembly_engine.hpp"
 #include "files/service/storage_engine.hpp"
 #include "files/service/upload_session_manager.hpp"
 #include "files/storage/s3_client.hpp"
 
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -52,6 +55,9 @@ struct FilesServiceDependencies {
     std::shared_ptr<FileFinalizationService> finalization_service{nullptr};
     std::shared_ptr<IFileCapabilityManager> capability_manager{nullptr};
 
+    // AUDIT-015-T03: Centralized Audit Publisher injected into the service
+    std::shared_ptr<FilesAuditEventPublisher> audit_publisher{nullptr};
+
     // Concurrency Bulkheads & Resource Controls (FILES-009)
     std::shared_ptr<ConcurrencyBulkhead> metadata_bulkhead{nullptr};
     std::shared_ptr<ConcurrencyBulkhead> upload_bulkhead{nullptr};
@@ -62,10 +68,6 @@ struct FilesServiceDependencies {
 };
 
 /// Implementation of the securecloud.files.v1.FilesService gRPC interface.
-/// In FILES-001, serves as the authoritative service skeleton:
-/// - Registers all 7 RPC endpoints returning deterministic UNIMPLEMENTED status.
-/// - Enforces mTLS client certificate SAN peer identity verification (Gateway: DNS:gateway).
-/// - Implements secret-safe operational logging (never logging ciphertext or secret keys).
 class FilesServiceImpl final : public v1::FilesService::Service {
   public:
     static constexpr std::string_view k_unimplemented_skeleton_message =
@@ -112,31 +114,35 @@ class FilesServiceImpl final : public v1::FilesService::Service {
                             v1::DeleteFileResponse* response) override;
 
     // --- Direct AuthContext Overloads (for unit testing and direct invocation) ---
+    // AUDIT-015-T03: All inner RPC methods now expect client_metadata for robust Correlation Context Extraction
 
     grpc::Status CreateFileUpload(const grpc::AuthContext* auth_ctx, const v1::CreateFileUploadRequest* request,
-                                  v1::CreateFileUploadResponse* response);
+                                  v1::CreateFileUploadResponse* response,
+                                  const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
 
     grpc::Status UploadChunk(const grpc::AuthContext* auth_ctx, const v1::UploadChunkRequest* request,
-                             v1::UploadChunkResponse* response);
+                             v1::UploadChunkResponse* response,
+                             const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
 
     grpc::Status FinalizeFileUpload(const grpc::AuthContext* auth_ctx, const v1::FinalizeFileUploadRequest* request,
-                                    v1::FinalizeFileUploadResponse* response);
+                                    v1::FinalizeFileUploadResponse* response,
+                                    const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
 
     grpc::Status GetFileMetadata(const grpc::AuthContext* auth_ctx, const v1::GetFileMetadataRequest* request,
-                                 v1::GetFileMetadataResponse* response);
-
-    grpc::Status DownloadChunk(const grpc::AuthContext* auth_ctx, const v1::DownloadChunkRequest* request,
-                               v1::DownloadChunkResponse* response);
+                                 v1::GetFileMetadataResponse* response,
+                                 const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
 
     grpc::Status DownloadChunk(const grpc::AuthContext* auth_ctx, const v1::DownloadChunkRequest* request,
                                v1::DownloadChunkResponse* response,
                                const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
 
     grpc::Status CancelFileUpload(const grpc::AuthContext* auth_ctx, const v1::CancelFileUploadRequest* request,
-                                  v1::CancelFileUploadResponse* response);
+                                  v1::CancelFileUploadResponse* response,
+                                  const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
 
     grpc::Status DeleteFile(const grpc::AuthContext* auth_ctx, const v1::DeleteFileRequest* request,
-                            v1::DeleteFileResponse* response);
+                            v1::DeleteFileResponse* response,
+                            const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
 
     // --- Security & Identity Helpers ---
 
@@ -147,6 +153,11 @@ class FilesServiceImpl final : public v1::FilesService::Service {
   private:
     grpc::Status check_peer_authorization(const grpc::AuthContext* auth_ctx, std::string_view rpc_name,
                                           std::string& out_peer) const;
+
+    // AUDIT-015-T03: Correlation and Call Context extraction
+    [[nodiscard]] FilesCallerContext
+    extract_caller_context(const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata,
+                           const std::string& peer_identity, const std::string& fallback_user_id = "") const;
 
     FilesServiceDependencies deps_;
     std::string expected_client_identity_;

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "files/db/files_connection_pool.hpp"
-#include "files/db/pqxx_compat.hpp"
 #include "files/db/pqxx_mappers.hpp"
 #include "files/domain/files_outbox_entity.hpp"
 #include "files/repository/file_repository.hpp"

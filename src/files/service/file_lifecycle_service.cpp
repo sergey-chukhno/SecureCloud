@@ -1,5 +1,7 @@
 #include "files/service/file_lifecycle_service.hpp"
 
+#include "files/db/files_connection_pool.hpp"
+
 #include <algorithm>
 #include <nlohmann/json.hpp>
 
@@ -50,7 +52,10 @@ std::string FileLifecycleService::create_file(const CreateFileRequestDto& dto,
         return dto.file_id;
     }
 
-    pqxx::work tx;
+    auto conn = pool_->acquire();
+
+    auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+    pqxx::work tx(default_conn.native_handle());
 
     auto existing = file_repo_->find_by_id(dto.file_id, tx);
     if (existing.has_value()) {
@@ -128,7 +133,10 @@ FileVersionEntity FileLifecycleService::create_file_version(const CreateFileVers
         };
     }
 
-    pqxx::work tx;
+    auto conn = pool_->acquire();
+
+    auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+    pqxx::work tx(default_conn.native_handle());
 
     auto file_opt = file_repo_->find_by_id(dto.file_id, tx);
     if (!file_opt.has_value()) {
@@ -204,7 +212,10 @@ bool FileLifecycleService::transition_lifecycle(const std::string& file_id, File
         return true;
     }
 
-    pqxx::work tx;
+    auto conn = pool_->acquire();
+
+    auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+    pqxx::work tx(default_conn.native_handle());
 
     auto file_opt = file_repo_->find_by_id(file_id, tx);
     if (!file_opt.has_value()) {
@@ -253,7 +264,10 @@ std::optional<FileMetadataSummary> FileLifecycleService::get_file_metadata(const
         return std::nullopt;
     }
 
-    pqxx::work tx;
+    auto conn = pool_->acquire();
+
+    auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+    pqxx::work tx(default_conn.native_handle());
 
     auto file_opt = file_repo_->find_by_id(file_id, tx);
     if (!file_opt.has_value()) {
@@ -299,7 +313,10 @@ bool FileLifecycleService::delete_file(const std::string& file_id, const std::st
         return true;
     }
 
-    pqxx::work tx;
+    auto conn = pool_->acquire();
+
+    auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+    pqxx::work tx(default_conn.native_handle());
 
     auto file_opt = file_repo_->find_by_id(file_id, tx);
     if (!file_opt.has_value()) {
@@ -352,7 +369,10 @@ size_t FileLifecycleService::evaluate_and_expire_files(std::chrono::system_clock
         return 0;
     }
 
-    pqxx::work tx;
+    auto conn = pool_->acquire();
+
+    auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+    pqxx::work tx(default_conn.native_handle());
 
     auto expired_files = file_repo_->find_expired_files(now, batch_size, tx);
     size_t count = 0;

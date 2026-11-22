@@ -1,5 +1,7 @@
 #include "files/service/download_manager.hpp"
 
+#include "files/db/files_connection_pool.hpp"
+
 #include <stdexcept>
 
 namespace securecloud::files::service {
@@ -32,7 +34,10 @@ bool DownloadManager::authorize_download(const std::string& file_id, const std::
     }
 
     try {
-        pqxx::work tx;
+        auto conn = pool_->acquire();
+
+        auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+        pqxx::work tx(default_conn.native_handle());
 
         auto file_opt = file_repo_->find_by_id(file_id, tx);
         if (!file_opt) {
@@ -58,7 +63,10 @@ DownloadChunkResult DownloadManager::get_chunk_versioned(const std::string& file
         throw std::runtime_error("ChunkDownloadEngine is uninitialized in DownloadManager");
     }
 
-    pqxx::work tx;
+    auto conn = pool_->acquire();
+
+    auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+    pqxx::work tx(default_conn.native_handle());
 
     // 1. Fetch file record
     auto file_opt = file_repo_->find_by_id(file_id, tx);
@@ -146,7 +154,10 @@ DownloadResumeModel DownloadManager::prepare_resume_session(const std::string& f
         throw std::runtime_error("Database connection pool is uninitialized in DownloadManager");
     }
 
-    pqxx::work tx;
+    auto conn = pool_->acquire();
+
+    auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+    pqxx::work tx(default_conn.native_handle());
 
     auto file_opt = file_repo_->find_by_id(file_id, tx);
     if (!file_opt) {
