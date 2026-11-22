@@ -1642,7 +1642,7 @@ add_executable(securecloud_domain_entities_test
 )
 
 target_link_libraries(securecloud_domain_entities_test PRIVATE
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud::compiler_flags
@@ -1657,7 +1657,7 @@ add_executable(securecloud_file_repository_test
 )
 
 target_link_libraries(securecloud_file_repository_test PRIVATE
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud::compiler_flags
@@ -1672,7 +1672,7 @@ add_executable(securecloud_transfer_chunk_repository_test
 )
 
 target_link_libraries(securecloud_transfer_chunk_repository_test PRIVATE
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud::compiler_flags
@@ -1687,7 +1687,7 @@ add_executable(securecloud_access_outbox_repository_test
 )
 
 target_link_libraries(securecloud_access_outbox_repository_test PRIVATE
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud::compiler_flags

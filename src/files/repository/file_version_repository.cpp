@@ -3,6 +3,7 @@
 #include "files/db/files_connection_pool.hpp"
 
 #include <chrono>
+#include <cstddef>
 
 namespace securecloud::files {
 
@@ -85,7 +86,7 @@ std::vector<FileVersionEntity> FileVersionRepository::list_versions(const std::s
 
     std::vector<FileVersionEntity> versions;
     versions.reserve(res.size());
-    for (int i = 0; i < res.size(); ++i) {
+    for (decltype(res.size()) i = 0; i < res.size(); ++i) {
         versions.push_back(db::file_version_from_row(res[i]));
     }
     return versions;

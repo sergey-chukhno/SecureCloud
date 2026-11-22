@@ -336,7 +336,7 @@ add_executable(securecloud_files_postgres_persistence_integration_test
 )
 
 target_link_libraries(securecloud_files_postgres_persistence_integration_test PRIVATE
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud::compiler_flags
@@ -383,8 +383,8 @@ add_executable(securecloud_files_lifecycle_integration_test
 )
 
 target_link_libraries(securecloud_files_lifecycle_integration_test PRIVATE
-    securecloud::files_service
-    securecloud::files_db
+    securecloud::files_service_test
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud_proto
@@ -409,9 +409,9 @@ add_executable(securecloud_files_resumable_upload_integration_test
 )
 
 target_link_libraries(securecloud_files_resumable_upload_integration_test PRIVATE
-    securecloud::files_service
+    securecloud::files_service_test
     securecloud::files_storage
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud_proto
@@ -436,9 +436,9 @@ add_executable(securecloud_files_finalization_integration_test
 )
 
 target_link_libraries(securecloud_files_finalization_integration_test PRIVATE
-    securecloud::files_service
+    securecloud::files_service_test
     securecloud::files_storage
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud_proto
@@ -463,9 +463,9 @@ add_executable(securecloud_files_download_integration_test
 )
 
 target_link_libraries(securecloud_files_download_integration_test PRIVATE
-    securecloud::files_service
+    securecloud::files_service_test
     securecloud::files_storage
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud_proto

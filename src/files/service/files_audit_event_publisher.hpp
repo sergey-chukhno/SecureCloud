@@ -5,7 +5,6 @@
 #include <map>
 #include <memory>
 #include <nlohmann/json.hpp>
-#include <pqxx/pqxx>
 #include <string>
 
 namespace securecloud::files::service {

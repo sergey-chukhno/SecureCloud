@@ -3,6 +3,7 @@
 #include "files/db/files_connection_pool.hpp"
 
 #include <chrono>
+#include <cstddef>
 
 namespace securecloud::files {
 
@@ -62,7 +63,7 @@ std::vector<int32_t> FileChunkRepository::get_accepted_chunk_indices(const std::
 
     std::vector<int32_t> indices;
     indices.reserve(res.size());
-    for (int i = 0; i < res.size(); ++i) {
+    for (decltype(res.size()) i = 0; i < res.size(); ++i) {
         indices.push_back(std::stoi(res[i]["chunk_index"].c_str()));
     }
     return indices;
@@ -148,7 +149,7 @@ std::vector<FileChunkEntity> FileChunkRepository::list_chunks_for_transfer(const
 
     std::vector<FileChunkEntity> chunks;
     chunks.reserve(res.size());
-    for (int i = 0; i < res.size(); ++i) {
+    for (decltype(res.size()) i = 0; i < res.size(); ++i) {
         chunks.push_back(db::file_chunk_from_row(res[i]));
     }
     return chunks;

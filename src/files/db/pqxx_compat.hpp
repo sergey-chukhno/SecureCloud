@@ -12,6 +12,7 @@
 #include <string>
 #include <string_view>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 // Cross-platform safeguard for __has_include macro
@@ -48,6 +49,18 @@ class broken_connection : public failure {
 class sql_error : public failure {
   public:
     using failure::failure;
+};
+
+/// Minimal connection stand-in used by unit-test builds.
+class connection {
+  public:
+    explicit connection(std::string /*connection_string*/ = {}) {}
+
+    [[nodiscard]] bool is_open() const noexcept { return open_; }
+    void close() noexcept { open_ = false; }
+
+  private:
+    bool open_{true};
 };
 
 /// Lightweight abstraction for a PostgreSQL row field when libpqxx is not bundled.
@@ -168,6 +181,45 @@ class result {
   private:
     std::vector<row> rows_;
     size_t affected_rows_{0};
+};
+
+/// Parameter pack compatible with the libpqxx call sites used by Files.
+class params {
+  public:
+    template <typename... Args> explicit params(Args&&... args) {
+        values_.reserve(sizeof...(Args));
+        (values_.push_back(to_string_param(std::forward<Args>(args))), ...);
+    }
+
+    [[nodiscard]] const std::vector<std::optional<std::string>>& values() const noexcept { return values_; }
+
+  private:
+    template <typename T> static std::optional<std::string> to_string_param(T&& value) {
+        using Value = std::decay_t<T>;
+        if constexpr (std::is_same_v<Value, std::nullopt_t>) {
+            return std::nullopt;
+        } else if constexpr (std::is_same_v<Value, std::string>) {
+            return std::forward<T>(value);
+        } else if constexpr (std::is_same_v<Value, std::string_view>) {
+            return std::string(value);
+        } else if constexpr (std::is_convertible_v<T, const char*>) {
+            const char* text = value;
+            return text ? std::make_optional(std::string(text)) : std::nullopt;
+        } else if constexpr (std::is_same_v<Value, bool>) {
+            return value ? "t" : "f";
+        } else if constexpr (std::is_arithmetic_v<Value>) {
+            return std::to_string(value);
+        } else if constexpr (requires { value.has_value(); }) {
+            if (!value.has_value()) {
+                return std::nullopt;
+            }
+            return to_string_param(*std::forward<T>(value));
+        } else {
+            return std::nullopt;
+        }
+    }
+
+    std::vector<std::optional<std::string>> values_;
 };
 
 /// In-memory mock database store supporting unit test verification of SQL repositories
@@ -293,6 +345,7 @@ class MockStorage {
 class work {
   public:
     work() = default;
+    explicit work(connection& /*conn*/) {}
 
     ~work() {
         if (!committed_) {
@@ -336,6 +389,8 @@ class work {
     }
 
     result exec(std::string_view query) { return execute(query, {}); }
+
+    result exec(std::string_view query, const params& query_params) { return execute(query, query_params.values()); }
 
     void commit() {
         if (committed_)

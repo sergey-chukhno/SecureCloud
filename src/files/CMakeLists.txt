@@ -19,7 +19,7 @@ target_link_libraries(securecloud_files_config PUBLIC
 
 find_package(OpenSSL REQUIRED)
 
-add_library(securecloud_files_db STATIC
+set(SECURECLOUD_FILES_DB_SOURCES
         db/files_connection_pool.cpp
         db/migration_runner.cpp
         db/pqxx_mappers.cpp
@@ -38,6 +38,8 @@ add_library(securecloud_files_db STATIC
         repository/device_revocation_provider.cpp
         repository/files_outbox_repository.cpp
 )
+
+add_library(securecloud_files_db STATIC ${SECURECLOUD_FILES_DB_SOURCES})
 
 add_library(securecloud::files_db ALIAS securecloud_files_db)
 
@@ -60,6 +62,29 @@ target_link_libraries(securecloud_files_db PUBLIC
         securecloud::auth
         securecloud::libpqxx
 )
+
+# Unit tests that exercise the in-memory pqxx compatibility layer need the
+# Files DB sources compiled without SECURECLOUD_FILES_USE_REAL_PQXX. Keep this
+# as a separate library so mock pqxx types never cross the production ABI.
+if(BUILD_TESTING)
+    add_library(securecloud_files_db_test STATIC ${SECURECLOUD_FILES_DB_SOURCES})
+    add_library(securecloud::files_db_test ALIAS securecloud_files_db_test)
+
+    target_include_directories(securecloud_files_db_test PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(securecloud_files_db_test PUBLIC
+            securecloud::files_config
+            securecloud::common
+            securecloud::compiler_flags
+            securecloud_proto
+            OpenSSL::Crypto
+            securecloud::json
+            securecloud::auth
+    )
+endif()
 
 add_library(securecloud_files_storage STATIC
         storage/s3_client.cpp
@@ -85,7 +110,7 @@ if(WIN32)
     target_link_libraries(securecloud_files_storage PUBLIC ws2_32)
 endif()
 
-add_library(securecloud_files_service STATIC
+set(SECURECLOUD_FILES_SERVICE_SOURCES
         service/files_service_impl.cpp
         service/storage_engine.cpp
         service/file_lifecycle_service.cpp
@@ -98,6 +123,8 @@ add_library(securecloud_files_service STATIC
         service/file_capability_manager.cpp
         service/files_audit_event_publisher.cpp
 )
+
+add_library(securecloud_files_service STATIC ${SECURECLOUD_FILES_SERVICE_SOURCES})
 
 add_library(securecloud::files_service ALIAS securecloud_files_service)
 
@@ -113,6 +140,24 @@ target_link_libraries(securecloud_files_service PUBLIC
         securecloud::common
         securecloud::compiler_flags
 )
+
+if(BUILD_TESTING)
+    add_library(securecloud_files_service_test STATIC ${SECURECLOUD_FILES_SERVICE_SOURCES})
+    add_library(securecloud::files_service_test ALIAS securecloud_files_service_test)
+
+    target_include_directories(securecloud_files_service_test PUBLIC
+            ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(securecloud_files_service_test PUBLIC
+            securecloud::files_storage
+            securecloud::files_db_test
+            securecloud::files_config
+            securecloud::common
+            securecloud::compiler_flags
+    )
+endif()
 
 add_library(securecloud_files_audit STATIC
         audit/grpc_audit_client.cpp

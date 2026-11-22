@@ -118,31 +118,31 @@ class FilesServiceImpl final : public v1::FilesService::Service {
 
     grpc::Status CreateFileUpload(const grpc::AuthContext* auth_ctx, const v1::CreateFileUploadRequest* request,
                                   v1::CreateFileUploadResponse* response,
-                                  const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
+                                  const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata = {});
 
     grpc::Status UploadChunk(const grpc::AuthContext* auth_ctx, const v1::UploadChunkRequest* request,
                              v1::UploadChunkResponse* response,
-                             const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
+                             const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata = {});
 
     grpc::Status FinalizeFileUpload(const grpc::AuthContext* auth_ctx, const v1::FinalizeFileUploadRequest* request,
                                     v1::FinalizeFileUploadResponse* response,
-                                    const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
+                                    const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata = {});
 
     grpc::Status GetFileMetadata(const grpc::AuthContext* auth_ctx, const v1::GetFileMetadataRequest* request,
                                  v1::GetFileMetadataResponse* response,
-                                 const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
+                                 const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata = {});
 
     grpc::Status DownloadChunk(const grpc::AuthContext* auth_ctx, const v1::DownloadChunkRequest* request,
                                v1::DownloadChunkResponse* response,
-                               const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
+                               const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata = {});
 
     grpc::Status CancelFileUpload(const grpc::AuthContext* auth_ctx, const v1::CancelFileUploadRequest* request,
                                   v1::CancelFileUploadResponse* response,
-                                  const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
+                                  const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata = {});
 
     grpc::Status DeleteFile(const grpc::AuthContext* auth_ctx, const v1::DeleteFileRequest* request,
                             v1::DeleteFileResponse* response,
-                            const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata);
+                            const std::multimap<grpc::string_ref, grpc::string_ref>& client_metadata = {});
 
     // --- Security & Identity Helpers ---
 

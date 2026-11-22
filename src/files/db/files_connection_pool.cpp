@@ -1,9 +1,9 @@
 #include "files/db/files_connection_pool.hpp"
+#include "files/db/pqxx_compat.hpp"
 
 #include "securecloud/health/transport_probe.hpp"
 
 #include <iostream>
-#include <pqxx/pqxx>
 #include <sstream>
 
 namespace securecloud::files::db {
