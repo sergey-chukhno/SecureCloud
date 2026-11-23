@@ -636,6 +636,199 @@ Rectangle {
                 }
             }
 
+            // 5. Emergency Defense & Login Duress Policy
+            SCCard {
+                id: duressPolicyCard
+                objectName: "duressPolicyCard"
+                Layout.fillWidth: true
+                headerText: qsTr("5. Emergency Defense & Login Duress Policy")
+                headerIconName: "shield-alert"
+                elevation: "Base"
+
+                property int selectedDuressMode: settingsRoot.avm ? settingsRoot.avm.configuredDuressPostWipeMode : 2
+                property string duressFeedbackText: ""
+                property bool duressFeedbackIsError: false
+
+                Connections {
+                    target: settingsRoot.avm
+                    enabled: settingsRoot.avm !== null
+                    function onDuressPolicyChanged() {
+                        if (settingsRoot.avm) {
+                            duressPolicyCard.selectedDuressMode = settingsRoot.avm.configuredDuressPostWipeMode
+                        }
+                    }
+                }
+
+                ColumnLayout {
+                    width: parent.width
+                    spacing: Theme.space12
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.space12
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Label {
+                                text: qsTr("Login Duress PIN / Passphrase")
+                                font.bold: true
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontBody
+                                color: Theme.textPrimary
+                            }
+
+                            Label {
+                                text: qsTr("Entering this credential instead of your real password at login immediately triggers an offline, zero-network forensic wipe (one-shot fuse). Minimum 6 characters (up to 1024 bytes, exact match with no trimming). Tip: choose a 12+ character password-style passphrase matching your real password's length for stronger shoulder-surfing deniability.")
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontCaption
+                                color: Theme.textSecondary
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        SCBadge {
+                            objectName: "duressStatusBadge"
+                            text: (settingsRoot.avm && settingsRoot.avm.hasDuressPinConfigured)
+                                  ? qsTr("Duress PIN Active")
+                                  : qsTr("Not Configured")
+                            type: (settingsRoot.avm && settingsRoot.avm.hasDuressPinConfigured) ? "Verified" : "Offline"
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.space12
+
+                        SCTextField {
+                            id: duressPinField
+                            objectName: "duressPinField"
+                            label: qsTr("Duress PIN / Passphrase")
+                            placeholderText: qsTr("Minimum 6 chars (12+ recommended)")
+                            isPassword: true
+                            Layout.fillWidth: true
+                            onTextEdited: duressPolicyCard.duressFeedbackText = ""
+                        }
+
+                        SCTextField {
+                            id: duressPinConfirmField
+                            objectName: "duressPinConfirmField"
+                            label: qsTr("Confirm Duress PIN / Passphrase")
+                            placeholderText: qsTr("Re-enter duress credential")
+                            isPassword: true
+                            Layout.fillWidth: true
+                            onTextEdited: duressPolicyCard.duressFeedbackText = ""
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.space8
+
+                        Label {
+                            text: qsTr("Post-Wipe Action:")
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontBody
+                            font.bold: true
+                            color: Theme.textPrimary
+                            Layout.fillWidth: true
+                        }
+
+                        SCButton {
+                            text: qsTr("Decoy Workspace")
+                            variant: duressPolicyCard.selectedDuressMode === 2 ? "Primary" : "Secondary"
+                            buttonHeight: 32
+                            onClicked: duressPolicyCard.selectedDuressMode = 2
+                        }
+
+                        SCButton {
+                            text: qsTr("Emergency Locked")
+                            variant: duressPolicyCard.selectedDuressMode === 0 ? "Primary" : "Secondary"
+                            buttonHeight: 32
+                            onClicked: duressPolicyCard.selectedDuressMode = 0
+                        }
+
+                        SCButton {
+                            text: qsTr("Unconfigured Reset")
+                            variant: duressPolicyCard.selectedDuressMode === 1 ? "Primary" : "Secondary"
+                            buttonHeight: 32
+                            onClicked: duressPolicyCard.selectedDuressMode = 1
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.space12
+
+                        SCButton {
+                            objectName: "saveDuressPinButton"
+                            text: qsTr("Save Duress Policy")
+                            iconName: "shield-check"
+                            variant: "Primary"
+                            buttonHeight: 34
+                            onClicked: {
+                                if (!settingsRoot.avm) {
+                                    duressPolicyCard.duressFeedbackIsError = true
+                                    duressPolicyCard.duressFeedbackText = qsTr("Application controller unavailable.")
+                                    return
+                                }
+                                if (duressPinField.text.length < 6) {
+                                    duressPolicyCard.duressFeedbackIsError = true
+                                    duressPolicyCard.duressFeedbackText = qsTr("Duress PIN / passphrase must be at least 6 characters (12+ recommended).")
+                                    return
+                                }
+                                if (duressPinField.text !== duressPinConfirmField.text) {
+                                    duressPolicyCard.duressFeedbackIsError = true
+                                    duressPolicyCard.duressFeedbackText = qsTr("Entries do not match. Re-enter both fields identically.")
+                                    return
+                                }
+                                if (settingsRoot.avm.configureDuressPin(duressPinField.text, duressPolicyCard.selectedDuressMode)) {
+                                    duressPinField.text = ""
+                                    duressPinConfirmField.text = ""
+                                    duressPolicyCard.duressFeedbackIsError = false
+                                    duressPolicyCard.duressFeedbackText = qsTr("Duress policy saved locally as a salted PBKDF2-HMAC-SHA256 verifier.")
+                                } else {
+                                    duressPolicyCard.duressFeedbackIsError = true
+                                    duressPolicyCard.duressFeedbackText = settingsRoot.avm.lastErrorMessage !== ""
+                                                                          ? settingsRoot.avm.lastErrorMessage
+                                                                          : qsTr("Failed to save duress policy.")
+                                }
+                            }
+                        }
+
+                        SCButton {
+                            objectName: "clearDuressPinButton"
+                            text: qsTr("Remove Duress PIN")
+                            variant: "Danger"
+                            buttonHeight: 34
+                            enabled: settingsRoot.avm ? settingsRoot.avm.hasDuressPinConfigured : false
+                            onClicked: {
+                                if (settingsRoot.avm && settingsRoot.avm.clearDuressPin()) {
+                                    duressPinField.text = ""
+                                    duressPinConfirmField.text = ""
+                                    duressPolicyCard.duressFeedbackIsError = false
+                                    duressPolicyCard.duressFeedbackText = qsTr("Duress PIN removed from local secure storage.")
+                                }
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    Label {
+                        visible: duressPolicyCard.duressFeedbackText !== ""
+                        text: duressPolicyCard.duressFeedbackText
+                        font.family: Theme.fontFamilyPrimary
+                        font.pixelSize: Theme.fontCaption
+                        color: duressPolicyCard.duressFeedbackIsError ? Theme.statusDanger : Theme.statusSuccess
+                        wrapMode: Text.WordWrap
+                        Layout.fillWidth: true
+                    }
+                }
+            }
+
             Item { width: 1; height: Theme.space16 }
         }
     }

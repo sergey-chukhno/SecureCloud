@@ -2419,6 +2419,12 @@ void WorkspaceViewModel::resetForEmergencyWipe() {
     devices_.clear();
     selected_conversation_id_.clear();
     selected_transfer_id_.clear();
+    is_inspector_open_ = false;
+    composer_priority_ = 1;
+    is_loading_messages_ = false;
+    delivery_failure_simulated_ = false;
+    local_prekey_count_ = 0;
+    local_prekey_health_ = QStringLiteral("Cleared");
     emit searchQueryChanged();
     emit conversationsChanged();
     emit contactsChanged();
@@ -2428,6 +2434,17 @@ void WorkspaceViewModel::resetForEmergencyWipe() {
     emit selectedConversationChanged();
     emit activeMessagesChanged();
     emit selectedTransferChanged();
+    emit inspectorOpenChanged();
+    emit composerPriorityChanged();
+    emit loadingMessagesChanged();
+    emit deliveryFailureSimulatedChanged();
+    emit pendingOutboxCountChanged();
+}
+
+void WorkspaceViewModel::enterDecoyWorkspace() {
+    resetForEmergencyWipe();
+    local_prekey_health_ = QStringLiteral("Healthy");
+    emit localDeviceIdentityChanged();
 }
 
 // -----------------------------------------------------------------------------

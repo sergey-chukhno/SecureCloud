@@ -74,10 +74,13 @@ int main(int argc, char* argv[]) {
     securecloud::client::ui::WorkspaceViewModel workspaceViewModel(clientApp, navController);
     securecloud::client::ui::UiTheme uiTheme;
     securecloud::client::ui::WindowStateManager windowStateManager;
+    appViewModel.setWorkspaceViewModel(&workspaceViewModel);
 
     QObject::connect(&appViewModel, &securecloud::client::ui::AppViewModel::emergencyWipedChanged, &workspaceViewModel,
                      [&appViewModel, &workspaceViewModel]() {
-                         if (appViewModel.isEmergencyWiped()) {
+                         if (appViewModel.isDecoySession()) {
+                             workspaceViewModel.enterDecoyWorkspace();
+                         } else if (appViewModel.isEmergencyWiped()) {
                              workspaceViewModel.resetForEmergencyWipe();
                          }
                      });
