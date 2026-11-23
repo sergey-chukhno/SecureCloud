@@ -77,7 +77,30 @@ int run_service() {
     auto s3_config = securecloud::files::storage::S3ClientConfig::from_files_config(config);
     auto s3_client = std::make_shared<securecloud::files::storage::S3Client>(std::move(s3_config));
 
-    securecloud::files::service::FilesServiceImpl files_service(db_pool, s3_client, "gateway");
+    auto outbox_repo = std::make_shared<securecloud::files::FilesOutboxRepository>(db_pool);
+    auto audit_publisher = std::make_shared<securecloud::files::service::FilesAuditEventPublisher>(outbox_repo);
+    auto assembly_engine = std::make_shared<securecloud::files::service::ObjectAssemblyEngine>(s3_client);
+
+    securecloud::files::service::FilesServiceDependencies service_deps;
+    service_deps.db_pool = db_pool;
+    service_deps.s3_client = s3_client;
+    service_deps.audit_publisher = audit_publisher;
+    service_deps.storage_engine = std::make_shared<securecloud::files::service::StorageEngine>();
+    service_deps.metadata_manager = std::make_shared<securecloud::files::service::MetadataManager>(db_pool);
+    service_deps.upload_session_manager =
+        std::make_shared<securecloud::files::service::UploadSessionManager>(db_pool, nullptr, nullptr, audit_publisher);
+    service_deps.download_manager = std::make_shared<securecloud::files::service::DownloadManager>(
+        db_pool, std::make_shared<securecloud::files::service::ChunkDownloadEngine>(s3_client), nullptr, nullptr,
+        nullptr, audit_publisher);
+    service_deps.lifecycle_service = std::make_shared<securecloud::files::FileLifecycleService>(
+        db_pool, nullptr, nullptr, nullptr, outbox_repo, audit_publisher);
+    service_deps.chunk_storage_service = std::make_shared<securecloud::files::service::ChunkStorageService>(
+        db_pool, s3_client, nullptr, nullptr, nullptr, audit_publisher);
+    service_deps.object_assembly_engine = assembly_engine;
+    service_deps.finalization_service = std::make_shared<securecloud::files::service::FileFinalizationService>(
+        db_pool, assembly_engine, nullptr, nullptr, nullptr, nullptr, outbox_repo, audit_publisher);
+
+    securecloud::files::service::FilesServiceImpl files_service(std::move(service_deps), "gateway");
 
     std::string server_address = config.common.listen_address();
 
@@ -100,9 +123,8 @@ int run_service() {
     health_manager.set_live(true);
     health_evaluator.evaluate_once();
 
-    auto outbox_repo = std::make_shared<securecloud::files::FilesOutboxRepository>(db_pool);
     auto& outbox_metrics = securecloud::files::audit::FilesOutboxMetrics::instance();
-    securecloud::files::audit::FilesOutboxDiagnostics outbox_diagnostics;
+    auto& outbox_diagnostics = securecloud::files::audit::FilesOutboxDiagnostics::instance();
     std::unique_ptr<securecloud::files::audit::FilesOutboxRelay> outbox_relay;
 
     if (config.audit.outbox_relay_enabled) {
@@ -116,6 +138,7 @@ int run_service() {
         outbox_relay = std::make_unique<securecloud::files::audit::FilesOutboxRelay>(
             outbox_repo, audit_client, config.audit.relay, config.audit.producer_instance, &outbox_metrics,
             &outbox_diagnostics);
+        audit_publisher->set_notify_callback([relay = outbox_relay.get()]() noexcept { relay->notify(); });
         outbox_relay->start();
     }
 
@@ -132,6 +155,7 @@ int run_service() {
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down mTLS server...\n";
     server->Shutdown(std::chrono::system_clock::now() + std::chrono::seconds(5));
 
+    audit_publisher->set_notify_callback(nullptr);
     if (outbox_relay) {
         std::cout << "[SecureCloud] [" << config.common.service_name << "] Stopping outbox relay...\n";
         outbox_relay->stop();

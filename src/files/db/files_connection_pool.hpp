@@ -87,9 +87,9 @@ class DefaultDbConnection : public IDbConnection {
 
   private:
     std::string id_;
-    std::string host_;
-    uint16_t port_;
-    std::chrono::milliseconds timeout_;
+    [[maybe_unused]] std::string host_;
+    [[maybe_unused]] uint16_t port_;
+    [[maybe_unused]] std::chrono::milliseconds timeout_;
     bool is_open_{true};
 
     std::unique_ptr<pqxx::connection> native_conn_;

@@ -48,10 +48,13 @@ int hex_char_to_val(char c) {
     return -1;
 }
 
-// Fix: Return std::optional<pqxx::field> by value instead of a dangling pointer to a temporary
-std::optional<pqxx::field> find_optional_column(const pqxx::row& r, const char* name) noexcept {
+std::optional<std::string> find_optional_string(const pqxx::row& r, const char* name) noexcept {
     try {
-        return r[name];
+        const auto& col = r[name];
+        if (col.is_null()) {
+            return std::nullopt;
+        }
+        return col.as<std::string>();
     } catch (...) {
         return std::nullopt;
     }
@@ -549,9 +552,8 @@ FilesOutboxEntity files_outbox_from_row(const pqxx::row& row) {
 
     entity.event_type = row["event_type"].as<std::string>();
 
-    // Fix: Remove pointer dereference matching updated std::optional return type
-    if (auto sev_field = find_optional_column(row, "severity"); sev_field && !sev_field->is_null()) {
-        entity.severity = outbox_severity_from_string(sev_field->as<std::string>());
+    if (auto sev = find_optional_string(row, "severity"); sev.has_value()) {
+        entity.severity = outbox_severity_from_string(*sev);
     }
 
     entity.payload_json = row["payload_json"].as<std::string>();
@@ -562,12 +564,11 @@ FilesOutboxEntity files_outbox_from_row(const pqxx::row& row) {
     if (!row["processed_at"].is_null()) {
         entity.processed_at = from_iso8601(row["processed_at"].as<std::string>());
     }
-    // Fix: Remove pointer dereferences here as well
-    if (auto err_field = find_optional_column(row, "last_error"); err_field && !err_field->is_null()) {
-        entity.last_error = err_field->as<std::string>();
+    if (auto err = find_optional_string(row, "last_error"); err.has_value()) {
+        entity.last_error = std::move(*err);
     }
-    if (auto lease_field = find_optional_column(row, "leased_until"); lease_field && !lease_field->is_null()) {
-        entity.leased_until = from_iso8601(lease_field->as<std::string>());
+    if (auto lease = find_optional_string(row, "leased_until"); lease.has_value()) {
+        entity.leased_until = from_iso8601(*lease);
     }
     return entity;
 }

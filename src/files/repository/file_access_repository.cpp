@@ -6,15 +6,14 @@
 
 namespace securecloud::files {
 
-FileAccessRepository::FileAccessRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
 #if defined(SECURECLOUD_FILES_TEST_PQXX)
-    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()){}
+FileAccessRepository::FileAccessRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()) {}
 #else
-    : pool_(std::move(pool)) {
-}
+FileAccessRepository::FileAccessRepository(std::shared_ptr<db::FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
 #endif
 
-      void FileAccessRepository::grant_access(const FileAccessEntity& grant, pqxx::work& tx) {
+void FileAccessRepository::grant_access(const FileAccessEntity& grant, pqxx::work& tx) {
     if (grant.access_id.empty()) {
         throw RepositoryException("Access ID cannot be empty");
     }
@@ -88,7 +87,7 @@ bool FileAccessRepository::check_access(const std::string& file_id, const std::s
         return false;
     }
 
-    auto grant = db::file_access_from_row(grant_res[0]);
+    auto grant = db::file_access_from_row(pqxx::row(grant_res[0]));
 
     if (grant.permission == FilePermission::Admin) {
         return true; // Admin satisfies Admin, Write, Read
@@ -158,9 +157,9 @@ std::vector<FileAccessEntity> FileAccessRepository::list_grantees(const std::str
         pqxx::params{file_id});
 
     std::vector<FileAccessEntity> grantees;
-    grantees.reserve(res.size());
+    grantees.reserve(static_cast<size_t>(res.size()));
     for (const auto& row : res) {
-        grantees.push_back(db::file_access_from_row(row));
+        grantees.push_back(db::file_access_from_row(pqxx::row(row)));
     }
     return grantees;
 }
@@ -194,7 +193,7 @@ std::optional<FileAccessEntity> FileAccessRepository::find_grant(const std::stri
         return std::nullopt;
     }
 
-    return db::file_access_from_row(res[0]);
+    return db::file_access_from_row(pqxx::row(res[0]));
 }
 
 std::optional<FileAccessEntity> FileAccessRepository::find_grant(const std::string& file_id,

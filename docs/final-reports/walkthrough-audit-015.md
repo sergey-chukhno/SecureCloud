@@ -126,3 +126,35 @@ The focused test executables passed. A full sanitizer matrix (ASan, UBSan, and T
 ## 6. Final Result
 
 The AUDIT-015 implementation and focused verification are complete. Files now stages canonical audit events durably, validates and scrubs them before delivery, retains events safely during Audit outages, exposes bounded operational telemetry, and has passing unit, Gateway E2E, and live PostgreSQL verification evidence. Gatekeeper review/sign-off remains with Sergey.
+
+---
+
+## 7. Post-Review Hardening Addendum (macOS Gatekeeper Review)
+
+Following branch synchronization with `main` (`merge(audit): update feature/audit-015 with main`) and architecture/ADR/codebase review on macOS (`dev-debug`, `libpqxx 8.0.2`, OpenSSL 3.6.4), the following hardening fixes and regression tests were applied before PR submission:
+
+### A. Summary of Fixes Applied
+
+1. **PostgreSQL Transaction & Pool Boundary Safety (`ADR-005`)**:
+   - Scoped `{ conn; pqxx::work tx; }` / explicit `release_db()` before autonomous Category B audit staging, S3 I/O, or retry pool acquisition across `FileLifecycleService`, `FileFinalizationService`, and `DownloadManager`.
+   - Fixed `FilesAuditEventPublisher` to set `aggregate_id = std::nullopt` whenever `target_type == "SERVICE"` or `!is_valid_uuid(record.target_id)` (preventing PostgreSQL `UUID` parse errors on `"files"` targets) and to persist `OutboxSeverity` (`INFO`/`WARNING`/`SECURITY`) explicitly without partial designated initializers.
+2. **Complete E01–E16 Wiring, Correlation & Severity Fidelity (`ADR-008`)**:
+   - Wired shared `FilesOutboxRepository` and `FilesAuditEventPublisher` across both `FilesServiceImpl` constructors and `src/files/main.cpp` (with wake notification bound to `FilesOutboxRelay::notify`).
+   - Added exception-safe RAII `ScopedFilesCallerContext` with `x-request-id` fallback across all 7 RPCs in `FilesServiceImpl`, restored the production `CreateFileUpload` `db_pool` fallback, exception-to-gRPC mappings (`UploadChunk`, `FinalizeFileUpload`, `DownloadChunk`), and `metadata_bulkhead` guards on `CancelFileUpload` / `DeleteFile`.
+   - Injected `FilesAuditEventPublisher` and completed canonical lowercase event staging across `FileLifecycleService` (`E01`, `E02`, `E04`, `E08`, `E10` `grant_file_access`, `E11` `revoke_file_access` with `SECURITY`, `E15`, `E16`, plus `E12` access denied), `FileFinalizationService` (`file.upload.completed` / `file.finalization.failed`), `DownloadManager` (`ADR-010` single `file.download.initiated` on `chunk_index == 0` and `prepare_resume_session`), `UploadSessionManager`, `ChunkStorageService` (one-shot `file.upload.expired`), and `FileCapabilityManager` (`file.capability.issued` without token leakage, `file.capability.rejected`, and missing-permission `E12`).
+   - Updated `FilesServiceImpl` so `file.chunk.integrity_failed` (`E07`) emits `SECURITY`, and updated `FilesAuditMapper` to remove duplicate `"FILE_VERSION_CREATED"`, map `"FILE_FINALIZING"` to `"file.upload.completed"`, include `"file.chunk.integrity_failed"` in `is_security_event_type`, and promote `WARNING`/`INFO` security-typed events to `SEVERITY_SECURITY`.
+3. **Zero-PII Redaction & Relay Resilience (`ADR-009`, `AUDIT-011`)**:
+   - Added Stage-1 forbidden-key and Bearer/JWT/PEM/Argon2/bcrypt scrubbing in `FilesAuditEventPublisher` and sensitive-data redaction in `FilesOutboxRepository` diagnostic messages.
+   - Fixed `FilesOutboxRelay` `stop()`/`notify()` mutex synchronization, called `record_success_diag()` before resetting `consecutive_failures_` (so `audit_recovered` is emitted on recovery), kept `FilesOutboxMetrics` synchronized during permanent rejection and probe isolation, typed `FilesConfig::relay.purge_interval` as `std::chrono::seconds{3600}`, and fixed `-Wsign-conversion` (`unsigned char`) in `files_outbox_diagnostics.cpp`.
+4. **macOS Toolchain Compatibility & Test Additions**:
+   - Updated `src/files/db/files_connection_pool.hpp`, `src/files/db/pqxx_mappers.cpp`, and all 6 Files repositories for `libpqxx 8.0.2` compatibility and clean `SECURECLOUD_FILES_TEST_PQXX` builds.
+   - Fixed OpenSSL 3.6 `const X509_NAME*` compatibility in `tests/unit/files/files_grpc_audit_client_test.cpp`, updated legacy uppercase event assertions in `tests/integration/files_lifecycle_integration_test.cpp`, and added regression tests in `files_service_impl_test.cpp`, `files_outbox_audit_test.cpp`, `files_outbox_relay_test.cpp`, and `access_outbox_repository_test.cpp`.
+
+### B. Updated Verification Evidence (`macOS arm64`, `build/dev-debug`)
+
+- **Build & Formatting**: Full CMake/Ninja build compiled cleanly (`424/424` targets on macOS `dev-debug`, followed by clean rebuild of `securecloud_files_service_impl_test`); `check-format` passed across all `1099` C++ files.
+- **Files Service Unit Suite (`securecloud_files_service_impl_test`)**: `56/56` tests from `17` test suites passed.
+- **CTest Combined Filter (`525` matched tests across Files, Gateway Files, `MigrationRunner`, `AuthPersistence`, and `AuthOutbox`, unsandboxed with live PostgreSQL 17 on `127.0.0.1:5433`)**:
+  - Non-`AuthOutbox` subset (`502` tests under `-j8`, including `FilesOutboxTransactionTest`, `FilesE2EGatewayAuditIntegrationTest`, `FilesGrpcAuditClientTest`, `FilesIntegrationTest`, `FilesServiceClientTest`, and `AuthPersistenceIntegrationTest`): **`496` passed, `0` failed, `6` skipped** (`FilesMinioStorageIntegrationTest.TC1_LiveBucketReachabilityAndPing` through `TC6_ColdRestartDurability` skipped because MinIO was not running).
+  - `^AuthOutbox` subset run sequentially (`ctest -j1 -R "^AuthOutbox"`, required because `AuthOutboxTransactionIntegrationTest::SetUp()` executes `DELETE FROM auth_outbox;` without an advisory lock): **`23/23` passed, `0` failed, `0` skipped**.
+  - Combined non-overlapping verified count across all `525` matched tests: **`519` passed, `0` failed, `6` skipped**.

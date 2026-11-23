@@ -7,6 +7,7 @@
 #include "files/repository/file_chunk_repository.hpp"
 #include "files/repository/file_repository.hpp"
 #include "files/repository/file_transfer_repository.hpp"
+#include "files/service/files_audit_event_publisher.hpp"
 #include "files/service/upload_session_manager.hpp"
 #include "files/storage/s3_client.hpp"
 
@@ -34,7 +35,8 @@ class ChunkStorageService {
                                  std::shared_ptr<storage::S3Client> s3_client,
                                  std::shared_ptr<FileTransferRepository> transfer_repo = nullptr,
                                  std::shared_ptr<FileChunkRepository> chunk_repo = nullptr,
-                                 std::shared_ptr<FileRepository> file_repo = nullptr);
+                                 std::shared_ptr<FileRepository> file_repo = nullptr,
+                                 std::shared_ptr<FilesAuditEventPublisher> audit_publisher = nullptr);
 
     virtual ~ChunkStorageService() = default;
 
@@ -50,6 +52,7 @@ class ChunkStorageService {
     std::shared_ptr<FileTransferRepository> transfer_repo_;
     std::shared_ptr<FileChunkRepository> chunk_repo_;
     std::shared_ptr<FileRepository> file_repo_;
+    std::shared_ptr<FilesAuditEventPublisher> audit_publisher_;
 };
 
 } // namespace securecloud::files::service

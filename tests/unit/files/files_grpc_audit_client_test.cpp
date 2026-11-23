@@ -196,10 +196,11 @@ X509Ptr create_ca_cert(EVP_PKEY* ca_key) {
     X509_gmtime_adj(X509_getm_notAfter(cert.get()), 3600);
     X509_set_pubkey(cert.get(), ca_key);
 
-    X509_NAME* name = X509_get_subject_name(cert.get());
-    X509_NAME_add_entry_by_txt(name, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>("SecureCloud Test CA"),
-                               -1, -1, 0);
-    X509_set_issuer_name(cert.get(), name);
+    std::unique_ptr<X509_NAME, decltype(&X509_NAME_free)> name(X509_NAME_new(), &X509_NAME_free);
+    X509_NAME_add_entry_by_txt(name.get(), "CN", MBSTRING_ASC,
+                               reinterpret_cast<const unsigned char*>("SecureCloud Test CA"), -1, -1, 0);
+    X509_set_subject_name(cert.get(), name.get());
+    X509_set_issuer_name(cert.get(), name.get());
 
     add_x509_ext(cert.get(), cert.get(), NID_basic_constraints, "critical,CA:TRUE");
     add_x509_ext(cert.get(), cert.get(), NID_key_usage, "critical,keyCertSign,cRLSign");
@@ -219,9 +220,11 @@ X509Ptr create_leaf_cert(EVP_PKEY* leaf_key, X509* ca_cert, EVP_PKEY* ca_key, lo
     X509_gmtime_adj(X509_getm_notAfter(cert.get()), 3600);
     X509_set_pubkey(cert.get(), leaf_key);
 
-    X509_NAME* subj = X509_get_subject_name(cert.get());
-    X509_NAME_add_entry_by_txt(subj, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>(cn.c_str()), -1, -1, 0);
-    X509_set_issuer_name(cert.get(), X509_get_subject_name(ca_cert));
+    std::unique_ptr<X509_NAME, decltype(&X509_NAME_free)> subj(X509_NAME_new(), &X509_NAME_free);
+    X509_NAME_add_entry_by_txt(subj.get(), "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>(cn.c_str()), -1,
+                               -1, 0);
+    X509_set_subject_name(cert.get(), subj.get());
+    X509_set_issuer_name(cert.get(), const_cast<X509_NAME*>(X509_get_subject_name(ca_cert)));
 
     add_x509_ext(ca_cert, cert.get(), NID_basic_constraints, "CA:FALSE");
     add_x509_ext(ca_cert, cert.get(), NID_ext_key_usage, "serverAuth,clientAuth");

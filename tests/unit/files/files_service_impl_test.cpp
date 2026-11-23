@@ -1,13 +1,26 @@
+#include "files/audit/files_outbox_metrics.hpp"
+#include "files/db/files_connection_pool.hpp"
+#include "files/domain/file_access_entity.hpp"
+#include "files/domain/files_outbox_entity.hpp"
 #include "files/domain/lifecycle_state_machine.hpp"
 #include "files/domain/metadata_validator.hpp"
+#include "files/repository/file_repository.hpp"
+#include "files/repository/file_version_repository.hpp"
+#include "files/repository/files_outbox_repository.hpp"
+#include "files/service/chunk_download_engine.hpp"
+#include "files/service/download_manager.hpp"
+#include "files/service/file_capability_manager.hpp"
 #include "files/service/file_lifecycle_service.hpp"
+#include "files/service/files_audit_event_publisher.hpp"
 #include "files/service/files_service_impl.hpp"
+#include "files/storage/s3_exceptions.hpp"
 #include "securecloud/files/v1/files.grpc.pb.h"
 #include "securecloud/files/v1/files.pb.h"
 
 #include <grpcpp/grpcpp.h>
 #include <gtest/gtest.h>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <vector>
 
@@ -1294,6 +1307,400 @@ TEST(FilesServiceImplResourceTest, MapsMemoryBudgetExhaustionToResourceExhausted
     auto status = service.UploadChunk(&gateway_ctx, &req, &resp);
     EXPECT_EQ(status.error_code(), grpc::StatusCode::RESOURCE_EXHAUSTED);
     EXPECT_NE(status.error_message().find("Global memory buffer budget exhausted"), std::string::npos);
+}
+
+// ============================================================================
+// AUDIT-015 Review Hardening Regression Tests
+// ============================================================================
+
+class StubChunkDownloadEngine final : public ChunkDownloadEngine {
+  public:
+    StubChunkDownloadEngine() : ChunkDownloadEngine(nullptr) {}
+
+    ChunkFetchResult fetch_chunk(const std::string& file_id, int32_t version_number, uint32_t chunk_index,
+                                 uint64_t /*total_file_size*/, uint32_t /*standard_chunk_size*/) override {
+        ChunkFetchResult res;
+        res.file_id = file_id;
+        res.version_number = version_number;
+        res.chunk_index = chunk_index;
+        res.encrypted_data = "stub-chunk-payload";
+        res.chunk_size_bytes = static_cast<uint32_t>(res.encrypted_data.size());
+        res.ciphertext_sha256 = compute_sha256_hex(res.encrypted_data);
+        return res;
+    }
+};
+
+class ExceptionChunkStorageService final : public ChunkStorageService {
+  public:
+    ExceptionChunkStorageService() : ChunkStorageService(nullptr, nullptr) {}
+
+    ChunkStoreResult store_chunk(const ChunkPayloadDto& /*chunk_dto*/, const std::string& /*caller_user_id*/) override {
+        if (throw_cancelled) {
+            throw TransferCancelledException("session cancelled concurrently");
+        }
+        if (throw_expired) {
+            throw TransferExpiredException("session lease expired");
+        }
+        return ChunkStoreResult{};
+    }
+
+    bool throw_cancelled{false};
+    bool throw_expired{false};
+};
+
+class ExceptionFinalizationService final : public FileFinalizationService {
+  public:
+    ExceptionFinalizationService() : FileFinalizationService(nullptr, nullptr) {}
+
+    enum class Mode { S3Integrity, S3NotFound, S3Conn, S3Auth };
+    Mode mode{Mode::S3Integrity};
+
+    FinalizeUploadResultDto finalize_file_upload(const FinalizeUploadRequestDto& /*request*/) override {
+        switch (mode) {
+        case Mode::S3Integrity:
+            throw storage::S3IntegrityException("checksum mismatch in S3");
+        case Mode::S3NotFound:
+            throw storage::S3ObjectNotFoundException("staged chunk missing");
+        case Mode::S3Conn:
+            throw storage::S3ConnectionException("S3 timeout");
+        case Mode::S3Auth:
+            throw storage::S3AuthenticationException("S3 forbidden");
+        }
+        return FinalizeUploadResultDto{};
+    }
+};
+
+TEST(FilesAuditEventPublisherTest, PersistsSeverityNullServiceAggregateAndStage1ScrubsSecrets) {
+    pqxx::MockStorage::instance().reset();
+    auto pool = db::test_files_db_connection_pool();
+    auto outbox_repo = std::make_shared<FilesOutboxRepository>(pool);
+    FilesAuditEventPublisher publisher(outbox_repo);
+
+    FilesAuditRecord service_rec;
+    service_rec.event_type = "file.capability.rejected";
+    service_rec.severity = "SECURITY";
+    service_rec.actor_type = "USER";
+    service_rec.actor_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36001";
+    service_rec.target_type = "SERVICE";
+    service_rec.target_id = "files";
+    service_rec.correlation_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36099";
+    service_rec.metadata = {
+        {"reason", "scope_mismatch"},
+        {"filename", "top-secret.pdf"},
+        {"encrypted_filename", "deadbeef"},
+        {"capability_token", "raw-cap-tok"},
+        {"password", "hunter2"},
+        {"s3_secret", "minio-secret"},
+        {"auth_header", "Bearer secret-bearer-value"},
+        {"jwt_note", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature123"},
+        {"pem_note", "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"},
+        {"hash_note", "$argon2id$v=19$m=65536,t=3,p=4$salt$hashval"},
+    };
+    publisher.publish_autonomous(service_rec);
+
+    FilesAuditRecord warn_rec;
+    warn_rec.event_type = "file.upload.expired";
+    warn_rec.severity = "WARNING";
+    warn_rec.actor_type = "SYSTEM";
+    warn_rec.actor_id = "files";
+    warn_rec.target_type = "FILE";
+    warn_rec.target_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000";
+    warn_rec.correlation_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36098";
+    publisher.publish_autonomous(warn_rec);
+
+    const auto pending = outbox_repo->fetch_pending_events(10);
+    ASSERT_EQ(pending.size(), 2u);
+
+    EXPECT_EQ(pending[0].event_type, "file.capability.rejected");
+    EXPECT_EQ(pending[0].severity, OutboxSeverity::Security);
+    EXPECT_EQ(pending[0].aggregate_type, "SERVICE");
+    EXPECT_FALSE(pending[0].aggregate_id.has_value());
+
+    const auto payload0 = nlohmann::json::parse(pending[0].payload_json);
+    EXPECT_EQ(payload0.value("target_id", ""), "files");
+    EXPECT_EQ(payload0.value("severity", ""), "SECURITY");
+    EXPECT_EQ(payload0.value("reason", ""), "scope_mismatch");
+    EXPECT_FALSE(payload0.contains("filename"));
+    EXPECT_FALSE(payload0.contains("encrypted_filename"));
+    EXPECT_FALSE(payload0.contains("capability_token"));
+    EXPECT_FALSE(payload0.contains("password"));
+    EXPECT_FALSE(payload0.contains("s3_secret"));
+    EXPECT_EQ(payload0.value("auth_header", ""), "[REDACTED]");
+    EXPECT_EQ(payload0.value("jwt_note", ""), "[REDACTED]");
+    EXPECT_EQ(payload0.value("pem_note", ""), "[REDACTED]");
+    EXPECT_EQ(payload0.value("hash_note", ""), "[REDACTED]");
+    EXPECT_EQ(pending[0].payload_json.find("top-secret.pdf"), std::string::npos);
+    EXPECT_EQ(pending[0].payload_json.find("secret-bearer-value"), std::string::npos);
+
+    EXPECT_EQ(pending[1].severity, OutboxSeverity::Warning);
+    ASSERT_TRUE(pending[1].aggregate_id.has_value());
+    EXPECT_EQ(*pending[1].aggregate_id, "0191ec4d-91b4-7b4d-b6a9-8e41e3d36000");
+}
+
+TEST(FilesServiceImplProductionWiringTest, WiresNonNullAuditPublisherByDefault) {
+    pqxx::MockStorage::instance().reset();
+    auto pool = db::test_files_db_connection_pool();
+    FilesServiceImpl service(pool, nullptr, "gateway");
+
+    EXPECT_NE(service.dependencies().audit_publisher, nullptr);
+    EXPECT_NE(service.dependencies().audit_publisher->outbox_repository(), nullptr);
+    EXPECT_NE(service.dependencies().lifecycle_service, nullptr);
+    EXPECT_NE(service.dependencies().upload_session_manager, nullptr);
+    EXPECT_NE(service.dependencies().chunk_storage_service, nullptr);
+}
+
+TEST(FilesServiceImplAuditAndErrorTest, UploadChunkMapsCancelledExpiredAndEmitsSecurityIntegrityEvent) {
+    pqxx::MockStorage::instance().reset();
+    auto pool = db::test_files_db_connection_pool();
+    auto outbox_repo = std::make_shared<FilesOutboxRepository>(pool);
+    auto publisher = std::make_shared<FilesAuditEventPublisher>(outbox_repo);
+    auto session_mgr = std::make_shared<UploadSessionManager>(pool, nullptr, nullptr, publisher);
+    auto storage_stub = std::make_shared<ExceptionChunkStorageService>();
+
+    const std::string file_id = "0191ec4d-91b4-7b4d-b6a9-8e41e3d36011";
+    const std::string payload = "encrypted-chunk-data";
+
+    v1::CreateFileUploadRequest init_req;
+    init_req.set_file_id(file_id);
+    init_req.set_owner_user_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36001");
+    init_req.set_owner_device_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36002");
+    init_req.set_encrypted_size_bytes(static_cast<uint64_t>(payload.size()));
+    init_req.set_expected_chunk_count(1);
+    init_req.set_encryption_version("XChaCha20-Poly1305");
+    const auto session = session_mgr->create_session(init_req);
+    ASSERT_TRUE(session.has_value());
+    for (const auto& seeded : outbox_repo->fetch_pending_events(10)) {
+        outbox_repo->mark_published(seeded.event_id);
+    }
+
+    FilesServiceDependencies deps;
+    deps.upload_session_manager = session_mgr;
+    deps.chunk_storage_service = storage_stub;
+    deps.audit_publisher = publisher;
+    FilesServiceImpl service(deps, "gateway");
+
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+    const std::string upload_id = session->upload_id;
+
+    v1::UploadChunkRequest bad_hash_req;
+    bad_hash_req.set_upload_id(upload_id);
+    bad_hash_req.set_chunk_index(0);
+    bad_hash_req.set_encrypted_data(payload);
+    bad_hash_req.set_chunk_size_bytes(static_cast<uint32_t>(payload.size()));
+    bad_hash_req.set_ciphertext_sha256("0000000000000000000000000000000000000000000000000000000000000000");
+    v1::UploadChunkResponse bad_hash_resp;
+
+    const auto mismatch_status = service.UploadChunk(&gateway_ctx, &bad_hash_req, &bad_hash_resp);
+    EXPECT_EQ(mismatch_status.error_code(), grpc::StatusCode::INVALID_ARGUMENT);
+
+    const auto pending = outbox_repo->fetch_pending_events(10);
+    ASSERT_EQ(pending.size(), 1u);
+    EXPECT_EQ(pending[0].event_type, "file.chunk.integrity_failed");
+    EXPECT_EQ(pending[0].severity, OutboxSeverity::Security);
+    ASSERT_TRUE(pending[0].aggregate_id.has_value());
+    EXPECT_EQ(*pending[0].aggregate_id, file_id);
+
+    v1::UploadChunkRequest valid_req;
+    valid_req.set_upload_id(upload_id);
+    valid_req.set_chunk_index(0);
+    valid_req.set_encrypted_data(payload);
+    valid_req.set_chunk_size_bytes(static_cast<uint32_t>(payload.size()));
+    valid_req.set_ciphertext_sha256(compute_sha256_hex(payload));
+    v1::UploadChunkResponse valid_resp;
+
+    storage_stub->throw_cancelled = true;
+    EXPECT_EQ(service.UploadChunk(&gateway_ctx, &valid_req, &valid_resp).error_code(),
+              grpc::StatusCode::FAILED_PRECONDITION);
+
+    storage_stub->throw_cancelled = false;
+    storage_stub->throw_expired = true;
+    EXPECT_EQ(service.UploadChunk(&gateway_ctx, &valid_req, &valid_resp).error_code(),
+              grpc::StatusCode::DEADLINE_EXCEEDED);
+}
+
+TEST(FilesServiceImplAuditAndErrorTest, FinalizeFileUploadMapsS3ErrorsAndEmitsAuditEvents) {
+    pqxx::MockStorage::instance().reset();
+    auto pool = db::test_files_db_connection_pool();
+    auto outbox_repo = std::make_shared<FilesOutboxRepository>(pool);
+    auto publisher = std::make_shared<FilesAuditEventPublisher>(outbox_repo);
+    auto fin_stub = std::make_shared<ExceptionFinalizationService>();
+
+    FilesServiceDependencies deps;
+    deps.finalization_service = fin_stub;
+    deps.audit_publisher = publisher;
+    FilesServiceImpl service(deps, "gateway");
+
+    TestAuthContext gateway_ctx(true, {{"x509_subject_alternative_name", "DNS:gateway"}});
+    v1::FinalizeFileUploadRequest req;
+    req.set_upload_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36021");
+    req.set_file_id("0191ec4d-91b4-7b4d-b6a9-8e41e3d36022");
+    v1::FinalizeFileUploadResponse resp;
+
+    fin_stub->mode = ExceptionFinalizationService::Mode::S3Integrity;
+    EXPECT_EQ(service.FinalizeFileUpload(&gateway_ctx, &req, &resp).error_code(),
+              grpc::StatusCode::FAILED_PRECONDITION);
+
+    fin_stub->mode = ExceptionFinalizationService::Mode::S3NotFound;
+    EXPECT_EQ(service.FinalizeFileUpload(&gateway_ctx, &req, &resp).error_code(), grpc::StatusCode::NOT_FOUND);
+
+    fin_stub->mode = ExceptionFinalizationService::Mode::S3Conn;
+    EXPECT_EQ(service.FinalizeFileUpload(&gateway_ctx, &req, &resp).error_code(), grpc::StatusCode::DEADLINE_EXCEEDED);
+
+    fin_stub->mode = ExceptionFinalizationService::Mode::S3Auth;
+    EXPECT_EQ(service.FinalizeFileUpload(&gateway_ctx, &req, &resp).error_code(), grpc::StatusCode::PERMISSION_DENIED);
+
+    const auto pending = outbox_repo->fetch_pending_events(10);
+    ASSERT_EQ(pending.size(), 4u);
+    EXPECT_EQ(pending[0].event_type, "file.finalization.failed");
+    EXPECT_EQ(pending[0].severity, OutboxSeverity::Security);
+    EXPECT_EQ(pending[1].severity, OutboxSeverity::Warning);
+    EXPECT_EQ(pending[2].severity, OutboxSeverity::Warning);
+    EXPECT_EQ(pending[3].severity, OutboxSeverity::Warning);
+}
+
+TEST(DownloadManagerAuditTest, TenChunkDownloadEmitsSingleInitiatedEventAndResumeEmitsOne) {
+    pqxx::MockStorage::instance().reset();
+    auto pool = db::test_files_db_connection_pool();
+    auto outbox_repo = std::make_shared<FilesOutboxRepository>(pool);
+    auto publisher = std::make_shared<FilesAuditEventPublisher>(outbox_repo);
+    FileLifecycleService lifecycle(pool, nullptr, nullptr, nullptr, outbox_repo, publisher);
+
+    const std::string file_id = generate_uuid_v7();
+    const std::string owner_id = generate_uuid_v7();
+    const std::string device_id = generate_uuid_v7();
+    const auto now = std::chrono::system_clock::now();
+
+    CreateFileRequestDto dto;
+    dto.file_id = file_id;
+    dto.owner_user_id = owner_id;
+    dto.owner_device_id = device_id;
+    dto.encrypted_size_bytes = 10ULL * k_standard_chunk_size;
+    dto.expected_chunk_count = 10;
+    dto.encrypted_filename = {0x01, 0x02};
+    dto.metadata_nonce = std::vector<uint8_t>(24, 0xAA);
+    dto.metadata_tag = std::vector<uint8_t>(16, 0xBB);
+    ASSERT_EQ(lifecycle.create_file(dto, now), file_id);
+    ASSERT_TRUE(lifecycle.transition_lifecycle(file_id, FileStatus::Created, FileStatus::Uploading, owner_id));
+    ASSERT_TRUE(lifecycle.transition_lifecycle(file_id, FileStatus::Uploading, FileStatus::Finalizing, owner_id));
+    ASSERT_TRUE(lifecycle.transition_lifecycle(file_id, FileStatus::Finalizing, FileStatus::Available, owner_id));
+
+    CreateFileVersionRequestDto ver_dto;
+    ver_dto.file_id = file_id;
+    ver_dto.version_number = 1;
+    ver_dto.encrypted_size_bytes = dto.encrypted_size_bytes;
+    ver_dto.minio_object_key = "objects/" + file_id + "/1";
+    ver_dto.checksum_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
+    (void)lifecycle.create_file_version(ver_dto, owner_id);
+
+    // Drain lifecycle setup outbox events before testing DownloadManager.
+    (void)outbox_repo->fetch_pending_events(20);
+
+    auto download_engine = std::make_shared<StubChunkDownloadEngine>();
+    DownloadManager dm(pool, download_engine, nullptr, nullptr, nullptr, publisher);
+    for (uint32_t idx = 0; idx < 10; ++idx) {
+        const auto chunk = dm.get_chunk_versioned(file_id, 1, idx, owner_id);
+        EXPECT_EQ(chunk.chunk_index, idx);
+    }
+
+    const auto download_events = outbox_repo->fetch_pending_events(20);
+    ASSERT_EQ(download_events.size(), 1u);
+    EXPECT_EQ(download_events[0].event_type, "file.download.initiated");
+    EXPECT_EQ(download_events[0].severity, OutboxSeverity::Info);
+    const auto dl_payload = nlohmann::json::parse(download_events[0].payload_json);
+    EXPECT_EQ(dl_payload.value("starting_chunk", ""), "0");
+    EXPECT_EQ(dl_payload.value("total_chunks", ""), "10");
+
+    (void)dm.prepare_resume_session(file_id, 1, 4, owner_id);
+    const auto resume_events = outbox_repo->fetch_pending_events(20);
+    ASSERT_EQ(resume_events.size(), 1u);
+    EXPECT_EQ(resume_events[0].event_type, "file.download.initiated");
+    const auto resume_payload = nlohmann::json::parse(resume_events[0].payload_json);
+    EXPECT_EQ(resume_payload.value("starting_chunk", ""), "4");
+}
+
+TEST(FileCapabilityManagerAuditTest, IssueAndRejectEmitExpectedAuditWithoutTokenLeak) {
+    pqxx::MockStorage::instance().reset();
+    auto pool = db::test_files_db_connection_pool();
+    auto outbox_repo = std::make_shared<FilesOutboxRepository>(pool);
+    auto publisher = std::make_shared<FilesAuditEventPublisher>(outbox_repo);
+    FileLifecycleService lifecycle(pool, nullptr, nullptr, nullptr, outbox_repo, publisher);
+
+    const std::string file_id = generate_uuid_v7();
+    const std::string owner_id = generate_uuid_v7();
+    const std::string device_id = generate_uuid_v7();
+    const auto now = std::chrono::system_clock::now();
+
+    CreateFileRequestDto dto;
+    dto.file_id = file_id;
+    dto.owner_user_id = owner_id;
+    dto.owner_device_id = device_id;
+    dto.encrypted_size_bytes = 1024;
+    dto.expected_chunk_count = 1;
+    dto.encrypted_filename = {0x01};
+    dto.metadata_nonce = std::vector<uint8_t>(24, 0x01);
+    dto.metadata_tag = std::vector<uint8_t>(16, 0x02);
+    ASSERT_EQ(lifecycle.create_file(dto, now), file_id);
+    (void)outbox_repo->fetch_pending_events(10);
+
+    auto signer = std::make_shared<auth::crypto::Ed25519TokenSigner>("sc-files-audit-test");
+    auto verifier = auth::crypto::Ed25519TokenVerifier::from_signer(*signer);
+    FileCapabilityManager cap_mgr(pool, signer, std::move(verifier), nullptr, nullptr, publisher);
+
+    const std::string token = cap_mgr.issue_capability(owner_id, device_id, file_id, FileCapabilityOperation::Read, 1);
+    EXPECT_FALSE(token.empty());
+
+    EXPECT_THROW(cap_mgr.authorize_capability("tampered.token.value", owner_id, device_id, file_id,
+                                              FileCapabilityOperation::Read, 1),
+                 InvalidCapabilityException);
+
+    const auto events = outbox_repo->fetch_pending_events(10);
+    ASSERT_EQ(events.size(), 2u);
+
+    EXPECT_EQ(events[0].event_type, "file.capability.issued");
+    EXPECT_EQ(events[0].severity, OutboxSeverity::Info);
+    EXPECT_EQ(events[0].payload_json.find(token), std::string::npos);
+
+    EXPECT_EQ(events[1].event_type, "file.capability.rejected");
+    EXPECT_EQ(events[1].severity, OutboxSeverity::Security);
+    const auto reject_payload = nlohmann::json::parse(events[1].payload_json);
+    EXPECT_EQ(reject_payload.value("reason", ""), "invalid_signature");
+}
+
+TEST(FileLifecycleAccessAuditTest, GrantAndRevokeAtomicallyStageOutboxEvents) {
+    pqxx::MockStorage::instance().reset();
+    auto pool = db::test_files_db_connection_pool();
+    auto outbox_repo = std::make_shared<FilesOutboxRepository>(pool);
+    auto publisher = std::make_shared<FilesAuditEventPublisher>(outbox_repo);
+    FileLifecycleService lifecycle(pool, nullptr, nullptr, nullptr, outbox_repo, publisher);
+
+    const std::string file_id = generate_uuid_v7();
+    const std::string owner_id = generate_uuid_v7();
+    const std::string grantee_id = generate_uuid_v7();
+
+    FileAccessEntity grant;
+    grant.access_id = generate_uuid_v7();
+    grant.file_id = file_id;
+    grant.grantee_user_id = grantee_id;
+    grant.permission = FilePermission::Read;
+    grant.granted_by = owner_id;
+    grant.granted_at = std::chrono::system_clock::now();
+
+    lifecycle.grant_file_access(grant, "share_for_review");
+    EXPECT_TRUE(lifecycle.revoke_file_access(file_id, grantee_id, owner_id, "review_complete"));
+    EXPECT_FALSE(lifecycle.revoke_file_access(file_id, grantee_id, owner_id, "duplicate_revoke"));
+
+    const auto events = outbox_repo->fetch_pending_events(10);
+    ASSERT_EQ(events.size(), 2u);
+
+    EXPECT_EQ(events[0].event_type, "file.access.granted");
+    EXPECT_EQ(events[0].severity, OutboxSeverity::Info);
+    ASSERT_TRUE(events[0].aggregate_id.has_value());
+    EXPECT_EQ(*events[0].aggregate_id, file_id);
+
+    EXPECT_EQ(events[1].event_type, "file.access.revoked");
+    EXPECT_EQ(events[1].severity, OutboxSeverity::Security);
+    ASSERT_TRUE(events[1].aggregate_id.has_value());
+    EXPECT_EQ(*events[1].aggregate_id, file_id);
 }
 
 } // namespace

@@ -13,6 +13,7 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -506,6 +507,104 @@ TEST(FilesOutboxRelayTest, LifecycleStartStopAndShutdownDrain) {
     EXPECT_EQ(repo->published_ids[0], id1);
 }
 
+TEST(FilesOutboxRelayTest, EmitsRecoveryDiagnosticWhenBatchSucceedsAfterTransientFailure) {
+    const auto id1 = make_uuid_v7();
+    const auto file_id = make_uuid_v7();
+
+    auto repo = std::make_shared<FakeOutboxRepository>();
+    auto ev = make_test_outbox_entity(id1, file_id, "file.created");
+    repo->pending_events.push_back(ev);
+
+    auto client = std::make_shared<MockAuditClient>();
+    FilesAuditBatchSubmitResult fail_res;
+    fail_res.rpc_success = false;
+    fail_res.status = grpc::Status(grpc::StatusCode::UNAVAILABLE, "transient outage");
+    FilesAuditBatchSubmitResult ok_res;
+    ok_res.rpc_success = true;
+    ok_res.status = grpc::Status::OK;
+    ok_res.accepted_count = 1;
+
+    EXPECT_CALL(*client, submit_batch(_)).WillOnce(Return(fail_res)).WillOnce(Return(ok_res));
+
+    std::ostringstream diag_stream;
+    FilesOutboxMetrics metrics;
+    FilesOutboxDiagnostics diag;
+    diag.reset_rate_limiters();
+    diag.set_output_stream(&diag_stream);
+
+    FilesOutboxRelay relay(repo, client, {}, "files-1", &metrics, &diag);
+    EXPECT_EQ(relay.poll_and_dispatch(10), 1u);
+    EXPECT_EQ(diag.consecutive_failures, 1u);
+
+    repo->pending_events.push_back(ev);
+    EXPECT_EQ(relay.poll_and_dispatch(10), 1u);
+    EXPECT_EQ(diag.consecutive_failures, 0u);
+    diag.set_output_stream(nullptr);
+
+    const std::string logs = diag_stream.str();
+    EXPECT_NE(logs.find("\"event\":\"audit_unavailable\""), std::string::npos);
+    EXPECT_NE(logs.find("\"event\":\"audit_recovered\""), std::string::npos);
+}
+
+TEST(FilesOutboxRelayTest, UpdatesGranularMetricsForSinglePermanentRejectAndProbeIsolation) {
+    const auto file_id = make_uuid_v7();
+    const auto id_conflict = make_uuid_v7();
+    const auto id_good = make_uuid_v7();
+    const auto id_bad = make_uuid_v7();
+    const auto id_retry = make_uuid_v7();
+
+    auto repo = std::make_shared<FakeOutboxRepository>();
+    repo->pending_events.push_back(make_test_outbox_entity(id_conflict, file_id, "file.created"));
+
+    auto client = std::make_shared<MockAuditClient>();
+    FilesAuditBatchSubmitResult conflict_res;
+    conflict_res.rpc_success = false;
+    conflict_res.status = grpc::Status(grpc::StatusCode::ALREADY_EXISTS, "duplicate event");
+
+    FilesAuditBatchSubmitResult batch_invalid;
+    batch_invalid.rpc_success = false;
+    batch_invalid.status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "poison event in batch");
+
+    FilesAuditBatchSubmitResult single_ok;
+    single_ok.rpc_success = true;
+    single_ok.status = grpc::Status::OK;
+    single_ok.accepted_count = 1;
+
+    FilesAuditBatchSubmitResult single_bad;
+    single_bad.rpc_success = false;
+    single_bad.status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "bad event schema");
+
+    FilesAuditBatchSubmitResult single_retry;
+    single_retry.rpc_success = false;
+    single_retry.status = grpc::Status(grpc::StatusCode::UNAVAILABLE, "transient probe failure");
+
+    EXPECT_CALL(*client, submit_batch(_))
+        .WillOnce(Return(conflict_res))
+        .WillOnce(Return(batch_invalid))
+        .WillOnce(Return(single_ok))
+        .WillOnce(Return(single_bad))
+        .WillOnce(Return(single_retry));
+
+    FilesOutboxMetrics metrics;
+    FilesOutboxRelay relay(repo, client, {}, "files-1", &metrics, nullptr);
+
+    EXPECT_EQ(relay.poll_and_dispatch(10), 1u);
+    EXPECT_EQ(metrics.quarantined(FilesOutboxQuarantineReason::Conflict), 1u);
+    EXPECT_EQ(metrics.events_quarantined.load(), 1u);
+
+    repo->pending_events.push_back(make_test_outbox_entity(id_good, file_id, "file.created"));
+    repo->pending_events.push_back(make_test_outbox_entity(id_bad, file_id, "file.deleted"));
+    repo->pending_events.push_back(make_test_outbox_entity(id_retry, file_id, "file.expired"));
+
+    EXPECT_EQ(relay.poll_and_dispatch(10), 3u);
+    EXPECT_EQ(metrics.delivered(), 1u);
+    EXPECT_EQ(metrics.events_published.load(), 1u);
+    EXPECT_EQ(metrics.quarantined(FilesOutboxQuarantineReason::Rejected), 1u);
+    EXPECT_EQ(metrics.events_quarantined.load(), 2u);
+    EXPECT_EQ(metrics.retries(), 1u);
+    EXPECT_EQ(metrics.transient_failures.load(), 1u);
+}
+
 TEST(FilesOutboxConfigTest, LoadsAuditSettingsDefaultsAndBoundsRelayBatchSize) {
     securecloud::common::configuration::InMemoryConfigurationSource source;
     source.set("SECURECLOUD_FILES_DB_PASSWORD", "db-test-secret");
@@ -543,6 +642,17 @@ TEST(FilesOutboxConfigTest, DefaultsAuditEndpointAndFailsClosedWithoutRequiredSe
     EXPECT_FALSE(missing_errors.is_valid());
     EXPECT_NE(missing_errors.to_string().find("SECURECLOUD_FILES_DB_PASSWORD"), std::string::npos);
     EXPECT_NE(missing_errors.to_string().find("SECURECLOUD_FILES_S3_SECRET_KEY"), std::string::npos);
+}
+
+TEST(FilesOutboxConfigTest, PreservesSubHourPurgeIntervalSeconds) {
+    securecloud::common::configuration::InMemoryConfigurationSource source;
+    source.set("SECURECLOUD_FILES_DB_PASSWORD", "db-test-secret");
+    source.set("SECURECLOUD_FILES_S3_SECRET_KEY", "s3-test-secret");
+    source.set("SECURECLOUD_FILES_AUDIT_PURGE_INTERVAL_SEC", "120");
+    securecloud::common::configuration::ValidationResult errors;
+    const auto config = securecloud::files::FilesConfig::load(source, errors);
+    EXPECT_TRUE(errors.is_valid()) << errors.to_string();
+    EXPECT_EQ(config.audit.relay.purge_interval, std::chrono::seconds(120));
 }
 
 } // namespace securecloud::files::audit

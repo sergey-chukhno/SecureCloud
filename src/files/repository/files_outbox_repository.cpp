@@ -3,6 +3,7 @@
 #include "files/db/files_connection_pool.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <sstream>
 
@@ -17,6 +18,42 @@ std::string sanitize_diagnostic_message(std::string_view raw) {
     if (raw.empty()) {
         return "unspecified_error";
     }
+
+    std::string lower(raw);
+    std::transform(lower.begin(), lower.end(), lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    constexpr std::array<std::string_view, 25> k_sensitive_terms = {
+        "password", "passwd",        "pwd=",       "secret",      "token",
+        "bearer ",  "authorization", "credential", "private_key", "-----begin",
+        "jwt",      "s3_",           "access_key", "filename",    "encrypted_filename",
+        "$argon2",  "$2a$",          "$2b$",       "$2x$",        "$2y$",
+        ".pdf",     ".doc",          ".jpg",       ".png",        ".txt"};
+    for (const auto term : k_sensitive_terms) {
+        if (lower.find(term) != std::string::npos) {
+            return "[REDACTED_SENSITIVE_DATA]";
+        }
+    }
+
+    if (lower.find('/') != std::string::npos || lower.find('\\') != std::string::npos) {
+        return "[REDACTED_SENSITIVE_DATA]";
+    }
+
+    constexpr std::array<std::string_view, 14> k_sensitive_exts = {".jpeg", ".csv", ".zip", ".xlsx", ".pptx",
+                                                                   ".json", ".xml", ".log", ".sql",  ".pem",
+                                                                   ".key",  ".mp4", ".mp3", ".webp"};
+    for (const auto ext : k_sensitive_exts) {
+        if (lower.find(ext) != std::string::npos) {
+            return "[REDACTED_SENSITIVE_DATA]";
+        }
+    }
+
+    if (const auto jwt = raw.find("eyJ");
+        jwt != std::string_view::npos &&
+        std::count(raw.begin() + static_cast<std::ptrdiff_t>(jwt), raw.end(), '.') >= 2) {
+        return "[REDACTED_SENSITIVE_DATA]";
+    }
+
     std::string out;
     out.reserve(std::min(raw.size(), k_max_error_length));
     for (char c : raw) {
@@ -48,15 +85,15 @@ template <typename Fn> auto with_autonomous_tx(const std::shared_ptr<db::FilesDb
 
 } // namespace
 
-FilesOutboxRepository::FilesOutboxRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
 #if defined(SECURECLOUD_FILES_TEST_PQXX)
-    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()){}
+FilesOutboxRepository::FilesOutboxRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()) {}
 #else
-    : pool_(std::move(pool)) {
-}
+FilesOutboxRepository::FilesOutboxRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+    : pool_(std::move(pool)) {}
 #endif
 
-      void FilesOutboxRepository::stage_event(const FilesOutboxEntity& event, pqxx::work& tx) {
+void FilesOutboxRepository::stage_event(const FilesOutboxEntity& event, pqxx::work& tx) {
     if (event.event_id.empty()) {
         throw RepositoryException("Event ID cannot be empty");
     }
@@ -135,9 +172,9 @@ FilesOutboxRepository::fetch_and_lease_pending_batch(size_t limit, std::chrono::
                            pqxx::params{now_iso, static_cast<int64_t>(limit), lease_until_iso});
 
         std::vector<FilesOutboxEntity> events;
-        events.reserve(res.size());
+        events.reserve(static_cast<size_t>(res.size()));
         for (const auto& row : res) {
-            events.push_back(db::files_outbox_from_row(row));
+            events.push_back(db::files_outbox_from_row(pqxx::row(row)));
         }
         tx.commit();
         return events;
@@ -173,9 +210,9 @@ std::vector<FilesOutboxEntity> FilesOutboxRepository::fetch_pending_events(size_
                        pqxx::params{now_iso, static_cast<int64_t>(limit), lease_until_iso});
 
     std::vector<FilesOutboxEntity> events;
-    events.reserve(res.size());
+    events.reserve(static_cast<size_t>(res.size()));
     for (const auto& row : res) {
-        events.push_back(db::files_outbox_from_row(row));
+        events.push_back(db::files_outbox_from_row(pqxx::row(row)));
     }
     return events;
 }
@@ -299,7 +336,7 @@ size_t FilesOutboxRepository::purge_published_older_than(std::chrono::system_clo
                            "  LIMIT $2"
                            ")",
                            pqxx::params{cutoff_iso, static_cast<int64_t>(batch_size)});
-        const size_t deleted = res.affected_rows();
+        const size_t deleted = static_cast<size_t>(res.affected_rows());
         tx.commit();
         return deleted;
     });
@@ -311,7 +348,7 @@ size_t FilesOutboxRepository::count_pending() {
         if (res.empty() || res[0]["cnt"].is_null()) {
             return 0;
         }
-        return res[0]["cnt"].as<size_t>();
+        return static_cast<size_t>(res[0]["cnt"].as<uint64_t>());
     });
 }
 
@@ -342,7 +379,7 @@ std::optional<FilesOutboxEntity> FilesOutboxRepository::find_by_id(const std::st
         return std::nullopt;
     }
 
-    return db::files_outbox_from_row(res[0]);
+    return db::files_outbox_from_row(pqxx::row(res[0]));
 }
 
 std::optional<FilesOutboxEntity> FilesOutboxRepository::find_by_id(const std::string& event_id) {

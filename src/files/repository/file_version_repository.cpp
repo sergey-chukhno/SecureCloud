@@ -7,15 +7,15 @@
 
 namespace securecloud::files {
 
-FileVersionRepository::FileVersionRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
 #if defined(SECURECLOUD_FILES_TEST_PQXX)
-    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()){}
+FileVersionRepository::FileVersionRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()) {}
 #else
-    : pool_(std::move(pool)) {
-}
+FileVersionRepository::FileVersionRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+    : pool_(std::move(pool)) {}
 #endif
 
-      void FileVersionRepository::create_version(const FileVersionEntity& version, pqxx::work& tx) {
+void FileVersionRepository::create_version(const FileVersionEntity& version, pqxx::work& tx) {
     if (version.version_id.empty() || version.file_id.empty()) {
         throw RepositoryException("Version ID and File ID must not be empty");
     }
@@ -62,7 +62,7 @@ std::optional<FileVersionEntity> FileVersionRepository::find_active_version(cons
         return std::nullopt;
     }
 
-    return db::file_version_from_row(res[0]);
+    return db::file_version_from_row(pqxx::row(res[0]));
 }
 
 std::optional<FileVersionEntity> FileVersionRepository::find_active_version(const std::string& file_id) {
@@ -90,9 +90,9 @@ std::vector<FileVersionEntity> FileVersionRepository::list_versions(const std::s
                        pqxx::params{file_id});
 
     std::vector<FileVersionEntity> versions;
-    versions.reserve(res.size());
+    versions.reserve(static_cast<size_t>(res.size()));
     for (decltype(res.size()) i = 0; i < res.size(); ++i) {
-        versions.push_back(db::file_version_from_row(res[i]));
+        versions.push_back(db::file_version_from_row(pqxx::row(res[i])));
     }
     return versions;
 }

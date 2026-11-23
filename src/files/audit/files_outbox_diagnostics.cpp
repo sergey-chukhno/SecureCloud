@@ -10,14 +10,16 @@ namespace {
 constexpr const char* categories[] = {"batch", "lease", "quarantine", "outage", "recovery", "purge"};
 std::string json_escape(std::string_view s) {
     std::string out;
-    for (unsigned char c : s) {
+    for (char raw_ch : s) {
+        const auto c = static_cast<unsigned char>(raw_ch);
         if (c == '"' || c == '\\') {
             out.push_back('\\');
-            out.push_back(static_cast<char>(c));
-        } else if (c >= 0x20 && c != 0x7f)
-            out.push_back(static_cast<char>(c));
-        else if (c == '\n' || c == '\r' || c == '\t')
+            out.push_back(raw_ch);
+        } else if (c >= 0x20 && c != 0x7f) {
+            out.push_back(raw_ch);
+        } else if (c == '\n' || c == '\r' || c == '\t') {
             out.push_back(' ');
+        }
     }
     return out;
 }

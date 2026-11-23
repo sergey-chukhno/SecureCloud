@@ -123,4 +123,28 @@ TEST(FilesOutboxAuditTest, AuthAuditHeaderAndFilesAuditValidatorFacadeCanShareTr
     const auto mapped = FilesAuditMapper::to_validated_proto(entity_value);
     EXPECT_TRUE(mapped.valid) << mapped.validation_error;
 }
+
+TEST(FilesOutboxAuditTest, PromotesChunkIntegrityToSecurityAndMapsFileFinalizing) {
+    FilesAuditProtoValidator validator;
+    const auto now = std::chrono::system_clock::now();
+
+    for (const auto& [outbox_sev, payload_sev] : std::array<std::pair<OutboxSeverity, std::string>, 2>{
+             {{OutboxSeverity::Info, "INFO"}, {OutboxSeverity::Warning, "WARNING"}}}) {
+        auto e = entity("file.chunk.integrity_failed");
+        e.severity = outbox_sev;
+        auto payload = nlohmann::json::parse(e.payload_json);
+        payload["severity"] = payload_sev;
+        e.payload_json = payload.dump();
+
+        const auto mapped = FilesAuditMapper::to_validated_proto(e, now, "files-test");
+        ASSERT_TRUE(mapped.valid) << mapped.validation_error;
+        EXPECT_EQ(mapped.proto.severity(), securecloud::audit::v1::SEVERITY_SECURITY);
+        EXPECT_TRUE(validator.validate(mapped.proto, now).valid);
+    }
+
+    auto finalizing = FilesAuditMapper::to_validated_proto(entity("FILE_FINALIZING"), now, "files-test");
+    ASSERT_TRUE(finalizing.valid) << finalizing.validation_error;
+    EXPECT_EQ(finalizing.proto.event_type(), "file.upload.completed");
+    EXPECT_TRUE(validator.validate(finalizing.proto, now).valid);
+}
 } // namespace securecloud::files::audit

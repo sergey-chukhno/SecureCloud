@@ -6,15 +6,15 @@
 
 namespace securecloud::files {
 
-FileTransferRepository::FileTransferRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
 #if defined(SECURECLOUD_FILES_TEST_PQXX)
-    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()){}
+FileTransferRepository::FileTransferRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()) {}
 #else
-    : pool_(std::move(pool)) {
-}
+FileTransferRepository::FileTransferRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+    : pool_(std::move(pool)) {}
 #endif
 
-      void FileTransferRepository::create_transfer(const FileTransferEntity& transfer, pqxx::work& tx) {
+void FileTransferRepository::create_transfer(const FileTransferEntity& transfer, pqxx::work& tx) {
     if (transfer.transfer_id.empty()) {
         throw RepositoryException("Transfer ID cannot be empty");
     }
@@ -51,7 +51,7 @@ std::optional<FileTransferEntity> FileTransferRepository::find_by_id(const std::
         return std::nullopt;
     }
 
-    return db::file_transfer_from_row(res[0]);
+    return db::file_transfer_from_row(pqxx::row(res[0]));
 }
 
 std::optional<FileTransferEntity> FileTransferRepository::find_by_id(const std::string& transfer_id) {

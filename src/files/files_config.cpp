@@ -282,7 +282,7 @@ void load_audit_outbox_config(FilesConfig& config, const common::configuration::
     if (auto v = source.get("SECURECLOUD_FILES_AUDIT_PURGE_INTERVAL_SEC"); v.has_value()) {
         if (auto p =
                 parse_int64_strict("SECURECLOUD_FILES_AUDIT_PURGE_INTERVAL_SEC", v.value(), 1, 86400, out_errors)) {
-            relay.purge_interval = std::chrono::hours(std::max<int64_t>(1, *p / 3600));
+            relay.purge_interval = std::chrono::seconds(*p);
         }
     }
 

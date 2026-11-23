@@ -57,6 +57,7 @@ const std::unordered_map<std::string, std::string> k_legacy_event_type_map = {
     {"FILE_FAILED", "file.finalization.failed"},
     {"FILE_EXPIRED", "file.expired"},
     {"FILE_UPLOAD_INITIATED", "file.created"},
+    {"FILE_FINALIZING", "file.upload.completed"},
     {"FILE_UPLOAD_COMPLETED", "file.upload.completed"},
     {"FILE_FINALIZED", "file.upload.completed"},
     {"FILE_UPLOAD_FAILED", "file.upload.failed"},
@@ -67,7 +68,6 @@ const std::unordered_map<std::string, std::string> k_legacy_event_type_map = {
     {"FILE_DOWNLOAD_DENIED", "file.download.denied"},
     {"FILE_METADATA_UPDATED", "file.metadata.updated"},
     {"FILE_RENAMED", "file.metadata.updated"},
-    {"FILE_VERSION_CREATED", "file.version.created"},
     {"FILE_VERSION_RESTORED", "file.version.restored"},
     {"FILE_SHARED", "file.access.granted"},
     {"FILE_ACCESS_GRANTED", "file.access.granted"},
@@ -282,7 +282,8 @@ const std::unordered_map<std::string, std::string> k_legacy_event_type_map = {
 
 [[nodiscard]] bool is_security_event_type(std::string_view canonical_type) noexcept {
     return canonical_type == "file.access.revoked" || canonical_type == "file.access.denied" ||
-           canonical_type == "file.download.denied" || canonical_type == "file.capability.rejected";
+           canonical_type == "file.download.denied" || canonical_type == "file.capability.rejected" ||
+           canonical_type == "file.chunk.integrity_failed";
 }
 
 [[nodiscard]] securecloud::audit::v1::ActorTypeProto parse_actor_type_string(std::string_view raw) {
@@ -354,7 +355,8 @@ securecloud::audit::v1::AuditEventProto FilesAuditMapper::to_proto(const FilesOu
 
     // Severity mapping from entity + canonical security event promotion
     auto severity = map_outbox_severity(entity.severity);
-    if (severity == securecloud::audit::v1::SEVERITY_INFO && is_security_event_type(canonical_event_type)) {
+    if ((severity == securecloud::audit::v1::SEVERITY_INFO || severity == securecloud::audit::v1::SEVERITY_WARNING) &&
+        is_security_event_type(canonical_event_type)) {
         severity = securecloud::audit::v1::SEVERITY_SECURITY;
     }
     proto.set_severity(severity);

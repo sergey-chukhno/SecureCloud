@@ -627,5 +627,32 @@ TEST_F(AccessOutboxRepositoryTest, AtomicDomainStateAndOutboxPersistence) {
     EXPECT_EQ(pending[0].event_id, "evt-atomic");
 }
 
+TEST_F(AccessOutboxRepositoryTest, RedactsSensitiveSecretsAndFilenamesInDiagnosticReasons) {
+    FilesOutboxRepository outbox_repo;
+    auto e1 = make_sample_event("evt-redact-1", "file-1");
+    auto e2 = make_sample_event("evt-redact-2", "file-2");
+    outbox_repo.stage_event(e1);
+    outbox_repo.stage_event(e2);
+
+    EXPECT_TRUE(outbox_repo.record_transient_failure("evt-redact-1", "failed with Bearer super-secret-jwt-token"));
+    auto r1 = outbox_repo.find_by_id("evt-redact-1");
+    ASSERT_TRUE(r1.has_value());
+    ASSERT_TRUE(r1->last_error.has_value());
+    EXPECT_EQ(*r1->last_error, "[REDACTED_SENSITIVE_DATA]");
+
+    EXPECT_TRUE(outbox_repo.record_transient_failure("evt-redact-1", "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0.signature"));
+    r1 = outbox_repo.find_by_id("evt-redact-1");
+    ASSERT_TRUE(r1.has_value());
+    ASSERT_TRUE(r1->last_error.has_value());
+    EXPECT_EQ(*r1->last_error, "[REDACTED_SENSITIVE_DATA]");
+
+    EXPECT_TRUE(
+        outbox_repo.mark_quarantined("evt-redact-2", "bad /var/tmp/report.pdf with -----BEGIN PRIVATE KEY-----"));
+    const auto r2 = outbox_repo.find_by_id("evt-redact-2");
+    ASSERT_TRUE(r2.has_value());
+    ASSERT_TRUE(r2->last_error.has_value());
+    EXPECT_EQ(*r2->last_error, "[REDACTED_SENSITIVE_DATA]");
+}
+
 } // namespace
 } // namespace securecloud::files

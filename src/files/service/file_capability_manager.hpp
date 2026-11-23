@@ -8,6 +8,7 @@
 #include "files/repository/device_revocation_provider.hpp"
 #include "files/repository/file_access_repository.hpp"
 #include "files/service/file_lifecycle_service.hpp"
+#include "files/service/files_audit_event_publisher.hpp"
 
 #include <chrono>
 #include <memory>
@@ -50,7 +51,8 @@ class FileCapabilityManager : public IFileCapabilityManager {
                           std::shared_ptr<auth::crypto::ITokenSigner> signer,
                           std::shared_ptr<auth::crypto::ITokenVerifier> verifier,
                           std::shared_ptr<IDeviceRevocationProvider> revocation_provider = nullptr,
-                          std::shared_ptr<FileAccessRepository> access_repo = nullptr);
+                          std::shared_ptr<FileAccessRepository> access_repo = nullptr,
+                          std::shared_ptr<service::FilesAuditEventPublisher> audit_publisher = nullptr);
 
     std::string issue_capability(const std::string& grantee_user_id, const std::string& grantee_device_id,
                                  const std::string& file_id, FileCapabilityOperation operation,
@@ -73,6 +75,7 @@ class FileCapabilityManager : public IFileCapabilityManager {
     std::shared_ptr<auth::crypto::ITokenVerifier> verifier_;
     std::shared_ptr<IDeviceRevocationProvider> revocation_provider_;
     std::shared_ptr<FileAccessRepository> access_repo_;
+    std::shared_ptr<service::FilesAuditEventPublisher> audit_publisher_;
     std::unique_ptr<CapabilityValidator> validator_;
 };
 

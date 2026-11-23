@@ -22,7 +22,7 @@ struct FilesOutboxRelayConfig {
     double jitter_ratio{0.25};
     uint32_t max_retries{5};
     std::chrono::hours published_retention{24 * 7};
-    std::chrono::hours purge_interval{1};
+    std::chrono::seconds purge_interval{3600};
     size_t purge_batch_size{1000};
     std::chrono::milliseconds shutdown_drain_timeout{3000};
 };

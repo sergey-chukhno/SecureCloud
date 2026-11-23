@@ -2,6 +2,8 @@
 
 #include "files/db/files_connection_pool.hpp"
 #include "files/domain/metadata_validator.hpp"
+#include "files/repository/files_outbox_repository.hpp"
+#include "files/service/files_caller_context.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -20,15 +22,24 @@ bool hashes_equal(std::string_view a, std::string_view b) {
     });
 }
 
+[[nodiscard]] std::string resolve_chunk_correlation_id() {
+    if (const auto ctx = current_files_caller_context(); ctx && !ctx->correlation_id.empty()) {
+        return ctx->correlation_id;
+    }
+    return generate_uuid_v7();
+}
+
 } // namespace
 
 ChunkStorageService::ChunkStorageService(std::shared_ptr<db::FilesDbConnectionPool> pool,
                                          std::shared_ptr<storage::S3Client> s3_client,
                                          std::shared_ptr<FileTransferRepository> transfer_repo,
                                          std::shared_ptr<FileChunkRepository> chunk_repo,
-                                         std::shared_ptr<FileRepository> file_repo)
+                                         std::shared_ptr<FileRepository> file_repo,
+                                         std::shared_ptr<FilesAuditEventPublisher> audit_publisher)
     : pool_(std::move(pool)), s3_client_(std::move(s3_client)), transfer_repo_(std::move(transfer_repo)),
-      chunk_repo_(std::move(chunk_repo)), file_repo_(std::move(file_repo)) {
+      chunk_repo_(std::move(chunk_repo)), file_repo_(std::move(file_repo)),
+      audit_publisher_(std::move(audit_publisher)) {
     if (!transfer_repo_ && pool_) {
         transfer_repo_ = std::make_shared<FileTransferRepository>(pool_);
     }
@@ -37,6 +48,9 @@ ChunkStorageService::ChunkStorageService(std::shared_ptr<db::FilesDbConnectionPo
     }
     if (!file_repo_ && pool_) {
         file_repo_ = std::make_shared<FileRepository>(pool_);
+    }
+    if (!audit_publisher_ && pool_) {
+        audit_publisher_ = std::make_shared<FilesAuditEventPublisher>(std::make_shared<FilesOutboxRepository>(pool_));
     }
 }
 
@@ -87,7 +101,24 @@ ChunkStoreResult ChunkStorageService::store_chunk(const ChunkPayloadDto& chunk_d
         // Check lease expiration
         if (now > transfer.expires_at) {
             transfer_repo_->update_status(chunk_dto.upload_id, TransferStatus::Expired, tx);
+            if (audit_publisher_) {
+                FilesAuditRecord record;
+                record.event_type = "file.upload.expired";
+                record.severity = "WARNING";
+                record.actor_type = "SYSTEM";
+                record.actor_id = "files";
+                record.target_type = transfer.file_id.empty() ? "SERVICE" : "FILE";
+                record.target_id = transfer.file_id.empty() ? "files" : transfer.file_id;
+                record.correlation_id = resolve_chunk_correlation_id();
+                record.metadata = {{"upload_id", chunk_dto.upload_id},
+                                   {"accepted_chunks", std::to_string(transfer.accepted_chunks)},
+                                   {"total_chunks", std::to_string(transfer.total_chunks)}};
+                audit_publisher_->publish_in_tx(record, tx);
+            }
             tx.commit();
+            if (audit_publisher_) {
+                audit_publisher_->notify_relay();
+            }
             throw TransferExpiredException("Upload transfer session lease expired: " + chunk_dto.upload_id);
         }
 

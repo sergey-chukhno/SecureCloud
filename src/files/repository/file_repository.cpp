@@ -4,16 +4,14 @@
 
 namespace securecloud::files {
 
-FileRepository::FileRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
 #if defined(SECURECLOUD_FILES_TEST_PQXX)
-    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()){}
+FileRepository::FileRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()) {}
 #else
-    : pool_(std::move(pool)) {
-}
+FileRepository::FileRepository(std::shared_ptr<db::FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
 #endif
 
-      void FileRepository::create_file(const FileEntity& file, const EncryptedFileMetadataEntity& metadata,
-                                       pqxx::work& tx) {
+void FileRepository::create_file(const FileEntity& file, const EncryptedFileMetadataEntity& metadata, pqxx::work& tx) {
     if (file.file_id.empty()) {
         throw RepositoryException("File ID cannot be empty");
     }
@@ -60,7 +58,7 @@ std::optional<FileEntity> FileRepository::find_by_id(const std::string& file_id,
         return std::nullopt;
     }
 
-    return db::file_from_row(res[0]);
+    return db::file_from_row(pqxx::row(res[0]));
 }
 
 std::optional<FileEntity> FileRepository::find_by_id(const std::string& file_id) {
@@ -93,7 +91,7 @@ std::optional<EncryptedFileMetadataEntity> FileRepository::find_encrypted_metada
         return std::nullopt;
     }
 
-    return db::encrypted_metadata_from_row(res[0]);
+    return db::encrypted_metadata_from_row(pqxx::row(res[0]));
 }
 
 std::optional<EncryptedFileMetadataEntity> FileRepository::find_encrypted_metadata(const std::string& file_id) {
@@ -161,9 +159,9 @@ std::vector<FileEntity> FileRepository::find_expired_files(std::chrono::system_c
                        pqxx::params{now_str, limit});
 
     std::vector<FileEntity> files;
-    files.reserve(res.size());
-    for (int i = 0; i < static_cast<int>(res.size()); ++i) {
-        files.push_back(db::file_from_row(res[i]));
+    files.reserve(static_cast<size_t>(res.size()));
+    for (decltype(res.size()) i = 0; i < res.size(); ++i) {
+        files.push_back(db::file_from_row(pqxx::row(res[i])));
     }
     return files;
 }

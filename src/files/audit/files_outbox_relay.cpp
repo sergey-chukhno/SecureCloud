@@ -51,10 +51,15 @@ void FilesOutboxRelay::start() {
 }
 
 void FilesOutboxRelay::stop() {
-    if (!running_.exchange(false)) {
+    bool was_running = false;
+    {
+        std::lock_guard<std::mutex> lock(cv_mutex_);
+        stopping_.store(true, std::memory_order_release);
+        was_running = running_.exchange(false, std::memory_order_acq_rel);
+    }
+    if (!was_running) {
         return;
     }
-    stopping_.store(true);
     cv_.notify_all();
     if (worker_thread_.joinable()) {
         worker_thread_.join();
@@ -62,7 +67,10 @@ void FilesOutboxRelay::stop() {
 }
 
 void FilesOutboxRelay::notify() noexcept {
-    notified_.store(true, std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> lock(cv_mutex_);
+        notified_.store(true, std::memory_order_release);
+    }
     cv_.notify_one();
 }
 
@@ -189,10 +197,11 @@ void FilesOutboxRelay::dispatch_chunk(const std::vector<FilesOutboxEntity>& chun
             metrics_->record_batch(submit_result.rejected_event_ids.empty() ? FilesOutboxOutcome::Success
                                                                             : FilesOutboxOutcome::Rejected);
         }
-        if (diagnostics_)
+        if (diagnostics_) {
             diagnostics_->log_event(FilesDiagnosticCategory::Batch, "batch_acknowledged", {}, {}, chunk_events.size());
-        consecutive_failures_.store(0, std::memory_order_relaxed);
+        }
         record_success_diag();
+        consecutive_failures_.store(0, std::memory_order_relaxed);
 
         std::unordered_set<std::string> rejected_ids(submit_result.rejected_event_ids.begin(),
                                                      submit_result.rejected_event_ids.end());
@@ -239,6 +248,9 @@ void FilesOutboxRelay::dispatch_chunk(const std::vector<FilesOutboxEntity>& chun
                 outbox_repo_->mark_quarantined(chunk_events[0].event_id, "audit_permanent_rejection: " + err_msg);
                 if (metrics_) {
                     metrics_->events_quarantined.fetch_add(1, std::memory_order_relaxed);
+                    metrics_->record_quarantined(code == grpc::StatusCode::ALREADY_EXISTS
+                                                     ? FilesOutboxQuarantineReason::Conflict
+                                                     : FilesOutboxQuarantineReason::Rejected);
                 }
             } catch (...) {
             }
@@ -319,11 +331,13 @@ void FilesOutboxRelay::probe_and_isolate_invalid_batch(
                     outbox_repo_->mark_quarantined(ev.event_id, "audit_service_rejected");
                     if (metrics_) {
                         metrics_->events_quarantined.fetch_add(1, std::memory_order_relaxed);
+                        metrics_->record_quarantined(FilesOutboxQuarantineReason::Rejected);
                     }
                 } else {
                     outbox_repo_->mark_published(ev.event_id);
                     if (metrics_) {
                         metrics_->events_published.fetch_add(1, std::memory_order_relaxed);
+                        metrics_->record_delivered();
                     }
                 }
             } catch (...) {
@@ -340,6 +354,9 @@ void FilesOutboxRelay::probe_and_isolate_invalid_batch(
                 outbox_repo_->mark_quarantined(ev.event_id, "audit_permanent_rejection: " + single_err);
                 if (metrics_) {
                     metrics_->events_quarantined.fetch_add(1, std::memory_order_relaxed);
+                    metrics_->record_quarantined(single_code == grpc::StatusCode::ALREADY_EXISTS
+                                                     ? FilesOutboxQuarantineReason::Conflict
+                                                     : FilesOutboxQuarantineReason::Rejected);
                 }
             } catch (...) {
             }
@@ -348,6 +365,7 @@ void FilesOutboxRelay::probe_and_isolate_invalid_batch(
                 outbox_repo_->record_transient_failure(ev.event_id, single_err);
                 if (metrics_) {
                     metrics_->transient_failures.fetch_add(1, std::memory_order_relaxed);
+                    metrics_->record_retry(1);
                 }
             } catch (...) {
             }

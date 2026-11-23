@@ -11,6 +11,7 @@
 #include "files/repository/file_transfer_repository.hpp"
 #include "files/repository/file_version_repository.hpp"
 #include "files/repository/files_outbox_repository.hpp"
+#include "files/service/files_audit_event_publisher.hpp"
 #include "files/service/object_assembly_engine.hpp"
 
 #include <chrono>
@@ -58,7 +59,8 @@ class FileFinalizationService {
                                      std::shared_ptr<FileRepository> file_repo = nullptr,
                                      std::shared_ptr<FileVersionRepository> version_repo = nullptr,
                                      std::shared_ptr<FileChunkRepository> chunk_repo = nullptr,
-                                     std::shared_ptr<FilesOutboxRepository> outbox_repo = nullptr);
+                                     std::shared_ptr<FilesOutboxRepository> outbox_repo = nullptr,
+                                     std::shared_ptr<FilesAuditEventPublisher> audit_publisher = nullptr);
 
     virtual ~FileFinalizationService() = default;
 
@@ -79,6 +81,7 @@ class FileFinalizationService {
     std::shared_ptr<FileVersionRepository> version_repo_;
     std::shared_ptr<FileChunkRepository> chunk_repo_;
     std::shared_ptr<FilesOutboxRepository> outbox_repo_;
+    std::shared_ptr<FilesAuditEventPublisher> audit_publisher_;
     std::mutex session_locks_mutex_;
     std::unordered_map<std::string, std::shared_ptr<std::mutex>> session_locks_;
 };

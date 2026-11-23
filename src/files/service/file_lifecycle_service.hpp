@@ -12,6 +12,7 @@
 #include "files/repository/file_repository.hpp"
 #include "files/repository/file_version_repository.hpp"
 #include "files/repository/files_outbox_repository.hpp"
+#include "files/service/files_audit_event_publisher.hpp"
 
 #include <chrono>
 #include <memory>
@@ -61,7 +62,8 @@ class FileLifecycleService {
                                   std::shared_ptr<FileRepository> file_repo = nullptr,
                                   std::shared_ptr<FileVersionRepository> version_repo = nullptr,
                                   std::shared_ptr<FileAccessRepository> access_repo = nullptr,
-                                  std::shared_ptr<FilesOutboxRepository> outbox_repo = nullptr);
+                                  std::shared_ptr<FilesOutboxRepository> outbox_repo = nullptr,
+                                  std::shared_ptr<service::FilesAuditEventPublisher> audit_publisher = nullptr);
 
     virtual ~FileLifecycleService() = default;
 
@@ -89,6 +91,13 @@ class FileLifecycleService {
     virtual bool delete_file(const std::string& file_id, const std::string& caller_user_id,
                              const std::string& reason = "");
 
+    /// Atomically grants or updates file access permissions and stages an outbox event (E10).
+    virtual void grant_file_access(const FileAccessEntity& grant, const std::string& reason = "");
+
+    /// Atomically revokes an active file access grant and stages a security outbox event (E11) if revoked.
+    virtual bool revoke_file_access(const std::string& file_id, const std::string& grantee_user_id,
+                                    const std::string& caller_user_id, const std::string& reason = "");
+
     /// Scans and transitions files past their retention deadline to EXPIRED.
     virtual size_t evaluate_and_expire_files(std::chrono::system_clock::time_point now, size_t batch_size = 100);
 
@@ -100,6 +109,7 @@ class FileLifecycleService {
     std::shared_ptr<FileVersionRepository> version_repo_;
     std::shared_ptr<FileAccessRepository> access_repo_;
     std::shared_ptr<FilesOutboxRepository> outbox_repo_;
+    std::shared_ptr<service::FilesAuditEventPublisher> audit_publisher_;
 };
 
 } // namespace securecloud::files

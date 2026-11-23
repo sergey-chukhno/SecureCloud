@@ -7,15 +7,14 @@
 
 namespace securecloud::files {
 
-FileChunkRepository::FileChunkRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
 #if defined(SECURECLOUD_FILES_TEST_PQXX)
-    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()){}
+FileChunkRepository::FileChunkRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()) {}
 #else
-    : pool_(std::move(pool)) {
-}
+FileChunkRepository::FileChunkRepository(std::shared_ptr<db::FilesDbConnectionPool> pool) : pool_(std::move(pool)) {}
 #endif
 
-      ChunkRecordResult FileChunkRepository::record_chunk(const FileChunkEntity& chunk, pqxx::work& tx) {
+ChunkRecordResult FileChunkRepository::record_chunk(const FileChunkEntity& chunk, pqxx::work& tx) {
     if (chunk.chunk_id.empty() || chunk.transfer_id.empty()) {
         throw RepositoryException("Chunk ID and Transfer ID must not be empty");
     }
@@ -68,7 +67,7 @@ std::vector<int32_t> FileChunkRepository::get_accepted_chunk_indices(const std::
                        pqxx::params{transfer_id});
 
     std::vector<int32_t> indices;
-    indices.reserve(res.size());
+    indices.reserve(static_cast<size_t>(res.size()));
     for (decltype(res.size()) i = 0; i < res.size(); ++i) {
         indices.push_back(std::stoi(res[i]["chunk_index"].c_str()));
     }
@@ -154,9 +153,9 @@ std::vector<FileChunkEntity> FileChunkRepository::list_chunks_for_transfer(const
                        pqxx::params{transfer_id});
 
     std::vector<FileChunkEntity> chunks;
-    chunks.reserve(res.size());
+    chunks.reserve(static_cast<size_t>(res.size()));
     for (decltype(res.size()) i = 0; i < res.size(); ++i) {
-        chunks.push_back(db::file_chunk_from_row(res[i]));
+        chunks.push_back(db::file_chunk_from_row(pqxx::row(res[i])));
     }
     return chunks;
 }
