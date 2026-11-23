@@ -60,7 +60,7 @@
 | **CLIENT-013-T01** | Emergency Panic Domain Models & Complete `ISecureStorage` / `ILocalStore` Purge Contracts | **Completed** | `PanicTriggerSource`, `PostWipeMode`, `WipeStepStatus`, `EmergencyWipeReport`, `EmergencyBroadcastRequest/Result`, `DuressPinConfig`; `ISecureStorage::list_secret_keys()` / `purge_all_secrets()`, `ILocalStore::database_path()` |
 | **CLIENT-013-T02** | Forensic `FileShredder` Utility & SQLCipher/Cache/Log Artifact Destruction | **Completed** | 3-pass overwrite (`0x00`, `0xFF`, `RAND_bytes`) + flush + truncate + unlink utility; `SqlCipherLocalStore::destroy_and_shred()` covering `.db`, `-wal`, `-shm`, `.part` files, and log artifacts |
 | **CLIENT-013-T03** | Production `EmergencyManager` Cryptographic Destruction Pipeline & Pre-Wipe E2EE Broadcast | **Completed** | `< 500 ms` 3-phase wipe pipeline; volatile wipe methods across `RatchetSessionManager`, `MessagingManager`, `FileManager`, `SyncManager`, `AuthManager`; pre-wipe `priority=3` E2EE broadcast + bounded ACK wait |
-| **CLIENT-013-T04** | Login Duress PIN Verification & Silent Plausible Decoy Session Engine | **Planned** | Salted PBKDF2-HMAC-SHA256 (`>= 100,000` iter, constant-time `CRYPTO_memcmp`) duress PIN management; silent login interception in `AuthManager` / `EmergencyManager` triggering wipe + `PostWipeMode::DecoyWorkspace` |
+| **CLIENT-013-T04** | Login Duress PIN Verification & Silent Plausible Decoy Session Engine | **Completed** | Salted PBKDF2-HMAC-SHA256 (`>= 100,000` iter, constant-time `CRYPTO_memcmp`) duress PIN management; silent login interception in `AuthManager` / `EmergencyManager` triggering wipe + `PostWipeMode::DecoyWorkspace` |
 | **CLIENT-013-T05** | `AppViewModel`, `WorkspaceViewModel` & QML Emergency Panic, Duress & Decoy UX | **Planned** | Hotkey & Instant vs Broadcast-then-Wipe modal (`Main.qml`); silent duress login & Decoy Workspace routing; post-wipe audit card in `EmergencyPlaceholder.qml`; Duress PIN & Post-Wipe policy controls in `SettingsPlaceholder.qml` |
 | **CLIENT-013-T06** | Emergency Panic & Forensic Wipe E2E Integration Suite, Tier 1/2 Smoke Tests & Walkthrough | **Planned** | 5-scenario E2E integration suite (`emergency_panic_wipe_integration_test.cpp`), `< 500 ms` latency + disk sector audit, Tier 1 `--smoke-test`, Tier 2 `--capture-screenshots`, `walkthrough-client-013.md`, `docs/pull_requests/CLIENT-013.md` |
 
@@ -213,7 +213,7 @@
 - **Architectural Scope:**
   1. **Cryptographic Duress PIN Storage (`EmergencyManager`):**
      - `ClientResult<void> configure_duress_pin(const common::configuration::SecretString& duress_pin, domain::PostWipeMode mode = domain::PostWipeMode::DecoyWorkspace)`:
-       - Validates minimum complexity (e.g., `>= 6` characters, non-empty).
+       - Validates Option A bounds (`6..1024` exact UTF-8 bytes matching `PasswordCredential::kMaxLength`, no whitespace trimming so both short PINs and full password-style passphrases work).
        - Generates 16-byte random salt via `OpenSSL RAND_bytes`, derives 32-byte verifier via `PKCS5_PBKDF2_HMAC` (SHA-256, `100,000` iterations), wraps inside `DuressPinConfig` (stored exclusively in `ISecureStorage` under `"emergency.duress_pin_config"`, never logged or stored in plaintext!).
      - `ClientResult<void> clear_duress_pin()` and `[[nodiscard]] bool has_duress_pin() const`.
      - `ClientResult<bool> verify_duress_credential(const common::configuration::SecretString& candidate) const`:
@@ -253,7 +253,7 @@
   3. **Update QML Screens (`Main.qml`, `EmergencyPlaceholder.qml`, `SettingsPlaceholder.qml`):**
      - **`Main.qml`:** Upgrade `emergencyConfirmDialog` (`objectName: "emergencyPanicModal"`) to let the operator either trigger **Instant Forensic Wipe** or check **"Send Encrypted Emergency Broadcast Before Wipe"** (with conversation selector / optional distress note) while preserving 1-click keyboard/button immediacy.
      - **`EmergencyPlaceholder.qml`:** Upgrade into a comprehensive forensic wipe confirmation card showing elapsed wipe time (`"<duration> ms"`), secrets purged count, files shredded count, volatile caches cleared count, and a `"Reset to Clean Unconfigured State"` button.
-     - **`SettingsPlaceholder.qml`:** Add a compact **Emergency Defense & Duress Policy** sub-section enabling the user to configure/remove the Login Duress PIN and choose post-wipe behavior (`EmergencyLocked` vs `DecoyWorkspace`).
+     - **`SettingsPlaceholder.qml`:** Add a compact **Emergency Defense & Duress Policy** sub-section enabling the user to configure/remove the Login Duress PIN (with an Option A helper hint recommending a `12+` character password-style passphrase while allowing `>= 6` characters) and choose post-wipe behavior (`EmergencyLocked` vs `DecoyWorkspace`).
 - **Acceptance Criteria:**
   - `workspace_view_model_emergency_test.cpp` verifies headless QML loading of `Main.qml` / `EmergencyPlaceholder.qml` with `0` QML warnings, tests instant panic wipe, broadcast-then-wipe, and silent duress login routing to an empty Decoy Workspace with `0` real messages remaining.
 
@@ -276,7 +276,7 @@
      - **Scenario 5 — Headless QML Panic Dialog, `EmergencyPlaceholder.qml` & Decoy UI Lifecycle:**
        - Instantiate real QML components (`Main.qml` / `EmergencyPlaceholder.qml`), verify zero QML runtime warnings, confirm panic modal & post-wipe audit report bindings render cleanly in both Dark and Light themes.
   2. Extend `src/client/main.cpp` `--capture-screenshots` to capture dark & light post-wipe / panic modal states into `docs/final-reports/assets/client-013/`.
-  3. Execute Tier 1 (`--smoke-test`), Tier 2 (`--capture-screenshots`), `check-format`, and full test suite, and author `docs/final-reports/walkthrough-client-013.md` and `docs/pull_requests/CLIENT-013.md`.
+  3. Execute Tier 1 (`--smoke-test`), Tier 2 (`--capture-screenshots`), `check-format`, and full test suite, and author `docs/final-reports/walkthrough-client-013.md` (recording Option A `6..1024` byte duress policy, `DuressPinConfig` one-shot fuse, `FileShredder` / CoW defense-in-depth, `ClientLogger` disk log closure/redaction, and Phase 0 user-flow / fail-safe resilience) and `docs/pull_requests/CLIENT-013.md`.
 - **Acceptance Criteria:**
   - All 5 scenarios pass cleanly under strict `-Werror` with observed panic wipe latency `< 500 ms`.
   - Tier 1 and Tier 2 smoke runs pass with `0` QML warnings.

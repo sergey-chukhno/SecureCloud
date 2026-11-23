@@ -3758,6 +3758,7 @@ if(Qt6_FOUND)
         client/emergency_domain_and_storage_test.cpp
         client/forensic_file_shredder_test.cpp
         client/emergency_wipe_pipeline_test.cpp
+        client/duress_pin_and_decoy_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

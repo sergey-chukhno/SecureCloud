@@ -8,6 +8,7 @@
 #include "domain/emergency_models.hpp"
 #include "domain/message_id.hpp"
 #include "domain/user_id.hpp"
+#include "securecloud/configuration/secret_string.hpp"
 
 #include <atomic>
 #include <cstddef>
@@ -27,6 +28,9 @@ class SyncManager;
 
 class EmergencyManager {
   public:
+    static constexpr std::size_t kMinDuressPinLength = 6U;
+    static constexpr std::size_t kMaxDuressPinLength = 1024U;
+
     EmergencyManager(interfaces::ILocalStore& local_store, interfaces::ISecureStorage& secure_storage);
     ~EmergencyManager() = default;
 
@@ -60,6 +64,16 @@ class EmergencyManager {
     [[nodiscard]] std::optional<domain::EmergencyWipeReport> last_wipe_report() const;
     [[nodiscard]] std::optional<domain::EmergencyBroadcastResult> last_broadcast_result() const;
 
+    // Login Duress PIN management (salted PBKDF2-HMAC-SHA256 + constant-time CRYPTO_memcmp)
+    ClientResult<void> configure_duress_pin(const common::configuration::SecretString& duress_pin,
+                                            domain::PostWipeMode mode = domain::PostWipeMode::DecoyWorkspace);
+    ClientResult<void> clear_duress_pin();
+    [[nodiscard]] bool has_duress_pin() const;
+    [[nodiscard]] std::optional<domain::PostWipeMode> duress_post_wipe_mode() const;
+    ClientResult<bool> verify_duress_credential(const common::configuration::SecretString& candidate) const;
+    ClientResult<std::optional<domain::EmergencyWipeReport>>
+    check_and_execute_duress_login(const common::configuration::SecretString& candidate);
+
     // Emergency priority message acknowledgement tracking (ADR-007)
     ClientResult<void> acknowledge_emergency_message(const domain::ConversationId& conversation_id,
                                                      const domain::MessageId& message_id,
@@ -73,6 +87,7 @@ class EmergencyManager {
         std::vector<std::string> suffixes;
     };
 
+    [[nodiscard]] std::optional<domain::DuressPinConfig> load_duress_pin_config() const;
     domain::EmergencyBroadcastResult attempt_pre_wipe_broadcast(const domain::EmergencyBroadcastRequest& request);
     domain::EmergencyWipeReport run_destruction_phases(domain::PanicTriggerSource source, domain::PostWipeMode mode,
                                                        std::optional<domain::EmergencyBroadcastResult> broadcast);

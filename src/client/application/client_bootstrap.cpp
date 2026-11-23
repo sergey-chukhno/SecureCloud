@@ -79,6 +79,7 @@ void ClientBootstrap::wire_managers() {
     emergency_manager_->set_file_manager(file_manager_.get());
     emergency_manager_->set_sync_manager(sync_manager_.get());
     emergency_manager_->set_auth_manager(auth_manager_.get());
+    auth_manager_->set_emergency_manager(emergency_manager_.get());
 }
 
 void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& user_id,

@@ -9,12 +9,80 @@
 #include "infrastructure/client_logger.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
+#include <cstdint>
+#include <limits>
 #include <nlohmann/json.hpp>
+#include <openssl/crypto.h>
+#include <openssl/evp.h>
+#include <openssl/rand.h>
+#include <span>
 #include <thread>
 
 namespace securecloud::client::application::managers {
 namespace {
+
+constexpr std::size_t kDuressSaltBytes = 16U;
+constexpr std::size_t kDuressHashBytes = 32U;
+
+std::string bytes_to_hex(std::span<const uint8_t> bytes) {
+    static constexpr char kHexDigits[] = "0123456789abcdef";
+    std::string out;
+    out.reserve(bytes.size() * 2U);
+    for (const uint8_t b : bytes) {
+        out.push_back(kHexDigits[static_cast<std::size_t>(b >> 4U) & 0x0FU]);
+        out.push_back(kHexDigits[static_cast<std::size_t>(b) & 0x0FU]);
+    }
+    return out;
+}
+
+std::optional<uint8_t> hex_nibble(char ch) noexcept {
+    if (ch >= '0' && ch <= '9') {
+        return static_cast<uint8_t>(ch - '0');
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return static_cast<uint8_t>(10 + (ch - 'a'));
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return static_cast<uint8_t>(10 + (ch - 'A'));
+    }
+    return std::nullopt;
+}
+
+bool hex_to_bytes(std::string_view hex, std::vector<uint8_t>& out) {
+    out.clear();
+    if (hex.empty() || (hex.size() % 2U) != 0U) {
+        return false;
+    }
+    out.reserve(hex.size() / 2U);
+    for (std::size_t i = 0; i < hex.size(); i += 2U) {
+        const auto hi = hex_nibble(hex[i]);
+        const auto lo = hex_nibble(hex[i + 1U]);
+        if (!hi.has_value() || !lo.has_value()) {
+            out.clear();
+            return false;
+        }
+        out.push_back(static_cast<uint8_t>((static_cast<unsigned int>(*hi) << 4U) | static_cast<unsigned int>(*lo)));
+    }
+    return true;
+}
+
+bool derive_pbkdf2_sha256(std::string_view raw_secret, std::span<const uint8_t> salt, uint32_t iterations,
+                          std::array<uint8_t, kDuressHashBytes>& out_digest) {
+    if (raw_secret.empty() || salt.empty() || iterations == 0U) {
+        return false;
+    }
+    if (raw_secret.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+        salt.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()) ||
+        iterations > static_cast<uint32_t>(std::numeric_limits<int>::max())) {
+        return false;
+    }
+    const int rc = PKCS5_PBKDF2_HMAC(raw_secret.data(), static_cast<int>(raw_secret.size()), salt.data(),
+                                     static_cast<int>(salt.size()), static_cast<int>(iterations), EVP_sha256(),
+                                     static_cast<int>(out_digest.size()), out_digest.data());
+    return rc == 1;
+}
 
 std::string build_broadcast_plaintext(const domain::EmergencyBroadcastRequest& request) {
     if (!request.encrypted_location_json.has_value() || request.encrypted_location_json->empty()) {
@@ -123,6 +191,140 @@ EmergencyManager::execute_broadcast_and_wipe(const domain::EmergencyBroadcastReq
     const auto broadcast_result = attempt_pre_wipe_broadcast(request);
     const auto report = run_destruction_phases(source, mode, broadcast_result);
     return ClientResult<domain::EmergencyWipeReport>::ok(report);
+}
+
+std::optional<domain::DuressPinConfig> EmergencyManager::load_duress_pin_config() const {
+    const auto stored = secure_storage_.get_secret(std::string(domain::DuressPinConfig::kStorageKey));
+    if (stored.is_error() || stored.value().empty()) {
+        return std::nullopt;
+    }
+
+    const auto parsed = domain::DuressPinConfig::from_json(stored.value().expose_unredacted_secret());
+    if (!parsed.has_value() || !parsed->enabled || !parsed->is_valid()) {
+        return std::nullopt;
+    }
+    return parsed;
+}
+
+ClientResult<void> EmergencyManager::configure_duress_pin(const common::configuration::SecretString& duress_pin,
+                                                          domain::PostWipeMode mode) {
+    // Exact byte check without trimming so Duress PIN matches PasswordCredential character/byte semantics.
+    if (duress_pin.size() < kMinDuressPinLength || duress_pin.size() > kMaxDuressPinLength) {
+        return ClientResult<void>::error(ClientError::validation("Duress PIN must be between 6 and 1024 bytes"));
+    }
+
+    std::array<uint8_t, kDuressSaltBytes> salt{};
+    if (RAND_bytes(salt.data(), static_cast<int>(salt.size())) != 1) {
+        OPENSSL_cleanse(salt.data(), salt.size());
+        return ClientResult<void>::error(ClientError::crypto("Failed to generate cryptographic salt for duress PIN"));
+    }
+
+    std::array<uint8_t, kDuressHashBytes> digest{};
+    if (!derive_pbkdf2_sha256(duress_pin.expose_unredacted_secret(), salt,
+                              domain::DuressPinConfig::kMinPbkdf2Iterations, digest)) {
+        OPENSSL_cleanse(salt.data(), salt.size());
+        OPENSSL_cleanse(digest.data(), digest.size());
+        return ClientResult<void>::error(ClientError::crypto("Failed to derive PBKDF2 verifier for duress PIN"));
+    }
+
+    domain::DuressPinConfig cfg;
+    cfg.enabled = true;
+    cfg.post_wipe_mode = mode;
+    cfg.pbkdf2_iterations = domain::DuressPinConfig::kMinPbkdf2Iterations;
+    cfg.salt_hex = bytes_to_hex(salt);
+    cfg.derived_hash_hex = bytes_to_hex(digest);
+    cfg.configured_at_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count();
+
+    OPENSSL_cleanse(salt.data(), salt.size());
+    OPENSSL_cleanse(digest.data(), digest.size());
+
+    const common::configuration::SecretString serialized(cfg.to_json());
+    return secure_storage_.store_secret(std::string(domain::DuressPinConfig::kStorageKey), serialized);
+}
+
+ClientResult<void> EmergencyManager::clear_duress_pin() {
+    if (!secure_storage_.has_secret(std::string(domain::DuressPinConfig::kStorageKey))) {
+        return ClientResult<void>::ok();
+    }
+    return secure_storage_.delete_secret(std::string(domain::DuressPinConfig::kStorageKey));
+}
+
+bool EmergencyManager::has_duress_pin() const {
+    return load_duress_pin_config().has_value();
+}
+
+std::optional<domain::PostWipeMode> EmergencyManager::duress_post_wipe_mode() const {
+    const auto cfg = load_duress_pin_config();
+    if (!cfg.has_value()) {
+        return std::nullopt;
+    }
+    return cfg->post_wipe_mode;
+}
+
+ClientResult<bool>
+EmergencyManager::verify_duress_credential(const common::configuration::SecretString& candidate) const {
+    const auto cfg = load_duress_pin_config();
+    if (!cfg.has_value()) {
+        return ClientResult<bool>::ok(false);
+    }
+    if (candidate.empty() || candidate.size() > kMaxDuressPinLength) {
+        return ClientResult<bool>::ok(false);
+    }
+
+    std::vector<uint8_t> salt;
+    std::vector<uint8_t> expected;
+    if (!hex_to_bytes(cfg->salt_hex, salt) || !hex_to_bytes(cfg->derived_hash_hex, expected) ||
+        salt.size() < kDuressSaltBytes || expected.size() != kDuressHashBytes) {
+        if (!salt.empty()) {
+            OPENSSL_cleanse(salt.data(), salt.size());
+        }
+        if (!expected.empty()) {
+            OPENSSL_cleanse(expected.data(), expected.size());
+        }
+        return ClientResult<bool>::ok(false);
+    }
+
+    std::array<uint8_t, kDuressHashBytes> derived{};
+    const bool derived_ok =
+        derive_pbkdf2_sha256(candidate.expose_unredacted_secret(), salt, cfg->pbkdf2_iterations, derived);
+    if (!derived_ok) {
+        OPENSSL_cleanse(derived.data(), derived.size());
+        OPENSSL_cleanse(salt.data(), salt.size());
+        OPENSSL_cleanse(expected.data(), expected.size());
+        return ClientResult<bool>::error(ClientError::crypto("Failed to verify duress credential"));
+    }
+
+    const bool matched = (CRYPTO_memcmp(derived.data(), expected.data(), kDuressHashBytes) == 0);
+    OPENSSL_cleanse(derived.data(), derived.size());
+    OPENSSL_cleanse(salt.data(), salt.size());
+    OPENSSL_cleanse(expected.data(), expected.size());
+    return ClientResult<bool>::ok(matched);
+}
+
+ClientResult<std::optional<domain::EmergencyWipeReport>>
+EmergencyManager::check_and_execute_duress_login(const common::configuration::SecretString& candidate) {
+    const auto cfg = load_duress_pin_config();
+    if (!cfg.has_value()) {
+        return ClientResult<std::optional<domain::EmergencyWipeReport>>::ok(std::nullopt);
+    }
+
+    // Capture target post-wipe mode BEFORE Phase 2 purges ISecureStorage (self-destructing DuressPinConfig).
+    const domain::PostWipeMode mode = cfg->post_wipe_mode;
+    const auto verify_res = verify_duress_credential(candidate);
+    if (verify_res.is_error()) {
+        return ClientResult<std::optional<domain::EmergencyWipeReport>>::error(verify_res.error());
+    }
+    if (!verify_res.value()) {
+        return ClientResult<std::optional<domain::EmergencyWipeReport>>::ok(std::nullopt);
+    }
+
+    const auto wipe_res = execute_panic_wipe(domain::PanicTriggerSource::DuressPin, mode);
+    if (wipe_res.is_error()) {
+        return ClientResult<std::optional<domain::EmergencyWipeReport>>::error(wipe_res.error());
+    }
+    return ClientResult<std::optional<domain::EmergencyWipeReport>>::ok(wipe_res.value());
 }
 
 domain::EmergencyBroadcastResult
