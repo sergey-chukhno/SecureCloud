@@ -74,6 +74,12 @@ void ClientBootstrap::wire_managers() {
     sync_manager_->set_messaging_manager(messaging_manager_.get());
     sync_manager_->set_contact_manager(contact_manager_.get());
     sync_manager_->set_file_manager(file_manager_.get());
+    emergency_manager_->set_gateway_client(gateway_.get());
+    emergency_manager_->set_messaging_manager(messaging_manager_.get());
+    emergency_manager_->set_file_manager(file_manager_.get());
+    emergency_manager_->set_sync_manager(sync_manager_.get());
+    emergency_manager_->set_auth_manager(auth_manager_.get());
+    auth_manager_->set_emergency_manager(emergency_manager_.get());
 }
 
 void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& user_id,
@@ -95,6 +101,9 @@ void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& u
     }
     if (sync_manager_) {
         sync_manager_->set_local_identity(user_id, device_id);
+    }
+    if (emergency_manager_) {
+        emergency_manager_->set_ratchet_session_manager(ratchet_session_manager_.get());
     }
 }
 

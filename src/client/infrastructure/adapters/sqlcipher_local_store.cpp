@@ -270,6 +270,7 @@ application::ClientResult<void> SqlCipherLocalStore::open(std::string_view path)
 
     db_ = raw_db;
     db_path_ = path_str;
+    last_db_path_ = path_str;
 
     std::string pragma_key = "PRAGMA key = \"x'" + key_hex + "'\";";
     SecretCleanseGuard pragma_guard(pragma_key);
@@ -307,6 +308,55 @@ application::ClientResult<void> SqlCipherLocalStore::close() {
     std::lock_guard<std::mutex> lock(mutex_);
     close_locked();
     return application::ClientResult<void>::ok();
+}
+
+std::string SqlCipherLocalStore::database_path() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return db_path_;
+}
+
+application::ClientResult<std::size_t> SqlCipherLocalStore::destroy_and_shred() {
+    return destroy_and_shred(ShredOptions{});
+}
+
+application::ClientResult<std::size_t> SqlCipherLocalStore::destroy_and_shred(const ShredOptions& options) {
+    std::string target_path;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        target_path = !db_path_.empty() ? db_path_ : last_db_path_;
+        close_locked();
+        last_db_path_.clear();
+    }
+
+    std::size_t files_shredded = 0U;
+    std::vector<std::string> errors;
+
+    if (!target_path.empty()) {
+        const std::vector<std::filesystem::path> artifacts{
+            std::filesystem::path(target_path),
+            std::filesystem::path(target_path + "-wal"),
+            std::filesystem::path(target_path + "-shm"),
+            std::filesystem::path(target_path + "-journal"),
+        };
+        const auto shred_res = FileShredder::shred_files(artifacts, options);
+        if (shred_res.is_error()) {
+            errors.push_back(shred_res.error().user_message());
+        } else {
+            files_shredded = shred_res.value().files_shredded;
+            if (!shred_res.value().failed_paths.empty()) {
+                for (const auto& err : shred_res.value().failed_paths) {
+                    errors.push_back(err);
+                }
+            }
+        }
+    }
+
+    (void)secure_storage_.delete_secret(kMasterKeyId);
+
+    if (!errors.empty()) {
+        return application::ClientResult<std::size_t>::error(application::ClientError::storage(errors.front()));
+    }
+    return application::ClientResult<std::size_t>::ok(files_shredded);
 }
 
 application::ClientResult<void> SqlCipherLocalStore::save_conversation(const domain::Conversation& conversation) {

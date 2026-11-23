@@ -399,6 +399,17 @@ ClientResult<void> RatchetSessionManager::purge_device_sessions(const domain::De
     return ClientResult<void>::ok();
 }
 
+std::size_t RatchetSessionManager::wipe_all_sessions() {
+    const std::size_t wiped_count = sessions_.size();
+    for (const auto& [k, _] : sessions_) {
+        const auto storage_key = make_storage_key(k.user_id, k.device_id);
+        (void)secure_storage_.delete_secret(storage_key);
+    }
+    sessions_.clear();
+    (void)secure_storage_.delete_secret(kSessionIndexKey);
+    return wiped_count;
+}
+
 bool RatchetSessionManager::has_session(const domain::UserId& peer_user_id,
                                         const domain::DeviceId& peer_device_id) const {
     domain::crypto::PeerDeviceKey key{.user_id = peer_user_id, .device_id = peer_device_id};

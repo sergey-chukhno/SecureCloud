@@ -60,6 +60,7 @@ class SyncManager {
     ClientResult<std::size_t> poll_sync();
     ClientResult<std::size_t> poll_realtime_updates(const domain::DeviceId& local_device_id);
     [[nodiscard]] uint64_t conversation_cursor(const domain::ConversationId& conversation_id) const;
+    std::size_t wipe_volatile_state();
 
   private:
     bool transition_connectivity_state(domain::ConnectivityState next_state);

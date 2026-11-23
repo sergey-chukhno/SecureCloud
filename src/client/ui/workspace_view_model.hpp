@@ -205,6 +205,7 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE bool replenishPrekeys(int batchSize = 50);
     Q_INVOKABLE void regenerateTotpSecret();
     Q_INVOKABLE void resetForEmergencyWipe();
+    Q_INVOKABLE void enterDecoyWorkspace();
 
     // New Invokables for CLIENT-004-T02
     // Contacts Directory Management

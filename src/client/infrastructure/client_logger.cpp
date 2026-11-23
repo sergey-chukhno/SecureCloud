@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <ctime>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <mutex>
@@ -15,6 +16,8 @@ namespace {
 std::mutex g_log_mutex;
 LogLevel g_min_level = LogLevel::Info;
 ClientLogger::LogSink g_custom_sink = nullptr;
+std::ofstream g_log_file;
+std::filesystem::path g_log_file_path;
 
 std::string format_timestamp() {
     using namespace std::chrono;
@@ -72,6 +75,50 @@ void ClientLogger::reset_sink() {
     g_custom_sink = nullptr;
 }
 
+bool ClientLogger::set_log_file_path(const std::filesystem::path& path) {
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    if (g_log_file.is_open()) {
+        g_log_file.flush();
+        g_log_file.close();
+    }
+    g_log_file_path.clear();
+
+    if (path.empty()) {
+        return true;
+    }
+
+    std::error_code ec;
+    if (path.has_parent_path()) {
+        std::filesystem::create_directories(path.parent_path(), ec);
+        if (ec) {
+            return false;
+        }
+    }
+
+    g_log_file.open(path, std::ios::out | std::ios::app);
+    if (!g_log_file.is_open()) {
+        return false;
+    }
+    g_log_file_path = path;
+    return true;
+}
+
+std::filesystem::path ClientLogger::log_file_path() {
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    return g_log_file_path;
+}
+
+std::filesystem::path ClientLogger::flush_and_close_log_file() {
+    std::lock_guard<std::mutex> lock(g_log_mutex);
+    if (g_log_file.is_open()) {
+        g_log_file.flush();
+        g_log_file.close();
+    }
+    std::filesystem::path closed_path = std::move(g_log_file_path);
+    g_log_file_path.clear();
+    return closed_path;
+}
+
 std::string ClientLogger::sanitize(std::string_view raw) {
     std::string text(raw);
 
@@ -85,14 +132,16 @@ std::string ClientLogger::sanitize(std::string_view raw) {
     static const std::regex bearer_regex("(Bearer\\s+)[A-Za-z0-9_\\-\\.]+", std::regex::ECMAScript);
     text = std::regex_replace(text, bearer_regex, "$1[REDACTED]");
 
-    // 3. Redact JSON password values
-    static const std::regex json_password_regex("(\"(?:password|passphrase|secret)\"\\s*:\\s*\")[^\"]*(\")",
-                                                std::regex::ECMAScript | std::regex::icase);
+    // 3. Redact JSON password/duress/salt/hash values
+    static const std::regex json_password_regex(
+        "(\"(?:password|passphrase|secret|duress_pin|derived_hash_hex|salt_hex)\"\\s*:\\s*\")[^\"]*(\")",
+        std::regex::ECMAScript | std::regex::icase);
     text = std::regex_replace(text, json_password_regex, "$1[REDACTED]$2");
 
-    // 4. Redact query/form password parameters
-    static const std::regex query_password_regex("((?:password|passphrase|secret)=)[^&\\s]+",
-                                                 std::regex::ECMAScript | std::regex::icase);
+    // 4. Redact query/form password/duress/salt/hash parameters
+    static const std::regex query_password_regex(
+        "((?:password|passphrase|secret|duress_pin|derived_hash_hex|salt_hex)=)[^&\\s]+",
+        std::regex::ECMAScript | std::regex::icase);
     text = std::regex_replace(text, query_password_regex, "$1[REDACTED]");
 
     // 5. Redact JSON token values
@@ -133,6 +182,15 @@ void ClientLogger::log(LogLevel level, std::string_view tag, std::string_view me
         out << " [cid: " << correlation_id << "]";
     }
     out << " " << sanitized_msg << "\n";
+
+    if (g_log_file.is_open()) {
+        g_log_file << "[" << timestamp << "] [" << to_string(level) << "] [" << tag << "]";
+        if (!correlation_id.empty()) {
+            g_log_file << " [cid: " << correlation_id << "]";
+        }
+        g_log_file << " " << sanitized_msg << "\n";
+        g_log_file.flush();
+    }
 }
 
 void ClientLogger::trace(std::string_view tag, std::string_view message, std::string_view correlation_id) {

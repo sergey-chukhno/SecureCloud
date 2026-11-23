@@ -1107,6 +1107,36 @@ FileManager::list_transfers(const domain::ConversationId& conversation_id) {
     return local_store_->list_file_transfers(conversation_id);
 }
 
+std::vector<std::filesystem::path> FileManager::wipe_volatile_state() {
+    std::vector<std::filesystem::path> part_paths;
+    if (local_store_ != nullptr) {
+        const auto transfers_res = local_store_->list_file_transfers();
+        if (transfers_res.is_ok()) {
+            part_paths.reserve(transfers_res.value().size());
+            for (const auto& rec : transfers_res.value()) {
+                if (rec.local_path.empty()) {
+                    continue;
+                }
+                static constexpr std::string_view kPartExt = ".part";
+                if (rec.local_path.size() >= kPartExt.size() &&
+                    rec.local_path.compare(rec.local_path.size() - kPartExt.size(), kPartExt.size(), kPartExt) == 0) {
+                    part_paths.emplace_back(rec.local_path);
+                } else {
+                    part_paths.emplace_back(rec.local_path + ".part");
+                }
+            }
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    active_transfers_.clear();
+    pause_requested_transfers_.clear();
+    cancel_requested_transfers_.clear();
+    local_user_id_ = domain::UserId{};
+    local_device_id_ = domain::DeviceId{};
+    return part_paths;
+}
+
 ClientResult<std::string> FileManager::prepare_encrypted_upload(std::string_view local_file_path) {
     if (local_file_path.empty()) {
         return ClientResult<std::string>::error(ClientError::validation("File path cannot be empty"));

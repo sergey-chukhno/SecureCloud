@@ -1713,4 +1713,11 @@ MessagingManager::process_inbound_realtime_event(const domain::RealtimeEvent& ev
     return ClientResult<std::optional<domain::Message>>::ok(std::nullopt);
 }
 
+std::size_t MessagingManager::wipe_volatile_state() {
+    const std::size_t cleared = retry_engine_.clear();
+    offline_mode_ = false;
+    local_device_id_ = domain::DeviceId{};
+    return cleared;
+}
+
 } // namespace securecloud::client::application::managers

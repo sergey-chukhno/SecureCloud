@@ -47,6 +47,7 @@ class DeliveryRetryEngine {
 
     bool remove(const domain::MessageId& message_id);
     bool remove_by_outbox_id(std::string_view outbox_id);
+    std::size_t clear();
     [[nodiscard]] std::size_t pending_count() const;
 
     using SubmitFn = std::function<ClientResult<std::string>(const interfaces::FanOutSubmissionRequest&)>;

@@ -16,6 +16,22 @@ application::ClientResult<void> MemoryLocalStore::close() {
     return application::ClientResult<void>::ok();
 }
 
+std::string MemoryLocalStore::database_path() const {
+    return {};
+}
+
+application::ClientResult<std::size_t> MemoryLocalStore::destroy_and_shred() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    conversations_.clear();
+    messages_.clear();
+    contacts_.clear();
+    file_transfers_.clear();
+    outbox_records_.clear();
+    sync_cursors_.clear();
+    is_open_ = false;
+    return application::ClientResult<std::size_t>::ok(0U);
+}
+
 application::ClientResult<void> MemoryLocalStore::save_conversation(const domain::Conversation& conversation) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!is_open_) {
