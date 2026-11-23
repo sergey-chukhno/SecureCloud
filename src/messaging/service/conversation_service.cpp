@@ -1,11 +1,39 @@
 #include "service/conversation_service.hpp"
 
-#include "domain/message_bucket.hpp"
+#include "audit/canonical_audit_mapper.hpp"
+#include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
 
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <unordered_set>
 
 namespace securecloud::messaging::service {
+
+namespace {
+
+void stage_conversation_audit(repository::IMessagingAuditOutboxRepository* audit_repo,
+                              domain::MessagingAuditEventType type, std::chrono::system_clock::time_point now,
+                              domain::UserId actor_user_id, const domain::ConversationId& conv_id,
+                              const nlohmann::json& metadata) {
+    if (audit_repo == nullptr) {
+        return;
+    }
+    const std::string conv_str = conv_id.to_string();
+    domain::MessagingAuditEvent event{
+        .event_id = domain::generate_audit_event_id(),
+        .event_type = type,
+        .severity = domain::default_severity(type),
+        .occurred_at = now,
+        .actor_user_id = std::move(actor_user_id),
+        .actor_device_id = {},
+        .target_resource = conv_str,
+        .payload_json = metadata.dump(),
+    };
+    audit::stage_canonical_audit_event(audit_repo, event, conv_str);
+}
+
+} // namespace
 
 ConversationService::ConversationService(repository::IConversationRepository& conversation_repo,
                                          repository::IMembershipRepository& membership_repo,
@@ -75,18 +103,8 @@ ConversationService::create_direct_conversation(const domain::UserId& caller, co
     record_outbox_event(conv_id, domain::ConversationOutboxEventType::ConversationCreated,
                         "{\"type\":\"direct\",\"creator\":\"" + caller.str() + "\"}");
 
-    if (audit_repo_) {
-        repository::AuditOutboxRecord audit_rec;
-        audit_rec.outbox_bucket = domain::MessageBucket::from_time_point(now).value();
-        audit_rec.shard_id = std::hash<std::string>{}(conv_id.to_string()) % 16;
-        audit_rec.created_at = now;
-        audit_rec.event_id = domain::ConversationId::generate_v7().to_string();
-        audit_rec.event_type = "conversation.created";
-        audit_rec.severity = "INFO";
-        audit_rec.actor_user_id = caller.str();
-        audit_rec.target_resource = conv_id.to_string();
-        audit_repo_->enqueue_audit_event(audit_rec);
-    }
+    stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationCreated, now, caller,
+                             conv_id, {{"conversation_type", "DIRECT"}, {"initial_member_count", 2}});
 
     return ServiceResult<domain::ConversationEntity>::ok(conv);
 }
@@ -159,18 +177,8 @@ ConversationService::create_group_conversation(const domain::UserId& caller, std
                         "{\"type\":\"group\",\"creator\":\"" + caller.str() + "\",\"title\":\"" + std::string(title) +
                             "\"}");
 
-    if (audit_repo_) {
-        repository::AuditOutboxRecord audit_rec;
-        audit_rec.outbox_bucket = domain::MessageBucket::from_time_point(now).value();
-        audit_rec.shard_id = std::hash<std::string>{}(conv_id.to_string()) % 16;
-        audit_rec.created_at = now;
-        audit_rec.event_id = domain::ConversationId::generate_v7().to_string();
-        audit_rec.event_type = "conversation.created";
-        audit_rec.severity = "INFO";
-        audit_rec.actor_user_id = caller.str();
-        audit_rec.target_resource = conv_id.to_string();
-        audit_repo_->enqueue_audit_event(audit_rec);
-    }
+    stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationCreated, now, caller,
+                             conv_id, {{"conversation_type", "GROUP"}, {"initial_member_count", added.size()}});
 
     return ServiceResult<domain::ConversationEntity>::ok(conv);
 }
@@ -215,18 +223,9 @@ ServiceResult<void> ConversationService::add_participant(const domain::UserId& c
     record_outbox_event(conv_id, domain::ConversationOutboxEventType::ParticipantJoined,
                         "{\"user_id\":\"" + target_user.str() + "\"}");
 
-    if (audit_repo_) {
-        repository::AuditOutboxRecord audit_add;
-        audit_add.outbox_bucket = domain::MessageBucket::from_time_point(now).value();
-        audit_add.shard_id = std::hash<std::string>{}(conv_id.to_string()) % 16;
-        audit_add.created_at = now;
-        audit_add.event_id = domain::ConversationId::generate_v7().to_string();
-        audit_add.event_type = "conversation.membership.changed";
-        audit_add.severity = "INFO";
-        audit_add.actor_user_id = caller.str();
-        audit_add.target_resource = target_user.str();
-        audit_repo_->enqueue_audit_event(audit_add);
-    }
+    stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationMembershipChanged, now,
+                             caller, conv_id,
+                             {{"action", "MEMBER_ADDED"}, {"affected_user_id", target_user.str()}, {"role", "MEMBER"}});
 
     return ServiceResult<void>::ok();
 }
@@ -258,6 +257,9 @@ ServiceResult<void> ConversationService::remove_participant(const domain::UserId
     record_outbox_event(conv_id, domain::ConversationOutboxEventType::ParticipantRemoved,
                         "{\"user_id\":\"" + target_user.str() + "\",\"removed_by\":\"" + caller.str() + "\"}");
 
+    stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationMembershipChanged, now,
+                             caller, conv_id, {{"action", "MEMBER_REMOVED"}, {"affected_user_id", target_user.str()}});
+
     return ServiceResult<void>::ok();
 }
 
@@ -286,6 +288,9 @@ ServiceResult<void> ConversationService::leave_conversation(const domain::UserId
     record_outbox_event(conv_id, domain::ConversationOutboxEventType::ParticipantLeft,
                         "{\"user_id\":\"" + caller.str() + "\"}");
 
+    stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationMembershipChanged, now,
+                             caller, conv_id, {{"action", "MEMBER_LEFT"}, {"affected_user_id", caller.str()}});
+
     auto active = membership_repo_.list_active_participants(conv_id);
     if (active.empty()) {
         auto meta = conversation_repo_.find_group_metadata(conv_id);
@@ -299,18 +304,9 @@ ServiceResult<void> ConversationService::leave_conversation(const domain::UserId
             record_outbox_event(conv_id, domain::ConversationOutboxEventType::ConversationClosed,
                                 "{\"reason\":\"all_participants_left\"}");
 
-            if (audit_repo_) {
-                repository::AuditOutboxRecord audit_close;
-                audit_close.outbox_bucket = domain::MessageBucket::from_time_point(now).value();
-                audit_close.shard_id = std::hash<std::string>{}(conv_id.to_string()) % 16;
-                audit_close.created_at = now;
-                audit_close.event_id = domain::ConversationId::generate_v7().to_string();
-                audit_close.event_type = "conversation.closed";
-                audit_close.severity = "INFO";
-                audit_close.actor_user_id = "SYSTEM";
-                audit_close.target_resource = conv_id.to_string();
-                audit_repo_->enqueue_audit_event(audit_close);
-            }
+            // Empty actor routes cleanly to ACTOR_TYPE_SYSTEM in canonical mapper
+            stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationClosed, now, {},
+                                     conv_id, {{"reason", "all_participants_left"}});
         }
     }
 

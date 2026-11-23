@@ -23,6 +23,9 @@
 
 namespace securecloud::messaging::service {
 
+/**
+ * @brief Successful message submission result returned by MessageSubmissionService.
+ */
 struct MessageSubmissionResponse {
     domain::MessageId message_id;
     domain::ConversationId conversation_id;
@@ -32,6 +35,20 @@ struct MessageSubmissionResponse {
     bool is_replay{false};
 };
 
+/**
+ * @brief Authoritative message submission application service.
+ *
+ * Implements the critical durability boundary (ADR-007, ADR-008):
+ * 1. Syntactic & Cryptographic Envelope Validation (SubmissionValidator & E2EEnvelopeValidator)
+ * 2. Participant Authorization & Active Standing (ConversationAuthorizationService)
+ * 3. Cryptographic Fingerprinting & Idempotency Evaluation (IdempotencyGuard)
+ * 4. Monotonic Sequence Allocation within UTC monthly partition (ISequenceAllocator)
+ * 5. Immutable Message Envelope Persistence (IMessageRepository)
+ * 6. Initial Per-Device Delivery State & Encrypted Envelope Persistence (IDeliveryStateRepository)
+ * 7. Transactional Outbox Event Publication (IOutboxRepository)
+ * 8. Durable Audit Outbox Staging & Forward Recovery (IMessagingAuditOutboxRepository)
+ * 9. Durable Idempotency Commit (IdempotencyGuard)
+ */
 class MessageSubmissionService {
   public:
     MessageSubmissionService(std::shared_ptr<ConversationAuthorizationService> auth_service,
@@ -44,6 +61,12 @@ class MessageSubmissionService {
                              std::shared_ptr<E2EEnvelopeValidator> envelope_validator = nullptr,
                              std::shared_ptr<RecipientDeviceResolutionService> resolution_service = nullptr);
 
+    /**
+     * @brief Authoritatively processes a client message submission request.
+     *
+     * @param cmd Strongly-typed submission command.
+     * @return ServiceResult containing MessageSubmissionResponse on success or domain error.
+     */
     [[nodiscard]] ServiceResult<MessageSubmissionResponse> submit_message(const domain::MessageSubmissionCommand& cmd);
 
   private:

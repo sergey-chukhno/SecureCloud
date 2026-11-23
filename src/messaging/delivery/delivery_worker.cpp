@@ -1,11 +1,47 @@
 #include "delivery/delivery_worker.hpp"
 
+#include "audit/canonical_audit_mapper.hpp"
+#include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
 #include "domain/message_bucket.hpp"
 
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <utility>
 
 namespace securecloud::messaging::delivery {
+
+namespace {
+
+void stage_delivery_failure_audit(repository::IMessagingAuditOutboxRepository* audit_repo,
+                                  const domain::DeliveryTask& task, std::chrono::system_clock::time_point now,
+                                  std::string_view reason) {
+    if (audit_repo == nullptr) {
+        return;
+    }
+
+    const nlohmann::json meta = {
+        {"conversation_id", task.conversation_id.to_string()},
+        {"recipient_device_id", task.recipient_device_id.str()},
+        {"attempts", task.attempt_count},
+        {"reason", reason},
+    };
+
+    domain::MessagingAuditEvent event{
+        .event_id = domain::generate_message_audit_event_id(task.message_id, task.recipient_device_id,
+                                                            domain::MessagingAuditEventType::MessageDeliveryFailed),
+        .event_type = domain::MessagingAuditEventType::MessageDeliveryFailed,
+        .severity = domain::MessagingAuditSeverity::Warning,
+        .occurred_at = now,
+        .actor_user_id = {},
+        .actor_device_id = {},
+        .target_resource = task.message_id.to_string(),
+        .payload_json = meta.dump(),
+    };
+    audit::stage_canonical_audit_event(audit_repo, event, task.conversation_id.to_string());
+}
+
+} // namespace
 
 DeliveryWorker::DeliveryWorker(std::shared_ptr<BoundedDeliveryScheduler> scheduler,
                                std::shared_ptr<IDeviceConnectionRegistry> connection_registry,
@@ -124,15 +160,22 @@ bool DeliveryWorker::process_single_task(std::chrono::milliseconds poll_timeout)
         }
 
         if (audit_repo_) {
-            repository::AuditOutboxRecord audit_del;
-            audit_del.outbox_bucket = domain::MessageBucket::from_time_point(delivered_at).value();
-            audit_del.shard_id = std::hash<std::string>{}(task.conversation_id.to_string()) % 16;
-            audit_del.created_at = delivered_at;
-            audit_del.event_id = task.message_id.to_string() + "_deliv_" + task.recipient_device_id.str();
-            audit_del.event_type = "message.delivered";
-            audit_del.severity = "INFO";
-            audit_del.target_resource = task.message_id.to_string();
-            audit_repo_->enqueue_audit_event(audit_del);
+            const nlohmann::json meta = {
+                {"conversation_id", task.conversation_id.to_string()},
+                {"attempt_count", task.attempt_count},
+            };
+            domain::MessagingAuditEvent event{
+                .event_id = domain::generate_message_audit_event_id(task.message_id, task.recipient_device_id,
+                                                                    domain::MessagingAuditEventType::MessageDelivered),
+                .event_type = domain::MessagingAuditEventType::MessageDelivered,
+                .severity = domain::MessagingAuditSeverity::Info,
+                .occurred_at = delivered_at,
+                .actor_user_id = task.recipient_user_id,
+                .actor_device_id = task.recipient_device_id,
+                .target_resource = task.message_id.to_string(),
+                .payload_json = meta.dump(),
+            };
+            audit::stage_canonical_audit_event(audit_repo_.get(), event, task.conversation_id.to_string());
         }
         break;
     }
@@ -172,6 +215,7 @@ bool DeliveryWorker::process_single_task(std::chrono::milliseconds poll_timeout)
                     task.recipient_device_id, delivery_bucket, task.accepted_at, task.message_id,
                     domain::DeliveryState::Expired, task.attempt_count, std::nullopt);
             }
+            stage_delivery_failure_audit(audit_repo_.get(), task, now, "MAX_RETRIES_EXHAUSTED");
         }
         break;
     }
@@ -184,17 +228,7 @@ bool DeliveryWorker::process_single_task(std::chrono::milliseconds poll_timeout)
                                                           task.attempt_count, std::nullopt);
         }
 
-        if (audit_repo_) {
-            repository::AuditOutboxRecord audit_fail;
-            audit_fail.outbox_bucket = domain::MessageBucket::from_time_point(now).value();
-            audit_fail.shard_id = std::hash<std::string>{}(task.conversation_id.to_string()) % 16;
-            audit_fail.created_at = now;
-            audit_fail.event_id = task.message_id.to_string() + "_fail_" + task.recipient_device_id.str();
-            audit_fail.event_type = "message.delivery.failed";
-            audit_fail.severity = "WARNING";
-            audit_fail.target_resource = task.message_id.to_string();
-            audit_repo_->enqueue_audit_event(audit_fail);
-        }
+        stage_delivery_failure_audit(audit_repo_.get(), task, now, "TERMINAL_FAILURE");
         break;
     }
     }

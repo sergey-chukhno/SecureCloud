@@ -1,12 +1,14 @@
 #include "audit/audit_diagnostics.hpp"
 #include "audit/messaging_audit_metrics.hpp"
 #include "audit/messaging_outbox_relay.hpp"
+#include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
 
 #include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <ctime>
+#include <cstdio>
 #include <gtest/gtest.h>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -162,16 +164,9 @@ class RecordingAuditClient final : public IMessagingAuditClient {
     std::vector<size_t> batch_sizes_;
 };
 
-std::string format_utc_bucket(std::chrono::system_clock::time_point tp) {
-    const auto time_t_val = std::chrono::system_clock::to_time_t(tp);
-    std::tm tm_buf{};
-#if defined(_WIN32)
-    gmtime_s(&tm_buf, &time_t_val);
-#else
-    gmtime_r(&time_t_val, &tm_buf);
-#endif
-    char buf[32]{};
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d-%H", &tm_buf);
+std::string make_uuid_v7(uint32_t tag) {
+    char buf[40]{};
+    std::snprintf(buf, sizeof(buf), "01934400-0000-7000-8000-%012u", tag);
     return std::string(buf);
 }
 
@@ -181,14 +176,15 @@ make_record(const std::string& event_id, int32_t shard_id,
             int32_t initial_attempts = 0) {
     securecloud::audit::v1::AuditEventProto proto;
     proto.set_event_id(event_id);
+    proto.set_producer_service(securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING);
     proto.set_event_type("message.submitted");
     proto.set_severity(securecloud::audit::v1::SEVERITY_INFO);
 
     std::string serialized;
-    proto.SerializeToString(&serialized);
+    EXPECT_TRUE(proto.SerializeToString(&serialized));
 
     repository::AuditOutboxRecord rec;
-    rec.outbox_bucket = format_utc_bucket(created_at);
+    rec.outbox_bucket = domain::compute_outbox_bucket_utc(created_at);
     rec.shard_id = shard_id;
     rec.created_at = created_at;
     rec.event_id = event_id;
@@ -231,9 +227,10 @@ TEST_F(MessagingOutboxRelayTest, ShardedPollerServicesAll16ShardsWithoutStarvati
     constexpr int kEventsPerShard = 4;
     constexpr size_t kTotalEvents = kShards * kEventsPerShard;
 
+    uint32_t tag = 100;
     for (int32_t shard = 0; shard < kShards; ++shard) {
         for (int i = 0; i < kEventsPerShard; ++i) {
-            repo->enqueue_audit_event(make_record("evt-s" + std::to_string(shard) + "-" + std::to_string(i), shard));
+            repo->enqueue_audit_event(make_record(make_uuid_v7(++tag), shard));
         }
     }
 
@@ -266,9 +263,11 @@ TEST_F(MessagingOutboxRelayTest, DrainsPreviousAndCurrentHourlyBucketsForBoundar
 
     const auto now = std::chrono::system_clock::now();
     const auto prev_hour = now - std::chrono::hours(1);
+    const std::string id_prev = make_uuid_v7(201);
+    const std::string id_curr = make_uuid_v7(202);
 
-    repo->enqueue_audit_event(make_record("evt-prev-hour", 0, prev_hour));
-    repo->enqueue_audit_event(make_record("evt-curr-hour", 0, now));
+    repo->enqueue_audit_event(make_record(id_prev, 0, prev_hour));
+    repo->enqueue_audit_event(make_record(id_curr, 0, now));
 
     OutboxRelayConfig cfg;
     cfg.worker_threads = 1;
@@ -284,8 +283,8 @@ TEST_F(MessagingOutboxRelayTest, DrainsPreviousAndCurrentHourlyBucketsForBoundar
     }
     relay.stop();
 
-    EXPECT_EQ(repo->status_of("evt-prev-hour"), "PUBLISHED");
-    EXPECT_EQ(repo->status_of("evt-curr-hour"), "PUBLISHED");
+    EXPECT_EQ(repo->status_of(id_prev), "PUBLISHED");
+    EXPECT_EQ(repo->status_of(id_curr), "PUBLISHED");
 }
 
 TEST_F(MessagingOutboxRelayTest, EnforcesConfiguredMaxBatchSizeOf100Events) {
@@ -294,7 +293,7 @@ TEST_F(MessagingOutboxRelayTest, EnforcesConfiguredMaxBatchSizeOf100Events) {
 
     constexpr size_t kTotalEvents = 250;
     for (size_t i = 0; i < kTotalEvents; ++i) {
-        repo->enqueue_audit_event(make_record("evt-batch-" + std::to_string(i), 0));
+        repo->enqueue_audit_event(make_record(make_uuid_v7(1000 + static_cast<uint32_t>(i)), 0));
     }
 
     OutboxRelayConfig cfg;
@@ -326,25 +325,28 @@ TEST_F(MessagingOutboxRelayTest, ExponentialBackoffAndJitterBoundsAdhereToFormul
     auto client = std::make_shared<RecordingAuditClient>();
     client->set_result({false, true, "UNAVAILABLE: downstream connection refused", {}});
 
-    repo->enqueue_audit_event(make_record("evt-backoff", 0));
+    const std::string id_backoff = make_uuid_v7(300);
+    repo->enqueue_audit_event(make_record(id_backoff, 0));
 
     OutboxRelayConfig cfg;
     cfg.worker_threads = 1;
     cfg.total_shards = 1;
     cfg.max_retries = 5;
+    cfg.base_backoff = std::chrono::milliseconds(5);
+    cfg.max_backoff = std::chrono::milliseconds(10000);
     cfg.active_poll_interval = std::chrono::milliseconds(2);
     cfg.idle_poll_interval = std::chrono::milliseconds(5);
 
     MessagingOutboxRelay relay(repo, client, cfg);
     relay.start();
 
-    for (int i = 0; i < 200 && repo->status_of("evt-backoff") != "QUARANTINED"; ++i) {
+    for (int i = 0; i < 200 && repo->status_of(id_backoff) != "QUARANTINED"; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     relay.stop();
 
-    EXPECT_EQ(repo->status_of("evt-backoff"), "QUARANTINED");
-    EXPECT_EQ(repo->attempts_of("evt-backoff"), 5);
+    EXPECT_EQ(repo->status_of(id_backoff), "QUARANTINED");
+    EXPECT_EQ(repo->attempts_of(id_backoff), 5);
 
     std::vector<long long> observed_backoffs;
     for (const auto& line : logs()) {
@@ -357,7 +359,7 @@ TEST_F(MessagingOutboxRelayTest, ExponentialBackoffAndJitterBoundsAdhereToFormul
     ASSERT_EQ(observed_backoffs.size(), 4U);
     for (size_t idx = 0; idx < observed_backoffs.size(); ++idx) {
         const int32_t attempt = static_cast<int32_t>(idx + 1);
-        const double nominal_ms = std::min(10000.0, 100.0 * std::pow(2.0, static_cast<double>(attempt)));
+        const double nominal_ms = std::min(10000.0, 5.0 * std::pow(2.0, static_cast<double>(attempt)));
         const long long min_expected = static_cast<long long>(nominal_ms * 0.8) - 1;
         const long long max_expected = static_cast<long long>(nominal_ms * 1.2) + 1;
 
@@ -370,11 +372,15 @@ TEST_F(MessagingOutboxRelayTest, PartialInvalidArgumentQuarantinesOnlyPoisonPill
     auto repo = std::make_shared<ThreadSafeOutboxRepository>();
     auto client = std::make_shared<RecordingAuditClient>();
 
-    repo->enqueue_audit_event(make_record("evt-healthy-1", 0));
-    repo->enqueue_audit_event(make_record("evt-poison", 0));
-    repo->enqueue_audit_event(make_record("evt-healthy-2", 0));
+    const std::string id_healthy_1 = make_uuid_v7(401);
+    const std::string id_poison = make_uuid_v7(402);
+    const std::string id_healthy_2 = make_uuid_v7(403);
 
-    client->set_result({false, false, "INVALID_ARGUMENT: malformed event schema", {"evt-poison"}});
+    repo->enqueue_audit_event(make_record(id_healthy_1, 0));
+    repo->enqueue_audit_event(make_record(id_poison, 0));
+    repo->enqueue_audit_event(make_record(id_healthy_2, 0));
+
+    client->set_result({false, false, "INVALID_ARGUMENT: malformed event schema", {id_poison}});
 
     OutboxRelayConfig cfg;
     cfg.worker_threads = 1;
@@ -385,15 +391,15 @@ TEST_F(MessagingOutboxRelayTest, PartialInvalidArgumentQuarantinesOnlyPoisonPill
     MessagingOutboxRelay relay(repo, client, cfg);
     relay.start();
 
-    for (int i = 0; i < 100 && repo->status_of("evt-poison") != "QUARANTINED"; ++i) {
+    for (int i = 0; i < 100 && repo->status_of(id_poison) != "QUARANTINED"; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
     relay.stop();
 
     // Only the explicitly rejected poison pill is quarantined; healthy events in the partial batch succeed
-    EXPECT_EQ(repo->status_of("evt-poison"), "QUARANTINED");
-    EXPECT_EQ(repo->status_of("evt-healthy-1"), "PUBLISHED");
-    EXPECT_EQ(repo->status_of("evt-healthy-2"), "PUBLISHED");
+    EXPECT_EQ(repo->status_of(id_poison), "QUARANTINED");
+    EXPECT_EQ(repo->status_of(id_healthy_1), "PUBLISHED");
+    EXPECT_EQ(repo->status_of(id_healthy_2), "PUBLISHED");
     EXPECT_EQ(MessagingAuditMetrics::instance().quarantined_total(AuditQuarantineReason::InvalidArgument), 1U);
     EXPECT_EQ(MessagingAuditMetrics::instance().published_total("message.submitted"), 2U);
 }
@@ -403,7 +409,8 @@ TEST_F(MessagingOutboxRelayTest, StartAndStopAreIdempotentAndDrainInFlightBatche
     auto client = std::make_shared<RecordingAuditClient>();
     client->set_dispatch_delay(std::chrono::milliseconds(30));
 
-    repo->enqueue_audit_event(make_record("evt-inflight", 0));
+    const std::string id_inflight = make_uuid_v7(501);
+    repo->enqueue_audit_event(make_record(id_inflight, 0));
 
     OutboxRelayConfig cfg;
     cfg.worker_threads = 2;
@@ -422,7 +429,7 @@ TEST_F(MessagingOutboxRelayTest, StartAndStopAreIdempotentAndDrainInFlightBatche
     relay.stop();
     relay.stop();
 
-    EXPECT_EQ(repo->status_of("evt-inflight"), "PUBLISHED");
+    EXPECT_EQ(repo->status_of(id_inflight), "PUBLISHED");
 }
 
 } // namespace

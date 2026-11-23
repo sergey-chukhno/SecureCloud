@@ -1,30 +1,18 @@
 #pragma once
 
+#include "audit/messaging_audit_client.hpp"
 #include "repository/messaging_audit_outbox_repository_interface.hpp"
-#include "securecloud/audit/v1/audit.pb.h"
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
 
 namespace securecloud::messaging::audit {
-
-class IMessagingAuditClient {
-  public:
-    virtual ~IMessagingAuditClient() = default;
-
-    struct BatchResult {
-        bool success{false};
-        bool is_transient_error{false};
-        std::string error_message;
-        std::vector<std::string> rejected_event_ids;
-    };
-
-    virtual BatchResult send_batch(const std::vector<securecloud::audit::v1::AuditEventProto>& events) = 0;
-};
 
 struct OutboxRelayConfig {
     uint32_t worker_threads{4};
@@ -34,6 +22,8 @@ struct OutboxRelayConfig {
     std::chrono::seconds lease_duration{30};
     size_t batch_size{100}; // Bound to AUDIT-005 limits
     int32_t max_retries{5}; // Quarantine threshold
+    std::chrono::milliseconds base_backoff{100};
+    std::chrono::milliseconds max_backoff{10000};
 };
 
 /**
@@ -56,6 +46,7 @@ class MessagingOutboxRelay {
   private:
     void worker_loop(uint32_t worker_index);
     bool process_shard(const std::string& bucket, int32_t shard_id);
+    void interruptible_wait(std::chrono::milliseconds duration);
 
     std::string get_current_hourly_bucket() const;
     std::string get_previous_hourly_bucket() const;
@@ -66,6 +57,8 @@ class MessagingOutboxRelay {
     OutboxRelayConfig config_;
 
     std::atomic<bool> is_running_{false};
+    std::mutex wake_mutex_;
+    std::condition_variable wake_cv_;
     std::vector<std::thread> workers_;
 };
 

@@ -1,6 +1,8 @@
 #include "service/read_receipt_service.hpp"
 
-#include "domain/message_bucket.hpp"
+#include "audit/canonical_audit_mapper.hpp"
+#include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
 
 #include <chrono>
 #include <map>
@@ -133,17 +135,21 @@ ServiceResult<ReadReceiptResponse> ReadReceiptService::record_read_receipt(const
     }
 
     if (audit_repo_) {
-        repository::AuditOutboxRecord audit_read;
-        audit_read.outbox_bucket = domain::MessageBucket::from_time_point(effective_read_at).value();
-        audit_read.shard_id = std::hash<std::string>{}(cmd.conversation_id.to_string()) % 16;
-        audit_read.created_at = effective_read_at;
-        audit_read.event_id = cmd.message_id.to_string() + "_read_" + cmd.reader_device_id.str();
-        audit_read.event_type = "message.read";
-        audit_read.severity = "INFO";
-        audit_read.actor_user_id = cmd.caller_user_id.str();
-        audit_read.actor_device_id = cmd.reader_device_id.str();
-        audit_read.target_resource = cmd.message_id.to_string();
-        audit_repo_->enqueue_audit_event(audit_read);
+        const nlohmann::json audit_meta = {
+            {"conversation_id", cmd.conversation_id.to_string()},
+        };
+        domain::MessagingAuditEvent read_audit{
+            .event_id = domain::generate_message_audit_event_id(cmd.message_id, cmd.reader_device_id,
+                                                                domain::MessagingAuditEventType::MessageRead),
+            .event_type = domain::MessagingAuditEventType::MessageRead,
+            .severity = domain::MessagingAuditSeverity::Info,
+            .occurred_at = effective_read_at,
+            .actor_user_id = cmd.caller_user_id,
+            .actor_device_id = cmd.reader_device_id,
+            .target_resource = cmd.message_id.to_string(),
+            .payload_json = audit_meta.dump(),
+        };
+        audit::stage_canonical_audit_event(audit_repo_.get(), read_audit, cmd.conversation_id.to_string());
     }
 
     ReadReceiptResponse resp;

@@ -37,6 +37,10 @@ class ScyllaMessagingAuditOutboxRepository : public IMessagingAuditOutboxReposit
 
     [[nodiscard]] size_t count_pending_backlog(const std::string& outbox_bucket, int32_t shard_id) override;
 
+    [[nodiscard]] bool has_event(const std::string& outbox_bucket, int32_t shard_id,
+                                 const std::chrono::system_clock::time_point& created_at,
+                                 const std::string& event_id) override;
+
   private:
     void init_prepared_statements();
 

@@ -322,4 +322,25 @@ size_t ScyllaMessagingAuditOutboxRepository::count_pending_backlog(const std::st
     return pending_rows;
 }
 
+bool ScyllaMessagingAuditOutboxRepository::has_event(const std::string& outbox_bucket, int32_t shard_id,
+                                                     const std::chrono::system_clock::time_point& created_at,
+                                                     const std::string& event_id) {
+    validate_partition_coords(outbox_bucket, shard_id);
+    if (event_id.empty()) {
+        throw std::invalid_argument("has_event requires non-empty event_id");
+    }
+
+    std::lock_guard<std::mutex> lock(mutex_);
+
+    db::ScyllaParams params;
+    params.add_string(outbox_bucket);
+    params.add_int(shard_id);
+    params.add_timestamp(to_millis(created_at));
+    params.add_string(event_id);
+
+    const auto existing =
+        session_->execute_prepared(prep_select_attempt_count_, params, db::ConsistencyLevel::LocalQuorum);
+    return !existing.empty();
+}
+
 } // namespace securecloud::messaging::repository

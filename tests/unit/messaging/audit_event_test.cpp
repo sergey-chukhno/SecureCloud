@@ -63,6 +63,32 @@ TEST(MessagingAuditEventTest, DeterministicMessageAuditEventIdIsStableAndValidUu
                  std::invalid_argument);
 }
 
+TEST(MessagingAuditEventTest, PerDeviceDeterministicMessageAuditEventIdDiffersAcrossDevicesAndTypes) {
+    const MessageId msg_id = MessageId::generate_v7();
+    const DeviceId dev_a("dev-alice-1");
+    const DeviceId dev_b("dev-bob-1");
+
+    const std::string id_a1 = generate_message_audit_event_id(msg_id, dev_a, MessagingAuditEventType::MessageDelivered);
+    const std::string id_a2 = generate_message_audit_event_id(msg_id, dev_a, MessagingAuditEventType::MessageDelivered);
+    const std::string id_b = generate_message_audit_event_id(msg_id, dev_b, MessagingAuditEventType::MessageDelivered);
+    const std::string id_read = generate_message_audit_event_id(msg_id, dev_a, MessagingAuditEventType::MessageRead);
+    const std::string id_2arg = generate_message_audit_event_id(msg_id, MessagingAuditEventType::MessageDelivered);
+
+    EXPECT_EQ(id_a1, id_a2);
+    EXPECT_NE(id_a1, id_b);
+    EXPECT_NE(id_a1, id_read);
+    EXPECT_NE(id_a1, id_2arg);
+    EXPECT_TRUE(is_valid_audit_uuid_v7(id_a1));
+    EXPECT_TRUE(is_valid_audit_uuid_v7(id_b));
+    EXPECT_TRUE(is_valid_audit_uuid_v7(id_read));
+    EXPECT_EQ(id_a1.substr(0, 13), msg_id.to_string().substr(0, 13));
+
+    EXPECT_THROW((void)generate_message_audit_event_id(MessageId{}, dev_a, MessagingAuditEventType::MessageDelivered),
+                 std::invalid_argument);
+    EXPECT_THROW((void)generate_message_audit_event_id(msg_id, DeviceId{}, MessagingAuditEventType::MessageDelivered),
+                 std::invalid_argument);
+}
+
 TEST(MessagingAuditEventTest, OutboxBucketAndShardIdAreDeterministicAndBounded) {
     const std::chrono::sys_days day{std::chrono::year{2026} / std::chrono::November / std::chrono::day{5}};
     const auto tp = day + std::chrono::hours{17} + std::chrono::minutes{42};

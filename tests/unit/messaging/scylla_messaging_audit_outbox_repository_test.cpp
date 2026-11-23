@@ -113,12 +113,21 @@ TEST(ScyllaMessagingAuditOutboxRepositoryTest, MarkPublishedRecordFailureAndCoun
 
     EXPECT_EQ(repo.count_pending_backlog("2026111308", 2), 17U);
 
+    session->set_prepared_result(db::PreparedStatementId{"audit_outbox_select_attempts"},
+                                 db::ScyllaQueryResult({db::ScyllaRow({"attempt_count"}, {int32_t{0}})}));
+    EXPECT_TRUE(repo.has_event("2026111308", 2, created_at, "01930000-0000-7000-8000-000000000031"));
+
+    session->set_prepared_result(db::PreparedStatementId{"audit_outbox_select_attempts"}, db::ScyllaQueryResult{});
+    EXPECT_FALSE(repo.has_event("2026111308", 2, created_at, "01930000-0000-7000-8000-000000000099"));
+
     const auto executed = session->get_executed_prepared();
-    ASSERT_EQ(executed.size(), 4U);
+    ASSERT_EQ(executed.size(), 6U);
     EXPECT_EQ(executed[0].first, db::PreparedStatementId{"audit_outbox_mark_published"});
     EXPECT_EQ(executed[1].first, db::PreparedStatementId{"audit_outbox_select_attempts"});
     EXPECT_EQ(executed[2].first, db::PreparedStatementId{"audit_outbox_record_failure"});
     EXPECT_EQ(executed[3].first, db::PreparedStatementId{"audit_outbox_count_pending"});
+    EXPECT_EQ(executed[4].first, db::PreparedStatementId{"audit_outbox_select_attempts"});
+    EXPECT_EQ(executed[5].first, db::PreparedStatementId{"audit_outbox_select_attempts"});
 }
 
 TEST(InMemoryMessagingAuditOutboxRepositoryTest, EndToEndLifecycleLeasingFailureAndQuarantine) {
@@ -130,8 +139,10 @@ TEST(InMemoryMessagingAuditOutboxRepositoryTest, EndToEndLifecycleLeasingFailure
     const auto rec1 = make_sample_record("01930000-0000-7000-8000-000000000041", t1, 7);
     const auto rec2 = make_sample_record("01930000-0000-7000-8000-000000000042", t2, 7);
 
+    EXPECT_FALSE(repo.has_event("2026111308", 7, t1, rec1.event_id));
     repo.enqueue_audit_event(rec1);
     repo.enqueue_audit_event(rec2);
+    EXPECT_TRUE(repo.has_event("2026111308", 7, t1, rec1.event_id));
     EXPECT_EQ(repo.count_pending_backlog("2026111308", 7), 2U);
 
     // Worker 1 claims batch of 1 with 30s lease

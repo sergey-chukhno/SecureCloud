@@ -1,13 +1,26 @@
 #include "audit/audit_diagnostics.hpp"
 #include "audit/canonical_audit_mapper.hpp"
+#include "audit/messaging_audit_client.hpp"
 #include "audit/messaging_audit_metrics.hpp"
 #include "audit/messaging_outbox_relay.hpp"
+#include "delivery/bounded_delivery_scheduler.hpp"
+#include "delivery/delivery_worker.hpp"
+#include "delivery/device_connection_registry.hpp"
+#include "delivery/mock_device_delivery_channel.hpp"
 #include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
 #include "messaging/db/scylla_error_mapper.hpp"
 #include "messaging/db/scylla_session_interface.hpp"
 #include "messaging/db/scylla_session_pool.hpp"
+#include "messaging/repository/in_memory_conversation_repository.hpp"
+#include "messaging/repository/in_memory_membership_repository.hpp"
 #include "messaging/repository/scylla_messaging_audit_outbox_repository.hpp"
 #include "securecloud/audit/v1/audit.grpc.pb.h"
+#include "service/conversation_service.hpp"
+#include "service/delivery_retry_policy.hpp"
+#include "service/in_memory_sequence_allocator.hpp"
+#include "service/message_submission_service.hpp"
+#include "service/read_receipt_service.hpp"
 #include "util/zero_plaintext_guard.hpp"
 
 #include <atomic>
@@ -132,16 +145,18 @@ class OpenSslPkiGenerator {
 
         X509_set_pubkey(cert.get(), subject_key);
 
-        X509_NAME* subj = X509_get_subject_name(cert.get());
-        X509_NAME_add_entry_by_txt(subj, "O", MBSTRING_ASC, reinterpret_cast<const unsigned char*>("SecureCloud"), -1,
-                                   -1, 0);
-        X509_NAME_add_entry_by_txt(subj, "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>(common_name), -1,
-                                   -1, 0);
+        std::unique_ptr<X509_NAME, decltype(&X509_NAME_free)> subj(X509_NAME_new(), &X509_NAME_free);
+        EXPECT_NE(subj, nullptr);
+        X509_NAME_add_entry_by_txt(subj.get(), "O", MBSTRING_ASC, reinterpret_cast<const unsigned char*>("SecureCloud"),
+                                   -1, -1, 0);
+        X509_NAME_add_entry_by_txt(subj.get(), "CN", MBSTRING_ASC, reinterpret_cast<const unsigned char*>(common_name),
+                                   -1, -1, 0);
+        X509_set_subject_name(cert.get(), subj.get());
 
         if (issuer_cert != nullptr) {
             X509_set_issuer_name(cert.get(), X509_get_subject_name(issuer_cert));
         } else {
-            X509_set_issuer_name(cert.get(), subj);
+            X509_set_issuer_name(cert.get(), subj.get());
         }
 
         X509V3_CTX ext_ctx;
@@ -588,82 +603,9 @@ class TestAuditIngestionServiceImpl final : public securecloud::audit::v1::Audit
     std::unordered_map<std::string, securecloud::audit::v1::AuditEventProto> ingested_by_id_;
 };
 
-class MtlsGrpcAuditClientAdapter final : public IMessagingAuditClient {
-  public:
-    MtlsGrpcAuditClientAdapter(const std::string& target_addr, const EphemeralMtlsBundle& pki) {
-        grpc::SslCredentialsOptions ssl_opts;
-        ssl_opts.pem_root_certs = pki.ca_cert_pem;
-        ssl_opts.pem_cert_chain = pki.client_cert_pem;
-        ssl_opts.pem_private_key = pki.client_key_pem;
-
-        grpc::ChannelArguments args;
-        args.SetSslTargetNameOverride("audit.securecloud.internal");
-
-        channel_ = grpc::CreateCustomChannel(target_addr, grpc::SslCredentials(ssl_opts), args);
-        stub_ = securecloud::audit::v1::AuditIngestionService::NewStub(channel_);
-    }
-
-    BatchResult send_batch(const std::vector<securecloud::audit::v1::AuditEventProto>& events) override {
-        if (events.empty()) {
-            return {true, false, "", {}};
-        }
-
-        securecloud::audit::v1::BatchSubmitAuditEventsRequest req;
-        for (const auto& ev : events) {
-            *req.add_events() = ev;
-        }
-
-        securecloud::audit::v1::BatchSubmitAuditEventsResponse resp;
-        grpc::ClientContext ctx;
-        ctx.set_deadline(std::chrono::system_clock::now() + std::chrono::seconds(2));
-
-        const grpc::Status status = stub_->BatchSubmitAuditEvents(&ctx, req, &resp);
-        if (!status.ok()) {
-            const bool is_transient = (status.error_code() == grpc::StatusCode::UNAVAILABLE ||
-                                       status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED ||
-                                       status.error_code() == grpc::StatusCode::RESOURCE_EXHAUSTED ||
-                                       status.error_code() == grpc::StatusCode::INTERNAL);
-            const std::string code_prefix =
-                (status.error_code() == grpc::StatusCode::UNAVAILABLE)         ? "UNAVAILABLE: "
-                : (status.error_code() == grpc::StatusCode::DEADLINE_EXCEEDED) ? "DEADLINE_EXCEEDED: "
-                : (status.error_code() == grpc::StatusCode::INVALID_ARGUMENT)  ? "INVALID_ARGUMENT: "
-                                                                               : "INTERNAL: ";
-            return {false, is_transient, code_prefix + status.error_message(), {}};
-        }
-
-        if (resp.rejected_count() > 0) {
-            std::vector<std::string> rejected_ids;
-            rejected_ids.reserve(static_cast<size_t>(resp.rejected_event_ids_size()));
-            for (const auto& id : resp.rejected_event_ids()) {
-                rejected_ids.push_back(id);
-            }
-            return {false, false, "INVALID_ARGUMENT: partial batch rejection", std::move(rejected_ids)};
-        }
-
-        return {true, false, "", {}};
-    }
-
-  private:
-    std::shared_ptr<grpc::Channel> channel_;
-    std::unique_ptr<securecloud::audit::v1::AuditIngestionService::Stub> stub_;
-};
-
 // ============================================================================
-// 4. Helper Functions
+// 4. Helper Functions & Scenario In-Memory Repositories
 // ============================================================================
-
-std::string relay_hourly_bucket(std::chrono::system_clock::time_point tp) {
-    auto time_t_val = std::chrono::system_clock::to_time_t(tp);
-    std::tm tm_buf{};
-#if defined(_WIN32)
-    gmtime_s(&tm_buf, &time_t_val);
-#else
-    gmtime_r(&time_t_val, &tm_buf);
-#endif
-    char buf[32]{};
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d-%H", &tm_buf);
-    return std::string(buf);
-}
 
 AuditOutboxRecord build_canonical_outbox_record(const std::string& event_id, const std::string& event_type,
                                                 const std::string& severity, const std::string& actor_user_id,
@@ -674,7 +616,7 @@ AuditOutboxRecord build_canonical_outbox_record(const std::string& event_id, con
 
     // 2. Construct intermediate record with JSON payload and map to canonical AUDIT-002 Protobuf
     AuditOutboxRecord rec;
-    rec.outbox_bucket = relay_hourly_bucket(created_at);
+    rec.outbox_bucket = compute_outbox_bucket_utc(created_at);
     rec.shard_id = compute_outbox_shard_id(conversation_id);
     rec.created_at = created_at;
     rec.event_id = event_id;
@@ -692,6 +634,184 @@ AuditOutboxRecord build_canonical_outbox_record(const std::string& event_id, con
     rec.payload_proto_bin.assign(serialized_wire.begin(), serialized_wire.end());
     return rec;
 }
+
+class ScenarioIdempotencyRepo final : public repository::IIdempotencyRepository {
+  public:
+    std::optional<domain::IdempotencyRecord> find_submission(const domain::DeviceId& sender_device_id,
+                                                             const std::string& idempotency_key) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto it = records_.find(sender_device_id.str() + ":" + idempotency_key);
+        if (it == records_.end()) {
+            return std::nullopt;
+        }
+        return it->second;
+    }
+
+    void save_submission(const domain::IdempotencyRecord& record) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        records_[record.sender_device_id.str() + ":" + record.idempotency_key] = record;
+    }
+
+  private:
+    std::mutex mutex_;
+    std::unordered_map<std::string, domain::IdempotencyRecord> records_;
+};
+
+class ScenarioMessageRepo final : public repository::IMessageRepository {
+  public:
+    void save_message(const domain::MessageEntity& msg) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        messages_.push_back(msg);
+    }
+
+    std::optional<domain::MessageEntity> find_by_id(const domain::ConversationId& conversation_id,
+                                                    const domain::MessageBucket& /*message_bucket*/,
+                                                    const domain::MessageId& message_id) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& m : messages_) {
+            if (m.conversation_id == conversation_id && m.message_id == message_id) {
+                return m;
+            }
+        }
+        return std::nullopt;
+    }
+
+    std::vector<domain::MessageEntity>
+    list_messages_by_sequence_range(const domain::ConversationId& /*conversation_id*/,
+                                    const domain::MessageBucket& /*message_bucket*/, uint64_t /*from_sequence*/,
+                                    uint64_t /*to_sequence*/, size_t /*limit*/) override {
+        return {};
+    }
+
+    uint64_t get_last_sequence(const domain::ConversationId& /*conversation_id*/,
+                               const domain::MessageBucket& /*message_bucket*/) override {
+        return 0;
+    }
+
+  private:
+    std::mutex mutex_;
+    std::vector<domain::MessageEntity> messages_;
+};
+
+class ScenarioDeliveryStateRepo final : public repository::IDeliveryStateRepository {
+  public:
+    void save_pending_deliveries(const std::vector<domain::DeviceDeliveryRecord>& records) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        pending_.insert(pending_.end(), records.begin(), records.end());
+    }
+
+    std::vector<domain::DeviceDeliveryRecord> fetch_pending_for_device(const domain::DeviceId& device_id,
+                                                                       const std::string& delivery_bucket,
+                                                                       size_t limit) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        std::vector<domain::DeviceDeliveryRecord> out;
+        for (const auto& rec : pending_) {
+            if (rec.device_id == device_id && rec.delivery_bucket == delivery_bucket) {
+                out.push_back(rec);
+                if (out.size() >= limit) {
+                    break;
+                }
+            }
+        }
+        return out;
+    }
+
+    void update_device_delivery_status(const domain::DeviceId& device_id, const std::string& delivery_bucket,
+                                       const std::chrono::system_clock::time_point& /*accepted_at*/,
+                                       const domain::MessageId& message_id, domain::DeliveryState state,
+                                       int32_t attempt_count,
+                                       std::optional<std::chrono::system_clock::time_point> next_retry) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (auto& rec : pending_) {
+            if (rec.device_id == device_id && rec.delivery_bucket == delivery_bucket && rec.message_id == message_id) {
+                rec.delivery_state = state;
+                rec.attempt_count = attempt_count;
+                rec.next_retry_at = next_retry;
+            }
+        }
+    }
+
+    void save_recipient_delivery_states(const std::vector<domain::RecipientDeliveryState>& states) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (const auto& state : states) {
+            recipient_states_[state.message_id.to_string()].push_back(state);
+        }
+    }
+
+    void record_delivery_ack(const domain::MessageId& message_id, const domain::DeviceId& recipient_device_id,
+                             const std::chrono::system_clock::time_point& delivered_at) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = recipient_states_.find(message_id.to_string());
+        if (it == recipient_states_.end()) {
+            return;
+        }
+        for (auto& s : it->second) {
+            if (s.recipient_device_id == recipient_device_id) {
+                s.delivery_state = domain::DeliveryState::Delivered;
+                s.delivered_at = delivered_at;
+            }
+        }
+    }
+
+    void record_read_ack(const domain::MessageId& message_id, const domain::DeviceId& recipient_device_id,
+                         const std::chrono::system_clock::time_point& read_at) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        auto it = recipient_states_.find(message_id.to_string());
+        if (it == recipient_states_.end()) {
+            return;
+        }
+        for (auto& s : it->second) {
+            if (s.recipient_device_id == recipient_device_id) {
+                s.delivery_state = domain::DeliveryState::Read;
+                s.read_at = read_at;
+            }
+        }
+    }
+
+    std::vector<domain::RecipientDeliveryState>
+    get_delivery_states_for_message(const domain::MessageId& message_id) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        const auto it = recipient_states_.find(message_id.to_string());
+        if (it == recipient_states_.end()) {
+            return {};
+        }
+        return it->second;
+    }
+
+  private:
+    std::mutex mutex_;
+    std::vector<domain::DeviceDeliveryRecord> pending_;
+    std::unordered_map<std::string, std::vector<domain::RecipientDeliveryState>> recipient_states_;
+};
+
+class ScenarioOutboxRepo final : public repository::IOutboxRepository {
+  public:
+    void enqueue_event(const domain::ConversationOutboxEvent& event, const std::string& outbox_bucket) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        repository::OutboxEventRecord rec;
+        rec.outbox_bucket =
+            outbox_bucket.empty() ? repository::outbox_bucket_from_time_point(event.created_at) : outbox_bucket;
+        rec.created_at = event.created_at;
+        rec.event_id = event.event_id;
+        rec.conversation_id = event.conversation_id;
+        rec.event_type = domain::to_string(event.event_type);
+        rec.payload_json = event.payload_json;
+        events_.push_back(std::move(rec));
+    }
+
+    std::vector<repository::OutboxEventRecord> fetch_pending_events(const std::string& /*outbox_bucket*/,
+                                                                    size_t /*limit*/) override {
+        return {};
+    }
+
+    void mark_event_published(const std::string& /*outbox_bucket*/,
+                              std::chrono::system_clock::time_point /*created_at*/, const std::string& /*event_id*/,
+                              std::chrono::system_clock::time_point /*published_at*/) override {}
+
+  private:
+    std::mutex mutex_;
+    std::vector<repository::OutboxEventRecord> events_;
+};
 
 bool is_scylla_reachable(const std::string& host = "127.0.0.1", uint16_t port = 9042, int timeout_ms = 250) {
 #ifdef _WIN32
@@ -751,7 +871,15 @@ class MessagingAuditOutboxIntegrationTest : public ::testing::Test {
 
         audit_service_ = std::make_unique<TestAuditIngestionServiceImpl>();
         start_mtls_server();
-        client_ = std::make_shared<MtlsGrpcAuditClientAdapter>(server_address_, pki_);
+
+        audit::AuditClientConfig client_cfg;
+        client_cfg.target_address = server_address_;
+        client_cfg.expected_peer_san = "audit.securecloud.internal";
+        client_cfg.timeout = std::chrono::seconds(2);
+        client_cfg.ca_cert_pem = pki_.ca_cert_pem;
+        client_cfg.client_cert_pem = pki_.client_cert_pem;
+        client_cfg.client_key_pem = pki_.client_key_pem;
+        client_ = std::make_shared<audit::MessagingAuditClient>(client_cfg);
     }
 
     void TearDown() override {
@@ -796,7 +924,7 @@ class MessagingAuditOutboxIntegrationTest : public ::testing::Test {
     std::unique_ptr<TestAuditIngestionServiceImpl> audit_service_;
     std::unique_ptr<grpc::Server> server_;
     std::string server_address_;
-    std::shared_ptr<MtlsGrpcAuditClientAdapter> client_;
+    std::shared_ptr<audit::MessagingAuditClient> client_;
 
     std::mutex logs_mutex_;
     std::vector<std::string> captured_logs_;
@@ -1075,6 +1203,145 @@ TEST_F(MessagingAuditOutboxIntegrationTest, FailureWindow4_PoisonPillQuarantined
     EXPECT_FALSE(session_->last_error_of(poison_id_1).empty());
     EXPECT_EQ(audit_service_->unique_ingested_count(), 8U);
     EXPECT_EQ(MessagingAuditMetrics::instance().quarantined_total(AuditQuarantineReason::InvalidArgument), 2U);
+}
+
+TEST_F(MessagingAuditOutboxIntegrationTest, FullProducerPipelineServicesToRelayOverRealMtlsGrpc) {
+    auto conv_repo = std::make_shared<repository::InMemoryConversationRepository>();
+    auto memb_repo = std::make_shared<repository::InMemoryMembershipRepository>();
+    auto auth_svc = std::make_shared<service::ConversationAuthorizationService>(*conv_repo, *memb_repo);
+    auto seq_alloc = std::make_shared<service::InMemorySequenceAllocator>();
+    auto idem_repo = std::make_shared<ScenarioIdempotencyRepo>();
+    auto idem_guard = std::make_shared<service::MessageSubmissionIdempotencyGuard>(idem_repo);
+    auto msg_repo = std::make_shared<ScenarioMessageRepo>();
+    auto deliv_repo = std::make_shared<ScenarioDeliveryStateRepo>();
+    auto outbox_repo = std::make_shared<ScenarioOutboxRepo>();
+
+    service::ConversationService conv_svc(*conv_repo, *memb_repo, *auth_svc, repo_);
+    service::MessageSubmissionService sub_svc(auth_svc, seq_alloc, idem_guard, msg_repo, deliv_repo, outbox_repo, repo_,
+                                              nullptr, nullptr);
+    service::ReadReceiptService read_svc(deliv_repo, memb_repo, outbox_repo, repo_);
+
+    auto scheduler = std::make_shared<delivery::BoundedDeliveryScheduler>();
+    auto registry = std::make_shared<delivery::DeviceConnectionRegistry>();
+    auto retry_policy = std::make_shared<service::DeliveryRetryPolicy>();
+    delivery::DeliveryWorker worker(scheduler, registry, deliv_repo, outbox_repo, repo_, retry_policy);
+
+    const domain::UserId alice_id("01934400-0100-7000-8000-000000000001");
+    const domain::UserId bob_id("01934400-0100-7000-8000-000000000002");
+    const domain::UserId carol_id("01934400-0100-7000-8000-000000000003");
+    const domain::DeviceId alice_dev("alice-dev-e2e");
+    const domain::DeviceId bob_dev("bob-dev-e2e");
+
+    auto bob_channel = std::make_shared<delivery::MockDeviceDeliveryChannel>(bob_dev, bob_id);
+    bob_channel->set_next_result(domain::DeliveryAttemptResult::Success);
+    registry->register_channel(bob_channel);
+
+    // 1. Conversation creation & membership mutations (plaintext group title must never leak to audit metadata)
+    const auto create_res = conv_svc.create_group_conversation(alice_id, "Top Secret Project Title", {bob_id});
+    ASSERT_TRUE(create_res.success);
+    const auto conv_id = create_res.value.conversation_id;
+    ASSERT_TRUE(conv_svc.add_participant(alice_id, conv_id, carol_id).success);
+    ASSERT_TRUE(conv_svc.remove_participant(alice_id, conv_id, carol_id).success);
+
+    // 2. Normal & Emergency message submission (ciphertext must never leak to audit metadata)
+    auto make_sub_cmd = [&](std::string token, domain::MessagePriority prio) {
+        domain::MessageSubmissionCommand cmd;
+        cmd.caller_user_id = alice_id;
+        cmd.sender_device_id = alice_dev;
+        cmd.conversation_id = conv_id;
+        cmd.client_idempotency_token = std::move(token);
+        cmd.priority = prio;
+
+        domain::DeviceDeliveryTarget target;
+        target.recipient_user_id = bob_id;
+        target.recipient_device_id = bob_dev;
+        target.ciphertext_blob = "SENSITIVE_CIPHERTEXT_SECRET_123";
+        target.ephemeral_public_key = std::vector<uint8_t>(32, 0x11);
+        target.iv = std::vector<uint8_t>(24, 0x22);
+        target.auth_tag = std::vector<uint8_t>(16, 0x33);
+        target.algorithm = "XChaCha20-Poly1305";
+        cmd.delivery_targets.push_back(std::move(target));
+        return cmd;
+    };
+
+    const auto normal_sub = sub_svc.submit_message(make_sub_cmd("e2e-norm-1", domain::MessagePriority::Normal));
+    ASSERT_TRUE(normal_sub.success);
+    const auto emerg_sub = sub_svc.submit_message(make_sub_cmd("e2e-emerg-1", domain::MessagePriority::Emergency));
+    ASSERT_TRUE(emerg_sub.success);
+
+    // 3. Delivery worker dispatches normal message
+    domain::DeliveryTask task;
+    task.message_id = normal_sub.value.message_id;
+    task.conversation_id = conv_id;
+    task.recipient_device_id = bob_dev;
+    task.recipient_user_id = bob_id;
+    task.priority = domain::MessagePriority::Normal;
+    task.accepted_at = normal_sub.value.accepted_at;
+    task.scheduled_at = normal_sub.value.accepted_at;
+    task.envelope.ciphertext_blob = "SENSITIVE_CIPHERTEXT_SECRET_123";
+    ASSERT_EQ(scheduler->schedule(task), delivery::SchedulerStatus::Enqueued);
+    ASSERT_TRUE(worker.process_single_task(std::chrono::milliseconds(100)));
+
+    // 4. Recipient records read receipt
+    service::ReadReceiptCommand read_cmd;
+    read_cmd.message_id = normal_sub.value.message_id;
+    read_cmd.conversation_id = conv_id;
+    read_cmd.caller_user_id = bob_id;
+    read_cmd.reader_device_id = bob_dev;
+    read_cmd.caller_device_id = bob_dev;
+    read_cmd.read_at = std::chrono::system_clock::now();
+    const auto read_res = read_svc.record_read_receipt(read_cmd);
+    ASSERT_TRUE(read_res.success);
+
+    // 8 canonical audit events staged into Scylla outbox:
+    // conversation.created (1), conversation.membership.changed (2),
+    // message.submitted (2), emergency.activated (1), message.delivered (1), message.read (1)
+    ASSERT_EQ(session_->count_by_status("PENDING"), 8u);
+
+    OutboxRelayConfig cfg;
+    cfg.worker_threads = 2;
+    cfg.total_shards = 16;
+    cfg.active_poll_interval = std::chrono::milliseconds(10);
+    cfg.idle_poll_interval = std::chrono::milliseconds(20);
+    cfg.batch_size = 50;
+
+    MessagingOutboxRelay relay(repo_, client_, cfg);
+    relay.start();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (audit_service_->unique_ingested_count() >= 8u && session_->count_by_status("PENDING") == 0u) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    relay.stop();
+
+    EXPECT_EQ(session_->count_by_status("PENDING"), 0u);
+    EXPECT_EQ(session_->count_by_status("PUBLISHED"), 8u);
+    EXPECT_EQ(audit_service_->unique_ingested_count(), 8u);
+
+    const auto ingested = audit_service_->ingested_events();
+    std::unordered_map<std::string, int> counts;
+    bool saw_emergency_critical = false;
+    for (const auto& ev : ingested) {
+        EXPECT_TRUE(domain::is_valid_audit_uuid_v7(ev.event_id()));
+        EXPECT_EQ(ev.producer_service(), securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING);
+        counts[ev.event_type()] += 1;
+        if (ev.event_type() == "emergency.activated" && ev.severity() == securecloud::audit::v1::SEVERITY_CRITICAL) {
+            saw_emergency_critical = true;
+        }
+        const std::string wire = ev.SerializeAsString();
+        EXPECT_EQ(wire.find("Top Secret Project Title"), std::string::npos);
+        EXPECT_EQ(wire.find("SENSITIVE_CIPHERTEXT_SECRET_123"), std::string::npos);
+    }
+    EXPECT_EQ(counts["conversation.created"], 1);
+    EXPECT_EQ(counts["conversation.membership.changed"], 2);
+    EXPECT_EQ(counts["message.submitted"], 2);
+    EXPECT_EQ(counts["emergency.activated"], 1);
+    EXPECT_EQ(counts["message.delivered"], 1);
+    EXPECT_EQ(counts["message.read"], 1);
+    EXPECT_TRUE(saw_emergency_critical);
 }
 
 // ============================================================================

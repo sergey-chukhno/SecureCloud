@@ -1,9 +1,12 @@
+#include "messaging/domain/audit_event.hpp"
+#include "messaging/domain/audit_event_id.hpp"
 #include "messaging/domain/conversation_entity.hpp"
 #include "messaging/domain/conversation_participant_entity.hpp"
 #include "messaging/domain/submission_fingerprint.hpp"
 #include "messaging/domain/submission_types.hpp"
 #include "messaging/repository/in_memory_conversation_repository.hpp"
 #include "messaging/repository/in_memory_membership_repository.hpp"
+#include "messaging/repository/in_memory_messaging_audit_outbox_repository.hpp"
 #include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/service/conversation_authorization_service.hpp"
 #include "messaging/service/e2e_envelope_validator.hpp"
@@ -11,6 +14,7 @@
 #include "messaging/service/in_memory_sequence_allocator.hpp"
 #include "messaging/service/message_submission_service.hpp"
 #include "messaging/service/recipient_device_resolution_service.hpp"
+#include "securecloud/audit/v1/audit.pb.h"
 
 #include <chrono>
 #include <gtest/gtest.h>
@@ -193,20 +197,6 @@ class ThreadSafeIdempotencyRepo final : public repository::IIdempotencyRepositor
     std::unordered_map<std::string, IdempotencyRecord> records_;
 };
 
-class ThreadSafeMessagingAuditOutboxRepository : public repository::IMessagingAuditOutboxRepository {
-  public:
-    void enqueue_audit_event(const repository::AuditOutboxRecord&) override {}
-    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
-                                                                    std::chrono::seconds) override {
-        return {};
-    }
-    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
-                        const std::string&) override {}
-    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
-                        const std::string&, bool) override {}
-    size_t count_pending_backlog(const std::string&, int32_t) override { return 0; }
-};
-
 // ============================================================================
 // Test Fixture
 // ============================================================================
@@ -223,7 +213,7 @@ class MessageSubmissionServiceTest : public ::testing::Test {
         message_repo_ = std::make_shared<ThreadSafeMessageRepo>();
         delivery_repo_ = std::make_shared<ThreadSafeDeliveryStateRepo>();
         outbox_repo_ = std::make_shared<ThreadSafeOutboxRepo>();
-        audit_repo_ = std::make_shared<ThreadSafeMessagingAuditOutboxRepository>();
+        audit_repo_ = std::make_shared<repository::InMemoryMessagingAuditOutboxRepository>();
 
         service_ = std::make_unique<MessageSubmissionService>(auth_service_, sequence_allocator_, idempotency_guard_,
                                                               message_repo_, delivery_repo_, outbox_repo_, audit_repo_,
@@ -278,7 +268,7 @@ class MessageSubmissionServiceTest : public ::testing::Test {
     std::shared_ptr<ThreadSafeMessageRepo> message_repo_;
     std::shared_ptr<ThreadSafeDeliveryStateRepo> delivery_repo_;
     std::shared_ptr<ThreadSafeOutboxRepo> outbox_repo_;
-    std::shared_ptr<ThreadSafeMessagingAuditOutboxRepository> audit_repo_;
+    std::shared_ptr<repository::InMemoryMessagingAuditOutboxRepository> audit_repo_;
 
     std::unique_ptr<MessageSubmissionService> service_;
 
@@ -392,6 +382,21 @@ TEST_F(MessageSubmissionServiceTest, UnauthorizedUserRejected) {
     EXPECT_EQ(res.error_code, v1::MESSAGING_ERROR_CODE_NOT_A_PARTICIPANT);
 
     EXPECT_TRUE(message_repo_->get_all_saved().empty());
+
+    const auto audit_records = audit_repo_->all_records();
+    ASSERT_EQ(audit_records.size(), 1U);
+    const auto& rec = audit_records[0];
+    EXPECT_EQ(rec.event_type, "security.authorization.denied");
+    EXPECT_EQ(rec.severity, "SECURITY");
+    EXPECT_TRUE(domain::is_valid_audit_uuid_v7(rec.event_id));
+    EXPECT_EQ(rec.outbox_bucket, domain::compute_outbox_bucket_utc(rec.created_at));
+    EXPECT_EQ(rec.shard_id, domain::compute_outbox_shard_id(test_conv_id_.to_string()));
+    ASSERT_FALSE(rec.payload_proto_bin.empty());
+    securecloud::audit::v1::AuditEventProto proto;
+    ASSERT_TRUE(proto.ParseFromArray(rec.payload_proto_bin.data(), static_cast<int>(rec.payload_proto_bin.size())));
+    EXPECT_EQ(proto.event_type(), "security.authorization.denied");
+    EXPECT_EQ(proto.severity(), securecloud::audit::v1::SEVERITY_SECURITY);
+    EXPECT_EQ(proto.producer_service(), securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING);
 }
 
 TEST_F(MessageSubmissionServiceTest, ConflictingIdempotencyTokenRejected) {
@@ -424,6 +429,100 @@ TEST_F(MessageSubmissionServiceTest, PersistenceFailureMarksIdempotencyFailedFor
     EXPECT_TRUE(retry_res.success);
     EXPECT_FALSE(retry_res.value.is_replay);
     EXPECT_EQ(retry_res.value.message_sequence, 2U);
+}
+
+TEST_F(MessageSubmissionServiceTest, EmergencyMessageSubmissionStagesCanonicalAuditRecordsAndCriticalEvent) {
+    auto cmd = make_valid_command("tok-emergency-001");
+    cmd.priority = MessagePriority::Emergency;
+
+    auto res = service_->submit_message(cmd);
+    ASSERT_TRUE(res.success);
+
+    const auto audit_records = audit_repo_->all_records();
+    ASSERT_EQ(audit_records.size(), 2U);
+
+    bool saw_submitted = false;
+    bool saw_emergency = false;
+    for (const auto& rec : audit_records) {
+        EXPECT_TRUE(domain::is_valid_audit_uuid_v7(rec.event_id));
+        EXPECT_EQ(rec.outbox_bucket, domain::compute_outbox_bucket_utc(rec.created_at));
+        EXPECT_EQ(rec.shard_id, domain::compute_outbox_shard_id(test_conv_id_.to_string()));
+        ASSERT_FALSE(rec.payload_proto_bin.empty());
+
+        securecloud::audit::v1::AuditEventProto proto;
+        ASSERT_TRUE(proto.ParseFromArray(rec.payload_proto_bin.data(), static_cast<int>(rec.payload_proto_bin.size())));
+        EXPECT_EQ(proto.event_id(), rec.event_id);
+        EXPECT_EQ(proto.producer_service(), securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING);
+
+        if (rec.event_type == "message.submitted") {
+            saw_submitted = true;
+            EXPECT_EQ(rec.event_id, domain::generate_message_audit_event_id(
+                                        res.value.message_id, domain::MessagingAuditEventType::MessageSubmitted));
+            EXPECT_EQ(rec.severity, "INFO");
+            EXPECT_EQ(proto.severity(), securecloud::audit::v1::SEVERITY_INFO);
+        } else if (rec.event_type == "emergency.activated") {
+            saw_emergency = true;
+            EXPECT_EQ(rec.event_id, domain::generate_message_audit_event_id(
+                                        res.value.message_id, domain::MessagingAuditEventType::EmergencyActivated));
+            EXPECT_EQ(rec.severity, "CRITICAL");
+            EXPECT_EQ(proto.severity(), securecloud::audit::v1::SEVERITY_CRITICAL);
+        }
+    }
+    EXPECT_TRUE(saw_submitted);
+    EXPECT_TRUE(saw_emergency);
+}
+
+TEST_F(MessageSubmissionServiceTest, IdempotentReplayDoesNotDowngradePublishedAuditEvent) {
+    auto cmd = make_valid_command("tok-published-preserve-001");
+    auto res1 = service_->submit_message(cmd);
+    ASSERT_TRUE(res1.success);
+
+    const auto initial_records = audit_repo_->all_records();
+    ASSERT_EQ(initial_records.size(), 1U);
+    const auto& rec = initial_records[0];
+    EXPECT_EQ(rec.publish_status, "PENDING");
+
+    audit_repo_->mark_published(rec.outbox_bucket, rec.shard_id, rec.created_at, rec.event_id);
+    const auto published_before =
+        audit_repo_->find_record(rec.outbox_bucket, rec.shard_id, rec.created_at, rec.event_id);
+    ASSERT_TRUE(published_before.has_value());
+    EXPECT_EQ(published_before->publish_status, "PUBLISHED");
+
+    auto res2 = service_->submit_message(cmd);
+    ASSERT_TRUE(res2.success);
+    EXPECT_TRUE(res2.value.is_replay);
+    EXPECT_EQ(audit_repo_->total_records(), 1U);
+
+    const auto published_after =
+        audit_repo_->find_record(rec.outbox_bucket, rec.shard_id, rec.created_at, rec.event_id);
+    ASSERT_TRUE(published_after.has_value());
+    EXPECT_EQ(published_after->publish_status, "PUBLISHED");
+}
+
+TEST_F(MessageSubmissionServiceTest, IdempotentReplayForwardRecoversMissingAuditEvent) {
+    auto cmd = make_valid_command("tok-forward-recover-001");
+    auto res1 = service_->submit_message(cmd);
+    ASSERT_TRUE(res1.success);
+
+    auto fresh_audit_repo = std::make_shared<repository::InMemoryMessagingAuditOutboxRepository>();
+    MessageSubmissionService recovery_service(auth_service_, sequence_allocator_, idempotency_guard_, message_repo_,
+                                              delivery_repo_, outbox_repo_, fresh_audit_repo, nullptr, nullptr);
+
+    auto res2 = recovery_service.submit_message(cmd);
+    ASSERT_TRUE(res2.success);
+    EXPECT_TRUE(res2.value.is_replay);
+    EXPECT_EQ(res2.value.message_id, res1.value.message_id);
+
+    const auto recovered = fresh_audit_repo->all_records();
+    ASSERT_EQ(recovered.size(), 1U);
+    EXPECT_EQ(recovered[0].event_id, domain::generate_message_audit_event_id(
+                                         res1.value.message_id, domain::MessagingAuditEventType::MessageSubmitted));
+
+    securecloud::audit::v1::AuditEventProto proto;
+    ASSERT_TRUE(proto.ParseFromArray(recovered[0].payload_proto_bin.data(),
+                                     static_cast<int>(recovered[0].payload_proto_bin.size())));
+    ASSERT_TRUE(proto.metadata().contains("forward_recovered"));
+    EXPECT_EQ(proto.metadata().at("forward_recovered"), "true");
 }
 
 } // namespace
