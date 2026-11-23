@@ -7,6 +7,7 @@
 #include "repository/clickhouse_client.hpp"
 #include "securecloud/health/health_service_impl.hpp"
 #include "securecloud/health/health_status_manager.hpp"
+#include "security/internal_security_event_recorder.hpp"
 #include "service/audit_ingestion_service.hpp"
 #include "service/audit_query_service_impl.hpp"
 #include "service/audit_service_impl.hpp"
@@ -37,10 +38,15 @@ class AuditServer {
     /// 5. Transitions to Running and sets health probes to active.
     bool start();
 
-    /// Graceful drain sequence:
-    /// 1. Transitions to Draining; marks health probes as shutting down (NOT_SERVING).
-    /// 2. Initiates bounded gRPC server shutdown within shutdown_grace_period_ms budget.
-    /// 3. Transitions to Stopped.
+    /// Multi-phase graceful drain sequence (AUDIT-010-T03/T04):
+    /// Thread-safe, non-reentrant, and idempotent teardown orchestration.
+    /// Phase 1: Withdraw Readiness (health check becomes NOT_SERVING)
+    /// Phase 2: Reject New Ingress (audit_service_->set_draining(true) & record ServiceDraining event)
+    /// Phase 3: Flush existing ingestion queue into ClickHouse within shutdown_grace_period_ms
+    /// Phase 4: Await completion of in-flight ClickHouse batches
+    /// Phase 5: Complete durability promises
+    /// Phase 6: Shutdown gRPC server (server_->Shutdown(deadline))
+    /// Phase 7: Join worker threadpools & transition to Stopped state
     void stop();
 
     /// Blocks the calling thread until the gRPC server shuts down.
@@ -62,6 +68,7 @@ class AuditServer {
     std::shared_ptr<repository::ClickHouseAuditEventRepository> repository_;
     std::shared_ptr<ingestion::AuditIngestionPipeline> pipeline_;
     std::shared_ptr<service::AuditIngestionService> ingestion_service_;
+    std::shared_ptr<security::InternalSecurityEventRecorder> security_recorder_;
     std::shared_ptr<query::AuditQueryApplicationService> query_app_service_;
 
     std::unique_ptr<service::AuditServiceImpl> audit_service_;

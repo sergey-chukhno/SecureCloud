@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ingestion/ingestion_envelope.hpp"
+#include "telemetry/audit_metrics.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -44,6 +45,9 @@ class BoundedIngestionQueue {
     [[nodiscard]] size_t peak_watermark() const noexcept;
 
   private:
+    void record_enqueue_metrics_locked(const IngestionEnvelope& item);
+    void record_pop_metrics_locked(const IngestionEnvelope& item);
+
     const size_t capacity_;
     mutable std::mutex mutex_;
     std::condition_variable cv_not_full_;

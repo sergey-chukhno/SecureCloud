@@ -3426,16 +3426,16 @@ target_link_libraries(securecloud_audit_page_cursor_test PRIVATE
 gtest_discover_tests(securecloud_audit_page_cursor_test)
 
 # ClickHouse Query Builder Test (AUDIT-007-T03)
-add_executable(securecloud_clickhouse_query_builder_test
+add_executable(securecloud_audit_clickhouse_query_builder_test
         audit/clickhouse_query_builder_test.cpp
 )
-target_link_libraries(securecloud_clickhouse_query_builder_test PRIVATE
+target_link_libraries(securecloud_audit_clickhouse_query_builder_test PRIVATE
         securecloud::audit_repository
         securecloud::common
         securecloud::compiler_flags
         GTest::gtest_main
 )
-gtest_discover_tests(securecloud_clickhouse_query_builder_test)
+gtest_discover_tests(securecloud_audit_clickhouse_query_builder_test)
 
 # Audit Query Application Service Test (AUDIT-007-T04)
 add_executable(securecloud_audit_query_application_service_test
@@ -3516,6 +3516,185 @@ target_link_libraries(securecloud_audit_retention_and_append_only_test PRIVATE
 
 gtest_discover_tests(securecloud_audit_retention_and_append_only_test)
 
+# Audit Service Internal Security Event Types Unit Test Suite (AUDIT-009-T01)
+add_executable(securecloud_audit_internal_security_event_types_test
+        audit/internal_security_event_types_test.cpp
+)
+
+target_link_libraries(securecloud_audit_internal_security_event_types_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_internal_security_event_types_test)
+
+# Audit Service Internal Security Event Factory Unit Test Suite (AUDIT-009-T02)
+add_executable(securecloud_audit_internal_security_event_factory_test
+        audit/internal_security_event_factory_test.cpp
+)
+
+target_link_libraries(securecloud_audit_internal_security_event_factory_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_internal_security_event_factory_test)
+
+# Audit Service Anti-Recursion Guard Unit Test Suite (AUDIT-009-T03)
+add_executable(securecloud_audit_anti_recursion_guard_test
+        audit/anti_recursion_guard_test.cpp
+)
+
+target_link_libraries(securecloud_audit_anti_recursion_guard_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_anti_recursion_guard_test)
+
+# Audit Service Internal Security Event Recorder Unit Test Suite (AUDIT-009-T06)
+add_executable(securecloud_audit_internal_security_event_recorder_test
+        audit/internal_security_event_recorder_test.cpp
+)
+
+target_link_libraries(securecloud_audit_internal_security_event_recorder_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_internal_security_event_recorder_test)
+
+# Audit Service Health Evaluator Unit Test Suite (AUDIT-010-T01)
+add_executable(securecloud_audit_health_evaluator_test
+        audit/audit_health_evaluator_test.cpp
+)
+
+target_link_libraries(securecloud_audit_health_evaluator_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_health_evaluator_test)
+
+# Audit Service State Test Suite (AUDIT-010-T02)
+add_executable(securecloud_audit_service_state_test
+        audit/audit_service_state_test.cpp
+)
+
+target_link_libraries(securecloud_audit_service_state_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_service_state_test)
+
+# Audit Service Graceful Drain Unit Test Suite (AUDIT-010-T03)
+add_executable(securecloud_audit_service_drain_test
+        audit/audit_service_drain_test.cpp
+)
+
+target_link_libraries(securecloud_audit_service_drain_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_service_drain_test)
+
+# Audit Server Stop Idempotency Unit Test Suite (AUDIT-010-T04)
+add_executable(securecloud_audit_server_stop_test
+        audit/audit_server_stop_test.cpp
+)
+
+target_link_libraries(securecloud_audit_server_stop_test PRIVATE
+        securecloud::audit_server
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_server_stop_test)
+
+# Audit Service Metrics & Telemetry Unit Test Suite (AUDIT-011-T01)
+add_executable(securecloud_audit_metrics_test
+        audit/audit_metrics_test.cpp
+)
+
+target_link_libraries(securecloud_audit_metrics_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_metrics_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Queue & Aggregator Telemetry Unit Test Suite (AUDIT-011-T03)
+add_executable(securecloud_audit_queue_telemetry_test
+        audit/audit_queue_telemetry_test.cpp
+)
+
+target_link_libraries(securecloud_audit_queue_telemetry_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_queue_telemetry_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Persistence & Resilience Telemetry Unit Test Suite (AUDIT-011-T04)
+add_executable(securecloud_audit_persistence_telemetry_test
+        audit/audit_persistence_telemetry_test.cpp
+)
+
+target_link_libraries(securecloud_audit_persistence_telemetry_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_persistence_telemetry_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Diagnostics Unit Test Suite (AUDIT-011-T05)
+add_executable(securecloud_audit_diagnostics_test
+        audit/audit_diagnostics_test.cpp
+)
+
+target_link_libraries(securecloud_audit_diagnostics_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_diagnostics_test ${SECURECLOUD_TEST_PROPERTIES})
+
 # Desktop Client Foundation Test Suite (CLIENT-001-T01 through CLIENT-001-T05)
 if(Qt6_FOUND)
     add_executable(securecloud_client_foundation_test
@@ -3523,11 +3702,59 @@ if(Qt6_FOUND)
         client/client_config_test.cpp
         client/client_error_test.cpp
         client/client_domain_test.cpp
+        client/client_crypto_provider_test.cpp
+        client/client_key_storage_test.cpp
+        client/client_gateway_test.cpp
+        client/client_device_lifecycle_test.cpp
+        client/client_crypto_identity_test.cpp
+        client/client_device_registration_test.cpp
+        client/client_contacts_messaging_test.cpp
         client/client_lifecycle_test.cpp
         client/navigation_controller_test.cpp
         client/ui_theme_test.cpp
         client/ui_components_test.cpp
         client/window_state_manager_test.cpp
+        client/x3dh_engine_test.cpp
+        client/double_ratchet_engine_test.cpp
+        client/skipped_keys_store_test.cpp
+        client/ratchet_session_manager_test.cpp
+        client/e2ee_messaging_integration_test.cpp
+        client/device_domain_models_test.cpp
+        client/device_pairing_coordinator_test.cpp
+        client/device_revocation_pipeline_test.cpp
+        client/safety_number_engine_test.cpp
+        client/workspace_view_model_devices_test.cpp
+        client/multi_device_trust_integration_test.cpp
+        client/contact_domain_and_directory_test.cpp
+        client/contact_directory_sync_test.cpp
+        client/contact_verification_pipeline_test.cpp
+        client/identity_key_change_alert_test.cpp
+        client/workspace_view_model_contacts_test.cpp
+        client/contact_management_integration_test.cpp
+        client/conversation_and_message_domain_test.cpp
+        client/sqlcipher_local_store_test.cpp
+        client/sender_key_engine_test.cpp
+        client/group_messaging_pipeline_test.cpp
+        client/workspace_view_model_group_persistence_test.cpp
+        client/direct_and_group_messaging_integration_test.cpp
+        client/realtime_gateway_contracts_test.cpp
+        client/delivery_state_and_dedupe_test.cpp
+        client/delivery_retry_engine_test.cpp
+        client/delivery_ack_and_read_receipt_test.cpp
+        client/workspace_view_model_realtime_test.cpp
+        client/realtime_delivery_and_receipts_integration_test.cpp
+        client/file_gateway_contracts_test.cpp
+        client/file_crypto_engine_test.cpp
+        client/file_transfer_persistence_test.cpp
+        client/file_manager_pipeline_test.cpp
+        client/workspace_view_model_files_test.cpp
+        client/encrypted_file_transfer_integration_test.cpp
+        client/offline_sync_contracts_test.cpp
+        client/offline_outbox_persistence_test.cpp
+        client/offline_outbox_replay_test.cpp
+        client/catchup_sync_reconciliation_test.cpp
+        client/workspace_view_model_offline_sync_test.cpp
+        client/offline_catchup_sync_integration_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES
@@ -3549,7 +3776,7 @@ if(Qt6_FOUND)
         Qt6::Qml
         Qt6::Quick
         Qt6::Test
-        GTest::gtest_main
+        GTest::gtest
     )
     gtest_discover_tests(securecloud_client_foundation_test ${SECURECLOUD_TEST_PROPERTIES})
 
@@ -3565,3 +3792,251 @@ if(Qt6_FOUND)
         set_tests_properties(client_startup_smoke_test PROPERTIES ENVIRONMENT_MODIFICATION "${_TEST_ENV_MODS}")
     endif()
 endif()
+
+# Gateway Audit Event Factory & Local Validation Test Suite (AUDIT-012-T02)
+add_executable(securecloud_gateway_audit_event_factory_test
+        gateway/gateway_audit_event_factory_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_event_factory_test PRIVATE
+        securecloud::gateway_audit
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_event_factory_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Include-Path & ODR Collision Compile-Guard Test (AUDIT-012-T02)
+add_executable(securecloud_gateway_audit_header_collision_test
+        gateway/header_collision_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_header_collision_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_http
+        securecloud::auth
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_header_collision_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Pending Audit Store Unit Test Suite (AUDIT-012-T03)
+add_executable(securecloud_gateway_audit_pending_store_test
+        gateway/audit_pending_store_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_pending_store_test PRIVATE
+        securecloud::gateway_audit
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_pending_store_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Delivery Dispatcher Unit Test Suite (AUDIT-012-T04)
+add_executable(securecloud_gateway_audit_delivery_dispatcher_test
+        gateway/audit_delivery_dispatcher_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_delivery_dispatcher_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_grpc
+        securecloud::gateway_http
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_delivery_dispatcher_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Producer & Aggregation Window Unit Test Suite (AUDIT-012-T05)
+add_executable(securecloud_gateway_audit_producer_test
+        gateway/gateway_audit_producer_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_producer_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_http
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_producer_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Producer Metrics Unit Test Suite (AUDIT-012-T06)
+add_executable(securecloud_gateway_audit_producer_metrics_test
+        gateway/audit_producer_metrics_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_producer_metrics_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_http
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_producer_metrics_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Verification Unit Suite (AUDIT-012-T07)
+add_executable(securecloud_gateway_audit_verification_test
+        gateway/audit_verification_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_verification_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_http
+        securecloud::gateway_grpc
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_verification_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Event Mapper Unit Test Suite (AUDIT-013-T03)
+add_executable(securecloud_auth_outbox_event_mapper_test
+        auth/outbox_event_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_event_mapper_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_event_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Relay Worker Unit Test Suite (AUDIT-013-T03)
+add_executable(securecloud_auth_outbox_relay_worker_test
+        auth/outbox_relay_worker_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_relay_worker_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_relay_worker_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Canonical Audit Proto Mapper Unit Test Suite (AUDIT-013-T04)
+add_executable(securecloud_auth_audit_mapper_test
+        auth/auth_audit_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_auth_audit_mapper_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_audit_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth mTLS Audit Ingestion Client Unit Test Suite (AUDIT-013-T04)
+add_executable(securecloud_auth_audit_client_test
+        auth/auth_audit_client_test.cpp
+)
+
+target_link_libraries(securecloud_auth_audit_client_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+target_compile_definitions(securecloud_auth_audit_client_test PRIVATE
+        SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+)
+
+gtest_discover_tests(securecloud_auth_audit_client_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Relay & Retention Engine Unit Test Suite (AUDIT-013-T05)
+add_executable(securecloud_auth_outbox_relay_test
+        auth/auth_outbox_relay_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_relay_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_relay_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Observability, Lock-Free Metrics & Zero-PII Diagnostics Test Suite (AUDIT-013-T06)
+add_executable(securecloud_auth_outbox_metrics_test
+        auth/auth_outbox_metrics_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_metrics_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_metrics_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Outbox Comprehensive Verification Test Suite (AUDIT-013-T07)
+add_executable(securecloud_auth_outbox_test
+        auth/auth_outbox_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_test PRIVATE
+        securecloud::auth
+        securecloud_proto
+        securecloud::common
+        securecloud::json
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_auth_outbox_test ${SECURECLOUD_TEST_PROPERTIES})

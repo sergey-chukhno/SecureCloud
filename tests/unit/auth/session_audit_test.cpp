@@ -15,6 +15,7 @@
 #include <memory>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <pqxx/pqxx>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -127,6 +128,7 @@ class MockDeviceRepository : public repository::IDeviceRepository {
 class MockAuditEventPublisher : public IAuditEventPublisher {
   public:
     MOCK_METHOD(void, publish, (const domain::AuditEvent& event), (noexcept, override));
+    MOCK_METHOD(void, publish_in_tx, (const domain::AuditEvent& event, pqxx::transaction_base& tx), (override));
 };
 
 class MockAuditSink : public IAuditEventSink {
@@ -240,12 +242,13 @@ TEST(SessionAuditTest, SessionManager_RevokeSession_EmitsSessionRevokedAudit) {
     EXPECT_CALL(*audit_publisher,
                 publish(Field(&domain::AuditEvent::event_type, domain::AuditEventType::SessionRevoked)))
         .Times(1);
+    EXPECT_CALL(*audit_publisher, publish_in_tx(_, _)).Times(0);
 
     auto result = manager.revoke_session(session.session_id, "Security termination");
     EXPECT_TRUE(result.is_success());
 }
 
-// Test 6: Validating an expired session emits SessionExpiredAttempt audit telemetry
+// Test 6: Validating an expired session emits Category B SessionExpiredAttempt without mutating session state
 TEST(SessionAuditTest, SessionManager_ValidateExpiredSession_EmitsExpiredAttemptAudit) {
     auto session_repo = std::make_shared<NiceMock<MockSessionRepository>>();
     auto device_repo = std::make_shared<NiceMock<MockDeviceRepository>>();
@@ -257,17 +260,19 @@ TEST(SessionAuditTest, SessionManager_ValidateExpiredSession_EmitsExpiredAttempt
     auto session = create_test_session(user_id, device_id, domain::SessionStatus::Expired);
 
     EXPECT_CALL(*session_repo, find_by_id(session.session_id)).WillOnce(Return(session));
+    EXPECT_CALL(*session_repo, touch_session_activity(_, _)).Times(0);
 
     EXPECT_CALL(*audit_publisher,
                 publish(Field(&domain::AuditEvent::event_type, domain::AuditEventType::SessionExpiredAttempt)))
         .Times(1);
+    EXPECT_CALL(*audit_publisher, publish_in_tx(_, _)).Times(0);
 
     auto result = manager.validate_session(session.session_id);
     EXPECT_FALSE(result.is_valid());
     EXPECT_EQ(result.status, domain::SessionValidationStatus::Expired);
 }
 
-// Test 7: Validating a revoked session emits SessionRevokedAttempt audit telemetry
+// Test 7: Validating a revoked session emits Category B SessionRevokedAttempt without mutating session state
 TEST(SessionAuditTest, SessionManager_ValidateRevokedSession_EmitsRevokedAttemptAudit) {
     auto session_repo = std::make_shared<NiceMock<MockSessionRepository>>();
     auto device_repo = std::make_shared<NiceMock<MockDeviceRepository>>();
@@ -279,10 +284,12 @@ TEST(SessionAuditTest, SessionManager_ValidateRevokedSession_EmitsRevokedAttempt
     auto session = create_test_session(user_id, device_id, domain::SessionStatus::Revoked);
 
     EXPECT_CALL(*session_repo, find_by_id(session.session_id)).WillOnce(Return(session));
+    EXPECT_CALL(*session_repo, touch_session_activity(_, _)).Times(0);
 
     EXPECT_CALL(*audit_publisher,
                 publish(Field(&domain::AuditEvent::event_type, domain::AuditEventType::SessionRevokedAttempt)))
         .Times(1);
+    EXPECT_CALL(*audit_publisher, publish_in_tx(_, _)).Times(0);
 
     auto result = manager.validate_session(session.session_id);
     EXPECT_FALSE(result.is_valid());

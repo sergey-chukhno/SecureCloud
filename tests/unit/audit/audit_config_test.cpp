@@ -35,6 +35,10 @@ TEST(AuditConfigTest, DefaultValuesAreValid) {
     EXPECT_EQ(config.ingestion.batch_flush_interval_ms, 200);
     EXPECT_EQ(config.retention.retention_months, 36);
     EXPECT_EQ(config.retention.retention_days, 1095);
+    EXPECT_EQ(config.health.probe_interval_ms, 1000u);
+    EXPECT_EQ(config.health.probe_timeout_ms, 500u);
+    EXPECT_EQ(config.health.consecutive_failures_threshold, 3u);
+    EXPECT_EQ(config.health.queue_high_water_pct, 90u);
 }
 
 TEST(AuditConfigTest, CompleteEnvironmentOverride) {
@@ -57,6 +61,10 @@ TEST(AuditConfigTest, CompleteEnvironmentOverride) {
     source.set("SECURECLOUD_AUDIT_RETENTION_MONTHS", "48");
     source.set("SECURECLOUD_AUDIT_RETENTION_DAYS", "1460");
     source.set("SECURECLOUD_AUDIT_SHUTDOWN_GRACE_PERIOD_MS", "10000");
+    source.set("SECURECLOUD_AUDIT_HEALTH_PROBE_INTERVAL_MS", "2000");
+    source.set("SECURECLOUD_AUDIT_HEALTH_PROBE_TIMEOUT_MS", "800");
+    source.set("SECURECLOUD_AUDIT_HEALTH_CONSECUTIVE_FAILURES", "5");
+    source.set("SECURECLOUD_AUDIT_HEALTH_QUEUE_HIGH_WATER_PCT", "85");
 
     common::configuration::ValidationResult errors;
     auto config = AuditConfig::load(source, errors);
@@ -80,6 +88,10 @@ TEST(AuditConfigTest, CompleteEnvironmentOverride) {
     EXPECT_EQ(config.retention.retention_months, 48);
     EXPECT_EQ(config.retention.retention_days, 1460);
     EXPECT_EQ(config.retention.shutdown_grace_period_ms, 10000);
+    EXPECT_EQ(config.health.probe_interval_ms, 2000u);
+    EXPECT_EQ(config.health.probe_timeout_ms, 800u);
+    EXPECT_EQ(config.health.consecutive_failures_threshold, 5u);
+    EXPECT_EQ(config.health.queue_high_water_pct, 85u);
 }
 
 TEST(AuditConfigTest, MissingRequiredPasswordFailsClosed) {
@@ -183,6 +195,49 @@ TEST(AuditConfigTest, RetentionMonthsBounds) {
     {
         auto source = create_valid_base_source();
         source.set("SECURECLOUD_AUDIT_RETENTION_MONTHS", "121");
+        common::configuration::ValidationResult errors;
+        AuditConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+}
+
+TEST(AuditConfigTest, HealthConfigBoundaryValidation) {
+    // Probe interval out of range (< 100)
+    {
+        auto source = create_valid_base_source();
+        source.set("SECURECLOUD_AUDIT_HEALTH_PROBE_INTERVAL_MS", "50");
+        common::configuration::ValidationResult errors;
+        AuditConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+    // Probe interval out of range (> 10000)
+    {
+        auto source = create_valid_base_source();
+        source.set("SECURECLOUD_AUDIT_HEALTH_PROBE_INTERVAL_MS", "15000");
+        common::configuration::ValidationResult errors;
+        AuditConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+    // Probe timeout out of range (< 50)
+    {
+        auto source = create_valid_base_source();
+        source.set("SECURECLOUD_AUDIT_HEALTH_PROBE_TIMEOUT_MS", "20");
+        common::configuration::ValidationResult errors;
+        AuditConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+    // Consecutive failures out of range (> 10)
+    {
+        auto source = create_valid_base_source();
+        source.set("SECURECLOUD_AUDIT_HEALTH_CONSECUTIVE_FAILURES", "15");
+        common::configuration::ValidationResult errors;
+        AuditConfig::load(source, errors);
+        EXPECT_FALSE(errors.is_valid());
+    }
+    // Queue high water pct out of range (> 95)
+    {
+        auto source = create_valid_base_source();
+        source.set("SECURECLOUD_AUDIT_HEALTH_QUEUE_HIGH_WATER_PCT", "99");
         common::configuration::ValidationResult errors;
         AuditConfig::load(source, errors);
         EXPECT_FALSE(errors.is_valid());

@@ -1216,3 +1216,88 @@ target_link_libraries(securecloud_audit_retention_integration_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_audit_retention_integration_test)
+
+# Audit Service Internal Security Integration Test Suite (AUDIT-009-T06)
+add_executable(securecloud_audit_internal_security_integration_test
+        audit_internal_security_integration_test.cpp
+)
+
+target_link_libraries(securecloud_audit_internal_security_integration_test PRIVATE
+        securecloud::audit_service
+        securecloud::audit_repository
+        securecloud::audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_internal_security_integration_test)
+
+# Audit Service Graceful Shutdown Integration Test Suite (AUDIT-010-T06)
+add_executable(securecloud_audit_graceful_shutdown_integration_test
+        audit_graceful_shutdown_integration_test.cpp
+)
+
+target_link_libraries(securecloud_audit_graceful_shutdown_integration_test PRIVATE
+        securecloud::audit_server
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+        GTest::gmock
+)
+
+gtest_discover_tests(securecloud_audit_graceful_shutdown_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Metrics & Telemetry High-Concurrency & Cardinality Test Suite (AUDIT-011-T06)
+add_executable(securecloud_audit_metrics_concurrency_test
+        audit_metrics_concurrency_test.cpp
+)
+
+target_link_libraries(securecloud_audit_metrics_concurrency_test PRIVATE
+        securecloud::audit_service
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_audit_metrics_concurrency_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Gateway Audit Verification Integration Suite (AUDIT-012-T07)
+add_executable(securecloud_gateway_audit_integration_test
+        gateway_audit_integration_test.cpp
+)
+
+target_link_libraries(securecloud_gateway_audit_integration_test PRIVATE
+        securecloud::gateway_audit
+        securecloud::gateway_grpc
+        securecloud_audit_domain
+        securecloud_proto
+        securecloud::common
+        securecloud::compiler_flags
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_gateway_audit_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Auth Transactional Outbox Integration Test Suite (AUDIT-013-T07)
+add_executable(securecloud_auth_outbox_transaction_test
+        auth_outbox_transaction_test.cpp
+)
+
+target_link_libraries(securecloud_auth_outbox_transaction_test PRIVATE
+        securecloud::auth
+        securecloud::common
+        securecloud_proto
+        OpenSSL::Crypto
+        securecloud::compiler_flags
+        GTest::gtest
+)
+
+if(WIN32)
+    target_link_libraries(securecloud_auth_outbox_transaction_test PRIVATE ws2_32)
+endif()
+
+gtest_discover_tests(securecloud_auth_outbox_transaction_test ${SECURECLOUD_TEST_PROPERTIES})

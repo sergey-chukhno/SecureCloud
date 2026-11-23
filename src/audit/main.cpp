@@ -4,21 +4,18 @@
 #include "securecloud/configuration/validation_error.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <iostream>
+#include <thread>
 
 namespace {
 
 std::atomic<bool> g_shutdown_requested{false};
-securecloud::audit::AuditServer* g_server = nullptr;
 
-void signal_handler(int signal) {
+extern "C" void signal_handler(int signal) noexcept {
     if (signal == SIGINT || signal == SIGTERM) {
-        if (!g_shutdown_requested.exchange(true)) {
-            if (g_server) {
-                g_server->stop();
-            }
-        }
+        g_shutdown_requested.store(true, std::memory_order_release);
     }
 }
 
@@ -37,12 +34,18 @@ int run_service() {
     }
 
     securecloud::audit::AuditServer server(std::move(config));
-    g_server = &server;
 
     if (!server.start()) {
         return 1;
     }
 
+    // Main event loop monitoring signal handler state
+    while (server.state() == securecloud::audit::ServiceState::Running &&
+           !g_shutdown_requested.load(std::memory_order_acquire)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    server.stop();
     server.wait();
     return 0;
 }

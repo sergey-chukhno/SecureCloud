@@ -9,17 +9,7 @@ namespace {
 
 using namespace securecloud::client::ui;
 
-class WindowStateManagerTest : public ::testing::Test {
-  protected:
-    static void SetUpTestSuite() {
-        if (!qobject_cast<QGuiApplication*>(QGuiApplication::instance())) {
-            static int argc = 1;
-            static char appName[] = "WindowStateManagerTest";
-            static char* argv[] = {appName, nullptr};
-            [[maybe_unused]] static auto* app = new QGuiApplication(argc, argv);
-        }
-    }
-};
+class WindowStateManagerTest : public ::testing::Test {};
 
 TEST_F(WindowStateManagerTest, DefaultValuesAndConstants) {
     QTemporaryDir tempDir;

@@ -250,7 +250,7 @@ TEST(WorkspaceViewModelTest, SearchSelectionMessagingFileTransferAndWipe) {
 
     // 1. Default seeded state
     EXPECT_EQ(workspace.activeSection(), QStringLiteral("Messages"));
-    EXPECT_EQ(workspace.conversations().size(), 5);
+    EXPECT_EQ(workspace.conversations().size(), 7);
     EXPECT_EQ(workspace.contacts().size(), 5);
     EXPECT_EQ(workspace.fileTransfers().size(), 3);
     EXPECT_EQ(workspace.selectedPeerName(), QStringLiteral("Frances Swann"));
@@ -261,7 +261,7 @@ TEST(WorkspaceViewModelTest, SearchSelectionMessagingFileTransferAndWipe) {
     EXPECT_EQ(workspace.conversations().size(), 1);
     EXPECT_EQ(workspace.fileTransfers().size(), 1);
     workspace.setSearchQuery(QStringLiteral(""));
-    EXPECT_EQ(workspace.conversations().size(), 5);
+    EXPECT_EQ(workspace.conversations().size(), 7);
 
     // 3. Select conversation & clear unread count
     workspace.selectConversation(QStringLiteral("conv-angelina"));

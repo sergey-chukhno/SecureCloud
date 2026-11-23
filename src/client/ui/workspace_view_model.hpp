@@ -10,6 +10,11 @@
 #include <cstdint>
 #include <vector>
 
+namespace securecloud::client::domain {
+struct FileTransferRecord;
+struct RealtimeEvent;
+} // namespace securecloud::client::domain
+
 namespace securecloud::client::ui {
 
 /**
@@ -42,6 +47,39 @@ class WorkspaceViewModel : public QObject {
     Q_PROPERTY(QVariantList activeMessages READ activeMessages NOTIFY activeMessagesChanged)
     Q_PROPERTY(QVariantList sharedFilesForSelectedPeer READ sharedFilesForSelectedPeer NOTIFY fileTransfersChanged)
 
+    // Group & Multi-Party Conversation Bindings (CLIENT-004-T02 / CLIENT-004-T04)
+    Q_PROPERTY(bool selectedConversationIsGroup READ selectedConversationIsGroup NOTIFY selectedConversationChanged)
+    Q_PROPERTY(int selectedConversationParticipantCount READ selectedConversationParticipantCount NOTIFY
+                   selectedConversationChanged)
+    Q_PROPERTY(int selectedConversationDeviceFanoutCount READ selectedConversationDeviceFanoutCount NOTIFY
+                   selectedConversationChanged)
+    Q_PROPERTY(QVariantList selectedConversationParticipants READ selectedConversationParticipants NOTIFY
+                   selectedConversationChanged)
+    Q_PROPERTY(bool selectedGroupAllVerified READ selectedGroupAllVerified NOTIFY selectedConversationChanged)
+    Q_PROPERTY(int selectedGroupUnverifiedCount READ selectedGroupUnverifiedCount NOTIFY selectedConversationChanged)
+    Q_PROPERTY(int selectedGroupKeyEpoch READ selectedGroupKeyEpoch NOTIFY selectedConversationChanged)
+    Q_PROPERTY(bool localUserIsGroupAdmin READ localUserIsGroupAdmin NOTIFY selectedConversationChanged)
+
+    // ADR-008 Identity Key Change State & Warning Banner (CLIENT-004-T02)
+    Q_PROPERTY(bool selectedPeerKeyChanged READ selectedPeerKeyChanged NOTIFY selectedConversationChanged)
+    Q_PROPERTY(
+        QString selectedPeerKeyChangedHandle READ selectedPeerKeyChangedHandle NOTIFY selectedConversationChanged)
+
+    // ADR-007 Emergency Acknowledgement & Status (CLIENT-004-T02)
+    Q_PROPERTY(int unacknowledgedEmergencyCount READ unacknowledgedEmergencyCount NOTIFY selectedConversationChanged)
+    Q_PROPERTY(bool isLoadingMessages READ isLoadingMessages NOTIFY loadingMessagesChanged)
+    Q_PROPERTY(bool deliveryFailureSimulated READ deliveryFailureSimulated WRITE setDeliveryFailureSimulated NOTIFY
+                   deliveryFailureSimulatedChanged)
+    Q_PROPERTY(bool readReceiptsEnabled READ readReceiptsEnabled WRITE setReadReceiptsEnabled NOTIFY
+                   readReceiptsEnabledChanged)
+
+    // Offline Operation & Catch-Up Sync State (CLIENT-012-T05)
+    Q_PROPERTY(QString connectivityState READ connectivityState NOTIFY connectivityStateChanged)
+    Q_PROPERTY(bool isOffline READ isOffline NOTIFY connectivityStateChanged)
+    Q_PROPERTY(bool isSyncing READ isSyncing NOTIFY connectivityStateChanged)
+    Q_PROPERTY(int pendingOutboxCount READ pendingOutboxCount NOTIFY pendingOutboxCountChanged)
+    Q_PROPERTY(QString syncStatusSummary READ syncStatusSummary NOTIFY connectivityStateChanged)
+
     // Selected File Transfer Properties (when activeSection == "Files")
     Q_PROPERTY(QString selectedTransferId READ selectedTransferId NOTIFY selectedTransferChanged)
     Q_PROPERTY(QVariantMap selectedTransferDetails READ selectedTransferDetails NOTIFY selectedTransferChanged)
@@ -57,6 +95,8 @@ class WorkspaceViewModel : public QObject {
     Q_PROPERTY(QVariantList devices READ devices NOTIFY devicesChanged)
     Q_PROPERTY(int pendingDeviceCount READ pendingDeviceCount NOTIFY devicesChanged)
     Q_PROPERTY(QVariantMap localDeviceIdentity READ localDeviceIdentity NOTIFY localDeviceIdentityChanged)
+    Q_PROPERTY(int prekeyCount READ prekeyCount NOTIFY localDeviceIdentityChanged)
+    Q_PROPERTY(QString prekeyHealthStatus READ prekeyHealthStatus NOTIFY localDeviceIdentityChanged)
     Q_PROPERTY(bool mfaRequiredOnLogin READ mfaRequiredOnLogin WRITE setMfaRequiredOnLogin NOTIFY mfaPolicyChanged)
     Q_PROPERTY(bool hardwareKeyEnforced READ hardwareKeyEnforced WRITE setHardwareKeyEnforced NOTIFY mfaPolicyChanged)
     Q_PROPERTY(QString totpEnrollmentSecret READ totpEnrollmentSecret NOTIFY mfaPolicyChanged)
@@ -64,7 +104,7 @@ class WorkspaceViewModel : public QObject {
   public:
     WorkspaceViewModel(application::ClientApplication& app, NavigationController& nav_controller,
                        QObject* parent = nullptr);
-    ~WorkspaceViewModel() override = default;
+    ~WorkspaceViewModel() override;
 
     WorkspaceViewModel(const WorkspaceViewModel&) = delete;
     WorkspaceViewModel& operator=(const WorkspaceViewModel&) = delete;
@@ -93,6 +133,33 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] QVariantList activeMessages() const;
     [[nodiscard]] QVariantList sharedFilesForSelectedPeer() const;
 
+    // Group & Multi-Party Conversation Getters (CLIENT-004-T02)
+    [[nodiscard]] bool selectedConversationIsGroup() const;
+    [[nodiscard]] int selectedConversationParticipantCount() const;
+    [[nodiscard]] int selectedConversationDeviceFanoutCount() const;
+    [[nodiscard]] QVariantList selectedConversationParticipants() const;
+    [[nodiscard]] bool selectedGroupAllVerified() const;
+    [[nodiscard]] int selectedGroupUnverifiedCount() const;
+    [[nodiscard]] int selectedGroupKeyEpoch() const;
+    [[nodiscard]] bool localUserIsGroupAdmin() const;
+
+    // ADR-008 Key Changed & Emergency State Getters
+    [[nodiscard]] bool selectedPeerKeyChanged() const;
+    [[nodiscard]] QString selectedPeerKeyChangedHandle() const;
+    [[nodiscard]] int unacknowledgedEmergencyCount() const;
+    [[nodiscard]] bool isLoadingMessages() const noexcept { return is_loading_messages_; }
+    [[nodiscard]] bool deliveryFailureSimulated() const noexcept { return delivery_failure_simulated_; }
+    void setDeliveryFailureSimulated(bool simulated);
+    [[nodiscard]] bool readReceiptsEnabled() const;
+    void setReadReceiptsEnabled(bool enabled);
+
+    // Offline Operation & Catch-Up Sync Getters (CLIENT-012-T05)
+    [[nodiscard]] QString connectivityState() const;
+    [[nodiscard]] bool isOffline() const;
+    [[nodiscard]] bool isSyncing() const;
+    [[nodiscard]] int pendingOutboxCount() const;
+    [[nodiscard]] QString syncStatusSummary() const;
+
     [[nodiscard]] QString selectedTransferId() const { return selected_transfer_id_; }
     [[nodiscard]] QVariantMap selectedTransferDetails() const;
 
@@ -107,18 +174,26 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] QVariantList devices() const;
     [[nodiscard]] int pendingDeviceCount() const noexcept;
     [[nodiscard]] QVariantMap localDeviceIdentity() const;
+    [[nodiscard]] int prekeyCount() const noexcept { return local_prekey_count_; }
+    [[nodiscard]] QString prekeyHealthStatus() const { return local_prekey_health_; }
     [[nodiscard]] bool mfaRequiredOnLogin() const noexcept { return mfa_required_on_login_; }
     void setMfaRequiredOnLogin(bool required);
     [[nodiscard]] bool hardwareKeyEnforced() const noexcept { return hardware_key_enforced_; }
     void setHardwareKeyEnforced(bool enforced);
     [[nodiscard]] QString totpEnrollmentSecret() const { return totp_enrollment_secret_; }
+    [[nodiscard]] Q_INVOKABLE QVariantMap hardwareAttestationInfo() const;
 
+    // Existing Invokables
     Q_INVOKABLE void selectConversation(const QString& conversationId);
     Q_INVOKABLE void selectContact(const QString& peerUserId);
     Q_INVOKABLE void selectTransfer(const QString& transferId);
     Q_INVOKABLE void toggleInspector();
     Q_INVOKABLE bool sendMessage(const QString& plaintext, int priority = 0);
     Q_INVOKABLE QString stageEncryptedFileTransfer(const QString& fileName, qint64 fileSizeBytes = 2457600);
+    Q_INVOKABLE QString uploadLocalFile(const QString& localFilePathOrUrl);
+    Q_INVOKABLE bool downloadEncryptedFile(const QString& transferId, const QString& destinationPathOrUrl);
+    Q_INVOKABLE bool pauseFileTransfer(const QString& transferId);
+    Q_INVOKABLE bool resumeFileTransfer(const QString& transferId);
     Q_INVOKABLE bool cancelFileTransfer(const QString& transferId);
     Q_INVOKABLE void togglePeerVerified(const QString& peerUserId);
     Q_INVOKABLE void togglePeerBlocked(const QString& peerUserId);
@@ -126,8 +201,44 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE bool revokeDevice(const QString& deviceId);
     Q_INVOKABLE QString pairNewDevice(const QString& displayName);
     Q_INVOKABLE void rotateSignedPrekey();
+    Q_INVOKABLE void refreshPrekeyInventory();
+    Q_INVOKABLE bool replenishPrekeys(int batchSize = 50);
     Q_INVOKABLE void regenerateTotpSecret();
     Q_INVOKABLE void resetForEmergencyWipe();
+
+    // New Invokables for CLIENT-004-T02
+    // Contacts Directory Management
+    Q_INVOKABLE bool addContact(const QString& handle, const QString& displayName, const QString& roleNote,
+                                const QString& safetyNumber = QString());
+    Q_INVOKABLE bool updateContactProfile(const QString& userId, const QString& displayName, const QString& roleNote);
+    Q_INVOKABLE bool removeContact(const QString& userId);
+    Q_INVOKABLE void simulatePeerKeyChange(const QString& userId);
+    Q_INVOKABLE void acceptAndVerifyPeerKey(const QString& userId);
+
+    // Contact Directory, Verification & Blocking (CLIENT-008-T05)
+    Q_INVOKABLE bool addContactByHandle(const QString& handle, const QString& displayName = QString(),
+                                        const QString& roleNote = QString());
+    Q_INVOKABLE bool verifyContactSafetyNumber(const QString& userId, bool verified);
+    Q_INVOKABLE bool blockContact(const QString& userId, bool blocked);
+    Q_INVOKABLE void syncContacts();
+    Q_INVOKABLE bool acknowledgeKeyChange(const QString& userId);
+
+    // Group Conversations Management
+    Q_INVOKABLE QString createDirectConversation(const QString& peerUserId);
+    Q_INVOKABLE QString createGroupConversation(const QString& groupTitle, const QVariantList& participantUserIds);
+    Q_INVOKABLE bool addParticipantToActiveGroup(const QString& userId);
+    Q_INVOKABLE bool removeParticipantFromActiveGroup(const QString& userId);
+    Q_INVOKABLE bool leaveActiveGroup();
+
+    // Message Retry & Emergency Acknowledgement
+    Q_INVOKABLE bool retryFailedMessage(const QString& messageId);
+    Q_INVOKABLE bool discardFailedMessage(const QString& messageId);
+    Q_INVOKABLE void setSimulateDeliveryFailure(bool enabled);
+    Q_INVOKABLE bool acknowledgeEmergencyMessage(const QString& messageId);
+    Q_INVOKABLE void clearSearchQuery();
+    Q_INVOKABLE void reloadFromLocalStore();
+    Q_INVOKABLE void setSimulatedOfflineMode(bool offline);
+    Q_INVOKABLE bool triggerCatchUpSync();
 
   signals:
     void activeSectionChanged();
@@ -143,6 +254,11 @@ class WorkspaceViewModel : public QObject {
     void devicesChanged();
     void localDeviceIdentityChanged();
     void mfaPolicyChanged();
+    void loadingMessagesChanged();
+    void deliveryFailureSimulatedChanged();
+    void readReceiptsEnabledChanged();
+    void connectivityStateChanged();
+    void pendingOutboxCountChanged();
     void workspaceError(const QString& message);
 
   private:
@@ -160,6 +276,11 @@ class WorkspaceViewModel : public QObject {
         QString timestampText;
         int unreadCount{0};
         int lastMessagePriority{1}; // 1 = Normal, 2 = Urgent, 3 = Emergency
+        bool isGroup{false};
+        std::vector<QString> participantUserIds;
+        int authorizedDeviceCount{1};
+        QString verificationStatus{QStringLiteral("Verified")};
+        int senderKeyEpoch{1};
     };
 
     struct MessageEntry {
@@ -178,6 +299,8 @@ class WorkspaceViewModel : public QObject {
         QString cipherSuite;
         QString sha256Short;
         int priority{1}; // 1 = Normal, 2 = Urgent, 3 = Emergency
+        QString idempotencyKey;
+        bool emergencyAcknowledged{false};
     };
 
     struct FileTransferEntry {
@@ -193,6 +316,17 @@ class WorkspaceViewModel : public QObject {
         QString direction;  // "Outbound" or "Inbound"
         QString statusText; // "Encrypted & Verified", "Streaming Chunks", "Cancelled"
         QString timestampText;
+        QString fileId{};
+        QString localPath{};
+        QString status{QStringLiteral("Completed")};
+        int progressPercent{100};
+        int completedChunks{1};
+        int totalChunks{1};
+        QString errorMessage{};
+        bool canPause{false};
+        bool canResume{false};
+        bool canDownload{false};
+        bool canCancel{true};
     };
 
     struct DeviceEntry {
@@ -210,9 +344,23 @@ class WorkspaceViewModel : public QObject {
     };
 
     void seedDefaultWorkspaceData();
+    void hydrateFromLocalStore();
+    void handleRealtimeEvent(const domain::RealtimeEvent& event);
+    void applyFileTransferUpdate(const domain::FileTransferRecord& record);
+    [[nodiscard]] FileTransferEntry buildTransferEntry(const domain::FileTransferRecord& record) const;
+    [[nodiscard]] QVariantMap buildTransferMap(const FileTransferEntry& tx, bool includeSelected) const;
+    [[nodiscard]] QString resolvePeerDisplayName(const QString& conversationId, const domain::UserId& peerUserId) const;
+    void appendDispatchedFileMessage(ConversationEntry& conv, const domain::Message& msg, const QString& transferId,
+                                     const QString& fileName, const QString& fileSizeText, const QString& cipherSuite,
+                                     const QString& sha256Short);
+    [[nodiscard]] domain::UserId localUserId() const;
+    [[nodiscard]] domain::DeviceId localDeviceId() const;
     [[nodiscard]] const ConversationEntry* findConversation(const QString& conversationId) const;
     [[nodiscard]] ConversationEntry* findConversationMutable(const QString& conversationId);
     [[nodiscard]] bool matchesQuery(const QString& candidate) const;
+    [[nodiscard]] QString resolveTargetPeerUserId(const QString& userId) const;
+    static QString normalizeLocalPath(const QString& pathOrUrl);
+    static QString formatShortHash(const std::string& hexHash);
     static QString formatFileSize(qint64 bytes);
     static QString priorityToLabel(int priority);
 
@@ -227,8 +375,14 @@ class WorkspaceViewModel : public QObject {
     int next_file_seq_{10};
     int next_device_seq_{4};
     int prekey_epoch_{14};
+    int local_prekey_count_{100};
+    QString local_prekey_health_{QStringLiteral("Healthy")};
     bool mfa_required_on_login_{true};
     bool hardware_key_enforced_{true};
+    bool is_loading_messages_{false};
+    bool delivery_failure_simulated_{false};
+    uint64_t realtime_sub_id_{0};
+    uint64_t connectivity_sub_id_{0};
     QString totp_enrollment_secret_{QStringLiteral("JBSWY3DPEHPK3PXP · SHA-256 (6-digit / 30s)")};
 
     std::vector<ConversationEntry> conversations_;

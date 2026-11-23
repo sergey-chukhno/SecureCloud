@@ -21,7 +21,7 @@ jobs:
   # ============================================================================
   quality-gates:
     name: Quality Gates (Formatting, Clang-Tidy, Contracts)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,7 +31,7 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew install openssl@3 protobuf grpc googletest llvm@18 ninja nlohmann-json cpp-httplib libpqxx libpq
+          brew install openssl@3 protobuf grpc googletest llvm@18 ninja nlohmann-json cpp-httplib libpqxx libpq sqlcipher
           echo "$(brew --prefix llvm@18)/bin" >> $GITHUB_PATH
           echo "/opt/homebrew/opt/libpq/bin" >> $GITHUB_PATH
 
@@ -56,7 +56,7 @@ jobs:
   # ============================================================================
   macos-build-test:
     name: macOS (AppleClang / arm64)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -103,7 +103,7 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_UPGRADE: 1
         run: |
-          brew install openssl@3 protobuf grpc googletest ninja nlohmann-json cpp-httplib libpqxx libpq
+          brew install openssl@3 protobuf grpc googletest ninja nlohmann-json cpp-httplib libpqxx libpq sqlcipher
           echo "/opt/homebrew/opt/openssl@3/bin" >> "$GITHUB_PATH"
           echo "/opt/homebrew/opt/libpq/bin" >> "$GITHUB_PATH"
 
@@ -135,6 +135,7 @@ jobs:
     runs-on: windows-2022
     env:
       VCPKG_DEFAULT_BINARY_CACHE: ${{ github.workspace }}/.vcpkg_archives
+      VCPKG_BINARY_SOURCES: "clear;files,${{ github.workspace }}/.vcpkg_archives,readwrite"
       VCPKG_DOWNLOADS: ${{ github.workspace }}/.vcpkg_downloads
       SCCACHE_GHA_ENABLED: "true"
       ACTIONS_CACHE_SERVICE_V2: "on"
@@ -188,6 +189,36 @@ jobs:
           & sccache --start-server
           & sccache --show-stats
 
+      - name: Set up MSVC Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure Ninja build system path
+        shell: pwsh
+        run: |
+          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Ensure vcpkg baseline commit
+        shell: pwsh
+        run: |
+          git -C $env:VCPKG_INSTALLATION_ROOT cat-file -e b322364f06308bdd24823f9d8f03fe0cc86fd46f 2>$null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "Fetching specific vcpkg baseline commit..."
+            git -C $env:VCPKG_INSTALLATION_ROOT fetch --depth=1 origin b322364f06308bdd24823f9d8f03fe0cc86fd46f
+          }
+
+      - name: Compute vcpkg & MSVC ABI cache key
+        id: vcpkg-abi
+        shell: pwsh
+        run: |
+          $clVer = (cl.exe 2>&1 | Select-Object -First 1).Trim()
+          $vcpkgCmakeSha = (git -C $env:VCPKG_INSTALLATION_ROOT rev-parse HEAD:scripts/cmake).Trim()
+          $tripletHash = (Get-FileHash "$env:VCPKG_INSTALLATION_ROOT/triplets/x64-windows.cmake" -Algorithm SHA256).Hash
+          $raw = "$clVer|$vcpkgCmakeSha|$tripletHash"
+          $stream = [IO.MemoryStream]::new([Text.Encoding]::UTF8.GetBytes($raw))
+          $abiKey = (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash.Substring(0, 16).ToLower()
+          "abi_key=$abiKey" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          Write-Host "Computed vcpkg/MSVC ABI key: $abiKey ($raw)"
+
       - name: Restore vcpkg binary archives and downloads
         id: vcpkg-cache
         uses: actions/cache/restore@v4
@@ -195,34 +226,40 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-v3-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v5-${{ hashFiles('vcpkg.json') }}-${{ steps.vcpkg-abi.outputs.abi_key }}
           restore-keys: |
-            vcpkg-msvc-v3-
-            vcpkg-msvc-v2-
-            vcpkg-msvc-
+            vcpkg-msvc-v5-${{ hashFiles('vcpkg.json') }}-
+            vcpkg-msvc-v5-
+            vcpkg-msvc-v4-
 
       - name: Ensure vcpkg cache directories exist
         shell: pwsh
         run: |
+          $matchedKey = "${{ steps.vcpkg-cache.outputs.cache-matched-key }}"
+          $expectedSuffix = "-${{ steps.vcpkg-abi.outputs.abi_key }}"
+          if (-not [string]::IsNullOrEmpty($matchedKey) -and -not $matchedKey.EndsWith($expectedSuffix)) {
+            Write-Host "Fallback cache '$matchedKey' does not match current ABI suffix '$expectedSuffix'. Clearing stale .vcpkg_archives..."
+            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "${{ github.workspace }}/.vcpkg_archives"
+          }
           New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg_archives"
           New-Item -ItemType Directory -Force -Path "${{ github.workspace }}/.vcpkg_downloads"
 
       - name: Pre-fetch vcpkg tools
         shell: pwsh
         run: |
-          $cmakeZip = "${{ github.workspace }}/.vcpkg_downloads/cmake-4.4.3-windows-x86_64.zip"
+          $cmakeZip = "${{ github.workspace }}/.vcpkg_downloads/cmake-4.4.4-windows-x86_64.zip"
           $needsDownload = $true
           if (Test-Path -Path $cmakeZip) {
             $file = Get-Item -Path $cmakeZip
             if ($file.Length -gt 10000000) {
               $needsDownload = $false
-              Write-Host "cmake-4.4.3-windows-x86_64.zip already cached ($($file.Length) bytes)."
+              Write-Host "cmake-4.4.4-windows-x86_64.zip already cached ($($file.Length) bytes)."
             }
           }
 
           if ($needsDownload) {
-            Write-Host "Pre-fetching cmake-4.4.3-windows-x86_64.zip with retries..."
-            $url = "https://github.com/Kitware/CMake/releases/download/v4.4.3/cmake-4.4.3-windows-x86_64.zip"
+            Write-Host "Pre-fetching cmake-4.4.4-windows-x86_64.zip with retries..."
+            $url = "https://github.com/Kitware/CMake/releases/download/v4.4.4/cmake-4.4.4-windows-x86_64.zip"
             $retries = 5
             for ($i = 1; $i -le $retries; $i++) {
               Write-Host "Download attempt $i of $retries..."
@@ -237,23 +274,6 @@ jobs:
               Write-Host "Attempt $i produced incomplete file, retrying in 10s..."
               Start-Sleep -Seconds 10
             }
-          }
-
-      - name: Set up MSVC Developer Command Prompt
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Configure Ninja build system path
-        shell: pwsh
-        run: |
-          "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Ensure vcpkg baseline commit
-        shell: pwsh
-        run: |
-          $hasCommit = git -C $env:VCPKG_INSTALLATION_ROOT cat-file -e b322364f06308bdd24823f9d8f03fe0cc86fd46f 2>$null; $LASTEXITCODE -eq 0
-          if (-not $hasCommit) {
-            Write-Host "Fetching specific vcpkg baseline commit..."
-            git -C $env:VCPKG_INSTALLATION_ROOT fetch --depth=1 origin b322364f06308bdd24823f9d8f03fe0cc86fd46f
           }
 
       - name: Configure CMake with MSVC & vcpkg
@@ -279,7 +299,7 @@ jobs:
           path: |
             ${{ github.workspace }}/.vcpkg_archives
             ${{ github.workspace }}/.vcpkg_downloads
-          key: vcpkg-msvc-v3-${{ hashFiles('vcpkg.json') }}
+          key: vcpkg-msvc-v5-${{ hashFiles('vcpkg.json') }}-${{ steps.vcpkg-abi.outputs.abi_key }}
 
       - name: Build All Targets
         shell: pwsh
@@ -308,10 +328,10 @@ jobs:
           ctest --preset ci-windows-msvc --output-on-failure --parallel 4
 
   # ============================================================================
-  # Native Windows MinGW Build & Test Job (MSYS2 MINGW64 / GCC 15+)
+  # Native Windows MinGW Build & Test Job (MSYS2 UCRT64 / GCC 15+)
   # ============================================================================
   windows-mingw-build-test:
-    name: Windows (MinGW-w64 MINGW64 / GCC 15+)
+    name: Windows (MinGW-w64 UCRT64 / GCC 15+)
     runs-on: windows-2022
     steps:
       - name: Checkout repository
@@ -345,15 +365,15 @@ jobs:
             core.exportVariable('ACTIONS_CACHE_SERVICE_V2', process.env.ACTIONS_CACHE_SERVICE_V2 || 'on');
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
 
-      - name: Set up MSYS2 MINGW64 Environment
+      - name: Set up MSYS2 UCRT64 Environment
         uses: msys2/setup-msys2@v2
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           release: false
           update: false
           path-type: minimal
 
-      - name: Install MinGW64 Dependencies with Retries
+      - name: Install UCRT64 Dependencies with Retries
         shell: msys2 {0}
         run: |
           # Disable pacman low-speed timeout to prevent aborts on slow mirrors
@@ -361,22 +381,23 @@ jobs:
           grep -q "DisableDownloadTimeout" /etc/pacman.conf || sed -i '/\[options\]/a DisableDownloadTimeout' /etc/pacman.conf
 
           PACKAGES=(
-            mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-cmake
-            mingw-w64-x86_64-ninja
-            mingw-w64-x86_64-lld
-            mingw-w64-x86_64-sccache
-            mingw-w64-x86_64-protobuf
-            mingw-w64-x86_64-grpc
-            mingw-w64-x86_64-gtest
-            mingw-w64-x86_64-openssl
-            mingw-w64-x86_64-nlohmann-json
-            mingw-w64-x86_64-libpqxx
+            mingw-w64-ucrt-x86_64-toolchain
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-lld
+            mingw-w64-ucrt-x86_64-sccache
+            mingw-w64-ucrt-x86_64-protobuf
+            mingw-w64-ucrt-x86_64-grpc
+            mingw-w64-ucrt-x86_64-gtest
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-nlohmann-json
+            mingw-w64-ucrt-x86_64-libpqxx
+            mingw-w64-ucrt-x86_64-sqlcipher
           )
 
           installed=0
           for attempt in 1 2 3 4 5; do
-            echo "Attempt $attempt of 5: Installing MinGW64 packages..."
+            echo "Attempt $attempt of 5: Installing UCRT64 packages..."
             if pacman -Sy --needed --noconfirm --disable-download-timeout "${PACKAGES[@]}"; then
               installed=1
               break
@@ -386,7 +407,7 @@ jobs:
           done
 
           if [ $installed -ne 1 ]; then
-            echo "FATAL: Failed to install MinGW64 packages after 5 attempts."
+            echo "FATAL: Failed to install UCRT64 packages after 5 attempts."
             exit 1
           fi
 

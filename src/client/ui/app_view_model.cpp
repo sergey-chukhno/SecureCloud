@@ -1,14 +1,71 @@
 #include "ui/app_view_model.hpp"
 
 #include "application/client_error.hpp"
+#include "domain/offline_sync_models.hpp"
+
+#include <QMetaObject>
+#include <QPointer>
 
 namespace securecloud::client::ui {
 
 AppViewModel::AppViewModel(application::ClientApplication& app, NavigationController& nav_controller, QObject* parent)
-    : QObject(parent), app_(app), nav_controller_(nav_controller) {}
+    : QObject(parent), app_(app), nav_controller_(nav_controller) {
+    QPointer<AppViewModel> self(this);
+    connectivity_sub_id_ =
+        app_.bootstrap().sync_manager().subscribe_connectivity_state([self](domain::ConnectivityState state) {
+            if (!self) {
+                return;
+            }
+            QMetaObject::invokeMethod(
+                self.data(),
+                [self, state]() {
+                    if (!self) {
+                        return;
+                    }
+                    if (!self->isEmergencyWiped()) {
+                        switch (state) {
+                        case domain::ConnectivityState::Online:
+                            self->connectionStatus_ = QStringLiteral("Connected");
+                            break;
+                        case domain::ConnectivityState::Offline:
+                            self->connectionStatus_ = QStringLiteral("Offline");
+                            break;
+                        case domain::ConnectivityState::Syncing:
+                            self->connectionStatus_ = QStringLiteral("Syncing");
+                            break;
+                        }
+                    }
+                    emit self->connectionStatusChanged();
+                },
+                Qt::AutoConnection);
+        });
+}
+
+AppViewModel::~AppViewModel() {
+    if (connectivity_sub_id_ != 0) {
+        app_.bootstrap().sync_manager().unsubscribe_connectivity_state(connectivity_sub_id_);
+        connectivity_sub_id_ = 0;
+    }
+}
 
 QString AppViewModel::connectionStatus() const {
+    if (isEmergencyWiped()) {
+        return QStringLiteral("Offline (Wiped)");
+    }
+    switch (app_.bootstrap().sync_manager().connectivity_state()) {
+    case domain::ConnectivityState::Offline:
+        return QStringLiteral("Offline");
+    case domain::ConnectivityState::Syncing:
+        return QStringLiteral("Syncing");
+    case domain::ConnectivityState::Online:
+        return connectionStatus_;
+    }
     return connectionStatus_;
+}
+
+QString AppViewModel::connectivityState() const {
+    const auto sv = domain::to_string(app_.bootstrap().sync_manager().connectivity_state());
+    return QString::fromUtf8(sv.data(), static_cast<qsizetype>(sv.size()));
 }
 
 QString AppViewModel::sessionStatusText() const {
@@ -17,6 +74,13 @@ QString AppViewModel::sessionStatusText() const {
     }
     if (!isAuthenticated()) {
         return QStringLiteral("Unauthenticated — Awaiting Credentials");
+    }
+    const auto state = app_.bootstrap().sync_manager().connectivity_state();
+    if (state == domain::ConnectivityState::Offline) {
+        return QStringLiteral("Offline Mode — Authenticated Session (%1)").arg(currentUser());
+    }
+    if (state == domain::ConnectivityState::Syncing) {
+        return QStringLiteral("Catch-Up Sync Active — (%1)").arg(currentUser());
     }
     return QStringLiteral("Authenticated Session (%1)").arg(currentUser());
 }

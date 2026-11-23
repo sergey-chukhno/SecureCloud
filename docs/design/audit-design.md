@@ -23,7 +23,7 @@ Its failure must not prevent Messaging or Files from durably accepting otherwise
 
 ## 7.2 Architectural Position
 
-Audit receives events from other services through their transactional outboxes.
+Audit receives events from other services through their transactional outboxes or durable spools.
 
 ```text
                     Runtime Services
@@ -33,22 +33,22 @@ Audit receives events from other services through their transactional outboxes.
         ▼                ▼                ▼
       Auth           Messaging          Files
         │                │                │
-        └───────┬────────┴────────┬───────┘
-                │                 │
-          Transactional      Transactional
-             Outbox             Outbox
-                │                 │
-                └────────┬────────┘
-                         ▼
-                 Audit ingestion
+        ├───────┬────────┴────────┬───────┤
+        │       │                 │       │
+    Gateway  Transactional   Transactional│
+     Disk     Outbox            Outbox    │
+     Spool      │                 │       │
+    (ADR-011)   └────────┬────────┘       │
+        │                ▼                │
+        └───────────────► Audit ingestion ◄┘
                          │
                          ▼
                     ClickHouse
 ```
 
-The Gateway may also generate operational/security events when appropriate.
+Services possessing a relational or document database (Auth, Messaging, Files) record events via their database Transactional Outbox. The Gateway microservice owns no business database (`ADR-005` §5). It records mandatory security events using a dedicated per-instance append-only WAL log spool (`/var/spool/securecloud-gateway/audit`) with group-commit `fsync` (**ADR-011**).
 
-Audit events are delivered asynchronously.
+Audit events are delivered asynchronously over gRPC (`AuditIngestionService`).
 
 The Audit Service never reads another service's database directly.
 
@@ -291,9 +291,9 @@ Audit is responsible for ingestion and durable analytical storage, not reconstru
 
 ---
 
-## 7.9 Transactional Outbox
+## 7.9 Transactional Outbox & Gateway Durable Spool
 
-Runtime services use a Transactional Outbox for audit events.
+Runtime services with database persistence (Auth, Messaging, Files) use a Transactional Outbox for audit events.
 
 Conceptually:
 
@@ -314,7 +314,9 @@ Business Transaction
         Audit Service
 ```
 
-The event is therefore published **at least once**.
+The Gateway microservice owns no business database (`ADR-005` §5). It implements a per-instance, bounded append-only log spool on persistent volume (**ADR-011**) as its outbox equivalent.
+
+In all cases, event delivery is **at least once**.
 
 The Audit Service must tolerate duplicate events.
 

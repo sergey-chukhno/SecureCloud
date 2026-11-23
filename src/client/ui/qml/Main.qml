@@ -234,9 +234,13 @@ ApplicationWindow {
                 width: 7
                 height: 7
                 radius: 3.5
-                color: appViewModel.isEmergencyWiped
-                       ? Theme.statusDanger
-                       : (appViewModel.isAuthenticated ? Theme.statusSuccess : Theme.textMuted)
+                color: {
+                    if (appViewModel.isEmergencyWiped) return Theme.statusDanger
+                    if (!appViewModel.isAuthenticated) return Theme.textMuted
+                    if (appViewModel.connectivityState === "Offline") return Theme.statusWarning
+                    if (appViewModel.connectivityState === "Syncing") return Theme.accentPrimary
+                    return Theme.statusSuccess
+                }
                 Layout.alignment: Qt.AlignVCenter
             }
 

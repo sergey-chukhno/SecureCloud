@@ -22,6 +22,24 @@ target_link_libraries(securecloud_audit_domain PUBLIC
         OpenSSL::Crypto
 )
 
+# Target dédiée pour la télémétrie & diagnostics (AUDIT-011)
+add_library(securecloud_audit_telemetry STATIC
+        telemetry/audit_metrics.cpp
+        telemetry/audit_diagnostics.cpp
+)
+
+add_library(securecloud::audit_telemetry ALIAS securecloud_audit_telemetry)
+
+target_include_directories(securecloud_audit_telemetry PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_link_libraries(securecloud_audit_telemetry PUBLIC
+        securecloud_audit_domain
+        securecloud::common
+        securecloud::compiler_flags
+)
+
 add_library(securecloud_audit_query STATIC
         query/audit_page_cursor.cpp
         query/audit_query_validator.cpp
@@ -78,6 +96,7 @@ target_include_directories(securecloud_audit_repository PUBLIC
 target_link_libraries(securecloud_audit_repository PUBLIC
         securecloud_audit_config
         securecloud_audit_domain
+        securecloud_audit_telemetry
         securecloud::common
         securecloud::httplib
         securecloud::compiler_flags
@@ -96,6 +115,11 @@ add_library(securecloud_audit_service STATIC
         service/audit_query_service_impl.cpp
         service/audit_service_impl.cpp
         security/grpc_producer_identity_validator.cpp
+        security/internal_security_event_types.cpp
+        security/internal_security_event_factory.cpp
+        security/anti_recursion_guard.cpp
+        security/internal_security_event_recorder.cpp
+        health/audit_health_evaluator.cpp
 )
 
 add_library(securecloud::audit_service ALIAS securecloud_audit_service)
@@ -108,6 +132,7 @@ target_link_libraries(securecloud_audit_service PUBLIC
         securecloud_audit_domain
         securecloud_audit_query
         securecloud_audit_repository
+        securecloud_audit_telemetry
         securecloud_proto
         securecloud::common
         securecloud::compiler_flags
@@ -130,6 +155,7 @@ target_link_libraries(securecloud_audit_server PUBLIC
         securecloud_audit_query
         securecloud_audit_repository
         securecloud_audit_service
+        securecloud_audit_telemetry
         securecloud::common
         securecloud::compiler_flags
 )

@@ -97,6 +97,13 @@ EvpPkeyPtr load_private_key(const std::string& path, std::string& out_error) {
 }
 
 bool check_certificate_expiry(X509* cert, std::string& out_error) {
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#elif defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4996)
+#endif
     const ASN1_TIME* not_after = X509_get0_notAfter(cert);
     if (not_after != nullptr && X509_cmp_current_time(not_after) <= 0) {
         out_error = "Certificate has expired";
@@ -108,6 +115,11 @@ bool check_certificate_expiry(X509* cert, std::string& out_error) {
         out_error = "Certificate is not yet valid";
         return false;
     }
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic pop
+#elif defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 
     return true;
 }

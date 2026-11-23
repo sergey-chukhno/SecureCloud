@@ -11,9 +11,19 @@ Item {
     property string cancelText: qsTr("Cancel")
     property bool isDanger: false
     property bool isOpen: false
+    property bool closeOnConfirm: true
+    property Component customContent: null
 
     signal confirmed()
     signal cancelled()
+
+    function open() {
+        isOpen = true;
+    }
+
+    function close() {
+        isOpen = false;
+    }
 
     visible: isOpen
     anchors.fill: parent
@@ -91,12 +101,20 @@ Item {
 
             // Dialog Message Body
             Label {
+                visible: dialogRoot.message.length > 0
                 text: dialogRoot.message
                 font.family: Theme.fontFamilyPrimary
                 font.pixelSize: Theme.fontBody
                 color: Theme.textSecondary
                 wrapMode: Text.WordWrap
                 Layout.fillWidth: true
+            }
+
+            // Optional Custom Content Slot (forms, inputs, list items)
+            Loader {
+                Layout.fillWidth: true
+                visible: dialogRoot.customContent !== null
+                sourceComponent: dialogRoot.customContent
             }
 
             Rectangle {
@@ -125,7 +143,9 @@ Item {
                     text: dialogRoot.confirmText
                     variant: dialogRoot.isDanger ? "Danger" : "Primary"
                     onClicked: {
-                        dialogRoot.isOpen = false
+                        if (dialogRoot.closeOnConfirm) {
+                            dialogRoot.isOpen = false
+                        }
                         dialogRoot.confirmed()
                     }
                 }

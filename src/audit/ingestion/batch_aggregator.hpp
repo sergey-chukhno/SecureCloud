@@ -66,7 +66,7 @@ class BatchAggregator {
 
   private:
     void aggregator_loop();
-    void flush_active_batch(bool is_count_trigger);
+    void flush_active_batch(bool is_count_trigger, bool is_shutdown_trigger = false);
 
     const size_t max_batch_size_;
     const std::chrono::milliseconds max_batch_delay_;

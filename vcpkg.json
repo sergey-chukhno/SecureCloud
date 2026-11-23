@@ -10,6 +10,7 @@
     "libpqxx",
     "protobuf",
     "nlohmann-json",
-    "cpp-httplib"
+    "cpp-httplib",
+    "sqlcipher"
   ]
 }

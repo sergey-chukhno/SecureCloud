@@ -1,8 +1,11 @@
+#include "auth/audit/auth_audit_client.hpp"
+#include "auth/audit/auth_outbox_relay.hpp"
 #include "auth/crypto/argon2id_hasher.hpp"
 #include "auth/crypto/mfa_secret_protector.hpp"
 #include "auth/crypto/token_crypto.hpp"
 #include "auth/crypto/totp_engine.hpp"
 #include "auth/db/postgres_connection_pool.hpp"
+#include "auth/repository/auth_outbox_repository.hpp"
 #include "auth/repository/device_public_key_repository.hpp"
 #include "auth/repository/device_repository.hpp"
 #include "auth/repository/mfa_repository.hpp"
@@ -31,6 +34,8 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdlib>
+#include <cstring>
 #include <grpcpp/grpcpp.h>
 #include <iostream>
 #include <memory>
@@ -112,9 +117,26 @@ int run_service() {
     std::shared_ptr<securecloud::auth::service::DeviceManager> device_mgr;
     std::shared_ptr<securecloud::auth::service::CryptoDirectoryManager> crypto_directory_mgr;
     std::shared_ptr<securecloud::auth::service::PrekeyManager> prekey_mgr;
-    auto audit_publisher = std::make_shared<securecloud::auth::service::AuditEventPublisher>();
+    std::shared_ptr<securecloud::auth::service::IAuditEventPublisher> audit_publisher;
+    std::unique_ptr<securecloud::auth::audit::AuthOutboxRelay> outbox_relay;
 
     if (pool) {
+        auto outbox_repo = std::make_shared<securecloud::auth::repository::PostgresAuthOutboxRepository>(*pool);
+        audit_publisher = std::make_shared<securecloud::auth::service::OutboxAuditEventPublisher>(
+            outbox_repo, config.producer_instance);
+
+        if (config.outbox_relay_enabled) {
+            securecloud::auth::audit::AuthAuditClientConfig audit_client_cfg;
+            audit_client_cfg.target_endpoint = config.audit_endpoint;
+            audit_client_cfg.timeout = config.audit_timeout;
+            audit_client_cfg.tls_credentials = config.common.tls_credentials;
+            audit_client_cfg.expected_peer_san = config.audit_expected_peer_san;
+
+            auto audit_client = std::make_shared<securecloud::auth::audit::AuthAuditClient>(audit_client_cfg);
+            outbox_relay = std::make_unique<securecloud::auth::audit::AuthOutboxRelay>(
+                outbox_repo, std::move(audit_client), config.outbox_relay, config.producer_instance);
+        }
+
         auto user_repo = std::make_shared<securecloud::auth::repository::PostgresUserRepository>(*pool);
         auto device_repo = std::make_shared<securecloud::auth::repository::PostgresDeviceRepository>(*pool);
         auto public_key_repo =
@@ -138,17 +160,22 @@ int run_service() {
 
         verifier = std::make_shared<securecloud::auth::service::CredentialVerifier>(user_repo, hasher);
         session_mgr = std::make_shared<securecloud::auth::service::SessionManager>(
-            session_repo, device_repo, std::chrono::hours(24), audit_publisher);
+            session_repo, device_repo, std::chrono::hours(24), audit_publisher, pool.get());
         token_mgr = std::make_shared<securecloud::auth::service::TokenManager>(
-            token_signer, refresh_token_repo, session_repo, device_repo, audit_publisher);
-        mfa_mgr = std::make_shared<securecloud::auth::service::MfaManager>(
-            mfa_repo, session_repo, user_repo, authenticator, totp_engine, secret_protector, audit_publisher);
-        device_mgr = std::make_shared<securecloud::auth::service::DeviceManager>(device_repo, public_key_repo,
-                                                                                 session_mgr, audit_publisher);
+            token_signer, refresh_token_repo, session_repo, device_repo, audit_publisher,
+            securecloud::auth::service::TokenManagerConfig{}, pool.get());
+        mfa_mgr = std::make_shared<securecloud::auth::service::MfaManager>(mfa_repo, session_repo, user_repo,
+                                                                           authenticator, totp_engine, secret_protector,
+                                                                           audit_publisher, pool.get());
+        device_mgr = std::make_shared<securecloud::auth::service::DeviceManager>(
+            device_repo, public_key_repo, session_mgr, audit_publisher,
+            securecloud::auth::service::DeviceManager::kDefaultPairingTtl, pool.get());
         crypto_directory_mgr = std::make_shared<securecloud::auth::service::CryptoDirectoryManager>(
-            device_repo, public_key_repo, audit_publisher);
+            device_repo, public_key_repo, audit_publisher, pool.get());
         prekey_mgr =
             std::make_shared<securecloud::auth::service::PrekeyManager>(device_repo, public_key_repo, audit_publisher);
+    } else {
+        audit_publisher = std::make_shared<securecloud::auth::service::AuditEventPublisher>();
     }
 
     // Instantiate AuthServiceImpl wired with domain verifier, session manager, audit publisher, token manager, MFA
@@ -168,6 +195,10 @@ int run_service() {
         std::cerr << "[SecureCloud] [" << config.common.service_name << "] FATAL: Failed to start gRPC mTLS server on "
                   << server_address << "\n";
         return 1;
+    }
+
+    if (outbox_relay) {
+        outbox_relay->start();
     }
 
     health_manager.set_live(true);
@@ -196,12 +227,18 @@ int run_service() {
     // Step 3: Destroy server instance (avoids deadlock-prone server->Wait() call after bounded Shutdown)
     server.reset();
 
-    // Step 4: Bounded database pool drain (2s)
+    // Step 4: Stop background outbox relay and perform bounded drain of remaining staged events
+    if (outbox_relay) {
+        outbox_relay->stop();
+        outbox_relay.reset();
+    }
+
+    // Step 5: Bounded database pool drain (2s)
     if (pool) {
         pool->shutdown(k_pool_drain_timeout);
     }
 
-    // Step 5: Process termination with exit code 0
+    // Step 6: Process termination with exit code 0
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Graceful shutdown completed successfully.\n";
     return 0;
 }

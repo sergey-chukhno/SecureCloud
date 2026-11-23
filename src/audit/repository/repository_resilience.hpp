@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audit_repository_exceptions.hpp"
+#include "telemetry/audit_metrics.hpp"
 
 #include <chrono>
 #include <random>
@@ -18,7 +19,10 @@ class RepositoryResilience {
     /// Executes an operation with concurrency limits and a retry policy (exponential backoff + jitter).
     template <typename Func> auto execute(Func&& operation, uint32_t max_retries = 3) -> std::invoke_result_t<Func> {
         // Bulkhead: limits the number of concurrent requests to the database
-        bulkhead_.acquire();
+        if (!bulkhead_.try_acquire_for(std::chrono::milliseconds(500))) {
+            telemetry::AuditMetrics::instance().record_clickhouse_bulkhead_rejection();
+            throw ClickHouseTimeoutException("Bulkhead semaphore timeout");
+        }
         struct BulkheadReleaser {
             std::counting_semaphore<128>& sem;
             ~BulkheadReleaser() { sem.release(); }
@@ -45,6 +49,7 @@ class RepositoryResilience {
                     throw;
             }
 
+            telemetry::AuditMetrics::instance().record_clickhouse_retry();
             std::this_thread::sleep_for(backoff + generate_jitter());
             backoff *= 2;
             attempt++;

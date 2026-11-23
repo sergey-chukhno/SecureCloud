@@ -569,6 +569,50 @@ Rectangle {
                             spacing: 2
 
                             Label {
+                                text: qsTr("Send Read Receipts")
+                                font.bold: true
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontBody
+                                color: Theme.textPrimary
+                            }
+
+                            Label {
+                                text: qsTr("When disabled, other participants will not see when you have read their messages.")
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontCaption
+                                color: Theme.textMuted
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        Switch {
+                            id: readReceiptsSwitch
+                            objectName: "readReceiptsSwitch"
+                            checked: wvm ? wvm.readReceiptsEnabled : true
+                            onToggled: {
+                                if (wvm) {
+                                    wvm.readReceiptsEnabled = checked
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height: 1
+                        color: Theme.borderSubtle
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.space12
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Label {
                                 text: qsTr("Gateway Transport Encryption")
                                 font.bold: true
                                 font.family: Theme.fontFamilyPrimary
