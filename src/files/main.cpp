@@ -71,16 +71,13 @@ int run_service() {
         return 1;
     }
 
-    // Initialize PostgreSQL connection pool and MinIO S3 client
     auto db_pool_config = securecloud::files::db::ConnectionPoolConfig::from_files_config(config);
     auto db_pool = std::make_shared<securecloud::files::db::FilesDbConnectionPool>(std::move(db_pool_config));
 
     auto s3_config = securecloud::files::storage::S3ClientConfig::from_files_config(config);
     auto s3_client = std::make_shared<securecloud::files::storage::S3Client>(std::move(s3_config));
 
-    // Initialize FilesServiceImpl enforcing Gateway mTLS client identity (DNS:gateway)
-    securecloud::files::service::FilesServiceImpl files_service(db_pool, s3_client,
-                                                                /*expected_client_identity=*/"gateway");
+    securecloud::files::service::FilesServiceImpl files_service(db_pool, s3_client, "gateway");
 
     std::string server_address = config.common.listen_address();
 
@@ -103,19 +100,24 @@ int run_service() {
     health_manager.set_live(true);
     health_evaluator.evaluate_once();
 
-    // Initialize Outbox Repository and Relay background worker (fail-closed mTLS)
     auto outbox_repo = std::make_shared<securecloud::files::FilesOutboxRepository>(db_pool);
-    std::string audit_endpoint = env_source.get("SECURECLOUD_AUDIT_ENDPOINT").value_or("audit:50055");
-    std::string audit_peer_san = env_source.get("SECURECLOUD_AUDIT_EXPECTED_SAN").value_or("audit");
-    securecloud::files::audit::GrpcAuditClientConfig audit_config{
-        .target_endpoint = audit_endpoint,
-        .timeout = std::chrono::milliseconds(2000),
-        .tls_credentials = config.common.tls_credentials,
-        .expected_peer_san = audit_peer_san,
-    };
-    auto audit_client = std::make_shared<securecloud::files::audit::GrpcAuditClient>(audit_config);
-    securecloud::files::audit::FilesOutboxRelay outbox_relay(outbox_repo, audit_client);
-    outbox_relay.start();
+    securecloud::files::audit::FilesOutboxMetrics outbox_metrics;
+    securecloud::files::audit::FilesOutboxDiagnostics outbox_diagnostics;
+    std::unique_ptr<securecloud::files::audit::FilesOutboxRelay> outbox_relay;
+
+    if (config.audit.outbox_relay_enabled) {
+        securecloud::files::audit::GrpcAuditClientConfig audit_config{
+            .target_endpoint = config.audit.audit_endpoint,
+            .timeout = config.audit.audit_timeout,
+            .tls_credentials = config.common.tls_credentials,
+            .expected_peer_san = config.audit.audit_expected_peer_san,
+        };
+        auto audit_client = std::make_shared<securecloud::files::audit::GrpcAuditClient>(audit_config);
+        outbox_relay = std::make_unique<securecloud::files::audit::FilesOutboxRelay>(
+            outbox_repo, audit_client, config.audit.relay, config.audit.producer_instance, &outbox_metrics,
+            &outbox_diagnostics);
+        outbox_relay->start();
+    }
 
     std::cout << "[SecureCloud] [" << config.common.service_name << "] mTLS server listening strictly on "
               << server_address << " with service identity 'DNS:" << config.common.service_name << "'\n";
@@ -126,11 +128,14 @@ int run_service() {
 
     health_manager.set_shutting_down(true);
     health_evaluator.stop();
-    std::cout << "[SecureCloud] [" << config.common.service_name << "] Stopping outbox relay...\n";
-    outbox_relay.stop();
 
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down mTLS server...\n";
     server->Shutdown(std::chrono::system_clock::now() + std::chrono::seconds(5));
+
+    if (outbox_relay) {
+        std::cout << "[SecureCloud] [" << config.common.service_name << "] Stopping outbox relay...\n";
+        outbox_relay->stop();
+    }
 
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Draining database connection pool...\n";
     db_pool->drain();

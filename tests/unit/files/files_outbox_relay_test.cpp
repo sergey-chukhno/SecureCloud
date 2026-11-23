@@ -74,12 +74,17 @@ class FakeOutboxRepository final : public IFilesOutboxRepository {
     std::vector<std::string> published_ids;
     std::vector<RecordedStateChange> transient_failures;
     std::vector<RecordedStateChange> quarantined_events;
+    size_t purge_return_value{0};
+    size_t purge_calls{0};
+    std::chrono::seconds last_lease_duration{0};
 
     void stage_event(const FilesOutboxEntity& event, pqxx::work&) override { pending_events.push_back(event); }
 
     void stage_event(const FilesOutboxEntity& event) override { pending_events.push_back(event); }
 
-    std::vector<FilesOutboxEntity> fetch_and_lease_pending_batch(size_t limit, std::chrono::seconds) override {
+    std::vector<FilesOutboxEntity> fetch_and_lease_pending_batch(size_t limit,
+                                                                 std::chrono::seconds lease_duration) override {
+        last_lease_duration = lease_duration;
         std::vector<FilesOutboxEntity> res;
         const size_t n = std::min(limit, pending_events.size());
         res.reserve(n);
@@ -109,7 +114,10 @@ class FakeOutboxRepository final : public IFilesOutboxRepository {
         return true;
     }
 
-    size_t purge_published_older_than(std::chrono::system_clock::time_point, size_t) override { return 0; }
+    size_t purge_published_older_than(std::chrono::system_clock::time_point, size_t) override {
+        ++purge_calls;
+        return purge_return_value;
+    }
 
     size_t count_pending() override { return pending_events.size(); }
 
@@ -147,6 +155,7 @@ TEST(FilesOutboxRelayTest, PollAndDispatchPublishesCanonicalBatchSuccessfully) {
             EXPECT_EQ(batch[0].event_id(), id1);
             EXPECT_EQ(batch[0].event_type(), "file.created");
             EXPECT_EQ(batch[0].producer_service(), securecloud::audit::v1::PRODUCER_SERVICE_FILES);
+            EXPECT_EQ(batch[0].producer_instance(), "files-test-1");
             EXPECT_EQ(batch[1].event_id(), id2);
             EXPECT_EQ(batch[1].event_type(), "file.upload.completed");
 
@@ -158,15 +167,21 @@ TEST(FilesOutboxRelayTest, PollAndDispatchPublishesCanonicalBatchSuccessfully) {
             return res;
         });
 
-    FilesOutboxRelay relay(repo, client);
+    FilesOutboxMetrics metrics;
+    FilesOutboxDiagnostics diag;
+    FilesOutboxRelay relay(repo, client, {}, "files-test-1", &metrics, &diag);
     const size_t processed = relay.poll_and_dispatch(50);
 
     EXPECT_EQ(processed, 2u);
+    EXPECT_EQ(repo->last_lease_duration, std::chrono::seconds(30));
     ASSERT_EQ(repo->published_ids.size(), 2u);
     EXPECT_EQ(repo->published_ids[0], id1);
     EXPECT_EQ(repo->published_ids[1], id2);
     EXPECT_TRUE(repo->transient_failures.empty());
     EXPECT_TRUE(repo->quarantined_events.empty());
+    EXPECT_EQ(metrics.batches_dispatched.load(), 1u);
+    EXPECT_EQ(metrics.events_published.load(), 2u);
+    EXPECT_EQ(diag.consecutive_failures, 0u);
 }
 
 TEST(FilesOutboxRelayTest, PollAndDispatchRecordsTransientFailureOnRpcFailureOrException) {
@@ -185,7 +200,9 @@ TEST(FilesOutboxRelayTest, PollAndDispatchRecordsTransientFailureOnRpcFailureOrE
 
     EXPECT_CALL(*client, submit_batch(_)).WillOnce(Return(rpc_fail));
 
-    FilesOutboxRelay relay(repo, client);
+    FilesOutboxMetrics metrics;
+    FilesOutboxDiagnostics diag;
+    FilesOutboxRelay relay(repo, client, {}, "files-1", &metrics, &diag);
     const size_t processed = relay.poll_and_dispatch(50);
 
     EXPECT_EQ(processed, 2u);
@@ -195,8 +212,9 @@ TEST(FilesOutboxRelayTest, PollAndDispatchRecordsTransientFailureOnRpcFailureOrE
     EXPECT_EQ(repo->transient_failures[0].event_id, id1);
     EXPECT_EQ(repo->transient_failures[0].reason, "Audit service unavailable");
     EXPECT_EQ(repo->transient_failures[1].event_id, id2);
+    EXPECT_EQ(metrics.transient_failures.load(), 2u);
+    EXPECT_EQ(diag.consecutive_failures, 1u);
 
-    // Also verify exception safety
     const auto id3 = make_uuid_v7();
     repo->transient_failures.clear();
     repo->pending_events.push_back(make_test_outbox_entity(id3, file_id, "FILE_CREATED"));
@@ -206,6 +224,7 @@ TEST(FilesOutboxRelayTest, PollAndDispatchRecordsTransientFailureOnRpcFailureOrE
     ASSERT_EQ(repo->transient_failures.size(), 1u);
     EXPECT_EQ(repo->transient_failures[0].event_id, id3);
     EXPECT_EQ(repo->transient_failures[0].reason, "transport_reset");
+    EXPECT_EQ(diag.consecutive_failures, 2u);
 }
 
 TEST(FilesOutboxRelayTest, QuarantinesPerEventRejectedIdsWhilePublishingAcceptedEvents) {
@@ -277,7 +296,77 @@ TEST(FilesOutboxRelayTest, QuarantinesCorruptedRowsLocallyBeforeGrpcDispatch) {
     EXPECT_EQ(repo->published_ids[0], valid_id);
 }
 
-TEST(FilesOutboxRelayTest, ChunksLargeBatchesToRespectGrpcMaxBatchSize100) {
+TEST(FilesOutboxRelayTest, ProbesAndIsolatesInvalidArgumentBatchWithoutDroppingHealthySiblings) {
+    const auto id_good = make_uuid_v7();
+    const auto id_bad = make_uuid_v7();
+    const auto file_id = make_uuid_v7();
+
+    auto repo = std::make_shared<FakeOutboxRepository>();
+    repo->pending_events.push_back(make_test_outbox_entity(id_good, file_id, "file.created"));
+    repo->pending_events.push_back(make_test_outbox_entity(id_bad, file_id, "file.deleted"));
+
+    auto client = std::make_shared<MockAuditClient>();
+    EXPECT_CALL(*client, submit_batch(_))
+        .WillOnce([](const std::vector<securecloud::audit::v1::AuditEventProto>& batch) {
+            EXPECT_EQ(batch.size(), 2u);
+            FilesAuditBatchSubmitResult res;
+            res.rpc_success = false;
+            res.status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "bad event");
+            return res;
+        })
+        .WillOnce([&](const std::vector<securecloud::audit::v1::AuditEventProto>& batch) {
+            EXPECT_EQ(batch.size(), 1u);
+            EXPECT_EQ(batch[0].event_id(), id_good);
+            FilesAuditBatchSubmitResult res;
+            res.rpc_success = true;
+            res.status = grpc::Status::OK;
+            res.accepted_count = 1;
+            return res;
+        })
+        .WillOnce([&](const std::vector<securecloud::audit::v1::AuditEventProto>& batch) {
+            EXPECT_EQ(batch.size(), 1u);
+            EXPECT_EQ(batch[0].event_id(), id_bad);
+            FilesAuditBatchSubmitResult res;
+            res.rpc_success = false;
+            res.status = grpc::Status(grpc::StatusCode::INVALID_ARGUMENT, "bad schema");
+            return res;
+        });
+
+    FilesOutboxRelay relay(repo, client);
+    const size_t processed = relay.poll_and_dispatch(50);
+
+    EXPECT_EQ(processed, 2u);
+    ASSERT_EQ(repo->published_ids.size(), 1u);
+    EXPECT_EQ(repo->published_ids[0], id_good);
+    ASSERT_EQ(repo->quarantined_events.size(), 1u);
+    EXPECT_EQ(repo->quarantined_events[0].event_id, id_bad);
+    EXPECT_TRUE(repo->transient_failures.empty());
+}
+
+TEST(FilesOutboxRelayTest, RetainsEventsAsPendingOnPermissionDeniedSecurityFault) {
+    const auto id1 = make_uuid_v7();
+    const auto file_id = make_uuid_v7();
+
+    auto repo = std::make_shared<FakeOutboxRepository>();
+    repo->pending_events.push_back(make_test_outbox_entity(id1, file_id, "file.created"));
+
+    auto client = std::make_shared<MockAuditClient>();
+    FilesAuditBatchSubmitResult auth_fail;
+    auth_fail.rpc_success = false;
+    auth_fail.status = grpc::Status(grpc::StatusCode::PERMISSION_DENIED, "mTLS SAN mismatch");
+    EXPECT_CALL(*client, submit_batch(_)).WillOnce(Return(auth_fail));
+
+    FilesOutboxMetrics metrics;
+    FilesOutboxRelay relay(repo, client, {}, "files-1", &metrics, nullptr);
+    EXPECT_EQ(relay.poll_and_dispatch(50), 1u);
+
+    EXPECT_TRUE(repo->published_ids.empty());
+    EXPECT_TRUE(repo->quarantined_events.empty());
+    ASSERT_EQ(repo->transient_failures.size(), 1u);
+    EXPECT_EQ(metrics.security_auth_failures.load(), 1u);
+}
+
+TEST(FilesOutboxRelayTest, ClampsLeaseBatchSizeToGrpcMaxBatchSize100) {
     const auto file_id = make_uuid_v7();
     auto repo = std::make_shared<FakeOutboxRepository>();
     for (int i = 0; i < 125; ++i) {
@@ -304,10 +393,49 @@ TEST(FilesOutboxRelayTest, ChunksLargeBatchesToRespectGrpcMaxBatchSize100) {
         });
 
     FilesOutboxRelay relay(repo, client);
-    const size_t processed = relay.poll_and_dispatch(150);
-
-    EXPECT_EQ(processed, 125u);
+    EXPECT_EQ(relay.poll_and_dispatch(150), 100u);
+    EXPECT_EQ(relay.poll_and_dispatch(150), 25u);
     EXPECT_EQ(repo->published_ids.size(), 125u);
+}
+
+TEST(FilesOutboxRelayTest, ComputesBoundedExponentialBackoffWithJitter) {
+    auto repo = std::make_shared<FakeOutboxRepository>();
+    auto client = std::make_shared<MockAuditClient>();
+
+    FilesOutboxRelayConfig cfg;
+    cfg.initial_backoff = std::chrono::milliseconds(200);
+    cfg.max_backoff = std::chrono::milliseconds(5000);
+    cfg.backoff_multiplier = 2.0;
+    cfg.jitter_ratio = 0.25;
+
+    FilesOutboxRelay relay(repo, client, cfg);
+    EXPECT_EQ(relay.compute_backoff_delay(0).count(), 0);
+
+    for (int i = 0; i < 20; ++i) {
+        const auto d1 = relay.compute_backoff_delay(1).count();
+        EXPECT_GE(d1, 150);
+        EXPECT_LE(d1, 250);
+
+        const auto d2 = relay.compute_backoff_delay(2).count();
+        EXPECT_GE(d2, 300);
+        EXPECT_LE(d2, 500);
+
+        const auto d10 = relay.compute_backoff_delay(10).count();
+        EXPECT_GE(d10, 3750);
+        EXPECT_LE(d10, 5000);
+    }
+}
+
+TEST(FilesOutboxRelayTest, PurgesOldPublishedRecords) {
+    auto repo = std::make_shared<FakeOutboxRepository>();
+    repo->purge_return_value = 42;
+    auto client = std::make_shared<MockAuditClient>();
+
+    FilesOutboxMetrics metrics;
+    FilesOutboxRelay relay(repo, client, {}, "files-1", &metrics, nullptr);
+    EXPECT_EQ(relay.purge_old_published_records(), 42u);
+    EXPECT_EQ(repo->purge_calls, 1u);
+    EXPECT_EQ(metrics.rows_purged.load(), 42u);
 }
 
 TEST(FilesOutboxRelayTest, EmptyOutboxReturnsZero) {
@@ -320,20 +448,39 @@ TEST(FilesOutboxRelayTest, EmptyOutboxReturnsZero) {
     EXPECT_EQ(processed, 0u);
 }
 
-TEST(FilesOutboxRelayTest, LifecycleStartStop) {
+TEST(FilesOutboxRelayTest, LifecycleStartStopAndShutdownDrain) {
+    const auto id1 = make_uuid_v7();
+    const auto file_id = make_uuid_v7();
+
     auto repo = std::make_shared<FakeOutboxRepository>();
     auto client = std::make_shared<MockAuditClient>();
 
+    EXPECT_CALL(*client, submit_batch(_))
+        .WillRepeatedly([](const std::vector<securecloud::audit::v1::AuditEventProto>& batch) {
+            FilesAuditBatchSubmitResult res;
+            res.rpc_success = true;
+            res.status = grpc::Status::OK;
+            res.accepted_count = static_cast<uint32_t>(batch.size());
+            return res;
+        });
+
     FilesOutboxRelayConfig cfg;
-    cfg.poll_interval_ms = std::chrono::milliseconds(50);
+    cfg.poll_interval = std::chrono::milliseconds(50);
+    cfg.shutdown_drain_timeout = std::chrono::milliseconds(500);
     FilesOutboxRelay relay(repo, client, cfg);
 
     EXPECT_FALSE(relay.is_running());
     relay.start();
     EXPECT_TRUE(relay.is_running());
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    repo->pending_events.push_back(make_test_outbox_entity(id1, file_id, "file.created"));
+    relay.notify();
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(60));
     relay.stop();
     EXPECT_FALSE(relay.is_running());
+    ASSERT_EQ(repo->published_ids.size(), 1u);
+    EXPECT_EQ(repo->published_ids[0], id1);
 }
 
 } // namespace securecloud::files::audit

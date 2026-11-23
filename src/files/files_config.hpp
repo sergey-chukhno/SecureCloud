@@ -6,10 +6,35 @@
 #include "securecloud/configuration/secret_string.hpp"
 #include "securecloud/configuration/validation_error.hpp"
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 
 namespace securecloud::files {
+
+struct FilesOutboxRelayConfig {
+    std::chrono::milliseconds poll_interval{500};
+    size_t batch_size{50};
+    std::chrono::seconds lease_duration{30};
+    std::chrono::milliseconds initial_backoff{250};
+    std::chrono::milliseconds max_backoff{30000};
+    double backoff_multiplier{2.0};
+    double jitter_ratio{0.25};
+    uint32_t max_retries{5};
+    std::chrono::hours published_retention{24 * 7};
+    std::chrono::hours purge_interval{1};
+    size_t purge_batch_size{1000};
+    std::chrono::milliseconds shutdown_drain_timeout{3000};
+};
+
+struct FilesAuditOutboxConfig {
+    bool outbox_relay_enabled{true};
+    std::string audit_endpoint{"audit:50055"};
+    std::chrono::milliseconds audit_timeout{2000};
+    std::string audit_expected_peer_san{"audit"};
+    std::string producer_instance{"files-1"};
+    FilesOutboxRelayConfig relay;
+};
 
 /// Typed configuration model for Files service.
 /// Holds common service settings, PostgreSQL database connection settings, and MinIO S3 settings.
@@ -32,6 +57,8 @@ struct FilesConfig {
 
     // Resource & Concurrency Controls (FILES-009)
     FilesResourceConfig resources;
+
+    FilesAuditOutboxConfig audit;
 
     /// Loads and validates Files configuration. Fails closed if db_password or s3_secret_key is missing/empty.
     static FilesConfig load(const common::configuration::ConfigurationSource& source,
