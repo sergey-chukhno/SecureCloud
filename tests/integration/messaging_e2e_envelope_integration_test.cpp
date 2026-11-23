@@ -25,6 +25,7 @@
 #include "messaging/repository/in_memory_conversation_repository.hpp"
 #include "messaging/repository/in_memory_membership_repository.hpp"
 #include "messaging/repository/message_repository_interface.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/repository/outbox_repository_interface.hpp"
 #include "messaging/service/conversation_authorization_service.hpp"
 #include "messaging/service/e2e_envelope_validator.hpp"
@@ -244,6 +245,39 @@ class ThreadSafeOutboxRepository : public repository::IOutboxRepository {
     std::vector<ConversationOutboxEvent> enqueued_events_;
 };
 
+class ThreadSafeAuditOutboxRepository final : public repository::IMessagingAuditOutboxRepository {
+  public:
+    void enqueue_audit_event(const repository::AuditOutboxRecord& record) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        records_.push_back(record);
+    }
+
+    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
+                                                                    std::chrono::seconds) override {
+        return {};
+    }
+
+    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
+                        const std::string&) override {}
+
+    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
+                        const std::string&, bool) override {}
+
+    size_t count_pending_backlog(const std::string&, int32_t) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return records_.size();
+    }
+
+    size_t count() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return records_.size();
+    }
+
+  private:
+    mutable std::mutex mutex_;
+    std::vector<repository::AuditOutboxRecord> records_;
+};
+
 class ThreadSafeIdempotencyRepository : public repository::IIdempotencyRepository {
   public:
     std::optional<IdempotencyRecord> find_submission(const DeviceId& sender_device_id,
@@ -434,6 +468,7 @@ class MessagingE2EEnvelopeIntegrationTest : public ::testing::Test {
         message_repo_ = std::make_shared<ThreadSafeMessageRepository>();
         delivery_repo_ = std::make_shared<ThreadSafeDeliveryStateRepository>();
         outbox_repo_ = std::make_shared<ThreadSafeOutboxRepository>();
+        audit_repo_ = std::make_shared<ThreadSafeAuditOutboxRepository>();
         crypto_client_ = std::make_shared<MockAuthCryptoClient>();
 
         resolution_service_ = std::make_shared<RecipientDeviceResolutionService>(crypto_client_);
@@ -441,7 +476,7 @@ class MessagingE2EEnvelopeIntegrationTest : public ::testing::Test {
 
         submission_service_ = std::make_shared<MessageSubmissionService>(
             auth_service_, sequence_allocator_, idempotency_guard_, message_repo_, delivery_repo_, outbox_repo_,
-            envelope_validator_, resolution_service_);
+            audit_repo_, envelope_validator_, resolution_service_);
 
         messaging_service_ = std::make_unique<MessagingServiceImpl>(submission_pool_, delivery_pool_, sync_pool_,
                                                                     nullptr, submission_service_);
@@ -652,6 +687,7 @@ class MessagingE2EEnvelopeIntegrationTest : public ::testing::Test {
     std::shared_ptr<ThreadSafeMessageRepository> message_repo_;
     std::shared_ptr<ThreadSafeDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<ThreadSafeOutboxRepository> outbox_repo_;
+    std::shared_ptr<ThreadSafeAuditOutboxRepository> audit_repo_;
     std::shared_ptr<MockAuthCryptoClient> crypto_client_;
 
     std::shared_ptr<RecipientDeviceResolutionService> resolution_service_;

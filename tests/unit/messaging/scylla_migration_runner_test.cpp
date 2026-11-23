@@ -100,7 +100,7 @@ INSERT INTO test_keyspace.sample (id, default_val) VALUES ('1', 'hello; world');
 TEST(ScyllaMigrationRunnerTest, StandardMigrationsHaveValidChecksumsAndOrdering) {
     auto migrations = ScyllaMigrationRunner::get_standard_migrations();
 
-    ASSERT_EQ(migrations.size(), 5U);
+    ASSERT_EQ(migrations.size(), 6U);
     EXPECT_EQ(migrations[0].version, 1);
     EXPECT_EQ(migrations[0].script_name, "create_messaging_keyspace");
     EXPECT_EQ(migrations[0].checksum, ScyllaMigrationRunner::calculate_checksum(k_v001_keyspace_cql));
@@ -120,6 +120,10 @@ TEST(ScyllaMigrationRunnerTest, StandardMigrationsHaveValidChecksumsAndOrdering)
     EXPECT_EQ(migrations[4].version, 5);
     EXPECT_EQ(migrations[4].script_name, "add_message_id_secondary_indexes");
     EXPECT_EQ(migrations[4].checksum, ScyllaMigrationRunner::calculate_checksum(k_v005_message_id_indexes_cql));
+
+    EXPECT_EQ(migrations[5].version, 6);
+    EXPECT_EQ(migrations[5].script_name, "create_messaging_audit_outbox");
+    EXPECT_EQ(migrations[5].checksum, ScyllaMigrationRunner::calculate_checksum(k_v006_messaging_audit_outbox_cql));
 }
 
 TEST(ScyllaMigrationRunnerTest, RunMigrationsAppliesAllScriptsSequentially) {
@@ -128,17 +132,18 @@ TEST(ScyllaMigrationRunnerTest, RunMigrationsAppliesAllScriptsSequentially) {
 
     auto result = runner.run_migrations();
 
-    EXPECT_EQ(result.migrations_applied, 5);
-    EXPECT_EQ(result.current_version, 5);
-    ASSERT_EQ(result.applied_scripts.size(), 5U);
+    EXPECT_EQ(result.migrations_applied, 6);
+    EXPECT_EQ(result.current_version, 6);
+    ASSERT_EQ(result.applied_scripts.size(), 6U);
     EXPECT_EQ(result.applied_scripts[0], "create_messaging_keyspace");
     EXPECT_EQ(result.applied_scripts[1], "create_messaging_tables");
     EXPECT_EQ(result.applied_scripts[2], "create_schema_version_tracking");
     EXPECT_EQ(result.applied_scripts[3], "add_per_device_envelope_columns");
     EXPECT_EQ(result.applied_scripts[4], "add_message_id_secondary_indexes");
+    EXPECT_EQ(result.applied_scripts[5], "create_messaging_audit_outbox");
 
     // Check that executor tracked all 5 migrations
-    EXPECT_EQ(executor.applied_migrations_.size(), 5U);
+    EXPECT_EQ(executor.applied_migrations_.size(), 6U);
     EXPECT_FALSE(executor.executed_statements_.empty());
 }
 
@@ -146,16 +151,16 @@ TEST(ScyllaMigrationRunnerTest, RunMigrationsIsIdempotent) {
     MockCqlExecutor executor;
     ScyllaMigrationRunner runner(executor);
 
-    // Initial run applies 5
+    // Initial run applies 6
     auto result1 = runner.run_migrations();
-    EXPECT_EQ(result1.migrations_applied, 5);
+    EXPECT_EQ(result1.migrations_applied, 6);
 
     size_t executed_count = executor.executed_statements_.size();
 
     // Second run applies 0
     auto result2 = runner.run_migrations();
     EXPECT_EQ(result2.migrations_applied, 0);
-    EXPECT_EQ(result2.current_version, 5);
+    EXPECT_EQ(result2.current_version, 6);
     EXPECT_TRUE(result2.applied_scripts.empty());
     EXPECT_EQ(executor.executed_statements_.size(), executed_count);
 }

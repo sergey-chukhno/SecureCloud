@@ -253,8 +253,8 @@ class MessagingDeliveryStateGrpcTest : public ::testing::Test {
 
         auto device_checker = [](const DeviceId& id) { return id.str() != "0191ec4d-91b4-7b4d-b6a9-8e41e3d36fee"; };
 
-        read_receipt_service_ =
-            std::make_shared<ReadReceiptService>(delivery_repo_, membership_repo_, outbox_repo_, device_checker);
+        read_receipt_service_ = std::make_shared<ReadReceiptService>(delivery_repo_, membership_repo_, outbox_repo_,
+                                                                     nullptr, device_checker);
 
         delivery_pool_ = std::make_shared<concurrency::BoundedWorkerPool>(2, 16, "test_pool");
 

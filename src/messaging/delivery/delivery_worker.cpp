@@ -1,20 +1,58 @@
 #include "delivery/delivery_worker.hpp"
 
+#include "audit/canonical_audit_mapper.hpp"
+#include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
 #include "domain/message_bucket.hpp"
 
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <utility>
 
 namespace securecloud::messaging::delivery {
 
+namespace {
+
+void stage_delivery_failure_audit(repository::IMessagingAuditOutboxRepository* audit_repo,
+                                  const domain::DeliveryTask& task, std::chrono::system_clock::time_point now,
+                                  std::string_view reason) {
+    if (audit_repo == nullptr) {
+        return;
+    }
+
+    const nlohmann::json meta = {
+        {"conversation_id", task.conversation_id.to_string()},
+        {"recipient_device_id", task.recipient_device_id.str()},
+        {"attempts", task.attempt_count},
+        {"reason", reason},
+    };
+
+    domain::MessagingAuditEvent event{
+        .event_id = domain::generate_message_audit_event_id(task.message_id, task.recipient_device_id,
+                                                            domain::MessagingAuditEventType::MessageDeliveryFailed),
+        .event_type = domain::MessagingAuditEventType::MessageDeliveryFailed,
+        .severity = domain::MessagingAuditSeverity::Warning,
+        .occurred_at = now,
+        .actor_user_id = {},
+        .actor_device_id = {},
+        .target_resource = task.message_id.to_string(),
+        .payload_json = meta.dump(),
+        .correlation_id = {},
+    };
+    audit::stage_canonical_audit_event(audit_repo, event, task.conversation_id.to_string());
+}
+
+} // namespace
+
 DeliveryWorker::DeliveryWorker(std::shared_ptr<BoundedDeliveryScheduler> scheduler,
                                std::shared_ptr<IDeviceConnectionRegistry> connection_registry,
                                std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
                                std::shared_ptr<repository::IOutboxRepository> outbox_repo,
+                               std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo,
                                std::shared_ptr<service::DeliveryRetryPolicy> retry_policy, DeliveryWorkerConfig config)
     : scheduler_(std::move(scheduler)), connection_registry_(std::move(connection_registry)),
       delivery_repo_(std::move(delivery_repo)), outbox_repo_(std::move(outbox_repo)),
-      retry_policy_(std::move(retry_policy)), config_(config) {}
+      audit_repo_(std::move(audit_repo)), retry_policy_(std::move(retry_policy)), config_(config) {}
 
 DeliveryWorker::~DeliveryWorker() {
     stop();
@@ -22,7 +60,7 @@ DeliveryWorker::~DeliveryWorker() {
 
 void DeliveryWorker::start() {
     if (running_.exchange(true, std::memory_order_acq_rel)) {
-        return; // Already started
+        return;
     }
 
     workers_.reserve(config_.worker_threads);
@@ -33,7 +71,7 @@ void DeliveryWorker::start() {
 
 void DeliveryWorker::stop() {
     if (!running_.exchange(false, std::memory_order_acq_rel)) {
-        return; // Already stopped
+        return;
     }
 
     if (scheduler_) {
@@ -71,14 +109,12 @@ bool DeliveryWorker::process_single_task(std::chrono::milliseconds poll_timeout)
     auto task = std::move(*task_opt);
     const std::string delivery_bucket = domain::MessageBucket::from_time_point(task.accepted_at).value();
 
-    // 1. Channel lookup in connection registry
     std::shared_ptr<IDeviceDeliveryChannel> channel;
     if (connection_registry_) {
         channel = connection_registry_->get_channel(task.recipient_device_id);
     }
 
     if (!channel || !channel->is_active()) {
-        // Device is currently offline: update durable state to QUEUED (no retry attempt penalty)
         if (delivery_repo_) {
             delivery_repo_->update_device_delivery_status(task.recipient_device_id, delivery_bucket, task.accepted_at,
                                                           task.message_id, domain::DeliveryState::Queued,
@@ -87,17 +123,14 @@ bool DeliveryWorker::process_single_task(std::chrono::milliseconds poll_timeout)
         return true;
     }
 
-    // 2. Mark state DELIVERING before network push
     if (delivery_repo_) {
         delivery_repo_->update_device_delivery_status(task.recipient_device_id, delivery_bucket, task.accepted_at,
                                                       task.message_id, domain::DeliveryState::Delivering,
                                                       task.attempt_count, std::nullopt);
     }
 
-    // 3. Dispatch envelope over device delivery channel
     const auto attempt_result = channel->send_envelope(task, config_.send_timeout);
 
-    // 4. Handle attempt result
     switch (attempt_result) {
     case domain::DeliveryAttemptResult::Success: {
         const auto delivered_at = std::chrono::system_clock::now();
@@ -126,11 +159,30 @@ bool DeliveryWorker::process_single_task(std::chrono::milliseconds poll_timeout)
 
             outbox_repo_->enqueue_event(ack_event);
         }
+
+        if (audit_repo_) {
+            const nlohmann::json meta = {
+                {"conversation_id", task.conversation_id.to_string()},
+                {"attempt_count", task.attempt_count},
+            };
+            domain::MessagingAuditEvent event{
+                .event_id = domain::generate_message_audit_event_id(task.message_id, task.recipient_device_id,
+                                                                    domain::MessagingAuditEventType::MessageDelivered),
+                .event_type = domain::MessagingAuditEventType::MessageDelivered,
+                .severity = domain::MessagingAuditSeverity::Info,
+                .occurred_at = delivered_at,
+                .actor_user_id = task.recipient_user_id,
+                .actor_device_id = task.recipient_device_id,
+                .target_resource = task.message_id.to_string(),
+                .payload_json = meta.dump(),
+                .correlation_id = {},
+            };
+            audit::stage_canonical_audit_event(audit_repo_.get(), event, task.conversation_id.to_string());
+        }
         break;
     }
 
     case domain::DeliveryAttemptResult::RecipientOffline: {
-        // Disconnected during transmission: safely revert to QUEUED
         if (delivery_repo_) {
             delivery_repo_->update_device_delivery_status(task.recipient_device_id, delivery_bucket, task.accepted_at,
                                                           task.message_id, domain::DeliveryState::Queued,
@@ -158,7 +210,6 @@ bool DeliveryWorker::process_single_task(std::chrono::milliseconds poll_timeout)
                     domain::DeliveryState::RetryWait, task.attempt_count, next_retry);
             }
 
-            // Re-enqueue into scheduler for retry
             scheduler_->schedule(std::move(task));
         } else {
             if (delivery_repo_) {
@@ -166,16 +217,20 @@ bool DeliveryWorker::process_single_task(std::chrono::milliseconds poll_timeout)
                     task.recipient_device_id, delivery_bucket, task.accepted_at, task.message_id,
                     domain::DeliveryState::Expired, task.attempt_count, std::nullopt);
             }
+            stage_delivery_failure_audit(audit_repo_.get(), task, now, "MAX_RETRIES_EXHAUSTED");
         }
         break;
     }
 
     case domain::DeliveryAttemptResult::TerminalFailure: {
+        const auto now = std::chrono::system_clock::now();
         if (delivery_repo_) {
             delivery_repo_->update_device_delivery_status(task.recipient_device_id, delivery_bucket, task.accepted_at,
                                                           task.message_id, domain::DeliveryState::Expired,
                                                           task.attempt_count, std::nullopt);
         }
+
+        stage_delivery_failure_audit(audit_repo_.get(), task, now, "TERMINAL_FAILURE");
         break;
     }
     }

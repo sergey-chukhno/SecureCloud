@@ -16,6 +16,7 @@
 #include "messaging/repository/in_memory_conversation_repository.hpp"
 #include "messaging/repository/in_memory_membership_repository.hpp"
 #include "messaging/repository/message_repository_interface.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/repository/outbox_repository_interface.hpp"
 #include "messaging/repository/sync_cursor_repository_interface.hpp"
 #include "service/conversation_authorization_service.hpp"
@@ -303,6 +304,40 @@ class SecurityTestOutboxRepository final : public repository::IOutboxRepository 
     std::vector<ConversationOutboxEvent> events_;
 };
 
+class SecurityTestAuditOutboxRepository final : public repository::IMessagingAuditOutboxRepository {
+  public:
+    void enqueue_audit_event(const repository::AuditOutboxRecord& record) override {
+        std::lock_guard<std::mutex> lock(mu_);
+        records_.push_back(record);
+    }
+
+    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
+                                                                    std::chrono::seconds) override {
+        std::lock_guard<std::mutex> lock(mu_);
+        return {};
+    }
+
+    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
+                        const std::string&) override {}
+
+    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
+                        const std::string&, bool) override {}
+
+    size_t count_pending_backlog(const std::string&, int32_t) override {
+        std::lock_guard<std::mutex> lock(mu_);
+        return records_.size();
+    }
+
+    [[nodiscard]] std::vector<repository::AuditOutboxRecord> snapshot() const {
+        std::lock_guard<std::mutex> lock(mu_);
+        return records_;
+    }
+
+  private:
+    mutable std::mutex mu_;
+    std::vector<repository::AuditOutboxRecord> records_;
+};
+
 class SecurityTestSyncCursorRepository final : public repository::ISyncCursorRepository {
   public:
     std::optional<DeviceSyncCursor> get_sync_cursor(const DeviceId& device_id,
@@ -439,6 +474,7 @@ class MessagingSecurityRegressionTest : public ::testing::Test {
         msg_repo_ = std::make_shared<SecurityTestMessageRepository>();
         delivery_repo_ = std::make_shared<SecurityTestDeliveryStateRepository>();
         outbox_repo_ = std::make_shared<SecurityTestOutboxRepository>();
+        audit_repo_ = std::make_shared<SecurityTestAuditOutboxRepository>();
         cursor_repo_ = std::make_shared<SecurityTestSyncCursorRepository>();
         idempotency_repo_ = std::make_shared<SecurityTestIdempotencyRepository>();
         crypto_client_ = std::make_shared<SecurityTestAuthCryptoDirectoryClient>();
@@ -451,7 +487,7 @@ class MessagingSecurityRegressionTest : public ::testing::Test {
         envelope_validator_ = std::make_shared<E2EEnvelopeValidator>(resolution_service_);
 
         submission_service_ = std::make_shared<MessageSubmissionService>(
-            auth_service_, seq_allocator_, idempotency_guard_, msg_repo_, delivery_repo_, outbox_repo_,
+            auth_service_, seq_allocator_, idempotency_guard_, msg_repo_, delivery_repo_, outbox_repo_, audit_repo_,
             envelope_validator_, resolution_service_);
 
         cursor_manager_ = std::make_shared<SyncCursorManager>(cursor_repo_, msg_repo_, seq_allocator_);
@@ -463,8 +499,8 @@ class MessagingSecurityRegressionTest : public ::testing::Test {
         };
 
         delivery_service_ = std::make_shared<DeliveryService>(delivery_repo_, outbox_repo_, dev_checker);
-        read_receipt_service_ =
-            std::make_shared<ReadReceiptService>(delivery_repo_, membership_repo_, outbox_repo_, dev_checker);
+        read_receipt_service_ = std::make_shared<ReadReceiptService>(delivery_repo_, membership_repo_, outbox_repo_,
+                                                                     audit_repo_, dev_checker);
         presence_coordinator_ = std::make_shared<PresenceCoordinator>();
     }
 
@@ -473,6 +509,7 @@ class MessagingSecurityRegressionTest : public ::testing::Test {
     std::shared_ptr<SecurityTestMessageRepository> msg_repo_;
     std::shared_ptr<SecurityTestDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<SecurityTestOutboxRepository> outbox_repo_;
+    std::shared_ptr<SecurityTestAuditOutboxRepository> audit_repo_;
     std::shared_ptr<SecurityTestSyncCursorRepository> cursor_repo_;
     std::shared_ptr<SecurityTestIdempotencyRepository> idempotency_repo_;
     std::shared_ptr<SecurityTestAuthCryptoDirectoryClient> crypto_client_;

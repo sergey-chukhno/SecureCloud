@@ -6,6 +6,7 @@
 #include "domain/read_receipt_types.hpp"
 #include "messaging/repository/delivery_state_repository_interface.hpp"
 #include "messaging/repository/membership_repository_interface.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/repository/outbox_repository_interface.hpp"
 #include "service/conversation_service.hpp" // for ServiceResult
 #include "service/read_receipt_commands.hpp"
@@ -35,7 +36,8 @@ namespace securecloud::messaging::service {
  * 5. Monotonic & Idempotent: Duplicate receipts for the same message/device succeed deterministically.
  * 6. Logical Recipient Aggregation: User is marked as Read when >=1 active device reports read;
  *    group conversations report separate read states per logical recipient user.
- * 7. Transactional Outbox: Emits ConversationOutboxEventType::MessageRead for asynchronous Audit.
+ * 7. Transactional Outbox: Emits ConversationOutboxEventType::MessageRead for internal notifications
+ *    and durable MessageRead audit events into IMessagingAuditOutboxRepository.
  */
 class ReadReceiptService {
   public:
@@ -45,6 +47,7 @@ class ReadReceiptService {
     ReadReceiptService(std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
                        std::shared_ptr<repository::IMembershipRepository> membership_repo,
                        std::shared_ptr<repository::IOutboxRepository> outbox_repo,
+                       std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo,
                        DeviceStatusChecker device_status_checker = nullptr);
     ~ReadReceiptService() = default;
 
@@ -89,6 +92,7 @@ class ReadReceiptService {
     std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<repository::IMembershipRepository> membership_repo_;
     std::shared_ptr<repository::IOutboxRepository> outbox_repo_;
+    std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo_;
     DeviceStatusChecker device_status_checker_;
 
     static constexpr size_t kNumStripes = 64;

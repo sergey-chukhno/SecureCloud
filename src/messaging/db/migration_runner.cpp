@@ -159,7 +159,9 @@ std::vector<MigrationScript> ScyllaMigrationRunner::get_standard_migrations() {
             {4, "add_per_device_envelope_columns", std::string(k_v004_per_device_envelope_cql),
              calculate_checksum(k_v004_per_device_envelope_cql)},
             {5, "add_message_id_secondary_indexes", std::string(k_v005_message_id_indexes_cql),
-             calculate_checksum(k_v005_message_id_indexes_cql)}};
+             calculate_checksum(k_v005_message_id_indexes_cql)},
+            {6, "create_messaging_audit_outbox", std::string(k_v006_messaging_audit_outbox_cql),
+             calculate_checksum(k_v006_messaging_audit_outbox_cql)}};
 }
 
 MigrationResult ScyllaMigrationRunner::run_migrations() {

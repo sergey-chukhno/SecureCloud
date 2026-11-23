@@ -4046,3 +4046,96 @@ target_link_libraries(securecloud_auth_outbox_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_auth_outbox_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Audit Event Domain & Zero-Plaintext Guard Unit Test Suite (AUDIT-014-T01)
+add_executable(securecloud_messaging_audit_event_test
+        messaging/audit_event_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_audit_event_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud::compiler_flags
+        OpenSSL::Crypto
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_audit_event_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging ScyllaDB Audit Outbox Repository Unit Test Suite (AUDIT-014-T02)
+add_executable(securecloud_scylla_messaging_audit_outbox_repository_test
+        messaging/scylla_messaging_audit_outbox_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_messaging_audit_outbox_repository_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud::compiler_flags
+        OpenSSL::Crypto
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_messaging_audit_outbox_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Canonical Audit Mapper Unit Test Suite (AUDIT-014-T04)
+add_executable(securecloud_messaging_canonical_audit_mapper_test
+        messaging/canonical_audit_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_canonical_audit_mapper_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud_proto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_canonical_audit_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Producer Observability & Diagnostics Unit Test Suite (AUDIT-014-T06)
+add_executable(securecloud_messaging_audit_observability_test
+        messaging/messaging_audit_observability_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_audit_observability_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud_proto
+        securecloud::json
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_audit_observability_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Asynchronous Outbox Relay Unit Test Suite (AUDIT-014-T07)
+add_executable(securecloud_messaging_outbox_relay_test
+        messaging/messaging_outbox_relay_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_outbox_relay_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud_proto
+        securecloud::json
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_outbox_relay_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Zero-Plaintext Audit Security Negative Test Suite (AUDIT-014-T07)
+add_executable(securecloud_zero_plaintext_audit_security_test
+        messaging/zero_plaintext_audit_security_test.cpp
+)
+
+target_link_libraries(securecloud_zero_plaintext_audit_security_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud_proto
+        securecloud::json
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_zero_plaintext_audit_security_test ${SECURECLOUD_TEST_PROPERTIES})

@@ -4,6 +4,7 @@
 #include "domain/submission_types.hpp"
 #include "messaging/repository/delivery_state_repository_interface.hpp"
 #include "messaging/repository/message_repository_interface.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/repository/outbox_repository_interface.hpp"
 #include "securecloud/messaging/v1/messaging.pb.h"
 #include "service/conversation_authorization_service.hpp"
@@ -45,7 +46,8 @@ struct MessageSubmissionResponse {
  * 5. Immutable Message Envelope Persistence (IMessageRepository)
  * 6. Initial Per-Device Delivery State & Encrypted Envelope Persistence (IDeliveryStateRepository)
  * 7. Transactional Outbox Event Publication (IOutboxRepository)
- * 8. Durable Idempotency Commit (IdempotencyGuard)
+ * 8. Durable Audit Outbox Staging & Forward Recovery (IMessagingAuditOutboxRepository)
+ * 9. Durable Idempotency Commit (IdempotencyGuard)
  */
 class MessageSubmissionService {
   public:
@@ -55,6 +57,7 @@ class MessageSubmissionService {
                              std::shared_ptr<repository::IMessageRepository> message_repo,
                              std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
                              std::shared_ptr<repository::IOutboxRepository> outbox_repo,
+                             std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo,
                              std::shared_ptr<E2EEnvelopeValidator> envelope_validator = nullptr,
                              std::shared_ptr<RecipientDeviceResolutionService> resolution_service = nullptr);
 
@@ -73,6 +76,7 @@ class MessageSubmissionService {
     std::shared_ptr<repository::IMessageRepository> message_repo_;
     std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<repository::IOutboxRepository> outbox_repo_;
+    std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo_;
     std::shared_ptr<E2EEnvelopeValidator> envelope_validator_{nullptr};
     std::shared_ptr<RecipientDeviceResolutionService> resolution_service_{nullptr};
 

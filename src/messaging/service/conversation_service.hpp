@@ -5,11 +5,13 @@
 #include "domain/conversation_types.hpp"
 #include "domain/group_metadata_entity.hpp"
 #include "domain/outbox_event.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "repository/conversation_repository_interface.hpp"
 #include "repository/membership_repository_interface.hpp"
 #include "securecloud/messaging/v1/messaging.pb.h"
 #include "service/conversation_authorization_service.hpp"
 
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -19,7 +21,6 @@
 
 namespace securecloud::messaging::service {
 
-/// Strongly-typed service operation result.
 template <typename T> struct ServiceResult {
     bool success{false};
     T value{};
@@ -67,7 +68,8 @@ class ConversationService {
   public:
     ConversationService(repository::IConversationRepository& conversation_repo,
                         repository::IMembershipRepository& membership_repo,
-                        ConversationAuthorizationService& auth_service);
+                        ConversationAuthorizationService& auth_service,
+                        std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo = nullptr);
 
     /// Creates or returns an existing 1-on-1 direct conversation idempotently.
     [[nodiscard]] ServiceResult<domain::ConversationEntity> create_direct_conversation(const domain::UserId& caller,
@@ -121,6 +123,7 @@ class ConversationService {
     repository::IConversationRepository& conversation_repo_;
     repository::IMembershipRepository& membership_repo_;
     ConversationAuthorizationService& auth_service_;
+    std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo_;
 
     mutable std::mutex outbox_mutex_;
     std::vector<domain::ConversationOutboxEvent> outbox_events_;
