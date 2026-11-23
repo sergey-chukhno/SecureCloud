@@ -46,6 +46,14 @@ class IMessagingAuditOutboxRepository {
                                 const std::string& error_message, bool should_quarantine) = 0;
 
     virtual size_t count_pending_backlog(const std::string& outbox_bucket, int32_t shard_id) = 0;
+
+    /// Returns true if an outbox record with the exact primary key already exists
+    /// (regardless of publish_status), preventing forward recovery from downgrading PUBLISHED rows.
+    virtual bool has_event(const std::string& /*outbox_bucket*/, int32_t /*shard_id*/,
+                           const std::chrono::system_clock::time_point& /*created_at*/,
+                           const std::string& /*event_id*/) {
+        return false;
+    }
 };
 
 } // namespace securecloud::messaging::repository

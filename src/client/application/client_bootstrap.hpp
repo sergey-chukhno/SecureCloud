@@ -73,6 +73,9 @@ class ClientBootstrap {
     void initialize_ratchet_session_manager(const domain::UserId& user_id, const domain::DeviceId& device_id);
 
   private:
+    struct AdapterInitTag {};
+    ClientBootstrap(AdapterInitTag, ClientConfig config);
+
     void wire_managers();
 
     ClientConfig config_;

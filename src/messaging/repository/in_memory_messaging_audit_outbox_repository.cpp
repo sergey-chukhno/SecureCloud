@@ -124,6 +124,14 @@ size_t InMemoryMessagingAuditOutboxRepository::count_pending_backlog(const std::
     return count;
 }
 
+bool InMemoryMessagingAuditOutboxRepository::has_event(const std::string& outbox_bucket, int32_t shard_id,
+                                                       const std::chrono::system_clock::time_point& created_at,
+                                                       const std::string& event_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    PrimaryKey pk{outbox_bucket, shard_id, to_millis(created_at), event_id};
+    return records_.find(pk) != records_.end();
+}
+
 std::optional<AuditOutboxRecord>
 InMemoryMessagingAuditOutboxRepository::find_record(const std::string& outbox_bucket, int32_t shard_id,
                                                     const std::chrono::system_clock::time_point& created_at,
@@ -141,6 +149,16 @@ InMemoryMessagingAuditOutboxRepository::find_record(const std::string& outbox_bu
 size_t InMemoryMessagingAuditOutboxRepository::total_records() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return records_.size();
+}
+
+std::vector<AuditOutboxRecord> InMemoryMessagingAuditOutboxRepository::all_records() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<AuditOutboxRecord> out;
+    out.reserve(records_.size());
+    for (const auto& [pk, record] : records_) {
+        out.push_back(record);
+    }
+    return out;
 }
 
 } // namespace securecloud::messaging::repository

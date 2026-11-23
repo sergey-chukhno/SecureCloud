@@ -223,9 +223,47 @@ class MockGatewayClient final : public IGatewayClient {
                                            std::string_view /*encrypted_envelope*/) override {
         return ClientResult<std::string>::ok("msg-server-assigned-id");
     }
+    ClientResult<std::string> submit_encrypted_message(const FanOutSubmissionRequest& /*request*/) override {
+        return ClientResult<std::string>::ok("msg-server-assigned-id");
+    }
     ClientResult<std::vector<std::string>> sync_messages(std::string_view /*cursor*/) override {
         return ClientResult<std::vector<std::string>>::ok({"msg-1", "msg-2"});
     }
+    ClientResult<DeliveryState> acknowledge_delivery(const MessageId& /*message_id*/,
+                                                     const DeviceId& /*recipient_device_id*/,
+                                                     int64_t /*delivered_at_ms*/) override {
+        return ClientResult<DeliveryState>::ok(DeliveryState::Delivered);
+    }
+    ClientResult<DeliveryState> send_read_receipt(const ConversationId& /*conversation_id*/,
+                                                  const MessageId& /*message_id*/, const DeviceId& /*reader_device_id*/,
+                                                  int64_t /*read_at_ms*/) override {
+        return ClientResult<DeliveryState>::ok(DeliveryState::Read);
+    }
+    ClientResult<MessageDeliveryStatusInfo> get_message_delivery_status(const ConversationId& /*conversation_id*/,
+                                                                        const MessageId& message_id) override {
+        return ClientResult<MessageDeliveryStatusInfo>::ok(
+            MessageDeliveryStatusInfo{.message_id = message_id, .delivery_state = DeliveryState::Delivered});
+    }
+    ClientResult<ConversationMessagesPage> fetch_conversation_messages(const ConversationId& /*conversation_id*/,
+                                                                       const DeviceId& /*recipient_device_id*/,
+                                                                       uint64_t since_sequence,
+                                                                       std::size_t /*max_results*/) override {
+        return ClientResult<ConversationMessagesPage>::ok(ConversationMessagesPage{.latest_sequence = since_sequence});
+    }
+    ClientResult<SyncCursorRecord> get_sync_cursor(const DeviceId& device_id,
+                                                   const ConversationId& conversation_id) override {
+        return ClientResult<SyncCursorRecord>::ok(
+            SyncCursorRecord{.device_id = device_id, .conversation_id = conversation_id});
+    }
+    ClientResult<SyncCursorRecord> update_sync_cursor(const SyncCursorRecord& cursor) override {
+        return ClientResult<SyncCursorRecord>::ok(cursor);
+    }
+    ClientResult<std::vector<RemoteConversationSummary>>
+    list_remote_conversations(const UserId& /*user_id*/, std::size_t /*max_results*/) override {
+        return ClientResult<std::vector<RemoteConversationSummary>>::ok({});
+    }
+    uint64_t subscribe_realtime_events(RealtimeEventHandler /*handler*/) override { return 1; }
+    void unsubscribe_realtime_events(uint64_t /*subscription_id*/) override {}
     ClientResult<bool> validate_token(std::string_view token) override {
         return ClientResult<bool>::ok(!token.empty());
     }
@@ -291,6 +329,50 @@ class MockGatewayClient final : public IGatewayClient {
         return ClientResult<domain::DirectoryUserEntry>::ok(
             domain::DirectoryUserEntry(user_id, "@mock", "Mock User", std::vector<uint8_t>(32, 0x01), "FP_MOCK", 1));
     }
+
+    ClientResult<FileUploadInitResult> init_file_upload(const FileUploadInitRequest& request) override {
+        return ClientResult<FileUploadInitResult>::ok(FileUploadInitResult{
+            .upload_id = "upload-mock-001",
+            .file_id = request.file_id,
+            .status = "TRANSFER_STATUS_PENDING",
+        });
+    }
+
+    ClientResult<FileChunkUploadResult> upload_file_chunk(const FileChunkUploadRequest& request) override {
+        return ClientResult<FileChunkUploadResult>::ok(FileChunkUploadResult{
+            .upload_id = request.upload_id,
+            .chunk_index = request.chunk_index,
+            .accepted = true,
+            .received_sha256 = request.ciphertext_sha256,
+        });
+    }
+
+    ClientResult<FileUploadFinalizeResult> finalize_file_upload(const FileUploadFinalizeRequest& request) override {
+        return ClientResult<FileUploadFinalizeResult>::ok(FileUploadFinalizeResult{
+            .file_id = request.file_id,
+            .lifecycle_state = "FILE_LIFECYCLE_STATE_AVAILABLE",
+        });
+    }
+
+    ClientResult<void> cancel_file_upload(std::string_view /*upload_id*/, std::string_view /*reason*/) override {
+        return ClientResult<void>::ok();
+    }
+
+    ClientResult<RemoteFileMetadata> get_file_metadata(std::string_view file_id) override {
+        return ClientResult<RemoteFileMetadata>::ok(RemoteFileMetadata{
+            .file_id = std::string(file_id),
+            .lifecycle_state = "FILE_LIFECYCLE_STATE_AVAILABLE",
+        });
+    }
+
+    ClientResult<FileChunkDownloadResult> download_file_chunk(std::string_view file_id, uint32_t chunk_index) override {
+        return ClientResult<FileChunkDownloadResult>::ok(FileChunkDownloadResult{
+            .file_id = std::string(file_id),
+            .chunk_index = chunk_index,
+        });
+    }
+
+    ClientResult<void> delete_file(std::string_view /*file_id*/) override { return ClientResult<void>::ok(); }
 };
 
 TEST(ApplicationInterfacesTest, InterfacePolymorphismAndContracts) {

@@ -2,32 +2,18 @@
 
 #include "audit/audit_diagnostics.hpp"
 #include "audit/messaging_audit_metrics.hpp"
+#include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
-#include <ctime>
-#include <iomanip>
 #include <random>
-#include <sstream>
 #include <string_view>
 
 namespace securecloud::messaging::audit {
 
 namespace {
-
-std::string format_hourly_bucket(std::chrono::system_clock::time_point tp) {
-    auto time_t_val = std::chrono::system_clock::to_time_t(tp);
-    std::tm tm_buf{};
-#if defined(_WIN32)
-    gmtime_s(&tm_buf, &time_t_val);
-#else
-    gmtime_r(&time_t_val, &tm_buf);
-#endif
-    std::ostringstream oss;
-    oss << std::put_time(&tm_buf, "%Y-%m-%d-%H");
-    return oss.str();
-}
 
 std::string to_upper_ascii(std::string_view input) {
     std::string out;
@@ -112,18 +98,34 @@ void MessagingOutboxRelay::start() {
 }
 
 void MessagingOutboxRelay::stop() {
-    if (is_running_.exchange(false)) {
-        AuditDiagnostics::log_relay_state_change("draining", config_.worker_threads, config_.total_shards);
-
-        for (auto& worker : workers_) {
-            if (worker.joinable()) {
-                worker.join();
-            }
-        }
-        workers_.clear();
-
-        AuditDiagnostics::log_relay_state_change("stopped", config_.worker_threads, config_.total_shards);
+    bool was_running = false;
+    {
+        std::lock_guard<std::mutex> lock(wake_mutex_);
+        was_running = is_running_.exchange(false);
     }
+    if (!was_running) {
+        return;
+    }
+
+    AuditDiagnostics::log_relay_state_change("draining", config_.worker_threads, config_.total_shards);
+    wake_cv_.notify_all();
+
+    for (auto& worker : workers_) {
+        if (worker.joinable()) {
+            worker.join();
+        }
+    }
+    workers_.clear();
+
+    AuditDiagnostics::log_relay_state_change("stopped", config_.worker_threads, config_.total_shards);
+}
+
+void MessagingOutboxRelay::interruptible_wait(std::chrono::milliseconds duration) {
+    if (duration.count() <= 0 || !is_running_.load(std::memory_order_relaxed)) {
+        return;
+    }
+    std::unique_lock<std::mutex> lock(wake_mutex_);
+    wake_cv_.wait_for(lock, duration, [this]() { return !is_running_.load(std::memory_order_relaxed); });
 }
 
 void MessagingOutboxRelay::worker_loop(uint32_t worker_index) {
@@ -156,11 +158,7 @@ void MessagingOutboxRelay::worker_loop(uint32_t worker_index) {
 
         current_shard_idx = (current_shard_idx + 1) % assigned_shards.size();
 
-        if (!processed_any) {
-            std::this_thread::sleep_for(config_.idle_poll_interval);
-        } else {
-            std::this_thread::sleep_for(config_.active_poll_interval);
-        }
+        interruptible_wait(processed_any ? config_.active_poll_interval : config_.idle_poll_interval);
     }
 }
 
@@ -184,7 +182,12 @@ bool MessagingOutboxRelay::process_shard(const std::string& bucket, int32_t shar
     // 1. Serialization & Local Validation Phase
     for (const auto& record : records) {
         securecloud::audit::v1::AuditEventProto event;
-        if (event.ParseFromArray(record.payload_proto_bin.data(), static_cast<int>(record.payload_proto_bin.size()))) {
+        const bool parsed_ok =
+            !record.payload_proto_bin.empty() &&
+            event.ParseFromArray(record.payload_proto_bin.data(), static_cast<int>(record.payload_proto_bin.size())) &&
+            domain::is_valid_audit_uuid_v7(event.event_id()) && !event.event_type().empty() &&
+            event.producer_service() == securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING;
+        if (parsed_ok) {
             batch.push_back(std::move(event));
             valid_records.push_back(&record);
         } else {
@@ -257,7 +260,7 @@ bool MessagingOutboxRelay::process_shard(const std::string& bucket, int32_t shar
         if (result.is_transient_error && batch_backoff.count() > 0) {
             AuditDiagnostics::log_connection_failure(bucket, shard_id, batch.size(), grpc_code, result.error_message,
                                                      batch_backoff);
-            std::this_thread::sleep_for(std::chrono::milliseconds(std::min(batch_backoff.count(), 100LL)));
+            interruptible_wait(batch_backoff);
         }
     }
 
@@ -265,16 +268,16 @@ bool MessagingOutboxRelay::process_shard(const std::string& bucket, int32_t shar
 }
 
 std::string MessagingOutboxRelay::get_current_hourly_bucket() const {
-    return format_hourly_bucket(std::chrono::system_clock::now());
+    return domain::compute_outbox_bucket_utc(std::chrono::system_clock::now());
 }
 
 std::string MessagingOutboxRelay::get_previous_hourly_bucket() const {
-    return format_hourly_bucket(std::chrono::system_clock::now() - std::chrono::hours(1));
+    return domain::compute_outbox_bucket_utc(std::chrono::system_clock::now() - std::chrono::hours(1));
 }
 
 std::chrono::milliseconds MessagingOutboxRelay::calculate_backoff_with_jitter(int32_t attempt_count) const {
-    constexpr double base_ms = 100.0;
-    constexpr double max_ms = 10000.0;
+    const double base_ms = static_cast<double>(std::max<int64_t>(1, config_.base_backoff.count()));
+    const double max_ms = static_cast<double>(std::max<int64_t>(1, config_.max_backoff.count()));
 
     const double backoff = std::min(max_ms, base_ms * std::pow(2.0, static_cast<double>(attempt_count)));
 

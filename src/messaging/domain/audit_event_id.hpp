@@ -14,6 +14,13 @@ namespace securecloud::messaging::domain {
 /// Throws std::invalid_argument if `msg_id` is nil.
 [[nodiscard]] std::string generate_message_audit_event_id(const MessageId& msg_id, MessagingAuditEventType type);
 
+/// Generates a deterministic, retry-safe RFC 9562 UUIDv7 event_id scoped to a specific
+/// MessageId, DeviceId, and MessagingAuditEventType (e.g. per-device delivery or read receipts).
+/// Preserves the original 48-bit millisecond timestamp of `msg_id`.
+/// Throws std::invalid_argument if `msg_id` is nil or `device_id` is empty.
+[[nodiscard]] std::string generate_message_audit_event_id(const MessageId& msg_id, const DeviceId& device_id,
+                                                          MessagingAuditEventType type);
+
 /// Generates a fresh random RFC 9562 UUIDv7 string for non-message-scoped audit events.
 [[nodiscard]] std::string generate_audit_event_id();
 

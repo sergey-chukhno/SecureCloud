@@ -35,12 +35,18 @@ class InMemoryMessagingAuditOutboxRepository : public IMessagingAuditOutboxRepos
 
     [[nodiscard]] size_t count_pending_backlog(const std::string& outbox_bucket, int32_t shard_id) override;
 
+    [[nodiscard]] bool has_event(const std::string& outbox_bucket, int32_t shard_id,
+                                 const std::chrono::system_clock::time_point& created_at,
+                                 const std::string& event_id) override;
+
     // --- Test Inspection Helpers ---
     [[nodiscard]] std::optional<AuditOutboxRecord> find_record(const std::string& outbox_bucket, int32_t shard_id,
                                                                const std::chrono::system_clock::time_point& created_at,
                                                                const std::string& event_id) const;
 
     [[nodiscard]] size_t total_records() const;
+
+    [[nodiscard]] std::vector<AuditOutboxRecord> all_records() const;
 
   private:
     // Ordered by (outbox_bucket, shard_id, created_at_ms, event_id) to mirror ScyllaDB clustering order

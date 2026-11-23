@@ -1,6 +1,8 @@
 #include "audit/audit_diagnostics.hpp"
 #include "audit/messaging_audit_metrics.hpp"
 #include "audit/messaging_outbox_relay.hpp"
+#include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -109,34 +111,22 @@ class StubAuditClient final : public IMessagingAuditClient {
     std::mutex mutex_;
 };
 
-std::string current_utc_bucket() {
-    const auto now = std::chrono::system_clock::now();
-    const auto time_t_val = std::chrono::system_clock::to_time_t(now);
-    std::tm tm_buf{};
-#if defined(_WIN32)
-    gmtime_s(&tm_buf, &time_t_val);
-#else
-    gmtime_r(&time_t_val, &tm_buf);
-#endif
-    char buf[32]{};
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d-%H", &tm_buf);
-    return std::string(buf);
-}
-
 repository::AuditOutboxRecord make_valid_record(const std::string& event_id, int32_t shard_id,
                                                 const std::string& event_type = "message.submitted") {
     securecloud::audit::v1::AuditEventProto proto;
     proto.set_event_id(event_id);
+    proto.set_producer_service(securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING);
     proto.set_event_type(event_type);
     proto.set_severity(securecloud::audit::v1::SEVERITY_INFO);
 
     std::string serialized;
-    proto.SerializeToString(&serialized);
+    EXPECT_TRUE(proto.SerializeToString(&serialized));
 
+    const auto created_at = std::chrono::system_clock::now() - std::chrono::milliseconds(25);
     repository::AuditOutboxRecord rec;
-    rec.outbox_bucket = current_utc_bucket();
+    rec.outbox_bucket = domain::compute_outbox_bucket_utc(created_at);
     rec.shard_id = shard_id;
-    rec.created_at = std::chrono::system_clock::now() - std::chrono::milliseconds(25);
+    rec.created_at = created_at;
     rec.event_id = event_id;
     rec.event_type = event_type;
     rec.severity = "INFO";
@@ -218,7 +208,7 @@ TEST_F(MessagingAuditObservabilityTest, LockFreeMetricsAndPrometheusExposition) 
 }
 
 TEST_F(MessagingAuditObservabilityTest, StructuredDiagnosticsSanitizesSensitiveData) {
-    AuditDiagnostics::log_quarantine_event("2026-11-19-08", 5, "evt-123", "message.submitted", 5,
+    AuditDiagnostics::log_quarantine_event("2026111908", 5, "evt-123", "message.submitted", 5,
                                            "Rejected payload: ciphertext=deadbeef01020304 secret=super_secret_key "
                                            "token=abc123xyz Bearer eyJsecretJwtToken");
 
@@ -243,8 +233,11 @@ TEST_F(MessagingAuditObservabilityTest, RelayRecordsPublishedLatencyBatchAndBack
     auto repo = std::make_shared<InMemoryOutboxRepository>();
     auto client = std::make_shared<StubAuditClient>();
 
-    repo->enqueue_audit_event(make_valid_record("evt-1", 0, "message.submitted"));
-    repo->enqueue_audit_event(make_valid_record("evt-2", 0, "message.read"));
+    const std::string evt_1 = domain::generate_audit_event_id();
+    const std::string evt_2 = domain::generate_audit_event_id();
+
+    repo->enqueue_audit_event(make_valid_record(evt_1, 0, "message.submitted"));
+    repo->enqueue_audit_event(make_valid_record(evt_2, 0, "message.read"));
 
     OutboxRelayConfig cfg;
     cfg.worker_threads = 1;
@@ -261,8 +254,8 @@ TEST_F(MessagingAuditObservabilityTest, RelayRecordsPublishedLatencyBatchAndBack
     std::this_thread::sleep_for(std::chrono::milliseconds(15));
     relay.stop();
 
-    EXPECT_EQ(repo->status_of("evt-1"), "PUBLISHED");
-    EXPECT_EQ(repo->status_of("evt-2"), "PUBLISHED");
+    EXPECT_EQ(repo->status_of(evt_1), "PUBLISHED");
+    EXPECT_EQ(repo->status_of(evt_2), "PUBLISHED");
 
     auto& metrics = MessagingAuditMetrics::instance();
     EXPECT_EQ(metrics.published_total("message.submitted"), 1U);
@@ -279,16 +272,20 @@ TEST_F(MessagingAuditObservabilityTest, RelayRecordsQuarantineAndRetryMetricsAnd
     auto client = std::make_shared<StubAuditClient>();
     client->set_result({false, true, "UNAVAILABLE: upstream timeout", {}});
 
+    const std::string evt_corrupt = domain::generate_audit_event_id();
+    const std::string evt_transient = domain::generate_audit_event_id();
+
     // 1 local malformed record (immediate quarantine) + 1 valid record (transient retry -> quarantine at max_retries=1)
-    repository::AuditOutboxRecord bad_rec = make_valid_record("evt-corrupt", 0);
+    repository::AuditOutboxRecord bad_rec = make_valid_record(evt_corrupt, 0);
     bad_rec.payload_proto_bin = {0xFF, 0xFE, 0xFD, 0x00, 0x01};
     repo->enqueue_audit_event(bad_rec);
-    repo->enqueue_audit_event(make_valid_record("evt-transient", 0));
+    repo->enqueue_audit_event(make_valid_record(evt_transient, 0));
 
     OutboxRelayConfig cfg;
     cfg.worker_threads = 1;
     cfg.total_shards = 1;
     cfg.max_retries = 1;
+    cfg.base_backoff = std::chrono::milliseconds(5);
     cfg.active_poll_interval = std::chrono::milliseconds(5);
     cfg.idle_poll_interval = std::chrono::milliseconds(10);
 
@@ -301,8 +298,8 @@ TEST_F(MessagingAuditObservabilityTest, RelayRecordsQuarantineAndRetryMetricsAnd
     std::this_thread::sleep_for(std::chrono::milliseconds(15));
     relay.stop();
 
-    EXPECT_EQ(repo->status_of("evt-corrupt"), "QUARANTINED");
-    EXPECT_EQ(repo->status_of("evt-transient"), "QUARANTINED");
+    EXPECT_EQ(repo->status_of(evt_corrupt), "QUARANTINED");
+    EXPECT_EQ(repo->status_of(evt_transient), "QUARANTINED");
 
     auto& metrics = MessagingAuditMetrics::instance();
     EXPECT_EQ(metrics.quarantined_total(AuditQuarantineReason::SerializationFailure), 1U);

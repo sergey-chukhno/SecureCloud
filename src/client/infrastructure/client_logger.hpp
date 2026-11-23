@@ -1,5 +1,6 @@
 #pragma once
 
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -20,6 +21,10 @@ class ClientLogger {
 
     static void set_custom_sink(LogSink sink);
     static void reset_sink();
+
+    static bool set_log_file_path(const std::filesystem::path& path);
+    [[nodiscard]] static std::filesystem::path log_file_path();
+    static std::filesystem::path flush_and_close_log_file();
 
     static void log(LogLevel level, std::string_view tag, std::string_view message,
                     std::string_view correlation_id = "");

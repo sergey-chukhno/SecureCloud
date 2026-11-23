@@ -963,7 +963,7 @@ TEST_F(MessagingCapacityLoadTest, EndToEndLatencyPercentilesP50P90P95P99AgainstA
 
     auto scheduler = std::make_shared<BoundedDeliveryScheduler>();
     auto retry_policy = std::make_shared<service::DeliveryRetryPolicy>();
-    DeliveryWorker worker(scheduler, conn_registry, delivery_repo_, outbox_repo_, retry_policy);
+    DeliveryWorker worker(scheduler, conn_registry, delivery_repo_, outbox_repo_, audit_repo_, retry_policy);
 
     std::vector<double> submit_latencies_us;
     std::vector<double> online_delivery_latencies_us;

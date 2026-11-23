@@ -23,9 +23,8 @@ namespace {
     return oss.str();
 }
 
-} // namespace
-
-std::string generate_message_audit_event_id(const MessageId& msg_id, MessagingAuditEventType type) {
+[[nodiscard]] std::string derive_deterministic_uuid_v7(const MessageId& msg_id, std::string_view extra_scope,
+                                                       MessagingAuditEventType type) {
     if (msg_id.is_nil()) {
         throw std::invalid_argument("Cannot derive deterministic audit event_id from nil MessageId");
     }
@@ -40,11 +39,14 @@ std::string generate_message_audit_event_id(const MessageId& msg_id, MessagingAu
         throw std::runtime_error("OpenSSL EVP_MD_CTX_new failed in generate_message_audit_event_id");
     }
 
-    const bool ok = EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
-                    EVP_DigestUpdate(ctx, msg_id.bytes().data(), msg_id.bytes().size()) == 1 &&
-                    EVP_DigestUpdate(ctx, ":", 1) == 1 &&
-                    EVP_DigestUpdate(ctx, type_str.data(), type_str.size()) == 1 &&
-                    EVP_DigestFinal_ex(ctx, digest.data(), &digest_len) == 1;
+    bool ok = EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
+              EVP_DigestUpdate(ctx, msg_id.bytes().data(), msg_id.bytes().size()) == 1 &&
+              EVP_DigestUpdate(ctx, ":", 1) == 1;
+    if (ok && !extra_scope.empty()) {
+        ok = EVP_DigestUpdate(ctx, extra_scope.data(), extra_scope.size()) == 1 && EVP_DigestUpdate(ctx, ":", 1) == 1;
+    }
+    ok = ok && EVP_DigestUpdate(ctx, type_str.data(), type_str.size()) == 1 &&
+         EVP_DigestFinal_ex(ctx, digest.data(), &digest_len) == 1;
 
     EVP_MD_CTX_free(ctx);
 
@@ -69,6 +71,20 @@ std::string generate_message_audit_event_id(const MessageId& msg_id, MessagingAu
     }
 
     return format_uuid_bytes(out_bytes);
+}
+
+} // namespace
+
+std::string generate_message_audit_event_id(const MessageId& msg_id, MessagingAuditEventType type) {
+    return derive_deterministic_uuid_v7(msg_id, {}, type);
+}
+
+std::string generate_message_audit_event_id(const MessageId& msg_id, const DeviceId& device_id,
+                                            MessagingAuditEventType type) {
+    if (device_id.empty()) {
+        throw std::invalid_argument("Cannot derive per-device deterministic audit event_id from empty DeviceId");
+    }
+    return derive_deterministic_uuid_v7(msg_id, device_id.str(), type);
 }
 
 std::string generate_audit_event_id() {

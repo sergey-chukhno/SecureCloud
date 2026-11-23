@@ -2,12 +2,13 @@
 #include "audit/canonical_audit_mapper.hpp"
 #include "audit/messaging_audit_metrics.hpp"
 #include "audit/messaging_outbox_relay.hpp"
+#include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
 #include "util/zero_plaintext_guard.hpp"
 
 #include <array>
 #include <chrono>
 #include <cstdint>
-#include <ctime>
 #include <gtest/gtest.h>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -110,28 +111,15 @@ class CapturingAuditClient final : public IMessagingAuditClient {
     std::vector<securecloud::audit::v1::AuditEventProto> dispatched_;
 };
 
-std::string current_utc_bucket() {
-    const auto now = std::chrono::system_clock::now();
-    const auto time_t_val = std::chrono::system_clock::to_time_t(now);
-    std::tm tm_buf{};
-#if defined(_WIN32)
-    gmtime_s(&tm_buf, &time_t_val);
-#else
-    gmtime_r(&time_t_val, &tm_buf);
-#endif
-    char buf[32]{};
-    std::strftime(buf, sizeof(buf), "%Y-%m-%d-%H", &tm_buf);
-    return std::string(buf);
-}
-
 void stage_validated_audit_event(repository::IMessagingAuditOutboxRepository& repo, const std::string& event_id,
                                  const std::string& event_type, const std::string& metadata_json) {
     util::ZeroPlaintextGuard::validate_audit_payload(metadata_json);
 
+    const auto now = std::chrono::system_clock::now();
     repository::AuditOutboxRecord staging_rec;
-    staging_rec.outbox_bucket = current_utc_bucket();
+    staging_rec.outbox_bucket = domain::compute_outbox_bucket_utc(now);
     staging_rec.shard_id = 0;
-    staging_rec.created_at = std::chrono::system_clock::now();
+    staging_rec.created_at = now;
     staging_rec.event_id = event_id;
     staging_rec.event_type = event_type;
     staging_rec.severity = "INFO";
@@ -200,7 +188,7 @@ TEST_F(ZeroPlaintextAuditSecurityTest, RejectsCiphertextPrekeysPrivateKeysAndTok
             << "Payload index " << i << " should have been rejected";
         EXPECT_FALSE(violation.empty());
 
-        EXPECT_THROW(stage_validated_audit_event(repo, "evt-bad-" + std::to_string(i), "message.submitted",
+        EXPECT_THROW(stage_validated_audit_event(repo, domain::generate_audit_event_id(), "message.submitted",
                                                  forbidden_payloads[i]),
                      std::logic_error)
             << "Payload index " << i << " must throw std::logic_error";
@@ -225,14 +213,15 @@ TEST_F(ZeroPlaintextAuditSecurityTest, SerializedOutboxBlobsAndDispatchedProtosC
     };
 
     const std::vector<CanonicalSample> samples = {
-        {"evt-sub-1", "message.submitted",
+        {domain::generate_audit_event_id(), "message.submitted",
          R"({"conversation_id":"conv-100","message_id":"msg-200","recipient_count":2,"payload_size_bytes":128,"algorithm":"X3DH-AES256-GCM"})"},
-        {"evt-del-1", "message.delivered",
+        {domain::generate_audit_event_id(), "message.delivered",
          R"({"conversation_id":"conv-100","message_id":"msg-200","recipient_device_id":"dev-9"})"},
-        {"evt-read-1", "message.read", R"({"conversation_id":"conv-100","watermark_sequence":42})"},
-        {"evt-conv-1", "conversation.created",
+        {domain::generate_audit_event_id(), "message.read",
+         R"({"conversation_id":"conv-100","watermark_sequence":42})"},
+        {domain::generate_audit_event_id(), "conversation.created",
          R"({"conversation_id":"conv-100","conversation_type":"GROUP","initial_member_count":3})"},
-        {"evt-authz-1", "security.authorization.denied",
+        {domain::generate_audit_event_id(), "security.authorization.denied",
          R"({"conversation_id":"conv-100","action":"SEND_MESSAGE","denial_reason":"NOT_ACTIVE_MEMBER"})"},
     };
 
@@ -284,13 +273,12 @@ TEST_F(ZeroPlaintextAuditSecurityTest, SerializedOutboxBlobsAndDispatchedProtosC
 
 TEST_F(ZeroPlaintextAuditSecurityTest, DiagnosticLogsRedactAllCryptographicAndTokenLeakageVectors) {
     AuditDiagnostics::log_quarantine_event(
-        "2026-11-19-10", 2, "evt-leak-1", "message.submitted", 5,
+        "2026111910", 2, "evt-leak-1", "message.submitted", 5,
         "Upstream error: ciphertext=abcdef0123456789 key=secret_aes_key iv=112233445566 auth_tag=998877665544 "
         "secret=top_secret payload=raw_bytes token=tok_live_98765 password=hunter2 Bearer eyJhbGciOiJIUzI1NiJ9.a.b");
 
     AuditDiagnostics::log_connection_failure(
-        "2026-11-19-10", 2, 10, 14,
-        "UNAVAILABLE: handshake failed with token=secret_rpc_token Bearer eyJanotherTokenVal",
+        "2026111910", 2, 10, 14, "UNAVAILABLE: handshake failed with token=secret_rpc_token Bearer eyJanotherTokenVal",
         std::chrono::milliseconds(200));
 
     const auto emitted = logs();

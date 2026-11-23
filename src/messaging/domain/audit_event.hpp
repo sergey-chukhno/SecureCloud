@@ -55,15 +55,15 @@ inline constexpr int32_t kMessagingAuditOutboxShardCount = 16;
 
 /// Canonical domain representation of a Messaging audit event prior to ScyllaDB outbox persistence.
 struct MessagingAuditEvent {
-    std::string event_id;
+    std::string event_id{};
     MessagingAuditEventType event_type{MessagingAuditEventType::MessageSubmitted};
     MessagingAuditSeverity severity{MessagingAuditSeverity::Info};
     std::chrono::system_clock::time_point occurred_at{};
     UserId actor_user_id{};
     DeviceId actor_device_id{};
-    std::string target_resource;
+    std::string target_resource{};
     std::string payload_json{"{}"};
-    std::string correlation_id;
+    std::string correlation_id{};
 
     auto operator<=>(const MessagingAuditEvent& other) const noexcept = default;
     bool operator==(const MessagingAuditEvent& other) const noexcept = default;
