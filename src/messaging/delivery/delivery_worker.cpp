@@ -37,6 +37,7 @@ void stage_delivery_failure_audit(repository::IMessagingAuditOutboxRepository* a
         .actor_device_id = {},
         .target_resource = task.message_id.to_string(),
         .payload_json = meta.dump(),
+        .correlation_id = {},
     };
     audit::stage_canonical_audit_event(audit_repo, event, task.conversation_id.to_string());
 }
@@ -174,6 +175,7 @@ bool DeliveryWorker::process_single_task(std::chrono::milliseconds poll_timeout)
                 .actor_device_id = task.recipient_device_id,
                 .target_resource = task.message_id.to_string(),
                 .payload_json = meta.dump(),
+                .correlation_id = {},
             };
             audit::stage_canonical_audit_event(audit_repo_.get(), event, task.conversation_id.to_string());
         }

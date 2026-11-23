@@ -98,23 +98,26 @@ void MessagingOutboxRelay::start() {
 }
 
 void MessagingOutboxRelay::stop() {
-    if (is_running_.exchange(false)) {
-        AuditDiagnostics::log_relay_state_change("draining", config_.worker_threads, config_.total_shards);
-
-        {
-            std::lock_guard<std::mutex> lock(wake_mutex_);
-        }
-        wake_cv_.notify_all();
-
-        for (auto& worker : workers_) {
-            if (worker.joinable()) {
-                worker.join();
-            }
-        }
-        workers_.clear();
-
-        AuditDiagnostics::log_relay_state_change("stopped", config_.worker_threads, config_.total_shards);
+    bool was_running = false;
+    {
+        std::lock_guard<std::mutex> lock(wake_mutex_);
+        was_running = is_running_.exchange(false);
     }
+    if (!was_running) {
+        return;
+    }
+
+    AuditDiagnostics::log_relay_state_change("draining", config_.worker_threads, config_.total_shards);
+    wake_cv_.notify_all();
+
+    for (auto& worker : workers_) {
+        if (worker.joinable()) {
+            worker.join();
+        }
+    }
+    workers_.clear();
+
+    AuditDiagnostics::log_relay_state_change("stopped", config_.worker_threads, config_.total_shards);
 }
 
 void MessagingOutboxRelay::interruptible_wait(std::chrono::milliseconds duration) {

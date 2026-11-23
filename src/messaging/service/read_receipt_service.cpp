@@ -148,6 +148,7 @@ ServiceResult<ReadReceiptResponse> ReadReceiptService::record_read_receipt(const
             .actor_device_id = cmd.reader_device_id,
             .target_resource = cmd.message_id.to_string(),
             .payload_json = audit_meta.dump(),
+            .correlation_id = {},
         };
         audit::stage_canonical_audit_event(audit_repo_.get(), read_audit, cmd.conversation_id.to_string());
     }

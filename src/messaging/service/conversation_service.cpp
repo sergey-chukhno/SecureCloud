@@ -29,6 +29,7 @@ void stage_conversation_audit(repository::IMessagingAuditOutboxRepository* audit
         .actor_device_id = {},
         .target_resource = conv_str,
         .payload_json = metadata.dump(),
+        .correlation_id = {},
     };
     audit::stage_canonical_audit_event(audit_repo, event, conv_str);
 }
