@@ -24,7 +24,7 @@ TEST(MigrationRunnerTest, NormalizationHandlesCrlfAndWhitespace) {
 
 TEST(MigrationRunnerTest, StandardMigrationsStructure) {
     auto migrations = MigrationRunner::get_standard_migrations();
-    ASSERT_EQ(migrations.size(), 4);
+    ASSERT_EQ(migrations.size(), 5);
 
     EXPECT_EQ(migrations[0].version, 1);
     EXPECT_EQ(migrations[0].description, "create_schema_migrations");
@@ -45,6 +45,12 @@ TEST(MigrationRunnerTest, StandardMigrationsStructure) {
     EXPECT_EQ(migrations[3].description, "add_device_public_key_signature");
     EXPECT_FALSE(migrations[3].sql_content.empty());
     EXPECT_EQ(migrations[3].checksum, MigrationRunner::calculate_checksum(migrations[3].sql_content));
+
+    EXPECT_EQ(migrations[4].version, 5);
+    EXPECT_EQ(migrations[4].description, "create_auth_outbox_table");
+    EXPECT_FALSE(migrations[4].sql_content.empty());
+    EXPECT_EQ(migrations[4].checksum, MigrationRunner::calculate_checksum(migrations[4].sql_content));
+    EXPECT_NE(migrations[4].sql_content.find("CREATE TABLE IF NOT EXISTS auth_outbox"), std::string::npos);
 }
 
 TEST(MigrationRunnerTest, AdvisoryLockConstantDefined) {

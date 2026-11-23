@@ -109,6 +109,10 @@ This scenario uses an in-memory Audit client to keep the E2E assertion focused o
 - `clang-format --dry-run --Werror` passed on the modified C++ files.
 - `git diff --check` passed.
 
+### G. Auth Outbox Migration Regression Checks
+
+The Auth migration runner now registers V005 (`create_auth_outbox_table`) in its standard migration list. The corresponding migration-structure unit test and the PostgreSQL persistence idempotency test were updated for schema version 5 and both passed (**1 test each**).
+
 ---
 
 ## 5. Validation Boundaries

@@ -61,7 +61,7 @@ class MigrationRunner {
     /// Normalizes SQL content by replacing \r\n with \n.
     [[nodiscard]] static std::string normalize_sql(std::string_view sql_content);
 
-    /// Returns the built-in canonical list of migrations (V001, V002, V003).
+    /// Returns the built-in canonical list of migrations (V001 through V005).
     [[nodiscard]] static std::vector<MigrationScript> get_standard_migrations();
 
     /// Executes all pending migrations under PostgreSQL advisory lock.
