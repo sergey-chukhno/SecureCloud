@@ -113,9 +113,8 @@ TEST_F(ForensicFileShredderTest, IdempotentMissingFileZeroByteFileAndDirectoryRe
     EXPECT_EQ(missing_res.value(), 0U);
 
     const std::filesystem::path empty_file = temp_dir_ / "empty.part";
-    {
-        std::ofstream ofs(empty_file, std::ios::binary | std::ios::trunc);
-    }
+    std::ofstream empty_ofs(empty_file, std::ios::binary | std::ios::trunc);
+    empty_ofs.close();
     ASSERT_TRUE(std::filesystem::exists(empty_file));
     const auto empty_res = FileShredder::shred_file(empty_file);
     ASSERT_TRUE(empty_res.is_ok());
