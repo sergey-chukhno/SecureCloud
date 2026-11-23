@@ -1,6 +1,7 @@
 #pragma once
 
 #include "audit_config.hpp"
+#include "health/audit_health_evaluator.hpp"
 #include "ingestion/audit_ingestion_pipeline.hpp"
 #include "query/audit_query_application_service.hpp"
 #include "repository/clickhouse_audit_event_repository.hpp"
@@ -66,7 +67,9 @@ class AuditServer {
 
     std::shared_ptr<repository::ClickHouseClient> clickhouse_client_;
     std::shared_ptr<repository::ClickHouseAuditEventRepository> repository_;
+    std::shared_ptr<ingestion::IDeduplicationCache> dedup_cache_;
     std::shared_ptr<ingestion::AuditIngestionPipeline> pipeline_;
+    std::unique_ptr<health::AuditHealthEvaluator> health_evaluator_;
     std::shared_ptr<service::AuditIngestionService> ingestion_service_;
     std::shared_ptr<security::InternalSecurityEventRecorder> security_recorder_;
     std::shared_ptr<query::AuditQueryApplicationService> query_app_service_;

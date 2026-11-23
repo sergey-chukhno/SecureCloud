@@ -13,6 +13,12 @@
 #include <utility>
 #include <vector>
 
+namespace securecloud::audit::service {} // namespace securecloud::audit::service
+
+namespace securecloud::audit::ingestion {
+class AuditIngestionPipeline;
+}
+
 namespace securecloud::audit::service {
 
 struct BatchIngestionResult {
@@ -26,7 +32,8 @@ class AuditIngestionService {
   public:
     explicit AuditIngestionService(std::shared_ptr<repository::IAuditEventRepository> repository,
                                    std::shared_ptr<ingestion::IDeduplicationCache> dedup_cache = nullptr,
-                                   std::chrono::milliseconds in_flight_timeout = std::chrono::milliseconds(5000));
+                                   std::chrono::milliseconds in_flight_timeout = std::chrono::milliseconds(5000),
+                                   std::shared_ptr<ingestion::AuditIngestionPipeline> pipeline = nullptr);
 
     [[nodiscard]] IngestionResult ingest_single(const domain::AuditEvent& event);
 
@@ -37,6 +44,7 @@ class AuditIngestionService {
     std::shared_ptr<ingestion::IDeduplicationCache> dedup_cache_;
     ingestion::AcknowledgementManager ack_manager_;
     std::chrono::milliseconds in_flight_timeout_{5000};
+    std::shared_ptr<ingestion::AuditIngestionPipeline> pipeline_;
 };
 
 } // namespace securecloud::audit::service

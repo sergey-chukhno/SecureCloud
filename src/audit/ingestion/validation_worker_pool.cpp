@@ -3,6 +3,7 @@
 #include "domain/audit_event_validator.hpp"
 #include "domain/sensitive_data_guard.hpp"
 #include "ingestion/in_memory_deduplication_manager.hpp"
+#include "telemetry/audit_metrics.hpp"
 
 namespace securecloud::audit::ingestion {
 
@@ -26,6 +27,8 @@ void ValidationWorkerPool::start() {
     }
 
     workers_.reserve(num_workers_);
+    telemetry::AuditMetrics::instance().set_active_workers(telemetry::WorkerPoolLabel::Validation,
+                                                           static_cast<int64_t>(num_workers_));
     for (size_t i = 0; i < num_workers_; ++i) {
         workers_.emplace_back(&ValidationWorkerPool::worker_loop, this);
     }
@@ -42,6 +45,7 @@ void ValidationWorkerPool::stop() noexcept {
         }
     }
     workers_.clear();
+    telemetry::AuditMetrics::instance().set_active_workers(telemetry::WorkerPoolLabel::Validation, 0);
 }
 
 bool ValidationWorkerPool::is_running() const noexcept {
@@ -68,6 +72,7 @@ void ValidationWorkerPool::worker_loop() {
             total_rejected_.fetch_add(1, std::memory_order_relaxed);
             service::IngestionResult fail_res{
                 .success = false,
+                .outcome_status = IngestionOutcomeStatus::ValidationRejected,
                 .error_code = "INVALID_ARGUMENT",
                 .error_message = val_res.errors().empty() ? "Validation failed" : val_res.errors().front().message,
                 .received_at = std::chrono::system_clock::now()};
@@ -86,6 +91,7 @@ void ValidationWorkerPool::worker_loop() {
         if (!sensitive_check.is_valid()) {
             total_rejected_.fetch_add(1, std::memory_order_relaxed);
             service::IngestionResult fail_res{.success = false,
+                                              .outcome_status = IngestionOutcomeStatus::ValidationRejected,
                                               .error_code = "INVALID_ARGUMENT",
                                               .error_message = sensitive_check.errors().empty()
                                                                    ? "Sensitive data policy violation"

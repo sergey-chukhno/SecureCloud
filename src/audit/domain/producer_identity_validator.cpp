@@ -24,7 +24,7 @@ bool matches_identity(std::string_view candidate, std::string_view expected_shor
     return lower_cand == expected_short || lower_cand == expected_fqdn;
 }
 
-bool is_peer_authorized(ProducerService producer, const PeerIdentity& peer) noexcept {
+bool matches_identity_for_producer(ProducerService producer, const PeerIdentity& peer) noexcept {
     std::string_view short_name;
     std::string_view fqdn;
 
@@ -72,6 +72,11 @@ bool is_peer_authorized(ProducerService producer, const PeerIdentity& peer) noex
 
 } // namespace
 
+bool ProducerIdentityValidator::matches_peer_identity(ProducerService producer,
+                                                      const PeerIdentity& peer_identity) noexcept {
+    return matches_identity_for_producer(producer, peer_identity);
+}
+
 AuditValidationResult
 ProducerIdentityValidator::validate_producer_authorization(ProducerService declared_producer,
                                                            const PeerIdentity& peer_identity) noexcept {
@@ -81,7 +86,7 @@ ProducerIdentityValidator::validate_producer_authorization(ProducerService decla
                                                "Unauthenticated peer attempting to produce audit events"});
     }
 
-    if (!is_peer_authorized(declared_producer, peer_identity)) {
+    if (!matches_peer_identity(declared_producer, peer_identity)) {
         return AuditValidationResult::failure({AuditValidationErrorCode::UnauthorizedProducer, "producer_service",
                                                "Declared producer service '" +
                                                    std::string(to_string(declared_producer)) +

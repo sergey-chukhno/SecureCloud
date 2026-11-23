@@ -10,7 +10,7 @@ AuditIngestionPipeline::AuditIngestionPipeline(const IngestionConfig& config,
     : config_(config), repository_(std::move(repository)), dedup_cache_(std::move(dedup_cache)) {
 
     input_queue_ = std::make_shared<BoundedIngestionQueue>(config_.max_queued_events);
-    validated_queue_ = std::make_shared<BoundedIngestionQueue>(config_.max_queued_events);
+    validated_queue_ = std::make_shared<BoundedIngestionQueue>(config_.max_queued_events, false);
     batch_queue_ = std::make_shared<BoundedBatchQueue>(32);
 
     validation_pool_ = std::make_shared<ValidationWorkerPool>(config_.workers, input_queue_, validated_queue_, nullptr);
@@ -18,7 +18,7 @@ AuditIngestionPipeline::AuditIngestionPipeline(const IngestionConfig& config,
     batch_aggregator_ = std::make_shared<BatchAggregator>(
         config_.batch_size, std::chrono::milliseconds(config_.batch_flush_interval_ms), validated_queue_, batch_queue_);
 
-    insert_pool_ = std::make_shared<InsertWorkerPool>(2, batch_queue_, repository_);
+    insert_pool_ = std::make_shared<InsertWorkerPool>(2, batch_queue_, repository_, dedup_cache_);
 }
 
 AuditIngestionPipeline::~AuditIngestionPipeline() {

@@ -71,6 +71,21 @@ TEST_F(AuditPersistenceTelemetryTest, InsertBatchMetricsFailure) {
     EXPECT_NE(text.find("audit_persisted_batches_total{outcome=\"failure\"} 1"), std::string::npos);
 }
 
+TEST_F(AuditPersistenceTelemetryTest, InsertBatchClassifiesTimeoutAsAmbiguousOutcome) {
+    auto mock_client = std::make_shared<MockClickHouseClient>();
+    EXPECT_CALL(*mock_client, execute_insert(_, _, _))
+        .WillOnce(::testing::Throw(ClickHouseTimeoutException("timeout")));
+
+    ClickHouseAuditEventRepository repo(mock_client);
+    const auto result = repo.insert_batch_classified({create_test_event()});
+
+    EXPECT_EQ(result.status, RepositoryWriteStatus::AmbiguousOutcome);
+    EXPECT_EQ(result.error_code, "DEADLINE_EXCEEDED");
+    EXPECT_FALSE(result.sanitized_reason.empty());
+    const auto metrics = telemetry::AuditMetrics::instance().to_prometheus_text();
+    EXPECT_NE(metrics.find("audit_clickhouse_insert_operations_total{outcome=\"timeout\"} 1"), std::string::npos);
+}
+
 TEST_F(AuditPersistenceTelemetryTest, ResilienceRetryMetrics) {
     RepositoryResilience resilience(10);
 

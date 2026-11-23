@@ -163,6 +163,10 @@ void BoundedDeduplicationCache::rollback_in_flight(const domain::EventId& event_
         promise_to_fulfill = in_flight_it->second.primary_promise;
         shard.in_flight_map.erase(in_flight_it);
         DeduplicationMetrics::instance().audit_dedup_inflight_rollbacks_total.fetch_add(1, std::memory_order_relaxed);
+        if (failure_result.status == IngestionOutcomeStatus::PersistenceAmbiguous) {
+            DeduplicationMetrics::instance().audit_persistence_ambiguous_outcomes_total.fetch_add(
+                1, std::memory_order_relaxed);
+        }
     }
 
     if (promise_to_fulfill) {
