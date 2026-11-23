@@ -28,18 +28,18 @@ struct FileUploadRequest {
     domain::ConversationId conversation_id;
     domain::UserId owner_user_id;
     domain::DeviceId owner_device_id;
-    domain::UserId peer_user_id;
+    domain::UserId peer_user_id{};
     std::string local_file_path;
     std::string mime_type{"application/octet-stream"};
-    std::string sender_display_name;
+    std::string sender_display_name{};
     int32_t priority{0};
     bool dispatch_key_envelope{true};
 };
 
 struct FileUploadResult {
     domain::FileTransferRecord record;
-    std::optional<domain::FileAttachmentKeyEnvelope> key_envelope;
-    std::optional<domain::Message> dispatched_message;
+    std::optional<domain::FileAttachmentKeyEnvelope> key_envelope{};
+    std::optional<domain::Message> dispatched_message{};
 };
 
 class FileManager {

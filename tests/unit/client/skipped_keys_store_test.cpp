@@ -273,7 +273,7 @@ TEST(DoubleRatchetOutOfOrderTest, ExcessiveSkipGapRejected) {
 
 TEST(DoubleRatchetOutOfOrderTest, StubCryptoProviderParity) {
     StubCryptoProvider stub_crypto;
-    SecretString shared_secret(std::string(32, 0x8D));
+    SecretString shared_secret(std::string(32, static_cast<char>(0x8DU)));
 
     auto bob_dh = stub_crypto.generate_dh_keypair().value();
     std::vector<uint8_t> bob_dh_pub = bob_dh.public_key;

@@ -67,12 +67,12 @@ struct EncryptedMessageEnvelope {
 };
 
 struct PerDeviceDeliveryPayload {
-    domain::UserId recipient_user_id;
-    domain::DeviceId recipient_device_id;
-    std::string ciphertext_blob;
-    std::vector<uint8_t> ephemeral_public_key;
-    std::vector<uint8_t> iv;
-    std::vector<uint8_t> auth_tag;
+    domain::UserId recipient_user_id{};
+    domain::DeviceId recipient_device_id{};
+    std::string ciphertext_blob{};
+    std::vector<uint8_t> ephemeral_public_key{};
+    std::vector<uint8_t> iv{};
+    std::vector<uint8_t> auth_tag{};
     std::string algorithm{"AES-256-GCM"};
 
     bool operator==(const PerDeviceDeliveryPayload& other) const noexcept = default;

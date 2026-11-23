@@ -63,7 +63,7 @@ struct RealtimeEvent {
 };
 
 struct ConversationMessagesPage {
-    std::vector<RealtimeEvent> events;
+    std::vector<RealtimeEvent> events{};
     bool has_more{false};
     uint64_t next_sequence{0};
     uint64_t latest_sequence{0};

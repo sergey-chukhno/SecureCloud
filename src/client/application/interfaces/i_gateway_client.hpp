@@ -28,7 +28,7 @@ struct DeviceRegistrationResult {
     domain::DeviceId device_id;
     domain::DeviceAuthorizationStatus status{domain::DeviceAuthorizationStatus::Authorized};
     std::chrono::system_clock::time_point registered_at{std::chrono::system_clock::now()};
-    std::string pairing_code;
+    std::string pairing_code{};
     std::chrono::system_clock::time_point pairing_code_expires_at{};
 };
 
@@ -38,7 +38,7 @@ struct PrekeyUpdateResult {
 };
 
 struct PairingInitiationResult {
-    domain::DeviceId device_id;
+    domain::DeviceId device_id{};
     std::string pairing_code;
     std::chrono::system_clock::time_point expires_at{std::chrono::system_clock::now() + std::chrono::minutes(10)};
 };
@@ -51,7 +51,7 @@ struct DeviceCryptoDirectoryEntry {
     std::optional<std::vector<uint8_t>> one_time_prekey;
     std::string one_time_prekey_id;
     domain::DeviceAuthorizationStatus status{domain::DeviceAuthorizationStatus::Authorized};
-    std::string identity_key_fingerprint;
+    std::string identity_key_fingerprint{};
     int32_t remaining_one_time_prekeys{0};
     std::chrono::system_clock::time_point signed_prekey_created_at{std::chrono::system_clock::now()};
 };
@@ -72,7 +72,7 @@ struct FileUploadInitRequest {
     uint64_t encrypted_size_bytes{0};
     uint32_t expected_chunk_count{0};
     std::string encryption_version{"v1"};
-    std::string client_crypto_metadata;
+    std::string client_crypto_metadata{};
 };
 
 struct FileUploadInitResult {
@@ -86,7 +86,7 @@ struct FileChunkUploadRequest {
     std::string upload_id;
     uint32_t chunk_index{0};
     std::vector<uint8_t> encrypted_data;
-    std::string ciphertext_sha256;
+    std::string ciphertext_sha256{};
 };
 
 struct FileChunkUploadResult {
@@ -99,7 +99,7 @@ struct FileChunkUploadResult {
 struct FileUploadFinalizeRequest {
     std::string upload_id;
     std::string file_id;
-    std::string expected_ciphertext_sha256;
+    std::string expected_ciphertext_sha256{};
 };
 
 struct FileUploadFinalizeResult {
@@ -110,13 +110,13 @@ struct FileUploadFinalizeResult {
 
 struct RemoteFileMetadata {
     std::string file_id;
-    domain::UserId owner_user_id;
-    domain::ConversationId conversation_id;
+    domain::UserId owner_user_id{};
+    domain::ConversationId conversation_id{};
     std::string lifecycle_state;
     uint64_t encrypted_size_bytes{0};
     uint32_t chunk_count{0};
     std::string encryption_version{"v1"};
-    std::string ciphertext_integrity_hash;
+    std::string ciphertext_integrity_hash{};
     int64_t created_at_unix_ms{0};
     int64_t available_at_unix_ms{0};
 };
@@ -124,8 +124,8 @@ struct RemoteFileMetadata {
 struct FileChunkDownloadResult {
     std::string file_id;
     uint32_t chunk_index{0};
-    std::vector<uint8_t> encrypted_data;
-    std::string ciphertext_sha256;
+    std::vector<uint8_t> encrypted_data{};
+    std::string ciphertext_sha256{};
 };
 
 class IGatewayClient {
