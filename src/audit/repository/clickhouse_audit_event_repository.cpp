@@ -58,26 +58,52 @@ std::string ClickHouseAuditEventRepository::escape_sql_string(const std::string&
 }
 
 bool ClickHouseAuditEventRepository::insert_batch(const std::vector<domain::AuditEvent>& events) {
-    if (events.empty())
-        return true;
+    return insert_batch_classified(events).status == RepositoryWriteStatus::Committed;
+}
+
+RepositoryBatchWriteResult
+ClickHouseAuditEventRepository::insert_batch_classified(const std::vector<domain::AuditEvent>& events) {
+    if (events.empty()) {
+        return RepositoryBatchWriteResult{
+            .status = RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
+    }
 
     auto start_time = std::chrono::steady_clock::now();
 
     std::string body_data = ClickHouseEventSerializer::serialize_for_insert(events);
     std::string query = "INSERT INTO audit_events FORMAT TabSeparated";
 
-    bool success = false;
+    RepositoryBatchWriteResult result{
+        .status = RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
     try {
-        success = client_->execute_insert(query, body_data);
-    } catch (...) {
-        success = false;
+        if (!client_->execute_insert(query, body_data)) {
+            result = RepositoryBatchWriteResult{.status = RepositoryWriteStatus::DeterministicFailure,
+                                                .error_code = "CLICKHOUSE_ERROR",
+                                                .sanitized_reason = "ClickHouse rejected the audit batch"};
+        }
+    } catch (const ClickHouseTimeoutException&) {
+        result = RepositoryBatchWriteResult{.status = RepositoryWriteStatus::AmbiguousOutcome,
+                                            .error_code = "DEADLINE_EXCEEDED",
+                                            .sanitized_reason = "ClickHouse insert outcome is ambiguous after timeout"};
+    } catch (const ClickHouseConnectionException&) {
+        result = RepositoryBatchWriteResult{.status = RepositoryWriteStatus::DeterministicFailure,
+                                            .error_code = "UNAVAILABLE",
+                                            .sanitized_reason = "ClickHouse is unavailable"};
+    } catch (const ClickHouseQueryException&) {
+        result = RepositoryBatchWriteResult{.status = RepositoryWriteStatus::DeterministicFailure,
+                                            .error_code = "CLICKHOUSE_ERROR",
+                                            .sanitized_reason = "ClickHouse rejected the audit batch"};
+    } catch (const std::exception&) {
+        result = RepositoryBatchWriteResult{.status = RepositoryWriteStatus::DeterministicFailure,
+                                            .error_code = "CLICKHOUSE_ERROR",
+                                            .sanitized_reason = "ClickHouse audit batch insertion failed"};
     }
 
     auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start_time).count();
     auto& metrics = telemetry::AuditMetrics::instance();
     metrics.observe_clickhouse_insert_duration(elapsed);
 
-    if (success) {
+    if (result.status == RepositoryWriteStatus::Committed) {
         metrics.record_clickhouse_insert_operation(telemetry::OperationOutcome::Success);
         metrics.record_persisted_batch(telemetry::OperationOutcome::Success);
 
@@ -89,11 +115,13 @@ bool ClickHouseAuditEventRepository::insert_batch(const std::vector<domain::Audi
             metrics.record_persisted_events(map_producer_label(producer), count);
         }
     } else {
-        metrics.record_clickhouse_insert_operation(telemetry::OperationOutcome::Failure);
+        metrics.record_clickhouse_insert_operation(result.status == RepositoryWriteStatus::AmbiguousOutcome
+                                                       ? telemetry::OperationOutcome::Timeout
+                                                       : telemetry::OperationOutcome::Failure);
         metrics.record_persisted_batch(telemetry::OperationOutcome::Failure);
     }
 
-    return success;
+    return result;
 }
 
 std::vector<domain::AuditEvent>

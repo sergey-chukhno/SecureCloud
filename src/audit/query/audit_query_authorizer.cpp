@@ -1,27 +1,8 @@
 #include "query/audit_query_authorizer.hpp"
 
-#include <algorithm>
-#include <optional>
-
 namespace securecloud::audit::query {
 
-namespace {
-
-std::optional<domain::ProducerService> producer_service_from_cn(std::string_view cn) {
-    if (cn == "auth.securecloud.internal")
-        return domain::ProducerService::Auth;
-    if (cn == "messaging.securecloud.internal")
-        return domain::ProducerService::Messaging;
-    if (cn == "files.securecloud.internal")
-        return domain::ProducerService::Files;
-    if (cn == "gateway.securecloud.internal")
-        return domain::ProducerService::Gateway;
-    if (cn == "audit.securecloud.internal")
-        return domain::ProducerService::Audit;
-    return std::nullopt;
-}
-
-} // namespace
+namespace {} // namespace
 
 grpc::Status AuditQueryAuthorizer::authorize_query(const domain::PeerIdentity& peer, const AuditQueryFilter& filter) {
     if (!peer.is_authenticated) {
@@ -29,12 +10,12 @@ grpc::Status AuditQueryAuthorizer::authorize_query(const domain::PeerIdentity& p
     }
 
     // 1. Global audit service authority
-    if (peer.common_name == "audit.securecloud.internal") {
+    if (domain::ProducerIdentityValidator::matches_peer_identity(domain::ProducerService::Audit, peer)) {
         return grpc::Status::OK;
     }
 
     // 2. Gateway restriction (operator contract disabled)
-    if (peer.common_name == "gateway.securecloud.internal") {
+    if (domain::ProducerIdentityValidator::matches_peer_identity(domain::ProducerService::Gateway, peer)) {
         bool is_gateway_self_scope =
             (filter.producer_services.size() == 1 && filter.producer_services[0] == domain::ProducerService::Gateway);
         if (!is_gateway_self_scope) {
@@ -46,12 +27,11 @@ grpc::Status AuditQueryAuthorizer::authorize_query(const domain::PeerIdentity& p
     }
 
     // 3. Producer-scoped authority (Auth, Messaging, Files)
-    auto caller_service_opt = producer_service_from_cn(peer.common_name);
-    if (caller_service_opt.has_value() && (*caller_service_opt == domain::ProducerService::Auth ||
-                                           *caller_service_opt == domain::ProducerService::Messaging ||
-                                           *caller_service_opt == domain::ProducerService::Files)) {
-
-        const auto caller_service = *caller_service_opt;
+    for (const auto caller_service :
+         {domain::ProducerService::Auth, domain::ProducerService::Messaging, domain::ProducerService::Files}) {
+        if (!domain::ProducerIdentityValidator::matches_peer_identity(caller_service, peer)) {
+            continue;
+        }
 
         if (filter.producer_services.empty()) {
             return grpc::Status(grpc::StatusCode::PERMISSION_DENIED,

@@ -179,10 +179,18 @@ bool ClickHouseClient::execute_insert(const std::string& query, const std::strin
 }
 
 bool ClickHouseClient::ping(std::chrono::milliseconds timeout) {
+    std::unique_ptr<httplib::Client> cli;
     try {
-        std::string response;
-        return execute_query("SELECT 1", &response, timeout) && !response.empty();
-    } catch (const ClickHouseException&) {
+        cli = impl_->acquire_connection(timeout);
+        if (!cli) {
+            return false;
+        }
+        auto response = cli->Get("/ping", impl_->build_headers());
+        const bool healthy = response && response->status == 200;
+        impl_->release_connection(std::move(cli));
+        return healthy;
+    } catch (...) {
+        impl_->release_connection(std::move(cli));
         return false;
     }
 }

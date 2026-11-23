@@ -1,5 +1,7 @@
 #include "telemetry/audit_metrics.hpp"
 
+#include "ingestion/deduplication_metrics.hpp"
+
 #include <sstream>
 
 namespace securecloud::audit::telemetry {
@@ -118,6 +120,7 @@ void AuditMetrics::set_clickhouse_available(bool available) noexcept {
 }
 
 void AuditMetrics::reset() noexcept {
+    ingestion::DeduplicationMetrics::instance().reset();
     for (auto& row : ingestion_requests_total_) {
         for (auto& cell : row)
             cell.store(0, std::memory_order_relaxed);
@@ -329,6 +332,47 @@ std::string AuditMetrics::to_prometheus_text() const {
     ss << "# HELP audit_clickhouse_available Reachability status of ClickHouse cluster\n";
     ss << "# TYPE audit_clickhouse_available gauge\n";
     ss << "audit_clickhouse_available " << clickhouse_available_.load(std::memory_order_relaxed) << "\n";
+
+    const auto& dedup = ingestion::DeduplicationMetrics::instance();
+    ss << "# HELP audit_events_persisted_new_total New events committed to ClickHouse\n";
+    ss << "# TYPE audit_events_persisted_new_total counter\n";
+    ss << "audit_events_persisted_new_total " << dedup.audit_events_persisted_new_total.load(std::memory_order_relaxed)
+       << "\n";
+
+    ss << "# HELP audit_dedup_hits_committed_total Retries matched previously committed event payloads\n";
+    ss << "# TYPE audit_dedup_hits_committed_total counter\n";
+    ss << "audit_dedup_hits_committed_total " << dedup.audit_dedup_hits_committed_total.load(std::memory_order_relaxed)
+       << "\n";
+
+    ss << "# HELP audit_dedup_hits_inflight_coalesced_total Retries coalesced with in-flight event persistence\n";
+    ss << "# TYPE audit_dedup_hits_inflight_coalesced_total counter\n";
+    ss << "audit_dedup_hits_inflight_coalesced_total "
+       << dedup.audit_dedup_hits_inflight_coalesced_total.load(std::memory_order_relaxed) << "\n";
+
+    ss << "# HELP audit_dedup_payload_conflicts_total Event identifiers reused with different payloads\n";
+    ss << "# TYPE audit_dedup_payload_conflicts_total counter\n";
+    ss << "audit_dedup_payload_conflicts_total "
+       << dedup.audit_dedup_payload_conflicts_total.load(std::memory_order_relaxed) << "\n";
+
+    ss << "# HELP audit_dedup_cache_evictions_ttl_total Committed dedup entries evicted after TTL\n";
+    ss << "# TYPE audit_dedup_cache_evictions_ttl_total counter\n";
+    ss << "audit_dedup_cache_evictions_ttl_total "
+       << dedup.audit_dedup_cache_evictions_ttl_total.load(std::memory_order_relaxed) << "\n";
+
+    ss << "# HELP audit_dedup_cache_evictions_lru_total Committed dedup entries evicted by capacity\n";
+    ss << "# TYPE audit_dedup_cache_evictions_lru_total counter\n";
+    ss << "audit_dedup_cache_evictions_lru_total "
+       << dedup.audit_dedup_cache_evictions_lru_total.load(std::memory_order_relaxed) << "\n";
+
+    ss << "# HELP audit_dedup_inflight_rollbacks_total In-flight dedup reservations rolled back\n";
+    ss << "# TYPE audit_dedup_inflight_rollbacks_total counter\n";
+    ss << "audit_dedup_inflight_rollbacks_total "
+       << dedup.audit_dedup_inflight_rollbacks_total.load(std::memory_order_relaxed) << "\n";
+
+    ss << "# HELP audit_persistence_ambiguous_outcomes_total ClickHouse writes with ambiguous commit outcomes\n";
+    ss << "# TYPE audit_persistence_ambiguous_outcomes_total counter\n";
+    ss << "audit_persistence_ambiguous_outcomes_total "
+       << dedup.audit_persistence_ambiguous_outcomes_total.load(std::memory_order_relaxed) << "\n";
 
     return ss.str();
 }
