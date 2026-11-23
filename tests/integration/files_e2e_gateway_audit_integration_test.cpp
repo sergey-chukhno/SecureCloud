@@ -9,6 +9,7 @@
 #endif
 
 #include "files/audit/audit_client_interface.hpp"
+#include "files/audit/files_audit_proto_validator.hpp"
 #include "files/audit/files_outbox_relay.hpp"
 #include "files/audit/grpc_audit_client.hpp"
 #include "files/domain/files_outbox_entity.hpp"
@@ -29,6 +30,7 @@
 #include "securecloud/files/v1/files.pb.h"
 #include "securecloud/security/mtls_config.hpp"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -48,6 +50,7 @@
 #include <string_view>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #ifdef _WIN32
@@ -153,6 +156,28 @@ class MockAuditIngestionService final : public securecloud::audit::v1::AuditInge
     }
 };
 
+class InMemoryAuditClient final : public audit::IFilesAuditClient {
+  public:
+    explicit InMemoryAuditClient(MockAuditIngestionService& service) : service_(service) {}
+    audit::FilesAuditBatchSubmitResult
+    submit_batch(const std::vector<securecloud::audit::v1::AuditEventProto>& events) override {
+        securecloud::audit::v1::BatchSubmitAuditEventsRequest request;
+        for (const auto& event : events)
+            *request.add_events() = event;
+        securecloud::audit::v1::BatchSubmitAuditEventsResponse response;
+        grpc::ServerContext context;
+        audit::FilesAuditBatchSubmitResult result;
+        result.status = service_.BatchSubmitAuditEvents(&context, &request, &response);
+        result.rpc_success = result.status.ok();
+        result.accepted_count = response.accepted_count();
+        result.rejected_count = response.rejected_count();
+        return result;
+    }
+
+  private:
+    MockAuditIngestionService& service_;
+};
+
 // ============================================================================
 // 2. Mock Files Outbox Repository for in-memory tracking
 // ============================================================================
@@ -185,6 +210,11 @@ class InMemoryOutboxRepository : public FilesOutboxRepository {
         }
         staged_.erase(staged_.begin(), staged_.begin() + static_cast<std::ptrdiff_t>(n));
         return res;
+    }
+
+    std::vector<FilesOutboxEntity> fetch_and_lease_pending_batch(size_t limit,
+                                                                 std::chrono::seconds /*lease_duration*/) override {
+        return fetch_pending_events(limit);
     }
 
     bool mark_published(const std::string& event_id) override {
@@ -235,7 +265,27 @@ class ControllableMockFilesService final : public securecloud::files::v1::FilesS
     std::map<std::string, StoredFile> files_;
     std::atomic<uint32_t> session_counter_{0};
 
-    ::grpc::Status CreateFileUpload(::grpc::ServerContext* /*context*/,
+    void stage_audit_event(std::string event_type, std::string correlation_id) {
+        if (!outbox_repo)
+            return;
+        FilesOutboxEntity ev;
+        ev.event_id = make_test_uuid_v7();
+        ev.aggregate_id = make_test_uuid_v7();
+        ev.event_type = std::move(event_type);
+        ev.created_at = std::chrono::system_clock::now();
+        ev.payload_json =
+            nlohmann::json{{"owner_user_id", make_test_uuid_v7()}, {"correlation_id", std::move(correlation_id)}}
+                .dump();
+        outbox_repo->stage_event(ev);
+    }
+
+    static std::string correlation_id(::grpc::ServerContext* context) {
+        const auto metadata = context->client_metadata();
+        const auto it = metadata.find("x-correlation-id");
+        return it == metadata.end() ? std::string{} : std::string(it->second.data(), it->second.length());
+    }
+
+    ::grpc::Status CreateFileUpload(::grpc::ServerContext* context,
                                     const securecloud::files::v1::CreateFileUploadRequest* request,
                                     securecloud::files::v1::CreateFileUploadResponse* response) override {
         if (simulate_downstream_failure.load()) {
@@ -256,16 +306,8 @@ class ControllableMockFilesService final : public securecloud::files::v1::FilesS
         }
 
         // Stage transactional outbox event
-        if (outbox_repo) {
-            FilesOutboxEntity ev;
-            ev.event_id = "evt-init-" + upload_id;
-            ev.aggregate_id = file_id;
-            ev.event_type = "FILE_CREATED";
-            ev.created_at = std::chrono::system_clock::now();
-            ev.payload_json =
-                "{\"owner_user_id\":\"" + request->owner_user_id() + "\",\"file_id\":\"" + file_id + "\"}";
-            outbox_repo->stage_event(ev);
-        }
+        stage_audit_event("file.created", correlation_id(context));
+        stage_audit_event("file.upload.initiated", correlation_id(context));
 
         response->set_upload_id(upload_id);
         response->set_file_id(file_id);
@@ -294,7 +336,7 @@ class ControllableMockFilesService final : public securecloud::files::v1::FilesS
         return ::grpc::Status::OK;
     }
 
-    ::grpc::Status FinalizeFileUpload(::grpc::ServerContext* /*context*/,
+    ::grpc::Status FinalizeFileUpload(::grpc::ServerContext* context,
                                       const securecloud::files::v1::FinalizeFileUploadRequest* request,
                                       securecloud::files::v1::FinalizeFileUploadResponse* response) override {
         if (simulate_downstream_failure.load()) {
@@ -316,15 +358,7 @@ class ControllableMockFilesService final : public securecloud::files::v1::FilesS
         }
         files_[f.file_id] = f;
 
-        if (outbox_repo) {
-            FilesOutboxEntity ev;
-            ev.event_id = "evt-fin-" + f.file_id;
-            ev.aggregate_id = f.file_id;
-            ev.event_type = "FILE_FINALIZED";
-            ev.created_at = std::chrono::system_clock::now();
-            ev.payload_json = "{\"owner_user_id\":\"" + f.owner_user_id + "\",\"file_id\":\"" + f.file_id + "\"}";
-            outbox_repo->stage_event(ev);
-        }
+        stage_audit_event("file.upload.completed", correlation_id(context));
 
         response->set_file_id(f.file_id);
         response->set_lifecycle_state(securecloud::files::v1::FileLifecycleState::FILE_LIFECYCLE_STATE_AVAILABLE);
@@ -405,11 +439,13 @@ class ControllableMockFilesService final : public securecloud::files::v1::FilesS
         response->set_chunk_index(request->chunk_index());
         response->set_encrypted_data(it->second.chunks[request->chunk_index()]);
         response->set_chunk_size_bytes(static_cast<uint32_t>(it->second.chunks[request->chunk_index()].size()));
+        if (request->chunk_index() == 0) {
+            stage_audit_event("file.download.initiated", correlation_id(context));
+        }
         return ::grpc::Status::OK;
     }
 
-    ::grpc::Status DeleteFile(::grpc::ServerContext* /*context*/,
-                              const securecloud::files::v1::DeleteFileRequest* request,
+    ::grpc::Status DeleteFile(::grpc::ServerContext* context, const securecloud::files::v1::DeleteFileRequest* request,
                               securecloud::files::v1::DeleteFileResponse* response) override {
         if (simulate_downstream_failure.load()) {
             return ::grpc::Status(::grpc::StatusCode::UNAVAILABLE, "Simulated Files outage");
@@ -423,16 +459,7 @@ class ControllableMockFilesService final : public securecloud::files::v1::FilesS
 
         it->second.deleted = true;
 
-        if (outbox_repo) {
-            FilesOutboxEntity ev;
-            ev.event_id = "evt-del-" + request->file_id();
-            ev.aggregate_id = request->file_id();
-            ev.event_type = "FILE_DELETED";
-            ev.created_at = std::chrono::system_clock::now();
-            ev.payload_json =
-                "{\"owner_user_id\":\"" + it->second.owner_user_id + "\",\"file_id\":\"" + request->file_id() + "\"}";
-            outbox_repo->stage_event(ev);
-        }
+        stage_audit_event("file.deleted", correlation_id(context));
 
         response->set_file_id(request->file_id());
         response->set_lifecycle_state(securecloud::files::v1::FileLifecycleState::FILE_LIFECYCLE_STATE_DELETED);
@@ -777,53 +804,75 @@ TEST_F(FilesE2EGatewayAuditIntegrationTest, Scenario5_DeletionAndMetadataLifecyc
 // Test 6: Transactional Outbox Audit Dispatch Verification
 // ============================================================================
 TEST_F(FilesE2EGatewayAuditIntegrationTest, Scenario6_OutboxAuditDispatchVerification) {
-    // Connect the production mTLS Audit client to the mock Audit service.
-    audit::GrpcAuditClientConfig audit_cfg;
-    audit_cfg.target_endpoint = audit_address_;
-    const std::filesystem::path pki_root(SECURECLOUD_DEV_PKI_DIR);
-    audit_cfg.tls_credentials = {
-        .ca_cert_path = pki_root / "ca" / "ca.crt",
-        .service_cert_path = pki_root / "services" / "files" / "files.crt",
-        .service_key_path = pki_root / "services" / "files" / "files.key",
-    };
-    auto audit_client = std::make_shared<audit::GrpcAuditClient>(audit_cfg);
+    // Use the in-memory Audit service double here; GrpcAuditClient mTLS/SAN behavior
+    // is covered by the dedicated Files gRPC Audit client test suite.
+    auto audit_client = std::make_shared<InMemoryAuditClient>(*audit_service_);
 
-    // Stage sample outbox events into repository
-    FilesOutboxEntity ev1;
-    ev1.event_id = make_test_uuid_v7();
-    ev1.aggregate_id = make_test_uuid_v7();
-    ev1.event_type = "FILE_CREATED";
-    ev1.created_at = std::chrono::system_clock::now();
-    ev1.payload_json = "{\"owner_user_id\":\"" + make_test_uuid_v7() + "\",\"file_size\":1024}";
-    outbox_repo_->stage_event(ev1);
-
-    FilesOutboxEntity ev2;
-    ev2.event_id = make_test_uuid_v7();
-    ev2.aggregate_id = make_test_uuid_v7();
-    ev2.event_type = "FILE_FINALIZED";
-    ev2.created_at = std::chrono::system_clock::now();
-    ev2.payload_json = "{\"owner_user_id\":\"" + make_test_uuid_v7() + "\",\"file_size\":1024}";
-    outbox_repo_->stage_event(ev2);
+    // Exercise Gateway -> Files metadata propagation and stage the lifecycle via HTTP.
+    httplib::Client cli("127.0.0.1", http_port_);
+    const std::string correlation_id = make_test_uuid_v7();
+    httplib::Headers headers = {{"X-Caller-Id", "alice-uuid"}, {"X-Request-ID", correlation_id}};
+    constexpr uint32_t download_chunk_count = 10;
+    const nlohmann::json init_request = {{"owner_user_id", "alice-uuid"},
+                                         {"expected_chunk_count", download_chunk_count},
+                                         {"encrypted_size_bytes", download_chunk_count * 4}};
+    auto init = cli.Post("/api/v1/files/upload/init", headers, init_request.dump(), "application/json");
+    ASSERT_TRUE(init && init->status == 201);
+    const auto init_json = nlohmann::json::parse(init->body);
+    const std::string upload_id = init_json.at("upload_id").get<std::string>();
+    const std::string file_id = init_json.at("file_id").get<std::string>();
+    for (uint32_t chunk_index = 0; chunk_index < download_chunk_count; ++chunk_index) {
+        httplib::Headers chunk_headers = headers;
+        chunk_headers.insert({"Upload-Id", upload_id});
+        chunk_headers.insert({"Chunk-Index", std::to_string(chunk_index)});
+        auto uploaded = cli.Post("/api/v1/files/upload/chunk", chunk_headers, "DATA", "application/octet-stream");
+        ASSERT_TRUE(uploaded && uploaded->status == 200);
+    }
+    const nlohmann::json finalize_request = {{"upload_id", upload_id}, {"file_id", file_id}};
+    auto finalized = cli.Post("/api/v1/files/upload/finalize", headers, finalize_request.dump(), "application/json");
+    ASSERT_TRUE(finalized && finalized->status == 200);
+    httplib::Headers download_headers = headers;
+    download_headers.insert({"X-File-Capability", "valid-ed25519-token"});
+    for (uint32_t chunk_index = 0; chunk_index < download_chunk_count; ++chunk_index) {
+        auto downloaded =
+            cli.Get("/api/v1/files/" + file_id + "/chunks/" + std::to_string(chunk_index), download_headers);
+        ASSERT_TRUE(downloaded && downloaded->status == 200);
+    }
+    auto deleted = cli.Delete("/api/v1/files/" + file_id, headers);
+    ASSERT_TRUE(deleted && deleted->status == 200);
 
     // Instantiate Outbox Relay Worker
     audit::FilesOutboxRelay relay(outbox_repo_, audit_client);
 
     // Trigger relay to drain any staged outbox events
     size_t dispatched = relay.poll_and_dispatch(50);
-    EXPECT_GE(dispatched, 2u);
+    EXPECT_GE(dispatched, 5u);
 
     // Verify Audit Service received events
-    EXPECT_GE(audit_service_->event_count(), 2u);
+    EXPECT_GE(audit_service_->event_count(), 5u);
 
     std::lock_guard<std::mutex> lock(audit_service_->mutex_);
+    std::unordered_set<std::string> observed_types;
+    audit::FilesAuditProtoValidator validator;
     for (const auto& ev : audit_service_->received_events) {
         EXPECT_EQ(ev.producer_service(), securecloud::audit::v1::ProducerServiceProto::PRODUCER_SERVICE_FILES);
         EXPECT_FALSE(ev.target_id().empty());
+        observed_types.insert(ev.event_type());
+        EXPECT_EQ(ev.correlation_id(), correlation_id);
+        const auto validation = validator.validate(ev);
+        EXPECT_TRUE(validation.valid) << validation.joined_errors();
         // Verify Zero Plaintext guarantee
         const auto& meta = ev.metadata();
         EXPECT_EQ(meta.find("encryption_key"), meta.end());
         EXPECT_EQ(meta.find("ciphertext"), meta.end());
     }
+    for (const auto* canonical : {"file.created", "file.upload.initiated", "file.upload.completed",
+                                  "file.download.initiated", "file.deleted"}) {
+        EXPECT_NE(observed_types.find(canonical), observed_types.end()) << canonical;
+    }
+    EXPECT_EQ(std::count_if(audit_service_->received_events.begin(), audit_service_->received_events.end(),
+                            [](const auto& event) { return event.event_type() == "file.download.initiated"; }),
+              1);
 }
 
 // ============================================================================

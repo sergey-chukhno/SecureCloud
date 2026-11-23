@@ -50,6 +50,12 @@ const std::unordered_set<std::string> k_envelope_only_keys = {
 // Rolling-upgrade legacy FILE_* -> canonical E01..E16 `file.*` translation table
 const std::unordered_map<std::string, std::string> k_legacy_event_type_map = {
     {"FILE_CREATED", "file.created"},
+    {"FILE_VERSION_CREATED", "file.version.created"},
+    {"FILE_UPLOADING", "file.upload.initiated"},
+    {"FILE_AVAILABLE", "file.upload.completed"},
+    {"TRANSFER_CANCELLED", "file.upload.cancelled"},
+    {"FILE_FAILED", "file.finalization.failed"},
+    {"FILE_EXPIRED", "file.expired"},
     {"FILE_UPLOAD_INITIATED", "file.created"},
     {"FILE_UPLOAD_COMPLETED", "file.upload.completed"},
     {"FILE_FINALIZED", "file.upload.completed"},

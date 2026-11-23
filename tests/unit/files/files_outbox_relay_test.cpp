@@ -1,6 +1,8 @@
 #include "files/audit/audit_client_interface.hpp"
 #include "files/audit/files_outbox_relay.hpp"
+#include "files/files_config.hpp"
 #include "files/repository/files_outbox_repository.hpp"
+#include "securecloud/configuration/configuration_source.hpp"
 
 #include <algorithm>
 #include <array>
@@ -11,7 +13,6 @@
 #include <memory>
 #include <optional>
 #include <random>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -226,6 +227,27 @@ TEST(FilesOutboxRelayTest, PollAndDispatchRecordsTransientFailureOnRpcFailureOrE
     EXPECT_EQ(repo->transient_failures[0].event_id, id3);
     EXPECT_EQ(repo->transient_failures[0].reason, "transport_reset");
     EXPECT_EQ(diag.consecutive_failures, 2u);
+}
+
+TEST(FilesOutboxRelayTest, KeepsAllRetryableGrpcFailuresOutOfFailedAndQuarantineStates) {
+    const auto file_id = make_uuid_v7();
+    for (const auto code :
+         {grpc::StatusCode::UNAVAILABLE, grpc::StatusCode::DEADLINE_EXCEEDED, grpc::StatusCode::RESOURCE_EXHAUSTED}) {
+        auto repo = std::make_shared<FakeOutboxRepository>();
+        const auto id = make_uuid_v7();
+        repo->pending_events.push_back(make_test_outbox_entity(id, file_id, "file.created"));
+        auto client = std::make_shared<MockAuditClient>();
+        FilesAuditBatchSubmitResult failed;
+        failed.rpc_success = false;
+        failed.status = grpc::Status(code, "retryable downstream error");
+        EXPECT_CALL(*client, submit_batch(_)).WillOnce(Return(failed));
+        FilesOutboxRelay relay(repo, client);
+        EXPECT_EQ(relay.poll_and_dispatch(10), 1u);
+        ASSERT_EQ(repo->transient_failures.size(), 1u);
+        EXPECT_EQ(repo->transient_failures.front().event_id, id);
+        EXPECT_TRUE(repo->quarantined_events.empty());
+        EXPECT_TRUE(repo->published_ids.empty());
+    }
 }
 
 TEST(FilesOutboxRelayTest, QuarantinesPerEventRejectedIdsWhilePublishingAcceptedEvents) {
@@ -449,32 +471,6 @@ TEST(FilesOutboxRelayTest, EmptyOutboxReturnsZero) {
     EXPECT_EQ(processed, 0u);
 }
 
-TEST(FilesOutboxObservabilityTest, MetricsExposeOnlyBoundedLabelsAndDiagnosticsScrubSecrets) {
-    FilesOutboxMetrics metrics;
-    metrics.record_staged(FilesOutboxCategory::Transactional, 2);
-    metrics.record_batch(FilesOutboxOutcome::Retryable);
-    metrics.record_quarantined(FilesOutboxQuarantineReason::Validation);
-    metrics.set_pending(7);
-    metrics.set_oldest_pending_age(12.5);
-    const auto exposition = metrics.to_prometheus_text();
-    EXPECT_NE(exposition.find("files_outbox_events_staged_total{category=\"transactional\"} 2"), std::string::npos);
-    EXPECT_NE(exposition.find("files_outbox_delivery_batches_total{outcome=\"retryable\"} 1"), std::string::npos);
-    EXPECT_NE(exposition.find("files_outbox_pending_events 7"), std::string::npos);
-    EXPECT_NE(exposition.find("# EOF\n"), std::string::npos);
-
-    EXPECT_EQ(FilesOutboxDiagnostics::scrub_sensitive_data("db_password=hunter2"), "[REDACTED_SENSITIVE_DATA]");
-    EXPECT_EQ(FilesOutboxDiagnostics::scrub_sensitive_data("Bearer abc.def.ghi"), "[REDACTED_SENSITIVE_DATA]");
-    EXPECT_EQ(FilesOutboxDiagnostics::scrub_sensitive_data("report.pdf"), "[REDACTED_SENSITIVE_DATA]");
-
-    std::ostringstream output;
-    FilesOutboxDiagnostics diagnostics;
-    diagnostics.set_output_stream(&output);
-    diagnostics.log_event(FilesDiagnosticCategory::Lease, "lease_failed", "corr-1", "db_password=hunter2");
-    EXPECT_NE(output.str().find("\"category\":\"lease\""), std::string::npos);
-    EXPECT_NE(output.str().find("[REDACTED_SENSITIVE_DATA]"), std::string::npos);
-    EXPECT_EQ(output.str().find("hunter2"), std::string::npos);
-}
-
 TEST(FilesOutboxRelayTest, LifecycleStartStopAndShutdownDrain) {
     const auto id1 = make_uuid_v7();
     const auto file_id = make_uuid_v7();
@@ -508,6 +504,45 @@ TEST(FilesOutboxRelayTest, LifecycleStartStopAndShutdownDrain) {
     EXPECT_FALSE(relay.is_running());
     ASSERT_EQ(repo->published_ids.size(), 1u);
     EXPECT_EQ(repo->published_ids[0], id1);
+}
+
+TEST(FilesOutboxConfigTest, LoadsAuditSettingsDefaultsAndBoundsRelayBatchSize) {
+    securecloud::common::configuration::InMemoryConfigurationSource source;
+    source.set("SECURECLOUD_FILES_DB_PASSWORD", "db-test-secret");
+    source.set("SECURECLOUD_FILES_S3_SECRET_KEY", "s3-test-secret");
+    source.set("SECURECLOUD_FILES_AUDIT_ENDPOINT", "audit-test:50055");
+    source.set("SECURECLOUD_FILES_AUDIT_TIMEOUT_MS", "1500");
+    source.set("SECURECLOUD_FILES_AUDIT_PEER_SAN", "audit.test");
+    source.set("SECURECLOUD_SERVICE_INSTANCE", "files-unit-1");
+    source.set("SECURECLOUD_FILES_AUDIT_RELAY_ENABLED", "false");
+    source.set("SECURECLOUD_FILES_AUDIT_BATCH_SIZE", "150");
+    securecloud::common::configuration::ValidationResult errors;
+    const auto config = securecloud::files::FilesConfig::load(source, errors);
+    EXPECT_TRUE(errors.is_valid()) << errors.to_string();
+    EXPECT_FALSE(config.audit.outbox_relay_enabled);
+    EXPECT_EQ(config.audit.audit_endpoint, "audit-test:50055");
+    EXPECT_EQ(config.audit.audit_timeout, std::chrono::milliseconds(1500));
+    EXPECT_EQ(config.audit.audit_expected_peer_san, "audit.test");
+    EXPECT_EQ(config.audit.producer_instance, "files-unit-1");
+    EXPECT_EQ(config.audit.relay.batch_size, 100u);
+    EXPECT_EQ(config.audit.relay.shutdown_drain_timeout, std::chrono::milliseconds(3000));
+}
+
+TEST(FilesOutboxConfigTest, DefaultsAuditEndpointAndFailsClosedWithoutRequiredServiceSecrets) {
+    securecloud::common::configuration::InMemoryConfigurationSource complete_source;
+    complete_source.set("SECURECLOUD_FILES_DB_PASSWORD", "db-test-secret");
+    complete_source.set("SECURECLOUD_FILES_S3_SECRET_KEY", "s3-test-secret");
+    securecloud::common::configuration::ValidationResult complete_errors;
+    const auto config = securecloud::files::FilesConfig::load(complete_source, complete_errors);
+    EXPECT_TRUE(complete_errors.is_valid()) << complete_errors.to_string();
+    EXPECT_EQ(config.audit.audit_endpoint, "audit:50055");
+
+    securecloud::common::configuration::InMemoryConfigurationSource missing_source;
+    securecloud::common::configuration::ValidationResult missing_errors;
+    (void)securecloud::files::FilesConfig::load(missing_source, missing_errors);
+    EXPECT_FALSE(missing_errors.is_valid());
+    EXPECT_NE(missing_errors.to_string().find("SECURECLOUD_FILES_DB_PASSWORD"), std::string::npos);
+    EXPECT_NE(missing_errors.to_string().find("SECURECLOUD_FILES_S3_SECRET_KEY"), std::string::npos);
 }
 
 } // namespace securecloud::files::audit

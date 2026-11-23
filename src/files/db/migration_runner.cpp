@@ -166,7 +166,9 @@ std::string trim_string(std::string_view s) {
 
 #if defined(SECURECLOUD_FILES_USE_REAL_PQXX) && __has_include(<pqxx/pqxx>)
 template <typename S> std::string extract_secret_value(const S& secret) {
-    if constexpr (requires { secret.reveal(); }) {
+    if constexpr (requires { secret.expose_unredacted_secret(); }) {
+        return std::string(secret.expose_unredacted_secret());
+    } else if constexpr (requires { secret.reveal(); }) {
         return std::string(secret.reveal());
     } else if constexpr (requires { secret.unmask(); }) {
         return std::string(secret.unmask());

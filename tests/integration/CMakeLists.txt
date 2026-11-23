@@ -1126,6 +1126,25 @@ endif()
 
 gtest_discover_tests(securecloud_files_e2e_gateway_audit_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
+# Files transactional outbox PostgreSQL, lease recovery, and concurrency suite (AUDIT-015-T07)
+add_executable(securecloud_files_outbox_transaction_test
+    files_outbox_transaction_test.cpp
+)
+target_link_libraries(securecloud_files_outbox_transaction_test PRIVATE
+    securecloud::files_audit
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    securecloud_proto
+    securecloud::json
+    GTest::gtest_main
+)
+gtest_discover_tests(securecloud_files_outbox_transaction_test ${SECURECLOUD_TEST_PROPERTIES})
+if(WIN32)
+    target_link_libraries(securecloud_files_outbox_transaction_test PRIVATE ws2_32)
+endif()
+
 # Audit Service ClickHouse 24.8 Live Integration Test Suite (AUDIT-003-T06)
 add_executable(securecloud_audit_clickhouse_integration_test
     audit_clickhouse_integration_test.cpp

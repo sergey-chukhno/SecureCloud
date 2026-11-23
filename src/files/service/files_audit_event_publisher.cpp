@@ -1,8 +1,8 @@
 #include "files/service/files_audit_event_publisher.hpp"
 
-#include "files/domain/metadata_validator.hpp"
-#include "files/audit/files_outbox_metrics.hpp"
 #include "files/audit/files_outbox_diagnostics.hpp"
+#include "files/audit/files_outbox_metrics.hpp"
+#include "files/domain/metadata_validator.hpp"
 
 #include <chrono>
 #include <iostream>
