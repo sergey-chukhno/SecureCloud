@@ -67,6 +67,7 @@ class RatchetSessionManager {
     ClientResult<void> load_all_sessions();
     ClientResult<void> terminate_session(const domain::UserId& peer_user_id, const domain::DeviceId& peer_device_id);
     ClientResult<void> purge_device_sessions(const domain::DeviceId& device_id);
+    std::size_t wipe_all_sessions();
 
     [[nodiscard]] bool has_session(const domain::UserId& peer_user_id, const domain::DeviceId& peer_device_id) const;
     [[nodiscard]] std::optional<std::vector<uint8_t>>

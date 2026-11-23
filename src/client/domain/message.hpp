@@ -8,7 +8,9 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <string_view>
 
 namespace securecloud::client::domain {
 
@@ -36,22 +38,31 @@ class Message {
     [[nodiscard]] int32_t priority() const noexcept { return priority_; }
     [[nodiscard]] const std::string& sender_display_name() const noexcept { return sender_display_name_; }
     [[nodiscard]] const std::string& idempotency_key() const noexcept { return idempotency_key_; }
+    [[nodiscard]] std::string client_message_id() const;
     [[nodiscard]] bool emergency_acknowledged() const noexcept { return emergency_acknowledged_; }
     [[nodiscard]] const std::string& attachment_name() const noexcept { return attachment_name_; }
     [[nodiscard]] int64_t attachment_size() const noexcept { return attachment_size_; }
     [[nodiscard]] const std::string& attachment_hash() const noexcept { return attachment_hash_; }
+    [[nodiscard]] uint64_t server_sequence_number() const noexcept { return server_sequence_number_; }
+    [[nodiscard]] std::optional<uint64_t> sender_key_epoch() const noexcept { return sender_key_epoch_; }
 
     void set_delivery_state(DeliveryState state) noexcept { delivery_state_ = state; }
     void set_encrypted_envelope_ref(std::string envelope_ref) { encrypted_envelope_ref_ = std::move(envelope_ref); }
     void set_priority(int32_t priority) noexcept { priority_ = priority; }
     void set_sender_display_name(std::string name) { sender_display_name_ = std::move(name); }
     void set_idempotency_key(std::string key) { idempotency_key_ = std::move(key); }
+    void set_client_message_id(std::string id) { idempotency_key_ = std::move(id); }
     void set_emergency_acknowledged(bool acknowledged) noexcept { emergency_acknowledged_ = acknowledged; }
     void set_attachment(std::string name, int64_t size, std::string hash) {
         attachment_name_ = std::move(name);
         attachment_size_ = size;
         attachment_hash_ = std::move(hash);
     }
+    void set_server_sequence_number(uint64_t seq) noexcept { server_sequence_number_ = seq; }
+    void set_sender_key_epoch(std::optional<uint64_t> epoch) noexcept { sender_key_epoch_ = epoch; }
+
+    [[nodiscard]] std::string to_json() const;
+    static std::optional<Message> from_json(std::string_view json_str);
 
     bool operator==(const Message& other) const noexcept;
     bool operator!=(const Message& other) const noexcept { return !(*this == other); }
@@ -71,6 +82,8 @@ class Message {
     std::string attachment_name_;
     int64_t attachment_size_{0};
     std::string attachment_hash_;
+    uint64_t server_sequence_number_{0};
+    std::optional<uint64_t> sender_key_epoch_{std::nullopt};
 };
 
 } // namespace securecloud::client::domain

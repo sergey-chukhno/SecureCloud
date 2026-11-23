@@ -5,12 +5,18 @@
 
 #include <QObject>
 #include <QString>
+#include <QVariantList>
+#include <QVariantMap>
+#include <cstdint>
 
 namespace securecloud::client::ui {
+
+class WorkspaceViewModel;
 
 class AppViewModel : public QObject {
     Q_OBJECT
     Q_PROPERTY(QString connectionStatus READ connectionStatus NOTIFY connectionStatusChanged)
+    Q_PROPERTY(QString connectivityState READ connectivityState NOTIFY connectionStatusChanged)
     Q_PROPERTY(QString sessionStatusText READ sessionStatusText NOTIFY connectionStatusChanged)
     Q_PROPERTY(QString securityStatusText READ securityStatusText NOTIFY connectionStatusChanged)
     Q_PROPERTY(QString securityBadgeType READ securityBadgeType NOTIFY connectionStatusChanged)
@@ -18,6 +24,10 @@ class AppViewModel : public QObject {
     Q_PROPERTY(bool isAuthenticated READ isAuthenticated NOTIFY currentUserChanged)
     Q_PROPERTY(bool isRunning READ isRunning NOTIFY lifecycleStateChanged)
     Q_PROPERTY(bool isEmergencyWiped READ isEmergencyWiped NOTIFY emergencyWipedChanged)
+    Q_PROPERTY(bool isDecoySession READ isDecoySession NOTIFY emergencyWipedChanged)
+    Q_PROPERTY(bool hasDuressPinConfigured READ hasDuressPinConfigured NOTIFY duressPolicyChanged)
+    Q_PROPERTY(int configuredDuressPostWipeMode READ configuredDuressPostWipeMode NOTIFY duressPolicyChanged)
+    Q_PROPERTY(QVariantMap lastWipeReportSummary READ lastWipeReportSummary NOTIFY emergencyWipedChanged)
     Q_PROPERTY(bool isAuthenticating READ isAuthenticating NOTIFY authenticatingChanged)
     Q_PROPERTY(bool isIdentityVerified READ isIdentityVerified NOTIFY connectionStatusChanged)
     Q_PROPERTY(QString lastErrorMessage READ lastErrorMessage NOTIFY errorStateChanged)
@@ -25,12 +35,15 @@ class AppViewModel : public QObject {
 
   public:
     AppViewModel(application::ClientApplication& app, NavigationController& nav_controller, QObject* parent = nullptr);
-    ~AppViewModel() override = default;
+    ~AppViewModel() override;
 
     AppViewModel(const AppViewModel&) = delete;
     AppViewModel& operator=(const AppViewModel&) = delete;
 
+    void setWorkspaceViewModel(WorkspaceViewModel* workspace_vm);
+
     [[nodiscard]] QString connectionStatus() const;
+    [[nodiscard]] QString connectivityState() const;
     [[nodiscard]] QString sessionStatusText() const;
     [[nodiscard]] QString securityStatusText() const;
     [[nodiscard]] QString securityBadgeType() const;
@@ -38,6 +51,10 @@ class AppViewModel : public QObject {
     [[nodiscard]] bool isAuthenticated() const;
     [[nodiscard]] bool isRunning() const;
     [[nodiscard]] bool isEmergencyWiped() const;
+    [[nodiscard]] bool isDecoySession() const;
+    [[nodiscard]] bool hasDuressPinConfigured() const;
+    [[nodiscard]] int configuredDuressPostWipeMode() const;
+    [[nodiscard]] QVariantMap lastWipeReportSummary() const;
     [[nodiscard]] bool isAuthenticating() const noexcept { return is_authenticating_; }
     [[nodiscard]] bool isIdentityVerified() const noexcept { return is_identity_verified_; }
     [[nodiscard]] QString lastErrorMessage() const { return last_error_message_; }
@@ -51,12 +68,19 @@ class AppViewModel : public QObject {
     Q_INVOKABLE void clearError();
     Q_INVOKABLE void requestLogout();
     Q_INVOKABLE void triggerEmergencyWipe();
+    Q_INVOKABLE void triggerInstantPanicWipe(int postWipeMode = 0);
+    Q_INVOKABLE void triggerBroadcastAndPanicWipe(const QString& conversationId, const QString& alertText,
+                                                  const QString& locationJson = QString(), bool waitForAck = true);
+    Q_INVOKABLE bool configureDuressPin(const QString& pin, int postWipeMode = 2);
+    Q_INVOKABLE bool clearDuressPin();
+    Q_INVOKABLE void resetClientAfterWipe();
 
   signals:
     void connectionStatusChanged();
     void currentUserChanged();
     void lifecycleStateChanged();
     void emergencyWipedChanged();
+    void duressPolicyChanged();
     void authenticatingChanged();
     void errorStateChanged();
     void operationError(const QString& message);
@@ -66,6 +90,7 @@ class AppViewModel : public QObject {
 
     application::ClientApplication& app_;
     NavigationController& nav_controller_;
+    WorkspaceViewModel* workspace_vm_{nullptr};
     QString connectionStatus_{QStringLiteral("Connected")};
     QString last_error_message_{};
     QString last_error_category_{};
@@ -73,6 +98,7 @@ class AppViewModel : public QObject {
     QString pending_password_{};
     bool is_authenticating_{false};
     bool is_identity_verified_{false};
+    uint64_t connectivity_sub_id_{0};
 };
 
 } // namespace securecloud::client::ui

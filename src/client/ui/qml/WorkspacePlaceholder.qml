@@ -31,6 +31,68 @@ Rectangle {
         workspaceRoot.wvm.stageEncryptedFileTransfer(fileName, fileSize)
     }
 
+    function openLocalFilePicker() {
+        if (!workspaceRoot.wvm) return
+        try {
+            var dlg = Qt.createQmlObject(
+                'import QtQuick; import QtQuick.Dialogs; FileDialog { title: qsTr("Select File to Encrypt & Upload"); fileMode: FileDialog.OpenFile }',
+                workspaceRoot,
+                "localUploadFileDialog"
+            )
+            if (!dlg) {
+                workspaceRoot.triggerSampleFileAttachment()
+                return
+            }
+            dlg.accepted.connect(function() {
+                if (workspaceRoot.wvm && dlg.selectedFile) {
+                    workspaceRoot.animateNewMessages = true
+                    workspaceRoot.wvm.uploadLocalFile(dlg.selectedFile.toString())
+                }
+                dlg.destroy()
+            })
+            dlg.rejected.connect(function() {
+                dlg.destroy()
+            })
+            dlg.open()
+        } catch (err) {
+            workspaceRoot.triggerSampleFileAttachment()
+        }
+    }
+
+    function openSaveFileDialog(transferId, suggestedFileName) {
+        if (!workspaceRoot.wvm || !transferId) return
+        try {
+            var titleSuffix = suggestedFileName ? (" — " + suggestedFileName) : ""
+            var qmlSrc = 'import QtQuick; import QtQuick.Dialogs; FileDialog { fileMode: FileDialog.SaveFile }'
+            var dlg = Qt.createQmlObject(qmlSrc, workspaceRoot, "saveDecryptedFileDialog")
+            if (!dlg) return
+            dlg.title = qsTr("Save Verified Decrypted File") + titleSuffix
+            dlg.accepted.connect(function() {
+                if (workspaceRoot.wvm && dlg.selectedFile) {
+                    workspaceRoot.wvm.downloadEncryptedFile(transferId, dlg.selectedFile.toString())
+                }
+                dlg.destroy()
+            })
+            dlg.rejected.connect(function() {
+                dlg.destroy()
+            })
+            dlg.open()
+        } catch (err) {
+            if (workspaceRoot.wvm) {
+                workspaceRoot.wvm.selectTransfer(transferId)
+                workspaceRoot.wvm.activeSection = "Files"
+            }
+        }
+    }
+
+    function transferBadgeType(tx) {
+        if (!tx) return "Verified"
+        if (tx.status === "Cancelled" || tx.status === "Failed" || tx.statusText === "Cancelled") return "Danger"
+        if (tx.status === "Paused") return "Unverified"
+        if (tx.status === "InProgress" || tx.status === "Pending" || tx.status === "Finalizing") return "Info"
+        return "Verified"
+    }
+
     Connections {
         target: workspaceRoot.wvm
         function onActiveMessagesChanged() {
@@ -649,11 +711,39 @@ Rectangle {
                             }
                         }
 
+                        SCButton {
+                            id: connectivityModeToggleBtn
+                            objectName: "connectivityModeToggleBtn"
+                            text: {
+                                if (!workspaceRoot.wvm) return qsTr("Online")
+                                if (workspaceRoot.wvm.isSyncing) return qsTr("Syncing...")
+                                if (workspaceRoot.wvm.isOffline) {
+                                    return workspaceRoot.wvm.pendingOutboxCount > 0
+                                           ? qsTr("Offline (%1)").arg(workspaceRoot.wvm.pendingOutboxCount)
+                                           : qsTr("Offline")
+                                }
+                                return workspaceRoot.wvm.pendingOutboxCount > 0
+                                       ? qsTr("Online (%1 queued)").arg(workspaceRoot.wvm.pendingOutboxCount)
+                                       : qsTr("Online")
+                            }
+                            iconName: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline)
+                                      ? "alert-triangle"
+                                      : ((workspaceRoot.wvm && workspaceRoot.wvm.isSyncing) ? "refresh" : "shield-check")
+                            variant: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline) ? "Secondary" : "Ghost"
+                            buttonHeight: 30
+                            horizontalPadding: 10
+                            onClicked: {
+                                if (workspaceRoot.wvm) {
+                                    workspaceRoot.wvm.setSimulatedOfflineMode(!workspaceRoot.wvm.isOffline)
+                                }
+                            }
+                        }
+
                         SCIconButton {
                             iconName: "paperclip"
                             variant: "Secondary"
-                            tooltipText: qsTr("Stage Encrypted File Transfer (AES-256-GCM)")
-                            onClicked: workspaceRoot.triggerSampleFileAttachment()
+                            tooltipText: qsTr("Select & Encrypt Local File (AES-256-GCM)")
+                            onClicked: workspaceRoot.openLocalFilePicker()
                         }
 
                         SCIconButton {
@@ -664,6 +754,76 @@ Rectangle {
                                          ? qsTr("Hide Peer Security Inspector")
                                          : qsTr("Show Peer Security Inspector")
                             onClicked: if (workspaceRoot.wvm) workspaceRoot.wvm.toggleInspector()
+                        }
+                    }
+                }
+
+                // CLIENT-012-T05: Offline Operation & Catch-Up Sync Banner
+                Rectangle {
+                    id: connectivityOfflineBanner
+                    objectName: "connectivityOfflineBanner"
+                    visible: workspaceRoot.wvm
+                             ? (workspaceRoot.wvm.isOffline || workspaceRoot.wvm.isSyncing || workspaceRoot.wvm.pendingOutboxCount > 0)
+                             : false
+                    Layout.fillWidth: true
+                    implicitHeight: offlineBannerRow.implicitHeight + (Theme.space8 * 2)
+                    color: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline)
+                           ? (Theme.isDark ? "rgba(245, 158, 11, 0.16)" : "#FEF3C7")
+                           : (Theme.isDark ? "rgba(59, 130, 246, 0.16)" : "#DBEAFE")
+                    border.color: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline)
+                                  ? Theme.statusWarning
+                                  : Theme.accentPrimary
+                    border.width: 1
+
+                    RowLayout {
+                        id: offlineBannerRow
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.leftMargin: Theme.space12
+                        anchors.rightMargin: Theme.space12
+                        spacing: Theme.space8
+
+                        SCIcon {
+                            name: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline) ? "alert-triangle" : "refresh"
+                            size: 16
+                            color: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline)
+                                   ? Theme.statusWarning
+                                   : Theme.accentPrimary
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        Label {
+                            text: workspaceRoot.wvm ? workspaceRoot.wvm.syncStatusSummary : ""
+                            font.family: Theme.fontFamilyPrimary
+                            font.pixelSize: Theme.fontCaption
+                            font.bold: true
+                            color: Theme.textPrimary
+                            elide: Text.ElideRight
+                            Layout.fillWidth: true
+                            Layout.alignment: Qt.AlignVCenter
+                        }
+
+                        SCButton {
+                            objectName: "reconnectAndSyncBtn"
+                            visible: workspaceRoot.wvm ? (workspaceRoot.wvm.isOffline || workspaceRoot.wvm.pendingOutboxCount > 0) : false
+                            enabled: workspaceRoot.wvm ? !workspaceRoot.wvm.isSyncing : false
+                            text: (workspaceRoot.wvm && workspaceRoot.wvm.isOffline)
+                                  ? qsTr("Reconnect & Sync")
+                                  : qsTr("Sync Now")
+                            iconName: "refresh"
+                            variant: "Primary"
+                            buttonHeight: 28
+                            horizontalPadding: 10
+                            onClicked: {
+                                if (workspaceRoot.wvm) {
+                                    if (workspaceRoot.wvm.isOffline) {
+                                        workspaceRoot.wvm.setSimulatedOfflineMode(false)
+                                    } else {
+                                        workspaceRoot.wvm.triggerCatchUpSync()
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -1391,7 +1551,7 @@ Rectangle {
                             iconName: "paperclip"
                             buttonSize: 32
                             tooltipText: qsTr("Attach & Encrypt File (AES-256-GCM)")
-                            onClicked: workspaceRoot.triggerSampleFileAttachment()
+                            onClicked: workspaceRoot.openLocalFilePicker()
                         }
 
                         // ADR-007 Interactive Priority Selector Pill (Normal / Urgent / Emergency)
@@ -1802,12 +1962,12 @@ Rectangle {
                         }
 
                         SCButton {
-                            text: qsTr("Stage File")
+                            text: qsTr("Upload File")
                             iconName: "paperclip"
                             variant: "Primary"
                             buttonHeight: 34
                             horizontalPadding: 10
-                            onClicked: workspaceRoot.triggerSampleFileAttachment()
+                            onClicked: workspaceRoot.openLocalFilePicker()
                         }
 
                         SCIconButton {
@@ -1898,9 +2058,7 @@ Rectangle {
 
                                     SCBadge {
                                         text: manifestCard.tx.statusText || qsTr("Encrypted & Verified")
-                                        type: (manifestCard.tx.statusText === "Cancelled")
-                                              ? "Danger"
-                                              : "Verified"
+                                        type: workspaceRoot.transferBadgeType(manifestCard.tx)
                                     }
                                 }
 
@@ -1986,6 +2144,78 @@ Rectangle {
                                     }
                                 }
 
+                                // Streaming Progress Bar & Chunk Verification Readout
+                                ColumnLayout {
+                                    Layout.fillWidth: true
+                                    spacing: 4
+
+                                    RowLayout {
+                                        Layout.fillWidth: true
+                                        spacing: Theme.space8
+
+                                        Label {
+                                            text: qsTr("Chunk Streaming Progress:")
+                                            font.family: Theme.fontFamilyPrimary
+                                            font.pixelSize: Theme.fontMicro
+                                            color: Theme.textMuted
+                                        }
+
+                                        Item { Layout.fillWidth: true }
+
+                                        Label {
+                                            objectName: "vaultChunkReadoutLabel"
+                                            text: manifestCard.tx.chunkSummaryText || ((manifestCard.tx.progressPercent !== undefined ? manifestCard.tx.progressPercent : 100) + "%")
+                                            font.family: Theme.fontFamilyMonospace
+                                            font.pixelSize: Theme.fontMicro
+                                            font.bold: true
+                                            color: Theme.textPrimary
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        id: vaultManifestProgressBar
+                                        objectName: "vaultManifestProgressBar"
+                                        Layout.fillWidth: true
+                                        implicitHeight: 8
+                                        height: 8
+                                        radius: 4
+                                        color: Theme.backgroundPrimary
+                                        border.color: Theme.borderSubtle
+                                        border.width: 1
+
+                                        property real from: 0
+                                        property real to: 100
+                                        property real value: (manifestCard.tx && manifestCard.tx.progressPercent !== undefined)
+                                                             ? manifestCard.tx.progressPercent
+                                                             : 100
+
+                                        Rectangle {
+                                            anchors.left: parent.left
+                                            anchors.top: parent.top
+                                            anchors.bottom: parent.bottom
+                                            width: parent.width * Math.max(0, Math.min(1, (vaultManifestProgressBar.to > vaultManifestProgressBar.from)
+                                                                                          ? ((vaultManifestProgressBar.value - vaultManifestProgressBar.from) / (vaultManifestProgressBar.to - vaultManifestProgressBar.from))
+                                                                                          : 0))
+                                            radius: 4
+                                            color: (manifestCard.tx && (manifestCard.tx.status === "Cancelled" || manifestCard.tx.status === "Failed"))
+                                                   ? Theme.statusDanger
+                                                   : ((manifestCard.tx && manifestCard.tx.status === "Paused")
+                                                      ? Theme.statusWarning
+                                                      : Theme.accentPrimary)
+                                        }
+                                    }
+
+                                    Label {
+                                        visible: !!(manifestCard.tx && manifestCard.tx.errorMessage && manifestCard.tx.errorMessage.length > 0)
+                                        text: manifestCard.tx ? (manifestCard.tx.errorMessage || "") : ""
+                                        font.family: Theme.fontFamilyPrimary
+                                        font.pixelSize: Theme.fontMicro
+                                        color: Theme.statusDanger
+                                        wrapMode: Text.WordWrap
+                                        Layout.fillWidth: true
+                                    }
+                                }
+
                                 RowLayout {
                                     Layout.fillWidth: true
                                     spacing: Theme.space8
@@ -2004,9 +2234,55 @@ Rectangle {
                                         }
                                     }
 
+                                    SCButton {
+                                        objectName: "vaultPauseTransferButton"
+                                        text: qsTr("Pause")
+                                        iconName: "clock"
+                                        variant: "Secondary"
+                                        buttonHeight: 32
+                                        horizontalPadding: 10
+                                        visible: !!(manifestCard.tx && manifestCard.tx.canPause)
+                                        onClicked: {
+                                            if (workspaceRoot.wvm && manifestCard.tx.transferId) {
+                                                workspaceRoot.wvm.pauseFileTransfer(manifestCard.tx.transferId)
+                                            }
+                                        }
+                                    }
+
+                                    SCButton {
+                                        objectName: "vaultResumeTransferButton"
+                                        text: qsTr("Resume")
+                                        iconName: "refresh-cw"
+                                        variant: "Primary"
+                                        buttonHeight: 32
+                                        horizontalPadding: 10
+                                        visible: !!(manifestCard.tx && manifestCard.tx.canResume)
+                                        onClicked: {
+                                            if (workspaceRoot.wvm && manifestCard.tx.transferId) {
+                                                workspaceRoot.wvm.resumeFileTransfer(manifestCard.tx.transferId)
+                                            }
+                                        }
+                                    }
+
+                                    SCButton {
+                                        objectName: "vaultDownloadTransferButton"
+                                        text: qsTr("Download")
+                                        iconName: "download"
+                                        variant: "Primary"
+                                        buttonHeight: 32
+                                        horizontalPadding: 10
+                                        visible: !!(manifestCard.tx && manifestCard.tx.canDownload)
+                                        onClicked: {
+                                            if (workspaceRoot.wvm && manifestCard.tx.transferId) {
+                                                workspaceRoot.openSaveFileDialog(manifestCard.tx.transferId, manifestCard.tx.fileName)
+                                            }
+                                        }
+                                    }
+
                                     Item { Layout.fillWidth: true }
 
                                     SCButton {
+                                        objectName: "vaultCancelTransferButton"
                                         text: (manifestCard.tx.statusText === "Cancelled")
                                               ? qsTr("Revoked")
                                               : qsTr("Revoke Transfer")
@@ -2014,7 +2290,9 @@ Rectangle {
                                         variant: "Danger"
                                         buttonHeight: 32
                                         horizontalPadding: 10
-                                        enabled: manifestCard.tx.statusText !== "Cancelled"
+                                        enabled: (manifestCard.tx && manifestCard.tx.canCancel !== undefined)
+                                                 ? !!manifestCard.tx.canCancel
+                                                 : (manifestCard.tx.statusText !== "Cancelled")
                                         onClicked: {
                                             if (workspaceRoot.wvm && manifestCard.tx.transferId) {
                                                 workspaceRoot.wvm.cancelFileTransfer(manifestCard.tx.transferId)
@@ -2047,9 +2325,10 @@ Rectangle {
                                 model: workspaceRoot.wvm ? workspaceRoot.wvm.fileTransfers : []
 
                                 delegate: Rectangle {
+                                    id: vaultRowDelegate
                                     Layout.fillWidth: true
                                     Layout.minimumWidth: 0
-                                    height: 60
+                                    height: 76
                                     radius: 12
                                     clip: true
                                     color: modelData.isSelected
@@ -2078,7 +2357,7 @@ Rectangle {
                                             Layout.fillWidth: true
                                             Layout.minimumWidth: 0
                                             Layout.preferredWidth: 1
-                                            spacing: 2
+                                            spacing: 3
 
                                             Label {
                                                 text: modelData.fileName || ""
@@ -2102,11 +2381,51 @@ Rectangle {
                                                 Layout.minimumWidth: 0
                                                 Layout.preferredWidth: 1
                                             }
+
+                                            RowLayout {
+                                                Layout.fillWidth: true
+                                                spacing: Theme.space8
+
+                                                Rectangle {
+                                                    id: rowProgressBar
+                                                    Layout.fillWidth: true
+                                                    implicitHeight: 5
+                                                    height: 5
+                                                    radius: 2.5
+                                                    color: Theme.backgroundPrimary
+
+                                                    property real from: 0
+                                                    property real to: 100
+                                                    property real value: modelData.progressPercent !== undefined ? modelData.progressPercent : 100
+
+                                                    Rectangle {
+                                                        anchors.left: parent.left
+                                                        anchors.top: parent.top
+                                                        anchors.bottom: parent.bottom
+                                                        width: parent.width * Math.max(0, Math.min(1, (rowProgressBar.to > rowProgressBar.from)
+                                                                                                      ? ((rowProgressBar.value - rowProgressBar.from) / (rowProgressBar.to - rowProgressBar.from))
+                                                                                                      : 0))
+                                                        radius: 2.5
+                                                        color: (modelData.status === "Cancelled" || modelData.status === "Failed")
+                                                               ? Theme.statusDanger
+                                                               : (modelData.status === "Paused"
+                                                                  ? Theme.statusWarning
+                                                                  : Theme.accentPrimary)
+                                                    }
+                                                }
+
+                                                Label {
+                                                    text: modelData.chunkSummaryText || ""
+                                                    font.family: Theme.fontFamilyMonospace
+                                                    font.pixelSize: 10
+                                                    color: Theme.textMuted
+                                                }
+                                            }
                                         }
 
                                         SCBadge {
                                             text: modelData.statusText || "Encrypted"
-                                            type: modelData.statusText === "Cancelled" ? "Danger" : "Verified"
+                                            type: workspaceRoot.transferBadgeType(modelData)
                                         }
                                     }
 
@@ -2297,7 +2616,7 @@ Rectangle {
                         buttonHeight: 32
                         horizontalPadding: 8
                         fontSize: Theme.fontCaption
-                        onClicked: workspaceRoot.triggerSampleFileAttachment()
+                        onClicked: workspaceRoot.openLocalFilePicker()
                     }
 
                     // Safety Number Monospace Box

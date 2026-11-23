@@ -1,13 +1,33 @@
 #include "infrastructure/adapters/default_gateway_client.hpp"
 
+#include "domain/crypto/file_crypto_engine.hpp"
 #include "domain/prekey_policy.hpp"
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <iomanip>
+#include <span>
 #include <sstream>
 
 namespace securecloud::client::infrastructure::adapters {
+namespace {
+
+std::string to_lower_ascii(std::string_view sv) {
+    std::string out;
+    out.reserve(sv.size());
+    for (const char ch : sv) {
+        out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(ch))));
+    }
+    return out;
+}
+
+int64_t current_unix_ms() noexcept {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
+} // namespace
 
 DefaultGatewayClient::DefaultGatewayClient(const application::ClientConfig& config) {
     std::ostringstream oss;
@@ -28,11 +48,36 @@ application::ClientResult<std::string> DefaultGatewayClient::send_message(const 
     if (simulate_failure_) {
         return application::ClientResult<std::string>::error(application::ClientError::network(failure_message_));
     }
+    if (simulate_submission_failure_) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::network(submission_failure_message_));
+    }
     if (conversation_id.empty()) {
         return application::ClientResult<std::string>::error(
             application::ClientError::validation("Conversation ID cannot be empty"));
     }
     return application::ClientResult<std::string>::ok("msg-server-assigned-id");
+}
+
+application::ClientResult<std::string>
+DefaultGatewayClient::submit_encrypted_message(const application::interfaces::FanOutSubmissionRequest& request) {
+    if (simulate_failure_) {
+        return application::ClientResult<std::string>::error(application::ClientError::network(failure_message_));
+    }
+    if (simulate_submission_failure_) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::network(submission_failure_message_));
+    }
+    if (request.conversation_id.empty()) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::validation("Conversation ID cannot be empty"));
+    }
+    if (request.device_payloads.empty() && !request.group_envelope_bytes.has_value()) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::validation("Encrypted message submission requires ciphertext payloads"));
+    }
+    submitted_fanouts_.push_back(request);
+    return application::ClientResult<std::string>::ok("msg-srv-" + std::to_string(message_submission_counter_++));
 }
 
 application::ClientResult<std::vector<std::string>> DefaultGatewayClient::sync_messages(std::string_view /*cursor*/) {
@@ -418,8 +463,678 @@ DefaultGatewayClient::lookup_user_identity(const domain::UserId& user_id) {
         application::ClientError::validation("User identity not found in directory: " + user_id.value()));
 }
 
+void DefaultGatewayClient::set_simulated_submission_failure(bool fail, std::string error_message) {
+    simulate_submission_failure_ = fail;
+    submission_failure_message_ = std::move(error_message);
+}
+
 void DefaultGatewayClient::set_simulated_directory_users(std::vector<domain::DirectoryUserEntry> users) {
     simulated_directory_users_ = std::move(users);
+}
+
+application::ClientResult<domain::DeliveryState>
+DefaultGatewayClient::acknowledge_delivery(const domain::MessageId& message_id,
+                                           const domain::DeviceId& recipient_device_id, int64_t delivered_at_ms) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::DeliveryState>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (message_id.empty() || recipient_device_id.empty()) {
+        return application::ClientResult<domain::DeliveryState>::error(
+            application::ClientError::validation("Message ID and recipient device ID are required for delivery ack"));
+    }
+
+    sent_delivery_acks_.push_back(domain::DeliveryAckRecord{
+        .message_id = message_id,
+        .recipient_device_id = recipient_device_id,
+        .delivered_at_ms = delivered_at_ms,
+    });
+    return application::ClientResult<domain::DeliveryState>::ok(domain::DeliveryState::Delivered);
+}
+
+application::ClientResult<domain::DeliveryState>
+DefaultGatewayClient::send_read_receipt(const domain::ConversationId& conversation_id,
+                                        const domain::MessageId& message_id, const domain::DeviceId& reader_device_id,
+                                        int64_t read_at_ms) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::DeliveryState>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (conversation_id.empty() || message_id.empty() || reader_device_id.empty()) {
+        return application::ClientResult<domain::DeliveryState>::error(application::ClientError::validation(
+            "Conversation ID, message ID, and reader device ID are required for read receipt"));
+    }
+
+    sent_read_receipts_.push_back(domain::ReadReceiptRecord{
+        .conversation_id = conversation_id,
+        .message_id = message_id,
+        .reader_device_id = reader_device_id,
+        .read_at_ms = read_at_ms,
+    });
+    return application::ClientResult<domain::DeliveryState>::ok(domain::DeliveryState::Read);
+}
+
+application::ClientResult<domain::MessageDeliveryStatusInfo>
+DefaultGatewayClient::get_message_delivery_status(const domain::ConversationId& conversation_id,
+                                                  const domain::MessageId& message_id) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::MessageDeliveryStatusInfo>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (conversation_id.empty() || message_id.empty()) {
+        return application::ClientResult<domain::MessageDeliveryStatusInfo>::error(
+            application::ClientError::validation("Conversation ID and message ID are required"));
+    }
+
+    const auto it = simulated_delivery_statuses_.find(message_id);
+    if (it != simulated_delivery_statuses_.end()) {
+        return application::ClientResult<domain::MessageDeliveryStatusInfo>::ok(it->second);
+    }
+
+    return application::ClientResult<domain::MessageDeliveryStatusInfo>::ok(domain::MessageDeliveryStatusInfo{
+        .message_id = message_id,
+        .delivery_state = domain::DeliveryState::Accepted,
+        .server_sequence_number = 0,
+        .updated_at_ms = 0,
+    });
+}
+
+application::ClientResult<domain::ConversationMessagesPage>
+DefaultGatewayClient::fetch_conversation_messages(const domain::ConversationId& conversation_id,
+                                                  const domain::DeviceId& recipient_device_id, uint64_t since_sequence,
+                                                  std::size_t max_results) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::ConversationMessagesPage>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (conversation_id.empty() || recipient_device_id.empty()) {
+        return application::ClientResult<domain::ConversationMessagesPage>::error(
+            application::ClientError::validation("Conversation ID and recipient device ID are required"));
+    }
+
+    domain::ConversationMessagesPage page;
+    page.next_sequence = since_sequence;
+    page.latest_sequence = since_sequence;
+
+    const auto it = simulated_conversation_messages_.find(conversation_id);
+    if (it == simulated_conversation_messages_.end()) {
+        const std::string cursor_key = recipient_device_id.value() + "|" + conversation_id.value();
+        const auto cur_it = simulated_sync_cursors_.find(cursor_key);
+        if (cur_it != simulated_sync_cursors_.end()) {
+            page.cursor = cur_it->second;
+        }
+        return application::ClientResult<domain::ConversationMessagesPage>::ok(std::move(page));
+    }
+
+    std::vector<domain::RealtimeEvent> matching;
+    matching.reserve(it->second.size());
+    for (const auto& ev : it->second) {
+        if (ev.server_sequence_number > since_sequence) {
+            matching.push_back(ev);
+        }
+    }
+    std::sort(matching.begin(), matching.end(), [](const domain::RealtimeEvent& a, const domain::RealtimeEvent& b) {
+        return a.server_sequence_number < b.server_sequence_number;
+    });
+
+    const std::size_t limit = max_results == 0 ? 50 : max_results;
+    const std::size_t take_count = std::min(matching.size(), limit);
+    page.events.reserve(take_count);
+    for (std::size_t i = 0; i < take_count; ++i) {
+        page.events.push_back(matching[i]);
+        if (matching[i].server_sequence_number > page.latest_sequence) {
+            page.latest_sequence = matching[i].server_sequence_number;
+        }
+    }
+    page.has_more = (matching.size() > take_count);
+    page.next_sequence = page.events.empty() ? since_sequence : page.events.back().server_sequence_number;
+
+    const std::string cursor_key = recipient_device_id.value() + "|" + conversation_id.value();
+    const auto cur_it = simulated_sync_cursors_.find(cursor_key);
+    if (cur_it != simulated_sync_cursors_.end()) {
+        page.cursor = cur_it->second;
+    } else if (!page.events.empty()) {
+        page.cursor = domain::SyncCursorRecord{
+            .device_id = recipient_device_id,
+            .conversation_id = conversation_id,
+            .last_delivered_sequence = page.next_sequence,
+            .last_sync_timestamp_ms = current_unix_ms(),
+            .sync_version = 1,
+        };
+    }
+
+    return application::ClientResult<domain::ConversationMessagesPage>::ok(std::move(page));
+}
+
+application::ClientResult<domain::SyncCursorRecord>
+DefaultGatewayClient::get_sync_cursor(const domain::DeviceId& device_id,
+                                      const domain::ConversationId& conversation_id) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (device_id.empty()) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::validation("Device ID is required for get_sync_cursor"));
+    }
+
+    const std::string cursor_key = device_id.value() + "|" + conversation_id.value();
+    const auto it = simulated_sync_cursors_.find(cursor_key);
+    if (it != simulated_sync_cursors_.end()) {
+        return application::ClientResult<domain::SyncCursorRecord>::ok(it->second);
+    }
+
+    return application::ClientResult<domain::SyncCursorRecord>::ok(domain::SyncCursorRecord{
+        .device_id = device_id,
+        .conversation_id = conversation_id,
+        .last_delivered_sequence = 0,
+        .last_sync_timestamp_ms = 0,
+        .sync_version = 1,
+    });
+}
+
+application::ClientResult<domain::SyncCursorRecord>
+DefaultGatewayClient::update_sync_cursor(const domain::SyncCursorRecord& cursor) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (cursor.device_id.empty()) {
+        return application::ClientResult<domain::SyncCursorRecord>::error(
+            application::ClientError::validation("Device ID is required for update_sync_cursor"));
+    }
+
+    const std::string cursor_key = cursor.device_id.value() + "|" + cursor.conversation_id.value();
+    auto it = simulated_sync_cursors_.find(cursor_key);
+    if (it == simulated_sync_cursors_.end()) {
+        domain::SyncCursorRecord stored = cursor;
+        if (stored.last_sync_timestamp_ms <= 0) {
+            stored.last_sync_timestamp_ms = current_unix_ms();
+        }
+        simulated_sync_cursors_[cursor_key] = stored;
+        return application::ClientResult<domain::SyncCursorRecord>::ok(std::move(stored));
+    }
+
+    const int64_t ts_ms = cursor.last_sync_timestamp_ms > 0 ? cursor.last_sync_timestamp_ms : current_unix_ms();
+    (void)it->second.advance_monotonically(cursor.last_delivered_sequence, ts_ms);
+    if (cursor.sync_version > it->second.sync_version) {
+        it->second.sync_version = cursor.sync_version;
+    }
+    return application::ClientResult<domain::SyncCursorRecord>::ok(it->second);
+}
+
+application::ClientResult<std::vector<domain::RemoteConversationSummary>>
+DefaultGatewayClient::list_remote_conversations(const domain::UserId& user_id, std::size_t max_results) {
+    if (simulate_failure_) {
+        return application::ClientResult<std::vector<domain::RemoteConversationSummary>>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (user_id.empty()) {
+        return application::ClientResult<std::vector<domain::RemoteConversationSummary>>::error(
+            application::ClientError::validation("User ID is required for list_remote_conversations"));
+    }
+
+    const std::size_t limit = max_results == 0 ? 100U : max_results;
+    std::vector<domain::RemoteConversationSummary> out;
+    out.reserve(std::min(limit, simulated_remote_conversations_.size()));
+    for (const auto& conv : simulated_remote_conversations_) {
+        if (out.size() >= limit) {
+            break;
+        }
+        const bool is_creator = (conv.creator_user_id == user_id);
+        const bool is_participant = std::find(conv.participant_user_ids.begin(), conv.participant_user_ids.end(),
+                                              user_id) != conv.participant_user_ids.end();
+        if (is_creator || is_participant || conv.participant_user_ids.empty()) {
+            out.push_back(conv);
+        }
+    }
+    return application::ClientResult<std::vector<domain::RemoteConversationSummary>>::ok(std::move(out));
+}
+
+uint64_t DefaultGatewayClient::subscribe_realtime_events(RealtimeEventHandler handler) {
+    std::lock_guard<std::mutex> lock(event_mutex_);
+    const uint64_t id = next_subscription_id_++;
+    if (handler) {
+        event_subscribers_.emplace(id, std::move(handler));
+    }
+    return id;
+}
+
+void DefaultGatewayClient::unsubscribe_realtime_events(uint64_t subscription_id) {
+    std::lock_guard<std::mutex> lock(event_mutex_);
+    event_subscribers_.erase(subscription_id);
+}
+
+void DefaultGatewayClient::emit_realtime_event(const domain::RealtimeEvent& event) {
+    std::vector<RealtimeEventHandler> handlers;
+    {
+        std::lock_guard<std::mutex> lock(event_mutex_);
+        handlers.reserve(event_subscribers_.size());
+        for (const auto& [_, handler] : event_subscribers_) {
+            handlers.push_back(handler);
+        }
+    }
+    for (const auto& handler : handlers) {
+        if (handler) {
+            handler(event);
+        }
+    }
+}
+
+void DefaultGatewayClient::set_simulated_delivery_status(const domain::MessageId& message_id,
+                                                         domain::MessageDeliveryStatusInfo status) {
+    simulated_delivery_statuses_[message_id] = std::move(status);
+}
+
+void DefaultGatewayClient::set_simulated_conversation_messages(const domain::ConversationId& conversation_id,
+                                                               std::vector<domain::RealtimeEvent> events) {
+    simulated_conversation_messages_[conversation_id] = std::move(events);
+}
+
+void DefaultGatewayClient::set_simulated_sync_cursor(const domain::SyncCursorRecord& cursor) {
+    const std::string cursor_key = cursor.device_id.value() + "|" + cursor.conversation_id.value();
+    simulated_sync_cursors_[cursor_key] = cursor;
+}
+
+void DefaultGatewayClient::set_simulated_remote_conversations(
+    std::vector<domain::RemoteConversationSummary> conversations) {
+    simulated_remote_conversations_ = std::move(conversations);
+}
+
+std::optional<application::ClientError> DefaultGatewayClient::check_file_network_failure_locked() const {
+    if (simulate_failure_) {
+        return application::ClientError::network(failure_message_);
+    }
+    if (simulate_file_transfer_failure_) {
+        return application::ClientError::network(file_transfer_failure_message_);
+    }
+    return std::nullopt;
+}
+
+application::ClientResult<application::interfaces::FileUploadInitResult>
+DefaultGatewayClient::init_file_upload(const application::interfaces::FileUploadInitRequest& request) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<application::interfaces::FileUploadInitResult>::error(*err);
+    }
+
+    if (request.file_id.empty() || request.owner_user_id.empty() || request.owner_device_id.empty() ||
+        request.conversation_id.empty()) {
+        return application::ClientResult<application::interfaces::FileUploadInitResult>::error(
+            application::ClientError::validation(
+                "File ID, owner user ID, owner device ID, and conversation ID are required"));
+    }
+    if (request.encrypted_size_bytes == 0ULL || request.encrypted_size_bytes > domain::kMaxEncryptedFileSizeBytes) {
+        return application::ClientResult<application::interfaces::FileUploadInitResult>::error(
+            application::ClientError::validation("Encrypted file size is outside allowed bounds (1 B .. 5 GiB)"));
+    }
+    if (request.expected_chunk_count == 0U) {
+        return application::ClientResult<application::interfaces::FileUploadInitResult>::error(
+            application::ClientError::validation("Expected chunk count must be positive"));
+    }
+
+    const int64_t now_ms = current_unix_ms();
+    const std::string upload_id = "upload-srv-" + std::to_string(file_upload_counter_++);
+
+    SimulatedUploadSession session;
+    session.upload_id = upload_id;
+    session.file_id = request.file_id;
+    session.owner_user_id = request.owner_user_id;
+    session.conversation_id = request.conversation_id;
+    session.encrypted_size_bytes = request.encrypted_size_bytes;
+    session.expected_chunk_count = request.expected_chunk_count;
+    session.encryption_version = request.encryption_version.empty() ? "v1" : request.encryption_version;
+    session.created_at_unix_ms = now_ms;
+    simulated_upload_sessions_[upload_id] = std::move(session);
+
+    return application::ClientResult<application::interfaces::FileUploadInitResult>::ok(
+        application::interfaces::FileUploadInitResult{
+            .upload_id = upload_id,
+            .file_id = request.file_id,
+            .status = "TRANSFER_STATUS_PENDING",
+            .expires_at_unix_ms = now_ms + 3600000LL,
+        });
+}
+
+application::ClientResult<application::interfaces::FileChunkUploadResult>
+DefaultGatewayClient::upload_file_chunk(const application::interfaces::FileChunkUploadRequest& request) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(*err);
+    }
+    if (simulated_failed_chunk_index_.has_value() && *simulated_failed_chunk_index_ == request.chunk_index) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::network(chunk_failure_message_));
+    }
+
+    if (request.upload_id.empty()) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Upload ID is required for chunk upload"));
+    }
+
+    const auto session_it = simulated_upload_sessions_.find(request.upload_id);
+    if (session_it == simulated_upload_sessions_.end()) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Upload session not found: " + request.upload_id));
+    }
+
+    SimulatedUploadSession& session = session_it->second;
+    if (session.cancelled) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Upload session has been cancelled"));
+    }
+    if (session.finalized) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Upload session is already finalized"));
+    }
+    if (request.chunk_index >= session.expected_chunk_count) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Chunk index out of expected range"));
+    }
+    if (request.encrypted_data.empty() ||
+        request.encrypted_data.size() > static_cast<std::size_t>(domain::kMaxFileWireChunkSize)) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Encrypted chunk size is outside allowed bounds (1 B .. 8 MiB)"));
+    }
+
+    const auto digest_res = domain::crypto::StreamingSha256::digest_hex(request.encrypted_data);
+    if (digest_res.is_error()) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(digest_res.error());
+    }
+    const std::string& digest_hex = digest_res.value();
+    if (!request.ciphertext_sha256.empty() && to_lower_ascii(request.ciphertext_sha256) != digest_hex) {
+        return application::ClientResult<application::interfaces::FileChunkUploadResult>::error(
+            application::ClientError::validation("Chunk ciphertext SHA-256 mismatch at chunk index " +
+                                                 std::to_string(request.chunk_index)));
+    }
+
+    session.chunks[request.chunk_index] = SimulatedStagedChunk{
+        .bytes = request.encrypted_data,
+        .sha256_hex = digest_hex,
+    };
+    uploaded_chunk_call_counts_[session.file_id] += 1U;
+
+    return application::ClientResult<application::interfaces::FileChunkUploadResult>::ok(
+        application::interfaces::FileChunkUploadResult{
+            .upload_id = request.upload_id,
+            .chunk_index = request.chunk_index,
+            .accepted = true,
+            .received_sha256 = digest_hex,
+        });
+}
+
+application::ClientResult<application::interfaces::FileUploadFinalizeResult>
+DefaultGatewayClient::finalize_file_upload(const application::interfaces::FileUploadFinalizeRequest& request) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(*err);
+    }
+
+    if (request.upload_id.empty() || request.file_id.empty()) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Upload ID and file ID are required to finalize upload"));
+    }
+
+    const auto session_it = simulated_upload_sessions_.find(request.upload_id);
+    if (session_it == simulated_upload_sessions_.end()) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Upload session not found: " + request.upload_id));
+    }
+
+    SimulatedUploadSession& session = session_it->second;
+    if (session.file_id != request.file_id) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Upload session file ID mismatch"));
+    }
+    if (session.cancelled) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Cannot finalize cancelled upload session"));
+    }
+    if (session.finalized) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Upload session is already finalized"));
+    }
+
+    SimulatedStoredFile stored;
+    stored.chunks.reserve(session.expected_chunk_count);
+    stored.chunk_sha256s.reserve(session.expected_chunk_count);
+    domain::crypto::StreamingSha256 total_hasher;
+    uint64_t total_size_bytes = 0ULL;
+
+    for (uint32_t idx = 0; idx < session.expected_chunk_count; ++idx) {
+        const auto chunk_it = session.chunks.find(idx);
+        if (chunk_it == session.chunks.end()) {
+            return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+                application::ClientError::validation("Missing chunk index " + std::to_string(idx) +
+                                                     " during finalize"));
+        }
+        if (const auto upd = total_hasher.update(chunk_it->second.bytes); upd.is_error()) {
+            return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(upd.error());
+        }
+        total_size_bytes += static_cast<uint64_t>(chunk_it->second.bytes.size());
+        stored.chunks.push_back(chunk_it->second.bytes);
+        stored.chunk_sha256s.push_back(chunk_it->second.sha256_hex);
+    }
+
+    const auto finalized_sha256 = total_hasher.finalize_hex();
+    if (finalized_sha256.is_error()) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            finalized_sha256.error());
+    }
+    if (!request.expected_ciphertext_sha256.empty() &&
+        to_lower_ascii(request.expected_ciphertext_sha256) != finalized_sha256.value()) {
+        return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::error(
+            application::ClientError::validation("Finalized ciphertext SHA-256 mismatch"));
+    }
+
+    const int64_t available_at_ms = current_unix_ms();
+    stored.metadata = application::interfaces::RemoteFileMetadata{
+        .file_id = session.file_id,
+        .owner_user_id = session.owner_user_id,
+        .conversation_id = session.conversation_id,
+        .lifecycle_state = "FILE_LIFECYCLE_STATE_AVAILABLE",
+        .encrypted_size_bytes = total_size_bytes,
+        .chunk_count = session.expected_chunk_count,
+        .encryption_version = session.encryption_version,
+        .ciphertext_integrity_hash = finalized_sha256.value(),
+        .created_at_unix_ms = session.created_at_unix_ms,
+        .available_at_unix_ms = available_at_ms,
+    };
+
+    simulated_stored_files_[session.file_id] = std::move(stored);
+    session.finalized = true;
+    session.chunks.clear();
+
+    return application::ClientResult<application::interfaces::FileUploadFinalizeResult>::ok(
+        application::interfaces::FileUploadFinalizeResult{
+            .file_id = request.file_id,
+            .lifecycle_state = "FILE_LIFECYCLE_STATE_AVAILABLE",
+            .available_at_unix_ms = available_at_ms,
+        });
+}
+
+application::ClientResult<void> DefaultGatewayClient::cancel_file_upload(std::string_view upload_id,
+                                                                         std::string_view /*reason*/) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<void>::error(*err);
+    }
+    if (upload_id.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Upload ID is required to cancel upload"));
+    }
+
+    const auto session_it = simulated_upload_sessions_.find(std::string(upload_id));
+    if (session_it == simulated_upload_sessions_.end()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Upload session not found: " + std::string(upload_id)));
+    }
+    if (session_it->second.finalized) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Cannot cancel finalized upload session"));
+    }
+
+    session_it->second.cancelled = true;
+    session_it->second.chunks.clear();
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<application::interfaces::RemoteFileMetadata>
+DefaultGatewayClient::get_file_metadata(std::string_view file_id) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<application::interfaces::RemoteFileMetadata>::error(*err);
+    }
+    if (file_id.empty()) {
+        return application::ClientResult<application::interfaces::RemoteFileMetadata>::error(
+            application::ClientError::validation("File ID is required for metadata lookup"));
+    }
+
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    if (it == simulated_stored_files_.end() || it->second.deleted) {
+        return application::ClientResult<application::interfaces::RemoteFileMetadata>::error(
+            application::ClientError::validation("File not found or deleted: " + std::string(file_id)));
+    }
+    return application::ClientResult<application::interfaces::RemoteFileMetadata>::ok(it->second.metadata);
+}
+
+application::ClientResult<application::interfaces::FileChunkDownloadResult>
+DefaultGatewayClient::download_file_chunk(std::string_view file_id, uint32_t chunk_index) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<application::interfaces::FileChunkDownloadResult>::error(*err);
+    }
+    if (simulated_failed_chunk_index_.has_value() && *simulated_failed_chunk_index_ == chunk_index) {
+        return application::ClientResult<application::interfaces::FileChunkDownloadResult>::error(
+            application::ClientError::network(chunk_failure_message_));
+    }
+    if (file_id.empty()) {
+        return application::ClientResult<application::interfaces::FileChunkDownloadResult>::error(
+            application::ClientError::validation("File ID is required for chunk download"));
+    }
+
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    if (it == simulated_stored_files_.end() || it->second.deleted) {
+        return application::ClientResult<application::interfaces::FileChunkDownloadResult>::error(
+            application::ClientError::validation("File not found or deleted: " + std::string(file_id)));
+    }
+    if (chunk_index >= it->second.chunks.size()) {
+        return application::ClientResult<application::interfaces::FileChunkDownloadResult>::error(
+            application::ClientError::validation("Requested chunk index out of range"));
+    }
+
+    return application::ClientResult<application::interfaces::FileChunkDownloadResult>::ok(
+        application::interfaces::FileChunkDownloadResult{
+            .file_id = std::string(file_id),
+            .chunk_index = chunk_index,
+            .encrypted_data = it->second.chunks[chunk_index],
+            .ciphertext_sha256 = it->second.chunk_sha256s[chunk_index],
+        });
+}
+
+application::ClientResult<void> DefaultGatewayClient::delete_file(std::string_view file_id) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    if (const auto err = check_file_network_failure_locked(); err.has_value()) {
+        return application::ClientResult<void>::error(*err);
+    }
+    if (file_id.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("File ID is required for deletion"));
+    }
+
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    if (it == simulated_stored_files_.end() || it->second.deleted) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("File not found or already deleted: " + std::string(file_id)));
+    }
+
+    it->second.deleted = true;
+    it->second.metadata.lifecycle_state = "FILE_LIFECYCLE_STATE_DELETED";
+    it->second.chunks.clear();
+    it->second.chunk_sha256s.clear();
+    return application::ClientResult<void>::ok();
+}
+
+void DefaultGatewayClient::set_simulated_file_transfer_failure(bool fail, std::string error_message) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    simulate_file_transfer_failure_ = fail;
+    file_transfer_failure_message_ = std::move(error_message);
+}
+
+void DefaultGatewayClient::set_simulated_chunk_failure(std::optional<uint32_t> chunk_index, std::string error_message) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    simulated_failed_chunk_index_ = chunk_index;
+    chunk_failure_message_ = std::move(error_message);
+}
+
+bool DefaultGatewayClient::mutate_stored_file_chunk_for_test(std::string_view file_id, uint32_t chunk_index,
+                                                             std::vector<uint8_t> tampered_bytes,
+                                                             bool recompute_server_sha256) {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    if (it == simulated_stored_files_.end() || it->second.deleted || chunk_index >= it->second.chunks.size()) {
+        return false;
+    }
+
+    it->second.chunks[chunk_index] = std::move(tampered_bytes);
+    uint64_t new_total = 0ULL;
+    for (const auto& chunk : it->second.chunks) {
+        new_total += static_cast<uint64_t>(chunk.size());
+    }
+    it->second.metadata.encrypted_size_bytes = new_total;
+
+    if (recompute_server_sha256) {
+        const auto chunk_sha = domain::crypto::StreamingSha256::digest_hex(it->second.chunks[chunk_index]);
+        if (chunk_sha.is_error()) {
+            return false;
+        }
+        it->second.chunk_sha256s[chunk_index] = chunk_sha.value();
+
+        domain::crypto::StreamingSha256 total_hasher;
+        for (const auto& chunk : it->second.chunks) {
+            if (total_hasher.update(chunk).is_error()) {
+                return false;
+            }
+        }
+        const auto total_sha = total_hasher.finalize_hex();
+        if (total_sha.is_error()) {
+            return false;
+        }
+        it->second.metadata.ciphertext_integrity_hash = total_sha.value();
+    }
+
+    return true;
+}
+
+std::size_t DefaultGatewayClient::uploaded_chunk_call_count(std::string_view file_id) const {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    const auto it = uploaded_chunk_call_counts_.find(std::string(file_id));
+    return it == uploaded_chunk_call_counts_.end() ? 0U : it->second;
+}
+
+bool DefaultGatewayClient::has_stored_file(std::string_view file_id) const {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    return it != simulated_stored_files_.end() && !it->second.deleted;
+}
+
+std::vector<uint8_t> DefaultGatewayClient::stored_file_raw_bytes(std::string_view file_id) const {
+    std::lock_guard<std::mutex> lock(file_store_mutex_);
+    const auto it = simulated_stored_files_.find(std::string(file_id));
+    if (it == simulated_stored_files_.end() || it->second.deleted) {
+        return {};
+    }
+
+    std::size_t total_size = 0U;
+    for (const auto& chunk : it->second.chunks) {
+        total_size += chunk.size();
+    }
+    std::vector<uint8_t> combined;
+    combined.reserve(total_size);
+    for (const auto& chunk : it->second.chunks) {
+        combined.insert(combined.end(), chunk.begin(), chunk.end());
+    }
+    return combined;
 }
 
 } // namespace securecloud::client::infrastructure::adapters

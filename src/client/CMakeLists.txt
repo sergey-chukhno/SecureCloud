@@ -23,12 +23,18 @@ if(Qt6_FOUND)
         domain/directory_user_entry.cpp
         domain/conversation.cpp
         domain/message.cpp
+        domain/file_transfer.cpp
+        domain/offline_sync_models.cpp
+        domain/emergency_models.cpp
         domain/crypto/x3dh_models.cpp
         domain/crypto/x3dh_engine.cpp
         domain/crypto/ratchet_models.cpp
         domain/crypto/skipped_keys_store.cpp
         domain/crypto/double_ratchet_engine.cpp
         domain/crypto/ratchet_session_state.cpp
+        domain/crypto/sender_key_models.cpp
+        domain/crypto/sender_key_engine.cpp
+        domain/crypto/file_crypto_engine.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)
     target_include_directories(securecloud_client_domain PUBLIC
@@ -47,6 +53,8 @@ if(Qt6_FOUND)
         infrastructure/client_logger.cpp
         infrastructure/adapters/default_gateway_client.cpp
         infrastructure/adapters/memory_local_store.cpp
+        infrastructure/adapters/sqlcipher_local_store.cpp
+        infrastructure/adapters/file_shredder.cpp
         infrastructure/adapters/memory_secure_storage.cpp
         infrastructure/adapters/stub_crypto_provider.cpp
         infrastructure/adapters/openssl_crypto_provider.cpp
@@ -61,6 +69,7 @@ if(Qt6_FOUND)
         securecloud_client_domain
         securecloud::common
         securecloud::compiler_flags
+        securecloud::sqlcipher
         OpenSSL::Crypto
         Qt6::Core
         Qt6::Network
@@ -75,6 +84,7 @@ if(Qt6_FOUND)
         application/client_application.cpp
         application/managers/auth_manager.cpp
         application/managers/messaging_manager.cpp
+        application/managers/delivery_retry_engine.cpp
         application/managers/contact_manager.cpp
         application/managers/device_manager.cpp
         application/managers/device_pairing_coordinator.cpp
