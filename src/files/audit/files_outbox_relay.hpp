@@ -2,6 +2,8 @@
 
 #include "files/audit/audit_client_interface.hpp"
 #include "files/audit/files_audit_mapper.hpp"
+#include "files/audit/files_outbox_diagnostics.hpp"
+#include "files/audit/files_outbox_metrics.hpp"
 #include "files/files_config.hpp"
 #include "files/repository/files_outbox_repository.hpp"
 
@@ -19,25 +21,6 @@
 namespace securecloud::files::audit {
 
 using FilesOutboxRelayConfig = ::securecloud::files::FilesOutboxRelayConfig;
-
-struct FilesOutboxMetrics {
-    std::atomic<uint64_t> batches_dispatched{0};
-    std::atomic<uint64_t> events_published{0};
-    std::atomic<uint64_t> events_quarantined{0};
-    std::atomic<uint64_t> transient_failures{0};
-    std::atomic<uint64_t> security_auth_failures{0};
-    std::atomic<uint64_t> rows_purged{0};
-};
-
-struct FilesOutboxDiagnostics {
-    std::mutex mutex;
-    std::string last_error_message;
-    grpc::StatusCode last_status_code{grpc::StatusCode::OK};
-    uint32_t consecutive_failures{0};
-    std::chrono::system_clock::time_point last_success_at{};
-    std::chrono::system_clock::time_point last_failure_at{};
-    std::chrono::system_clock::time_point last_purge_at{};
-};
 
 /**
  * @brief Transactional outbox background relay worker for Files Service.

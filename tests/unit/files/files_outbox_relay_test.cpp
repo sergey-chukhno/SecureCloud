@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <random>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -446,6 +447,32 @@ TEST(FilesOutboxRelayTest, EmptyOutboxReturnsZero) {
     FilesOutboxRelay relay(repo, client);
     const size_t processed = relay.poll_and_dispatch(10);
     EXPECT_EQ(processed, 0u);
+}
+
+TEST(FilesOutboxObservabilityTest, MetricsExposeOnlyBoundedLabelsAndDiagnosticsScrubSecrets) {
+    FilesOutboxMetrics metrics;
+    metrics.record_staged(FilesOutboxCategory::Transactional, 2);
+    metrics.record_batch(FilesOutboxOutcome::Retryable);
+    metrics.record_quarantined(FilesOutboxQuarantineReason::Validation);
+    metrics.set_pending(7);
+    metrics.set_oldest_pending_age(12.5);
+    const auto exposition = metrics.to_prometheus_text();
+    EXPECT_NE(exposition.find("files_outbox_events_staged_total{category=\"transactional\"} 2"), std::string::npos);
+    EXPECT_NE(exposition.find("files_outbox_delivery_batches_total{outcome=\"retryable\"} 1"), std::string::npos);
+    EXPECT_NE(exposition.find("files_outbox_pending_events 7"), std::string::npos);
+    EXPECT_NE(exposition.find("# EOF\n"), std::string::npos);
+
+    EXPECT_EQ(FilesOutboxDiagnostics::scrub_sensitive_data("db_password=hunter2"), "[REDACTED_SENSITIVE_DATA]");
+    EXPECT_EQ(FilesOutboxDiagnostics::scrub_sensitive_data("Bearer abc.def.ghi"), "[REDACTED_SENSITIVE_DATA]");
+    EXPECT_EQ(FilesOutboxDiagnostics::scrub_sensitive_data("report.pdf"), "[REDACTED_SENSITIVE_DATA]");
+
+    std::ostringstream output;
+    FilesOutboxDiagnostics diagnostics;
+    diagnostics.set_output_stream(&output);
+    diagnostics.log_event(FilesDiagnosticCategory::Lease, "lease_failed", "corr-1", "db_password=hunter2");
+    EXPECT_NE(output.str().find("\"category\":\"lease\""), std::string::npos);
+    EXPECT_NE(output.str().find("[REDACTED_SENSITIVE_DATA]"), std::string::npos);
+    EXPECT_EQ(output.str().find("hunter2"), std::string::npos);
 }
 
 TEST(FilesOutboxRelayTest, LifecycleStartStopAndShutdownDrain) {

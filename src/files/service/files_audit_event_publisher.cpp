@@ -1,6 +1,8 @@
 #include "files/service/files_audit_event_publisher.hpp"
 
 #include "files/domain/metadata_validator.hpp"
+#include "files/audit/files_outbox_metrics.hpp"
+#include "files/audit/files_outbox_diagnostics.hpp"
 
 #include <chrono>
 #include <iostream>
@@ -25,6 +27,8 @@ void FilesAuditEventPublisher::publish_in_tx(const FilesAuditRecord& record, pqx
                              .created_at = std::chrono::system_clock::now()};
 
     outbox_repo_->stage_event(entity, tx);
+    securecloud::files::audit::FilesOutboxMetrics::instance().record_staged(
+        securecloud::files::audit::FilesOutboxCategory::Transactional);
 }
 
 void FilesAuditEventPublisher::publish_autonomous(const FilesAuditRecord& record) noexcept {
@@ -39,10 +43,12 @@ void FilesAuditEventPublisher::publish_autonomous(const FilesAuditRecord& record
                                  .status = OutboxStatus::Pending,
                                  .created_at = std::chrono::system_clock::now()};
         outbox_repo_->stage_event(entity);
+        securecloud::files::audit::FilesOutboxMetrics::instance().record_staged(
+            securecloud::files::audit::FilesOutboxCategory::Autonomous);
     } catch (const std::exception& ex) {
         // Stage-1 constraint: autonomous audit failure must NOT break the application flow.
-        std::cerr << "[FilesAuditEventPublisher] Failed to record autonomous audit event '" << record.event_type
-                  << "': " << ex.what() << "\n";
+        securecloud::files::audit::FilesOutboxDiagnostics::instance().log_event(
+            securecloud::files::audit::FilesDiagnosticCategory::Batch, "autonomous_stage_failed", {}, ex.what());
     }
 }
 

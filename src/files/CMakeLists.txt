@@ -190,6 +190,17 @@ set(SECURECLOUD_FILES_AUDIT_SOURCES
         audit/files_outbox_relay.cpp
 )
 
+add_library(securecloud_files_outbox_observability STATIC
+        audit/files_outbox_metrics.cpp
+        audit/files_outbox_diagnostics.cpp
+)
+add_library(securecloud::files_outbox_observability ALIAS securecloud_files_outbox_observability)
+target_include_directories(securecloud_files_outbox_observability PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_SOURCE_DIR}/src
+)
+target_link_libraries(securecloud_files_outbox_observability PUBLIC securecloud::compiler_flags)
+
 # `securecloud_files_audit` MUST NEVER link `securecloud::files_db` or `securecloud::auth`
 # (which exports `src/auth/domain/audit_event.hpp` and `src/auth/domain/enums.hpp`).
 add_library(securecloud_files_audit STATIC ${SECURECLOUD_FILES_AUDIT_SOURCES})
@@ -212,10 +223,17 @@ target_link_libraries(securecloud_files_audit
         securecloud::compiler_flags
         securecloud_proto
         securecloud::json
+        securecloud::files_outbox_observability
         securecloud::libpqxx
         PRIVATE
         securecloud::files_audit_validator
 )
+
+# The Files audit publisher records staging counters in the producer metrics.
+target_link_libraries(securecloud_files_service PUBLIC securecloud::files_outbox_observability)
+if(BUILD_TESTING)
+    target_link_libraries(securecloud_files_service_test PUBLIC securecloud::files_outbox_observability)
+endif()
 
 add_library(securecloud_files_health STATIC
         health/files_health_evaluator.cpp

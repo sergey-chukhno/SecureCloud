@@ -101,7 +101,7 @@ int run_service() {
     health_evaluator.evaluate_once();
 
     auto outbox_repo = std::make_shared<securecloud::files::FilesOutboxRepository>(db_pool);
-    securecloud::files::audit::FilesOutboxMetrics outbox_metrics;
+    auto& outbox_metrics = securecloud::files::audit::FilesOutboxMetrics::instance();
     securecloud::files::audit::FilesOutboxDiagnostics outbox_diagnostics;
     std::unique_ptr<securecloud::files::audit::FilesOutboxRelay> outbox_relay;
 
