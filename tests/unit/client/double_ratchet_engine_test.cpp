@@ -186,7 +186,7 @@ TEST(DoubleRatchetEngineTest, ConsecutiveBurstMessages) {
 TEST(DoubleRatchetEngineTest, TamperedCiphertextAndHeaderRejection) {
     OpenSslCryptoProvider crypto;
 
-    std::string sk_raw(PrekeyPolicy::kSharedSecretSize, 0x88);
+    std::string sk_raw(PrekeyPolicy::kSharedSecretSize, static_cast<char>(0x88));
     securecloud::common::configuration::SecretString shared_secret(std::move(sk_raw));
 
     auto bob_dh = crypto.generate_dh_keypair().value();

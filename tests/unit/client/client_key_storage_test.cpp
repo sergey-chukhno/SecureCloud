@@ -178,7 +178,7 @@ TEST(KeyStorageHelperTest, TamperAndCorruptionResistance) {
 
     // 3. Corrupted format version
     std::string bad_version = valid_data;
-    bad_version[4] = 0x99;
+    bad_version[4] = static_cast<char>(0x99);
     EXPECT_TRUE(KeyStorageHelper::deserialize(SecretString(bad_version)).is_error());
 
     // 4. Truncated in middle of OTPK data
