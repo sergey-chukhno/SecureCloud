@@ -25,6 +25,7 @@ if(Qt6_FOUND)
         domain/message.cpp
         domain/file_transfer.cpp
         domain/offline_sync_models.cpp
+        domain/emergency_models.cpp
         domain/crypto/x3dh_models.cpp
         domain/crypto/x3dh_engine.cpp
         domain/crypto/ratchet_models.cpp

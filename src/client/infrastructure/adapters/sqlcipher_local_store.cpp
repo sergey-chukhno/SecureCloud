@@ -309,6 +309,11 @@ application::ClientResult<void> SqlCipherLocalStore::close() {
     return application::ClientResult<void>::ok();
 }
 
+std::string SqlCipherLocalStore::database_path() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return db_path_;
+}
+
 application::ClientResult<void> SqlCipherLocalStore::save_conversation(const domain::Conversation& conversation) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (db_ == nullptr) {

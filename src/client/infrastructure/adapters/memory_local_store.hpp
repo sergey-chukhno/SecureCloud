@@ -16,6 +16,7 @@ class MemoryLocalStore final : public application::interfaces::ILocalStore {
 
     application::ClientResult<void> open(std::string_view path) override;
     application::ClientResult<void> close() override;
+    [[nodiscard]] std::string database_path() const override;
 
     application::ClientResult<void> save_conversation(const domain::Conversation& conversation) override;
     application::ClientResult<domain::Conversation> get_conversation(const domain::ConversationId& id) override;

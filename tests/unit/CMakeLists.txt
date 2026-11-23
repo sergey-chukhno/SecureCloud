@@ -3755,6 +3755,7 @@ if(Qt6_FOUND)
         client/catchup_sync_reconciliation_test.cpp
         client/workspace_view_model_offline_sync_test.cpp
         client/offline_catchup_sync_integration_test.cpp
+        client/emergency_domain_and_storage_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

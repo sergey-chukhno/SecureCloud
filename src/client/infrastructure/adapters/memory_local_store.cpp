@@ -16,6 +16,10 @@ application::ClientResult<void> MemoryLocalStore::close() {
     return application::ClientResult<void>::ok();
 }
 
+std::string MemoryLocalStore::database_path() const {
+    return {};
+}
+
 application::ClientResult<void> MemoryLocalStore::save_conversation(const domain::Conversation& conversation) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!is_open_) {
