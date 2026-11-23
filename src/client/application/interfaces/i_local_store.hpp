@@ -24,6 +24,7 @@ class ILocalStore {
     virtual ClientResult<void> open(std::string_view path) = 0;
     virtual ClientResult<void> close() = 0;
     [[nodiscard]] virtual std::string database_path() const = 0;
+    virtual ClientResult<std::size_t> destroy_and_shred() = 0;
 
     virtual ClientResult<void> save_conversation(const domain::Conversation& conversation) = 0;
     virtual ClientResult<domain::Conversation> get_conversation(const domain::ConversationId& id) = 0;

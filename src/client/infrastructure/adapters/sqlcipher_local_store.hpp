@@ -3,6 +3,7 @@
 #include "application/interfaces/i_crypto_provider.hpp"
 #include "application/interfaces/i_local_store.hpp"
 #include "application/interfaces/i_secure_storage.hpp"
+#include "infrastructure/adapters/file_shredder.hpp"
 
 #include <mutex>
 #include <string>
@@ -27,6 +28,8 @@ class SqlCipherLocalStore final : public application::interfaces::ILocalStore {
     application::ClientResult<void> open(std::string_view path) override;
     application::ClientResult<void> close() override;
     [[nodiscard]] std::string database_path() const override;
+    application::ClientResult<std::size_t> destroy_and_shred() override;
+    application::ClientResult<std::size_t> destroy_and_shred(const ShredOptions& options);
 
     application::ClientResult<void> save_conversation(const domain::Conversation& conversation) override;
     application::ClientResult<domain::Conversation> get_conversation(const domain::ConversationId& id) override;
@@ -78,6 +81,7 @@ class SqlCipherLocalStore final : public application::interfaces::ILocalStore {
     mutable std::mutex mutex_;
     sqlite3* db_{nullptr};
     std::string db_path_;
+    std::string last_db_path_;
 };
 
 } // namespace securecloud::client::infrastructure::adapters

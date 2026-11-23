@@ -54,6 +54,7 @@ if(Qt6_FOUND)
         infrastructure/adapters/default_gateway_client.cpp
         infrastructure/adapters/memory_local_store.cpp
         infrastructure/adapters/sqlcipher_local_store.cpp
+        infrastructure/adapters/file_shredder.cpp
         infrastructure/adapters/memory_secure_storage.cpp
         infrastructure/adapters/stub_crypto_provider.cpp
         infrastructure/adapters/openssl_crypto_provider.cpp
