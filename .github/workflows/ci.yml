@@ -411,7 +411,7 @@ jobs:
             exit 1
           fi
 
-      - name: Initialize sccache Daemon (MinGW MINGW64)
+      - name: Initialize sccache Daemon (UCRT64)
         shell: msys2 {0}
         env:
           SCCACHE_GHA_ENABLED: "true"
@@ -424,7 +424,7 @@ jobs:
           sccache --start-server
           sccache --show-stats
 
-      - name: Configure CMake (MinGW MINGW64)
+      - name: Configure CMake (UCRT64)
         shell: msys2 {0}
         env:
           SCCACHE_GHA_ENABLED: "true"
@@ -436,9 +436,9 @@ jobs:
           CMAKE_C_COMPILER_LAUNCHER: "sccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
         run: |
-          cmake --preset ci-windows-mingw -DCMAKE_NO_SYSTEM_FROM_IMPORTED=ON
+          cmake --preset ci-windows-ucrt64 -DCMAKE_NO_SYSTEM_FROM_IMPORTED=ON
 
-      - name: Build All Targets (MinGW MINGW64)
+      - name: Build All Targets (UCRT64)
         shell: msys2 {0}
         env:
           SCCACHE_GHA_ENABLED: "true"
@@ -448,19 +448,19 @@ jobs:
           ACTIONS_RESULTS_URL: ${{ env.ACTIONS_RESULTS_URL }}
           MSYS2_ENV_CONV_EXCL: "ACTIONS_CACHE_URL;ACTIONS_RESULTS_URL"
         run: |
-          cmake --build --preset ci-windows-mingw --parallel
+          cmake --build --preset ci-windows-ucrt64 --parallel
 
       - name: Show sccache Stats
         shell: msys2 {0}
         run: |
           sccache --show-stats
 
-      - name: Generate Development PKI Certificates (MinGW MINGW64)
+      - name: Generate Development PKI Certificates (UCRT64)
         shell: msys2 {0}
         run: |
           bash scripts/generate-dev-pki.sh --force
 
-      - name: Execute CTest Suite (MinGW MINGW64)
+      - name: Execute CTest Suite (UCRT64)
         shell: msys2 {0}
         run: |
-          ctest --preset ci-windows-mingw --output-on-failure
+          ctest --preset ci-windows-ucrt64 --output-on-failure

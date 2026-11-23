@@ -99,6 +99,16 @@
       }
     },
     {
+      "name": "ci-windows-ucrt64",
+      "displayName": "CI Windows UCRT64 Build Preset",
+      "description": "Strict CI build using the MSYS2 UCRT64 toolchain",
+      "inherits": "ci-windows-mingw",
+      "binaryDir": "${sourceDir}/build/ci-windows-ucrt64",
+      "environment": {
+        "PATH": "C:/msys64/ucrt64/bin;C:/msys64/usr/bin;$penv{PATH}"
+      }
+    },
+    {
       "name": "ci-windows",
       "displayName": "CI Windows Build Preset",
       "description": "Strict build configuration for Windows CI environment",
@@ -149,6 +159,14 @@
       "name": "ci-windows-mingw",
       "displayName": "Build CI Windows MinGW",
       "configurePreset": "ci-windows-mingw"
+    },
+    {
+      "name": "ci-windows-ucrt64",
+      "displayName": "Build CI Windows UCRT64",
+      "configurePreset": "ci-windows-ucrt64",
+      "environment": {
+        "PATH": "C:/msys64/ucrt64/bin;C:/msys64/usr/bin;$penv{PATH}"
+      }
     },
     {
       "name": "ci-windows",
@@ -209,7 +227,18 @@
       "displayName": "Test CI Windows MinGW",
       "configurePreset": "ci-windows-mingw",
       "environment": {
-        "PATH": "C:/msys64/ucrt64/bin;C:/msys64/mingw64/bin;C:/msys64/usr/bin;$penv{PATH}"
+        "PATH": "C:/msys64/mingw64/bin;C:/msys64/usr/bin;$penv{PATH}"
+      },
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ci-windows-ucrt64",
+      "displayName": "Test CI Windows UCRT64",
+      "configurePreset": "ci-windows-ucrt64",
+      "environment": {
+        "PATH": "C:/msys64/ucrt64/bin;C:/msys64/usr/bin;$penv{PATH}"
       },
       "output": {
         "outputOnFailure": true
