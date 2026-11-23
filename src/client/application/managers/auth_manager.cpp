@@ -34,6 +34,12 @@ ClientResult<void> AuthManager::logout() {
     return ClientResult<void>::ok();
 }
 
+void AuthManager::force_clear_session() {
+    is_authenticated_ = false;
+    current_user_ = domain::UserId{};
+    (void)secure_storage_.delete_secret("session_auth_token");
+}
+
 ClientResult<securecloud::common::configuration::SecretString> AuthManager::session_token() const {
     if (!is_authenticated_) {
         return ClientResult<securecloud::common::configuration::SecretString>::error(

@@ -12,6 +12,7 @@
 #include "domain/user_id.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -82,6 +83,7 @@ class FileManager {
     ClientResult<domain::FileTransferRecord> resume_download(std::string_view transfer_id);
     ClientResult<domain::FileTransferRecord> resume_transfer(std::string_view transfer_id);
     ClientResult<std::size_t> resume_interrupted_transfers();
+    std::vector<std::filesystem::path> wipe_volatile_state();
 
     ClientResult<void> pause_transfer(std::string_view transfer_id);
     ClientResult<void> cancel_transfer(std::string_view transfer_id);

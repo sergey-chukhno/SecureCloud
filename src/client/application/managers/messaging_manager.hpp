@@ -110,6 +110,7 @@ class MessagingManager {
     std::size_t flush_offline_outbox(std::chrono::system_clock::time_point now = std::chrono::system_clock::now(),
                                      bool ignore_backoff = true);
     [[nodiscard]] std::size_t pending_outbox_count() const;
+    std::size_t wipe_volatile_state();
 
     ClientResult<std::vector<domain::Message>> get_conversation_messages(const domain::ConversationId& conversation_id,
                                                                          std::size_t limit = 50);

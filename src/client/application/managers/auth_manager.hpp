@@ -20,6 +20,7 @@ class AuthManager {
 
     ClientResult<bool> authenticate(std::string_view username, std::string_view password);
     ClientResult<void> logout();
+    void force_clear_session();
 
     [[nodiscard]] bool is_authenticated() const noexcept { return is_authenticated_; }
     [[nodiscard]] const domain::UserId& current_user() const noexcept { return current_user_; }

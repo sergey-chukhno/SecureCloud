@@ -101,6 +101,13 @@ bool DeliveryRetryEngine::remove_by_outbox_id(std::string_view outbox_id) {
     return queue_.size() != prev_size;
 }
 
+std::size_t DeliveryRetryEngine::clear() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const std::size_t cleared = queue_.size();
+    queue_.clear();
+    return cleared;
+}
+
 std::size_t DeliveryRetryEngine::pending_count() const {
     std::lock_guard<std::mutex> lock(mutex_);
     return queue_.size();
