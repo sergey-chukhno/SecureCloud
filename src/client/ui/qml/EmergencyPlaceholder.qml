@@ -26,7 +26,7 @@ Rectangle {
                 id: emergencyColumn
                 anchors.centerIn: parent
                 spacing: Theme.space16
-                width: Math.max(320, Math.min(580, emergencyRoot.width - (Theme.space32 * 2)))
+                width: Math.max(320, Math.min(640, emergencyRoot.width - (Theme.space32 * 2)))
 
                 Rectangle {
                     Layout.fillWidth: true
@@ -165,7 +165,7 @@ Rectangle {
                                         font.family: Theme.fontFamilyPrimary
                                         font.pixelSize: Theme.fontMicro
                                         color: Theme.textSecondary
-                                        elide: Text.ElideRight
+                                        wrapMode: Text.WordWrap
                                         Layout.fillWidth: true
                                     }
 

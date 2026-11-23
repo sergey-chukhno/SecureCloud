@@ -62,7 +62,7 @@
 | **CLIENT-013-T03** | Production `EmergencyManager` Cryptographic Destruction Pipeline & Pre-Wipe E2EE Broadcast | **Completed** | `< 500 ms` 3-phase wipe pipeline; volatile wipe methods across `RatchetSessionManager`, `MessagingManager`, `FileManager`, `SyncManager`, `AuthManager`; pre-wipe `priority=3` E2EE broadcast + bounded ACK wait |
 | **CLIENT-013-T04** | Login Duress PIN Verification & Silent Plausible Decoy Session Engine | **Completed** | Salted PBKDF2-HMAC-SHA256 (`>= 100,000` iter, constant-time `CRYPTO_memcmp`) duress PIN management; silent login interception in `AuthManager` / `EmergencyManager` triggering wipe + `PostWipeMode::DecoyWorkspace` |
 | **CLIENT-013-T05** | `AppViewModel`, `WorkspaceViewModel` & QML Emergency Panic, Duress & Decoy UX | **Completed** | Hotkey & Instant vs Broadcast-then-Wipe modal (`Main.qml`); silent duress login & Decoy Workspace routing; post-wipe audit card in `EmergencyPlaceholder.qml`; Duress PIN & Post-Wipe policy controls in `SettingsPlaceholder.qml` |
-| **CLIENT-013-T06** | Emergency Panic & Forensic Wipe E2E Integration Suite, Tier 1/2 Smoke Tests & Walkthrough | **Planned** | 5-scenario E2E integration suite (`emergency_panic_wipe_integration_test.cpp`), `< 500 ms` latency + disk sector audit, Tier 1 `--smoke-test`, Tier 2 `--capture-screenshots`, `walkthrough-client-013.md`, `docs/pull_requests/CLIENT-013.md` |
+| **CLIENT-013-T06** | Emergency Panic & Forensic Wipe E2E Integration Suite, Tier 1/2 Smoke Tests & Walkthrough | **Completed** | 5-scenario E2E integration suite (`emergency_panic_wipe_integration_test.cpp`), `< 500 ms` latency + disk sector audit, Tier 1 `--smoke-test`, Tier 2 `--capture-screenshots`, `walkthrough-client-013.md`, `docs/pull_requests/CLIENT-013.md` |
 
 ---
 

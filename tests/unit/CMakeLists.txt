@@ -3760,6 +3760,7 @@ if(Qt6_FOUND)
         client/emergency_wipe_pipeline_test.cpp
         client/duress_pin_and_decoy_test.cpp
         client/workspace_view_model_emergency_test.cpp
+        client/emergency_panic_wipe_integration_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

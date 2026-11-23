@@ -284,6 +284,42 @@ int main(int argc, char* argv[]) {
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
         captureWindow(QStringLiteral("workspace-settings-light-1200x800.png"), 1200, 800);
 
+        // 8. Authenticated Settings — Section 5 Login Duress Policy (CLIENT-013, Dark & Light 1200x800)
+        (void)appViewModel.configureDuressPin(QStringLiteral("Autumn-Backup-42!"), 2);
+        if (auto* settingsScroll = window->findChild<QObject*>("settingsScrollView")) {
+            QMetaObject::invokeMethod(settingsScroll, "scrollToBottom");
+        }
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("settings-duress-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("settings-duress-light-1200x800.png"), 1200, 800);
+
+        // 9. Upgraded Panic Confirmation Modal with Pre-Wipe E2EE Broadcast (CLIENT-013, Dark & Light 1200x800)
+        (void)navController.navigateTo(securecloud::client::ui::NavigationController::NavigationState::MainWorkspace);
+        workspaceViewModel.setActiveSection(QStringLiteral("Messages"));
+        if (auto* panicModal = window->findChild<QObject*>("emergencyPanicModal")) {
+            panicModal->setProperty("broadcastConversationId", QStringLiteral("conv-secops"));
+            panicModal->setProperty("broadcastAlertText", QStringLiteral("PANIC WIPE INITIATED: Device compromised"));
+            panicModal->setProperty("waitForBroadcastAck", true);
+            panicModal->setProperty("sendPreWipeBroadcast", true);
+            panicModal->setProperty("isOpen", true);
+            uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+            captureWindow(QStringLiteral("panic-modal-dark-1200x800.png"), 1200, 800);
+
+            uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+            captureWindow(QStringLiteral("panic-modal-light-1200x800.png"), 1200, 800);
+            panicModal->setProperty("isOpen", false);
+        }
+
+        // 10. Post-Wipe Forensic Telemetry Confirmation Screen (CLIENT-013, Dark & Light 1200x800)
+        appViewModel.triggerInstantPanicWipe(0);
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("emergency-wiped-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("emergency-wiped-light-1200x800.png"), 1200, 800);
+
         (void)clientApp.shutdown();
         return 0;
     }

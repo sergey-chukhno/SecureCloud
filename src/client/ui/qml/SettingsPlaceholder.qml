@@ -12,9 +12,17 @@ Rectangle {
     readonly property var localIdentity: wvm ? wvm.localDeviceIdentity : ({})
 
     ScrollView {
+        id: settingsScrollView
+        objectName: "settingsScrollView"
         anchors.fill: parent
         clip: true
         contentWidth: availableWidth
+
+        function scrollToBottom() {
+            if (contentItem && contentItem.contentHeight > height) {
+                contentItem.contentY = contentItem.contentHeight - height
+            }
+        }
 
         ColumnLayout {
             width: Math.min(820, parent.width - (Theme.space32 * 2))

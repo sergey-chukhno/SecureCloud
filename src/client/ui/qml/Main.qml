@@ -364,7 +364,9 @@ ApplicationWindow {
                         Repeater {
                             model: rootWindow.wvm ? rootWindow.wvm.conversations.slice(0, 3) : []
                             delegate: SCButton {
-                                text: modelData.peerDisplayName || modelData.conversationId || ""
+                                text: (modelData.peerDisplayName && modelData.peerDisplayName !== "You (Alice)")
+                                      ? modelData.peerDisplayName
+                                      : (modelData.conversationId || "")
                                 variant: emergencyConfirmDialog.broadcastConversationId === (modelData.conversationId || "")
                                          ? "Primary"
                                          : "Secondary"
