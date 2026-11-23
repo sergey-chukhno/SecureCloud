@@ -3757,6 +3757,30 @@ if(Qt6_FOUND)
         client/identity_key_change_alert_test.cpp
         client/workspace_view_model_contacts_test.cpp
         client/contact_management_integration_test.cpp
+        client/conversation_and_message_domain_test.cpp
+        client/sqlcipher_local_store_test.cpp
+        client/sender_key_engine_test.cpp
+        client/group_messaging_pipeline_test.cpp
+        client/workspace_view_model_group_persistence_test.cpp
+        client/direct_and_group_messaging_integration_test.cpp
+        client/realtime_gateway_contracts_test.cpp
+        client/delivery_state_and_dedupe_test.cpp
+        client/delivery_retry_engine_test.cpp
+        client/delivery_ack_and_read_receipt_test.cpp
+        client/workspace_view_model_realtime_test.cpp
+        client/realtime_delivery_and_receipts_integration_test.cpp
+        client/file_gateway_contracts_test.cpp
+        client/file_crypto_engine_test.cpp
+        client/file_transfer_persistence_test.cpp
+        client/file_manager_pipeline_test.cpp
+        client/workspace_view_model_files_test.cpp
+        client/encrypted_file_transfer_integration_test.cpp
+        client/offline_sync_contracts_test.cpp
+        client/offline_outbox_persistence_test.cpp
+        client/offline_outbox_replay_test.cpp
+        client/catchup_sync_reconciliation_test.cpp
+        client/workspace_view_model_offline_sync_test.cpp
+        client/offline_catchup_sync_integration_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

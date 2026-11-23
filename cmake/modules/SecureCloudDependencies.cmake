@@ -333,7 +333,68 @@ else()
     )
 endif()
 
-# 7. Discover Qt 6 framework for SecureCloud Desktop Client
+# 7. Discover SQLCipher encrypted database engine
+message(STATUS "[SecureCloud] Discovering SQLCipher framework...")
+find_package(unofficial-sqlcipher CONFIG QUIET)
+if(NOT unofficial-sqlcipher_FOUND)
+    find_package(sqlcipher CONFIG QUIET)
+endif()
+
+if(TARGET unofficial::sqlcipher::sqlcipher)
+    set(_SECURECLOUD_SQLCIPHER_TARGET unofficial::sqlcipher::sqlcipher)
+elseif(TARGET sqlcipher::sqlcipher)
+    set(_SECURECLOUD_SQLCIPHER_TARGET sqlcipher::sqlcipher)
+else()
+    set(_SECURECLOUD_SQLCIPHER_TARGET "")
+endif()
+
+if(_SECURECLOUD_SQLCIPHER_TARGET)
+    if(NOT TARGET securecloud_sqlcipher)
+        add_library(securecloud_sqlcipher INTERFACE)
+        target_link_libraries(securecloud_sqlcipher INTERFACE ${_SECURECLOUD_SQLCIPHER_TARGET})
+        target_compile_definitions(securecloud_sqlcipher INTERFACE SQLITE_HAS_CODEC)
+        add_library(securecloud::sqlcipher ALIAS securecloud_sqlcipher)
+    endif()
+    message(STATUS "[SecureCloud] Discovered SQLCipher target: ${_SECURECLOUD_SQLCIPHER_TARGET} (aliased as securecloud::sqlcipher)")
+else()
+    find_path(SQLCIPHER_INCLUDE_DIR
+        NAMES sqlcipher/sqlite3.h sqlite3.h
+        PATHS
+            /opt/homebrew/opt/sqlcipher/include
+            /usr/local/opt/sqlcipher/include
+    )
+    find_library(SQLCIPHER_LIBRARY
+        NAMES sqlcipher
+        PATHS
+            /opt/homebrew/opt/sqlcipher/lib
+            /usr/local/opt/sqlcipher/lib
+    )
+    if(SQLCIPHER_INCLUDE_DIR AND SQLCIPHER_LIBRARY)
+        if(NOT TARGET securecloud_sqlcipher)
+            add_library(securecloud_sqlcipher INTERFACE)
+            target_include_directories(securecloud_sqlcipher INTERFACE "${SQLCIPHER_INCLUDE_DIR}")
+            target_link_libraries(securecloud_sqlcipher INTERFACE "${SQLCIPHER_LIBRARY}")
+            if(TARGET OpenSSL::Crypto)
+                target_link_libraries(securecloud_sqlcipher INTERFACE OpenSSL::Crypto)
+            endif()
+            target_compile_definitions(securecloud_sqlcipher INTERFACE SQLITE_HAS_CODEC)
+            add_library(securecloud::sqlcipher ALIAS securecloud_sqlcipher)
+        endif()
+        message(STATUS "[SecureCloud] Discovered SQLCipher library: ${SQLCIPHER_LIBRARY} (include: ${SQLCIPHER_INCLUDE_DIR})")
+    else()
+        message(FATAL_ERROR
+            "[SecureCloud] SQLCipher package was not found.\n"
+            "  Active CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}\n"
+            "  Remediation:\n"
+            "    - On macOS: Run 'brew install sqlcipher'\n"
+            "    - On Ubuntu/Debian: Run 'apt-get install libsqlcipher-dev'\n"
+            "    - On MSYS2 UCRT64: Run 'pacman -S --needed mingw-w64-ucrt-x86_64-sqlcipher'\n"
+            "    - On MSVC / vcpkg:  Ensure vcpkg.json contains \"sqlcipher\""
+        )
+    endif()
+endif()
+
+# 8. Discover Qt 6 framework for SecureCloud Desktop Client
 message(STATUS "[SecureCloud] Discovering Qt 6 framework...")
 find_package(Qt6 COMPONENTS Core Gui Qml Quick QuickControls2 Network Test QUIET)
 if(Qt6_FOUND)
