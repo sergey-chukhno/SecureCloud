@@ -1,9 +1,12 @@
 #include "infrastructure/adapters/sqlcipher_local_store.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
+#include <nlohmann/json.hpp>
 #include <openssl/crypto.h>
 #include <openssl/rand.h>
 #include <string>
@@ -33,9 +36,34 @@ class StmtGuard {
 
     [[nodiscard]] sqlite3_stmt* get() const noexcept { return stmt_; }
     sqlite3_stmt** out() noexcept { return &stmt_; }
+    void finalize() noexcept {
+        if (stmt_ != nullptr) {
+            sqlite3_finalize(stmt_);
+            stmt_ = nullptr;
+        }
+    }
 
   private:
     sqlite3_stmt* stmt_{nullptr};
+};
+
+class AuditTxGuard {
+  public:
+    explicit AuditTxGuard(sqlite3* db) noexcept : db_(db) {}
+    ~AuditTxGuard() {
+        if (active_ && db_ != nullptr) {
+            (void)sqlite3_exec(db_, "ROLLBACK;", nullptr, nullptr, nullptr);
+        }
+    }
+
+    AuditTxGuard(const AuditTxGuard&) = delete;
+    AuditTxGuard& operator=(const AuditTxGuard&) = delete;
+
+    void dismiss() noexcept { active_ = false; }
+
+  private:
+    sqlite3* db_{nullptr};
+    bool active_{true};
 };
 
 class SecretCleanseGuard {
@@ -97,6 +125,47 @@ class SecretCleanseGuard {
 [[nodiscard]] int64_t current_unix_ms() noexcept {
     return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
         .count();
+}
+
+[[nodiscard]] domain::LocalAuditEvent read_audit_row(sqlite3_stmt* stmt) {
+    domain::LocalAuditEvent ev;
+    ev.sequence_id = static_cast<int64_t>(sqlite3_column_int64(stmt, 0));
+    ev.occurred_at_ms = static_cast<int64_t>(sqlite3_column_int64(stmt, 1));
+    ev.event_type = column_text_string(stmt, 2);
+
+    const std::string cat_str = column_text_string(stmt, 3);
+    const auto cat_opt = domain::local_audit_category_from_string(cat_str);
+    if (cat_opt.has_value()) {
+        ev.category = *cat_opt;
+    } else {
+        ev.event_type = "__CORRUPT_CATEGORY__:" + cat_str;
+    }
+
+    const std::string outcome_str = column_text_string(stmt, 4);
+    const auto outcome_opt = domain::local_audit_outcome_from_string(outcome_str);
+    if (outcome_opt.has_value()) {
+        ev.outcome = *outcome_opt;
+    } else {
+        ev.event_type = "__CORRUPT_OUTCOME__:" + outcome_str;
+    }
+
+    ev.prev_hash_sha256 = column_text_string(stmt, 5);
+    ev.entry_hash_sha256 = column_text_string(stmt, 6);
+
+    const std::string payload_str = column_text_string(stmt, 7);
+    const nlohmann::json payload = nlohmann::json::parse(payload_str.begin(), payload_str.end(), nullptr, false);
+    if (!payload.is_discarded() && payload.is_object() && payload.size() == 3U && payload.contains("actor_opaque_id") &&
+        payload["actor_opaque_id"].is_string() && payload.contains("target_opaque_id") &&
+        payload["target_opaque_id"].is_string() && payload.contains("sanitized_summary") &&
+        payload["sanitized_summary"].is_string()) {
+        ev.actor_opaque_id = payload["actor_opaque_id"].get<std::string>();
+        ev.target_opaque_id = payload["target_opaque_id"].get<std::string>();
+        ev.sanitized_summary = payload["sanitized_summary"].get<std::string>();
+    } else {
+        ev.sanitized_summary = payload_str;
+    }
+
+    return ev;
 }
 
 } // namespace
@@ -207,6 +276,19 @@ application::ClientResult<void> SqlCipherLocalStore::initialize_schema_locked() 
             payload_json TEXT NOT NULL,
             PRIMARY KEY (device_id, conversation_id)
         );
+
+        CREATE TABLE IF NOT EXISTS local_audit_log (
+            sequence_id INTEGER PRIMARY KEY,
+            occurred_at_ms INTEGER NOT NULL,
+            event_type TEXT NOT NULL,
+            category TEXT NOT NULL,
+            outcome TEXT NOT NULL,
+            prev_hash_sha256 TEXT NOT NULL,
+            entry_hash_sha256 TEXT NOT NULL,
+            payload_json TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_local_audit_occurred
+            ON local_audit_log(occurred_at_ms DESC);
     )sql";
     auto schema_res = exec_sql_locked(kSchemaSql);
     if (schema_res.is_error()) {
@@ -1497,6 +1579,206 @@ application::ClientResult<std::size_t> SqlCipherLocalStore::delete_expired_messa
         return application::ClientResult<std::size_t>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
     }
     return application::ClientResult<std::size_t>::ok(static_cast<std::size_t>(sqlite3_changes(db_)));
+}
+
+application::ClientResult<void> SqlCipherLocalStore::append_audit_event(const domain::LocalAuditEvent& event) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+
+    const auto errors = event.validate();
+    if (!errors.empty()) {
+        return application::ClientResult<void>::error(application::ClientError::validation(errors.front()));
+    }
+    if (!event.has_valid_hash()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Audit event entry_hash_sha256 does not match canonical payload"));
+    }
+
+    auto begin_res = exec_sql_locked("BEGIN IMMEDIATE;");
+    if (begin_res.is_error()) {
+        return begin_res;
+    }
+    AuditTxGuard tx_guard(db_);
+
+    int64_t expected_seq = 1;
+    std::string expected_prev(domain::kGenesisAuditHash);
+
+    {
+        static constexpr const char* kLatestSql =
+            "SELECT sequence_id, entry_hash_sha256 FROM local_audit_log ORDER BY sequence_id DESC LIMIT 1;";
+        StmtGuard latest_stmt;
+        if (sqlite3_prepare_v2(db_, kLatestSql, -1, latest_stmt.out(), nullptr) != SQLITE_OK) {
+            return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+        }
+        const int step_rc = sqlite3_step(latest_stmt.get());
+        if (step_rc == SQLITE_ROW) {
+            expected_seq = static_cast<int64_t>(sqlite3_column_int64(latest_stmt.get(), 0)) + 1;
+            expected_prev = column_text_string(latest_stmt.get(), 1);
+        } else if (step_rc != SQLITE_DONE) {
+            return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+        }
+        latest_stmt.finalize();
+    }
+
+    if (event.sequence_id != expected_seq) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Audit event sequence_id does not match expected monotonic next ID"));
+    }
+    if (event.prev_hash_sha256.size() != 64U || expected_prev.size() != 64U ||
+        CRYPTO_memcmp(event.prev_hash_sha256.data(), expected_prev.data(), 64U) != 0) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Audit event prev_hash_sha256 does not match chain head"));
+    }
+
+    nlohmann::json payload;
+    payload["actor_opaque_id"] = event.actor_opaque_id;
+    payload["target_opaque_id"] = event.target_opaque_id;
+    payload["sanitized_summary"] = event.sanitized_summary;
+    const std::string payload_json = payload.dump();
+
+    const std::string cat_str(domain::to_string(event.category));
+    const std::string outcome_str(domain::to_string(event.outcome));
+
+    static constexpr const char* kInsertSql = R"sql(
+        INSERT INTO local_audit_log (
+            sequence_id, occurred_at_ms, event_type, category, outcome,
+            prev_hash_sha256, entry_hash_sha256, payload_json
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8);
+    )sql";
+
+    StmtGuard insert_stmt;
+    if (sqlite3_prepare_v2(db_, kInsertSql, -1, insert_stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    sqlite3_bind_int64(insert_stmt.get(), 1, static_cast<sqlite3_int64>(event.sequence_id));
+    sqlite3_bind_int64(insert_stmt.get(), 2, static_cast<sqlite3_int64>(event.occurred_at_ms));
+    sqlite3_bind_text(insert_stmt.get(), 3, event.event_type.c_str(), static_cast<int>(event.event_type.size()),
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(insert_stmt.get(), 4, cat_str.c_str(), static_cast<int>(cat_str.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(insert_stmt.get(), 5, outcome_str.c_str(), static_cast<int>(outcome_str.size()),
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(insert_stmt.get(), 6, event.prev_hash_sha256.c_str(),
+                      static_cast<int>(event.prev_hash_sha256.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(insert_stmt.get(), 7, event.entry_hash_sha256.c_str(),
+                      static_cast<int>(event.entry_hash_sha256.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(insert_stmt.get(), 8, payload_json.c_str(), static_cast<int>(payload_json.size()),
+                      SQLITE_TRANSIENT);
+
+    if (sqlite3_step(insert_stmt.get()) != SQLITE_DONE) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+    insert_stmt.finalize();
+
+    auto commit_res = exec_sql_locked("COMMIT;");
+    if (commit_res.is_error()) {
+        return commit_res;
+    }
+    tx_guard.dismiss();
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<std::vector<domain::LocalAuditEvent>>
+SqlCipherLocalStore::list_audit_events(std::size_t limit, std::size_t offset) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<std::vector<domain::LocalAuditEvent>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (limit == 0U) {
+        return application::ClientResult<std::vector<domain::LocalAuditEvent>>::ok({});
+    }
+
+    static constexpr const char* kSql = R"sql(
+        SELECT sequence_id, occurred_at_ms, event_type, category, outcome,
+               prev_hash_sha256, entry_hash_sha256, payload_json
+        FROM local_audit_log
+        ORDER BY sequence_id ASC
+        LIMIT ?1 OFFSET ?2;
+    )sql";
+
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<std::vector<domain::LocalAuditEvent>>::error(
+            application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    const auto max_i64 = static_cast<std::size_t>(std::numeric_limits<int64_t>::max());
+    const sqlite3_int64 sql_limit = static_cast<sqlite3_int64>(std::min(limit, max_i64));
+    const sqlite3_int64 sql_offset = static_cast<sqlite3_int64>(std::min(offset, max_i64));
+    sqlite3_bind_int64(stmt.get(), 1, sql_limit);
+    sqlite3_bind_int64(stmt.get(), 2, sql_offset);
+
+    std::vector<domain::LocalAuditEvent> result;
+    while (true) {
+        const int rc = sqlite3_step(stmt.get());
+        if (rc == SQLITE_ROW) {
+            result.push_back(read_audit_row(stmt.get()));
+        } else if (rc == SQLITE_DONE) {
+            break;
+        } else {
+            return application::ClientResult<std::vector<domain::LocalAuditEvent>>::error(
+                application::ClientError::storage(sqlite3_errmsg(db_)));
+        }
+    }
+    return application::ClientResult<std::vector<domain::LocalAuditEvent>>::ok(std::move(result));
+}
+
+application::ClientResult<std::optional<domain::LocalAuditEvent>> SqlCipherLocalStore::get_latest_audit_event() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<std::optional<domain::LocalAuditEvent>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+
+    static constexpr const char* kSql = R"sql(
+        SELECT sequence_id, occurred_at_ms, event_type, category, outcome,
+               prev_hash_sha256, entry_hash_sha256, payload_json
+        FROM local_audit_log
+        ORDER BY sequence_id DESC
+        LIMIT 1;
+    )sql";
+
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<std::optional<domain::LocalAuditEvent>>::error(
+            application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    const int rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_DONE) {
+        return application::ClientResult<std::optional<domain::LocalAuditEvent>>::ok(std::nullopt);
+    }
+    if (rc == SQLITE_ROW) {
+        return application::ClientResult<std::optional<domain::LocalAuditEvent>>::ok(read_audit_row(stmt.get()));
+    }
+    return application::ClientResult<std::optional<domain::LocalAuditEvent>>::error(
+        application::ClientError::storage(sqlite3_errmsg(db_)));
+}
+
+application::ClientResult<std::size_t> SqlCipherLocalStore::count_audit_events() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<std::size_t>::error(application::ClientError::storage("Storage is closed"));
+    }
+
+    static constexpr const char* kSql = "SELECT COUNT(*) FROM local_audit_log;";
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<std::size_t>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    const int rc = sqlite3_step(stmt.get());
+    if (rc != SQLITE_ROW) {
+        return application::ClientResult<std::size_t>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+    const sqlite3_int64 raw_count = sqlite3_column_int64(stmt.get(), 0);
+    if (raw_count <= 0) {
+        return application::ClientResult<std::size_t>::ok(0U);
+    }
+    return application::ClientResult<std::size_t>::ok(static_cast<std::size_t>(raw_count));
 }
 
 } // namespace securecloud::client::infrastructure::adapters

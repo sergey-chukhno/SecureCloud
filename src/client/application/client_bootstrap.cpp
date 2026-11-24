@@ -1,6 +1,7 @@
 #include "application/client_bootstrap.hpp"
 
 #include "application/managers/device_pairing_coordinator.hpp"
+#include "application/managers/local_audit_logger.hpp"
 #include "application/managers/ratchet_session_manager.hpp"
 #include "application/managers/safety_number_engine.hpp"
 #include "infrastructure/adapters/default_gateway_client.hpp"
@@ -86,19 +87,24 @@ ClientBootstrap::create_with_adapters(ClientConfig config, std::unique_ptr<inter
 }
 
 void ClientBootstrap::wire_managers() {
+    local_audit_logger_ = std::make_unique<managers::LocalAuditLogger>(*local_store_);
     auth_manager_ = std::make_unique<managers::AuthManager>(*gateway_, *secure_storage_);
     messaging_manager_ = std::make_unique<managers::MessagingManager>(*gateway_, *local_store_, *crypto_provider_,
                                                                       nullptr, secure_storage_.get());
     safety_number_engine_ = std::make_unique<managers::SafetyNumberEngine>(*crypto_provider_, *secure_storage_);
+    safety_number_engine_->set_local_audit_logger(local_audit_logger_.get());
     contact_manager_ = std::make_unique<managers::ContactManager>(*local_store_, *gateway_, *safety_number_engine_);
     device_manager_ = std::make_unique<managers::DeviceManager>(*gateway_, *secure_storage_, *crypto_provider_);
+    device_manager_->set_local_audit_logger(local_audit_logger_.get());
     device_pairing_coordinator_ = std::make_unique<managers::DevicePairingCoordinator>(
         *gateway_, *secure_storage_, *crypto_provider_, *device_manager_);
+    device_pairing_coordinator_->set_local_audit_logger(local_audit_logger_.get());
     file_manager_ = std::make_unique<managers::FileManager>(*gateway_, *crypto_provider_, local_store_.get(),
                                                             secure_storage_.get(), messaging_manager_.get());
     emergency_manager_ = std::make_unique<managers::EmergencyManager>(*local_store_, *secure_storage_);
     settings_manager_ = std::make_unique<managers::SettingsManager>(*local_store_, *secure_storage_, *gateway_, config_,
                                                                     file_manager_.get(), messaging_manager_.get());
+    settings_manager_->set_local_audit_logger(local_audit_logger_.get());
     sync_manager_ = std::make_unique<managers::SyncManager>(*gateway_, config_);
     sync_manager_->set_local_store(local_store_.get());
     sync_manager_->set_messaging_manager(messaging_manager_.get());
@@ -110,6 +116,7 @@ void ClientBootstrap::wire_managers() {
     emergency_manager_->set_sync_manager(sync_manager_.get());
     emergency_manager_->set_auth_manager(auth_manager_.get());
     emergency_manager_->set_settings_manager(settings_manager_.get());
+    emergency_manager_->set_local_audit_logger(local_audit_logger_.get());
     auth_manager_->set_emergency_manager(emergency_manager_.get());
     if (switchable_gateway_ != nullptr) {
         settings_manager_->set_network_config_reload_callback(
@@ -141,6 +148,9 @@ void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& u
     }
     if (emergency_manager_) {
         emergency_manager_->set_ratchet_session_manager(ratchet_session_manager_.get());
+    }
+    if (local_audit_logger_) {
+        ratchet_session_manager_->set_local_audit_logger(local_audit_logger_.get());
     }
 }
 

@@ -28,6 +28,7 @@ if(Qt6_FOUND)
         domain/file_transfer.cpp
         domain/offline_sync_models.cpp
         domain/emergency_models.cpp
+        domain/local_audit_event.cpp
         domain/crypto/x3dh_models.cpp
         domain/crypto/x3dh_engine.cpp
         domain/crypto/ratchet_models.cpp
@@ -99,6 +100,7 @@ if(Qt6_FOUND)
         application/managers/file_manager.cpp
         application/managers/emergency_manager.cpp
         application/managers/settings_manager.cpp
+        application/managers/local_audit_logger.cpp
         application/managers/sync_manager.cpp
     )
     add_library(securecloud::client_app ALIAS securecloud_client_app)

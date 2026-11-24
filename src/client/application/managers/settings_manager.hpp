@@ -24,6 +24,7 @@
 namespace securecloud::client::application::managers {
 
 class FileManager;
+class LocalAuditLogger;
 class MessagingManager;
 
 using NetworkConfigReloadCallback = std::function<void(const ClientConfig&)>;
@@ -53,6 +54,7 @@ class SettingsManager {
 
     void set_file_manager(FileManager* file_manager) noexcept;
     void set_messaging_manager(MessagingManager* messaging_manager) noexcept;
+    void set_local_audit_logger(LocalAuditLogger* local_audit_logger) noexcept;
     void set_network_config_reload_callback(NetworkConfigReloadCallback callback);
 
     // Persisted Preferences & Proxy Secret Lifecycle
@@ -101,6 +103,7 @@ class SettingsManager {
     ClientConfig& config_;
     FileManager* file_manager_{nullptr};
     MessagingManager* messaging_manager_{nullptr};
+    LocalAuditLogger* local_audit_logger_{nullptr};
 
     mutable std::mutex mutex_;
     domain::UserSettings cached_settings_{};

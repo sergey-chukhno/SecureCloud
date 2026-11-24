@@ -1,5 +1,7 @@
 #include "application/managers/safety_number_engine.hpp"
 
+#include "application/managers/local_audit_logger.hpp"
+
 #include <algorithm>
 #include <sstream>
 
@@ -94,6 +96,11 @@ SafetyNumberEngine::evaluate_key_verification_status(const domain::UserId& peer_
     }
 
     // Key was previously verified, but active public key fingerprint differs: KeyChanged!
+    if (local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::MessagingSecurity,
+                                                "peer.identity_key_changed", domain::LocalAuditOutcome::Triggered, "",
+                                                peer_user_id.str(), "Peer identity key fingerprint changed");
+    }
     return ClientResult<domain::KeyVerificationStatus>::ok(domain::KeyVerificationStatus::KeyChanged);
 }
 
@@ -109,6 +116,11 @@ ClientResult<void> SafetyNumberEngine::set_verification_state(const domain::User
 
     if (!verified) {
         secure_storage_.delete_secret(storage_key);
+        if (local_audit_logger_ != nullptr) {
+            (void)local_audit_logger_->record_event(
+                domain::LocalAuditCategory::DeviceTrust, "peer.identity_verification_cleared",
+                domain::LocalAuditOutcome::Success, "", peer_user_id.str(), "Peer verification cleared");
+        }
         return ClientResult<void>::ok();
     }
 
@@ -126,6 +138,12 @@ ClientResult<void> SafetyNumberEngine::set_verification_state(const domain::User
         secure_storage_.store_secret(storage_key, securecloud::common::configuration::SecretString(fp_res.value()));
     if (!store_res.is_ok()) {
         return ClientResult<void>::error(store_res.error());
+    }
+
+    if (local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::DeviceTrust, "peer.identity_verified",
+                                                domain::LocalAuditOutcome::Success, "", peer_user_id.str(),
+                                                "Peer safety number verified");
     }
 
     return ClientResult<void>::ok();

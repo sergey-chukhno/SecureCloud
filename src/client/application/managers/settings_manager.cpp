@@ -1,6 +1,7 @@
 #include "application/managers/settings_manager.hpp"
 
 #include "application/managers/file_manager.hpp"
+#include "application/managers/local_audit_logger.hpp"
 #include "application/managers/messaging_manager.hpp"
 
 #include <cctype>
@@ -42,6 +43,11 @@ void SettingsManager::set_file_manager(FileManager* file_manager) noexcept {
 void SettingsManager::set_messaging_manager(MessagingManager* messaging_manager) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     messaging_manager_ = messaging_manager;
+}
+
+void SettingsManager::set_local_audit_logger(LocalAuditLogger* local_audit_logger) noexcept {
+    std::lock_guard<std::mutex> lock(mutex_);
+    local_audit_logger_ = local_audit_logger;
 }
 
 void SettingsManager::set_network_config_reload_callback(NetworkConfigReloadCallback callback) {
@@ -399,6 +405,20 @@ SettingsManager::inspect_and_optionally_pin_gateway_tls(std::string_view host, u
         return ClientResult<interfaces::TlsCertificateInfo>::error(save_res.error());
     }
 
+    LocalAuditLogger* audit = nullptr;
+    std::string actor_uid;
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        audit = local_audit_logger_;
+        if (cached_profile_.has_value()) {
+            actor_uid = std::string(cached_profile_->user_id.str());
+        }
+    }
+    if (audit != nullptr) {
+        (void)audit->record_event(domain::LocalAuditCategory::SettingsNetwork, "network.tls_pin_saved",
+                                  domain::LocalAuditOutcome::Success, actor_uid, "", "Gateway TLS SPKI pin updated");
+    }
+
     inspect_res.value().has_pinned_key = true;
     inspect_res.value().matches_pinned_key = true;
     return inspect_res;
@@ -439,6 +459,20 @@ ClientResult<void> SettingsManager::confirm_recovery_phrase_backup(
         return ClientResult<void>::error(verify_res.error());
     }
     if (!verify_res.value()) {
+        LocalAuditLogger* audit = nullptr;
+        std::string actor_uid;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            audit = local_audit_logger_;
+            if (cached_profile_.has_value()) {
+                actor_uid = std::string(cached_profile_->user_id.str());
+            }
+        }
+        if (audit != nullptr) {
+            (void)audit->record_event(domain::LocalAuditCategory::KeyLifecycle, "recovery.phrase_verified",
+                                      domain::LocalAuditOutcome::Rejected, actor_uid, "",
+                                      "Recovery phrase verification rejected");
+        }
         return ClientResult<void>::error(
             ClientError::validation("Recovery phrase confirmation challenge answers did not match"));
     }
@@ -463,10 +497,20 @@ ClientResult<void> SettingsManager::confirm_recovery_phrase_backup(
         return ClientResult<void>::error(save_res.error());
     }
 
+    LocalAuditLogger* audit = nullptr;
+    std::string actor_uid;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         pending_recovery_phrase_.reset();
         pending_recovery_challenge_.reset();
+        audit = local_audit_logger_;
+        if (cached_profile_.has_value()) {
+            actor_uid = std::string(cached_profile_->user_id.str());
+        }
+    }
+    if (audit != nullptr) {
+        (void)audit->record_event(domain::LocalAuditCategory::KeyLifecycle, "recovery.phrase_verified",
+                                  domain::LocalAuditOutcome::Success, actor_uid, "", "Recovery phrase backup verified");
     }
 
     return ClientResult<void>::ok();

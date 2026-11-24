@@ -66,6 +66,12 @@ class MemoryLocalStore final : public application::interfaces::ILocalStore {
 
     application::ClientResult<std::size_t> delete_expired_messages(int64_t now_ms) override;
 
+    application::ClientResult<void> append_audit_event(const domain::LocalAuditEvent& event) override;
+    application::ClientResult<std::vector<domain::LocalAuditEvent>> list_audit_events(std::size_t limit = 100,
+                                                                                      std::size_t offset = 0) override;
+    application::ClientResult<std::optional<domain::LocalAuditEvent>> get_latest_audit_event() override;
+    application::ClientResult<std::size_t> count_audit_events() override;
+
     void clear();
 
   private:
@@ -79,6 +85,7 @@ class MemoryLocalStore final : public application::interfaces::ILocalStore {
     std::unordered_map<std::string, domain::SyncCursorRecord> sync_cursors_;
     std::unordered_map<domain::UserId, domain::UserProfile> user_profiles_;
     std::unordered_map<std::string, domain::UserSettings> user_settings_;
+    std::vector<domain::LocalAuditEvent> audit_events_;
 };
 
 } // namespace securecloud::client::infrastructure::adapters

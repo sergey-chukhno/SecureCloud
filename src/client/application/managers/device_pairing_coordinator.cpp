@@ -1,5 +1,6 @@
 #include "application/managers/device_pairing_coordinator.hpp"
 
+#include "application/managers/local_audit_logger.hpp"
 #include "infrastructure/adapters/key_storage_helper.hpp"
 
 #include <chrono>
@@ -182,7 +183,15 @@ ClientResult<void> DevicePairingCoordinator::approve_companion_pairing(const Pai
     }
 
     // Submit authorization to Gateway with MFA token
-    return gateway_.authorize_device_pairing(prompt.device_id, prompt.pairing_code, mfa_token);
+    const auto auth_res = gateway_.authorize_device_pairing(prompt.device_id, prompt.pairing_code, mfa_token);
+    if (local_audit_logger_ != nullptr) {
+        const auto outcome = auth_res.is_ok() ? domain::LocalAuditOutcome::Success : domain::LocalAuditOutcome::Failure;
+        const std::string_view summary =
+            auth_res.is_ok() ? "Companion device pairing authorized" : "Companion device pairing authorization failed";
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::DeviceTrust, "device.pairing_approved",
+                                                outcome, prompt.user_id.str(), prompt.device_id.value(), summary);
+    }
+    return auth_res;
 }
 
 } // namespace securecloud::client::application::managers

@@ -25,6 +25,7 @@ class IHardwareAuthenticator;
 namespace securecloud::client::application::managers {
 class RatchetSessionManager;
 class DevicePairingCoordinator;
+class LocalAuditLogger;
 class SafetyNumberEngine;
 } // namespace securecloud::client::application::managers
 
@@ -70,6 +71,7 @@ class ClientBootstrap {
         return *hardware_authenticator_;
     }
     [[nodiscard]] managers::FileManager& file_manager() noexcept { return *file_manager_; }
+    [[nodiscard]] managers::LocalAuditLogger* local_audit_logger() const noexcept { return local_audit_logger_.get(); }
     [[nodiscard]] managers::EmergencyManager& emergency_manager() noexcept { return *emergency_manager_; }
     [[nodiscard]] managers::SettingsManager& settings_manager() noexcept { return *settings_manager_; }
     [[nodiscard]] managers::SyncManager& sync_manager() noexcept { return *sync_manager_; }
@@ -95,7 +97,8 @@ class ClientBootstrap {
     std::unique_ptr<interfaces::IGatewayClient> gateway_;
     infrastructure::adapters::SwitchableGatewayClient* switchable_gateway_{nullptr};
 
-    // Managers (instantiated second, destroyed first)
+    // Managers (instantiated second, destroyed first; local_audit_logger_ outlives sibling managers)
+    std::unique_ptr<managers::LocalAuditLogger> local_audit_logger_;
     std::unique_ptr<managers::AuthManager> auth_manager_;
     std::unique_ptr<managers::MessagingManager> messaging_manager_;
     std::unique_ptr<managers::RatchetSessionManager> ratchet_session_manager_;

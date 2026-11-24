@@ -1,5 +1,6 @@
 #include "application/managers/device_manager.hpp"
 
+#include "application/managers/local_audit_logger.hpp"
 #include "application/managers/ratchet_session_manager.hpp"
 #include "domain/prekey_policy.hpp"
 #include "infrastructure/adapters/key_storage_helper.hpp"
@@ -135,6 +136,12 @@ ClientResult<domain::Device> DeviceManager::register_device(const domain::UserId
     local_device_ = domain::Device(assigned_id, user_id, std::move(dname), std::move(identity), reg_result.status,
                                    reg_result.registered_at);
 
+    if (local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::DeviceTrust, "device.registered",
+                                                domain::LocalAuditOutcome::Success, user_id.str(), assigned_id.value(),
+                                                "Local device identity registered");
+    }
+
     return ClientResult<domain::Device>::ok(*local_device_);
 }
 
@@ -184,6 +191,12 @@ ClientResult<void> DeviceManager::rotate_signed_prekey() {
                            std::move(updated_id), local_device_->status(), local_device_->last_seen_at());
     }
 
+    if (local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::KeyLifecycle, "prekey.signed_rotated",
+                                                domain::LocalAuditOutcome::Success, local_device_->user_id().str(),
+                                                local_device_->device_id().value(), "Signed prekey rotated");
+    }
+
     return ClientResult<void>::ok();
 }
 
@@ -221,6 +234,11 @@ ClientResult<void> DeviceManager::revoke_device(const domain::DeviceId& device_i
         if (ratchet_session_manager_ != nullptr) {
             ratchet_session_manager_->purge_device_sessions(device_id);
         }
+        if (local_audit_logger_ != nullptr) {
+            (void)local_audit_logger_->record_event(domain::LocalAuditCategory::DeviceTrust, "device.local_self_wiped",
+                                                    domain::LocalAuditOutcome::Success, "", device_id.value(),
+                                                    "Local device revoked and wiped");
+        }
         return ClientResult<void>::ok();
     }
 
@@ -236,6 +254,12 @@ ClientResult<void> DeviceManager::revoke_device(const domain::DeviceId& device_i
         if (!purge_res.is_ok()) {
             return purge_res;
         }
+    }
+
+    if (local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::DeviceTrust, "device.revoked",
+                                                domain::LocalAuditOutcome::Success, "", device_id.value(),
+                                                "Device revoked");
     }
 
     return ClientResult<void>::ok();

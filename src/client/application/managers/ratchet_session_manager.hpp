@@ -21,6 +21,8 @@
 
 namespace securecloud::client::application::managers {
 
+class LocalAuditLogger;
+
 class RatchetSessionManager {
   public:
     static constexpr std::string_view kSessionKeyPrefix = "ratchet_session:";
@@ -76,7 +78,14 @@ class RatchetSessionManager {
 
     static std::string make_storage_key(const domain::UserId& peer_user_id, const domain::DeviceId& peer_device_id);
 
+    void set_local_audit_logger(LocalAuditLogger* local_audit_logger) noexcept {
+        local_audit_logger_ = local_audit_logger;
+    }
+
   private:
+    ClientResult<securecloud::common::configuration::SecretString>
+    decrypt_from_device_impl(const domain::UserId& sender_user_id, const domain::DeviceId& sender_device_id,
+                             const domain::crypto::EncryptedMessageEnvelope& envelope);
     ClientResult<void> ensure_outbound_session(const domain::UserId& peer_user_id,
                                                const domain::DeviceId& peer_device_id);
     ClientResult<void> persist_session_index();
@@ -89,6 +98,7 @@ class RatchetSessionManager {
 
     std::unordered_map<domain::crypto::PeerDeviceKey, domain::crypto::RatchetSession, domain::crypto::PeerDeviceKeyHash>
         sessions_;
+    LocalAuditLogger* local_audit_logger_{nullptr};
 };
 
 } // namespace securecloud::client::application::managers
