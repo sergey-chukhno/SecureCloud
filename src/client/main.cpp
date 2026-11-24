@@ -13,6 +13,7 @@
 #include <QImage>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
+#include <QQuickStyle>
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QThread>
@@ -46,6 +47,7 @@ int main(int argc, char* argv[]) {
 
     // Qt GUI Application initialization
     QGuiApplication app(argc, argv);
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
     app.setApplicationName(QStringLiteral("SecureCloud Client"));
     app.setOrganizationName(QStringLiteral("SecureCloud"));
     app.setApplicationVersion(
@@ -277,18 +279,74 @@ int main(int argc, char* argv[]) {
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
         captureWindow(QStringLiteral("workspace-files-light-1200x800.png"), 1200, 800);
 
-        // 7. Authenticated Settings — Security, Device Trust & Identity Center (Dark & Light 1200x800)
+        // 7. Authenticated Settings — Profile & Workstation Identity Center (CLIENT-014, Dark & Light 1200x800)
         (void)navController.navigateTo(securecloud::client::ui::NavigationController::NavigationState::Settings);
+        (void)workspaceViewModel.saveUserProfile(QStringLiteral("Alice Vance (SecOps)"), QStringLiteral("alice.secops"),
+                                                 QStringLiteral("Principal Cryptographer · Hardware Enclave Verified"),
+                                                 true, true);
+        if (auto* settingsScroll = window->findChild<QObject*>("settingsScrollView")) {
+            QMetaObject::invokeMethod(settingsScroll, "scrollToTop");
+        }
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
         captureWindow(QStringLiteral("workspace-settings-dark-1200x800.png"), 1200, 800);
+        captureWindow(QStringLiteral("settings-profile-dark-1200x800.png"), 1200, 800);
 
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
         captureWindow(QStringLiteral("workspace-settings-light-1200x800.png"), 1200, 800);
+        captureWindow(QStringLiteral("settings-profile-light-1200x800.png"), 1200, 800);
 
-        // 8. Authenticated Settings — Section 5 Login Duress Policy (CLIENT-013, Dark & Light 1200x800)
+        // 7b. Appearance & Accessibility — High-Contrast AAA + 120% Font Scale (CLIENT-014)
+        (void)workspaceViewModel.applyAndSaveAppearance(1, 1.20, true);
+        pumpEvents(4, 15);
+        if (auto* settingsScroll = window->findChild<QObject*>("settingsScrollView")) {
+            QMetaObject::invokeMethod(settingsScroll, "scrollToCard",
+                                      Q_ARG(QVariant, QStringLiteral("appearanceCard")));
+        }
+        captureWindow(QStringLiteral("settings-high-contrast-dark-1200x800.png"), 1200, 800);
+
+        (void)workspaceViewModel.applyAndSaveAppearance(2, 1.20, true);
+        pumpEvents(4, 15);
+        if (auto* settingsScroll = window->findChild<QObject*>("settingsScrollView")) {
+            QMetaObject::invokeMethod(settingsScroll, "scrollToCard",
+                                      Q_ARG(QVariant, QStringLiteral("appearanceCard")));
+        }
+        captureWindow(QStringLiteral("settings-high-contrast-light-1200x800.png"), 1200, 800);
+        (void)workspaceViewModel.applyAndSaveAppearance(1, 1.0, false);
+
+        // 7c. Network, Proxy & TLS SPKI Pinning Card (CLIENT-014, Dark & Light 1200x800)
+        (void)workspaceViewModel.saveNetworkAndProxyConfig(
+            false, QStringLiteral("gw.securecloud.internal"), 8443, 1, QStringLiteral("proxy.corp.internal"), 8080,
+            QStringLiteral("secops-proxy"), QStringLiteral("DemoProxyPass!26"), false, QString(), true);
+        (void)workspaceViewModel.inspectGatewayTlsFingerprint(QStringLiteral("gw.securecloud.internal"), 8443, true);
+        if (auto* settingsScroll = window->findChild<QObject*>("settingsScrollView")) {
+            QMetaObject::invokeMethod(settingsScroll, "scrollToCard",
+                                      Q_ARG(QVariant, QStringLiteral("networkTlsCard")));
+        }
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("settings-network-tls-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("settings-network-tls-light-1200x800.png"), 1200, 800);
+
+        // 7d. Endpoint-Only BIP-39 Recovery Phrase Modal (12-Word Default + 3-Word Quiz, CLIENT-014)
+        if (auto* recoveryModal = window->findChild<QObject*>("recoveryPhraseModal")) {
+            const QVariantMap bipPayload = workspaceViewModel.generateRecoveryPhraseWords(false);
+            QMetaObject::invokeMethod(recoveryModal, "openWithPayload",
+                                      Q_ARG(QVariant, QVariant::fromValue(bipPayload)));
+            recoveryModal->setProperty("showWords", true);
+            uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+            captureWindow(QStringLiteral("settings-bip39-modal-dark-1200x800.png"), 1200, 800);
+
+            uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+            captureWindow(QStringLiteral("settings-bip39-modal-light-1200x800.png"), 1200, 800);
+            QMetaObject::invokeMethod(recoveryModal, "closeModal");
+        }
+
+        // 8. Authenticated Settings — Section 4 Login Duress Policy (CLIENT-013, Dark & Light 1200x800)
         (void)appViewModel.configureDuressPin(QStringLiteral("Autumn-Backup-42!"), 2);
         if (auto* settingsScroll = window->findChild<QObject*>("settingsScrollView")) {
-            QMetaObject::invokeMethod(settingsScroll, "scrollToBottom");
+            QMetaObject::invokeMethod(settingsScroll, "scrollToCard",
+                                      Q_ARG(QVariant, QStringLiteral("securityPrivacyCard")));
         }
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
         captureWindow(QStringLiteral("settings-duress-dark-1200x800.png"), 1200, 800);

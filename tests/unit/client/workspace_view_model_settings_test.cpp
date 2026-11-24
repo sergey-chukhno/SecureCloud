@@ -73,8 +73,10 @@ struct QmlWarningCapture {
 
     static void handler(QtMsgType type, const QMessageLogContext& context, const QString& msg) {
         if (type == QtWarningMsg || type == QtCriticalMsg || type == QtFatalMsg) {
+            const std::string category = (context.category != nullptr) ? std::string(context.category) : std::string{};
             const std::string text = msg.toStdString();
-            if (text.find("qt.qpa.fonts") == std::string::npos) {
+            if (category.find("qt.qpa.fonts") == std::string::npos && text.find("qt.qpa.fonts") == std::string::npos &&
+                text.find("Populating font family aliases") == std::string::npos) {
                 warnings.push_back(text);
             }
         }

@@ -80,7 +80,32 @@ Rectangle {
             }
         }
 
+        function scrollToTop() {
+            if (contentItem) {
+                contentItem.contentY = 0
+            }
+        }
+
+        function scrollToCard(cardObjectName) {
+            if (!contentItem) {
+                return
+            }
+            var target = null
+            for (var i = 0; i < settingsColumn.children.length; i++) {
+                var child = settingsColumn.children[i]
+                if (child && child.objectName === cardObjectName) {
+                    target = child
+                    break
+                }
+            }
+            if (target) {
+                var maxY = Math.max(0, contentItem.contentHeight - height)
+                contentItem.contentY = Math.min(Math.max(0, target.y - Theme.space16), maxY)
+            }
+        }
+
         ColumnLayout {
+            id: settingsColumn
             width: Math.min(820, parent.width - (Theme.space32 * 2))
             anchors.horizontalCenter: parent.horizontalCenter
             spacing: Theme.space24
@@ -1994,7 +2019,7 @@ Rectangle {
 
         Rectangle {
             anchors.fill: parent
-            color: Theme.isDark ? "rgba(0, 0, 0, 0.72)" : "rgba(15, 23, 42, 0.48)"
+            color: Theme.isDark ? Qt.rgba(0, 0, 0, 0.72) : Qt.rgba(15 / 255, 23 / 255, 42 / 255, 0.48)
 
             MouseArea {
                 anchors.fill: parent
@@ -2034,6 +2059,7 @@ Rectangle {
                         font.pixelSize: Theme.fontTitle
                         font.bold: true
                         color: Theme.textPrimary
+                        wrapMode: Text.WordWrap
                         Layout.fillWidth: true
                     }
 
