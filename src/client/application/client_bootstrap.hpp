@@ -13,10 +13,12 @@
 #include "application/managers/messaging_manager.hpp"
 #include "application/managers/settings_manager.hpp"
 #include "application/managers/sync_manager.hpp"
+#include "domain/crypto/crypto_self_test.hpp"
 #include "domain/device_id.hpp"
 #include "domain/user_id.hpp"
 
 #include <memory>
+#include <optional>
 
 namespace securecloud::client::application::interfaces {
 class IHardwareAuthenticator;
@@ -72,6 +74,12 @@ class ClientBootstrap {
     }
     [[nodiscard]] managers::FileManager& file_manager() noexcept { return *file_manager_; }
     [[nodiscard]] managers::LocalAuditLogger* local_audit_logger() const noexcept { return local_audit_logger_.get(); }
+    [[nodiscard]] const std::optional<domain::crypto::CryptoSelfTestReport>& last_self_test_report() const noexcept {
+        return last_self_test_report_;
+    }
+    void set_last_self_test_report(domain::crypto::CryptoSelfTestReport report);
+    void set_self_test_fault_injector(domain::crypto::CryptoSelfTest::FaultInjector injector);
+    [[nodiscard]] domain::crypto::CryptoSelfTest::FaultInjector self_test_fault_injector() const;
     [[nodiscard]] managers::EmergencyManager& emergency_manager() noexcept { return *emergency_manager_; }
     [[nodiscard]] managers::SettingsManager& settings_manager() noexcept { return *settings_manager_; }
     [[nodiscard]] managers::SyncManager& sync_manager() noexcept { return *sync_manager_; }
@@ -110,6 +118,9 @@ class ClientBootstrap {
     std::unique_ptr<managers::EmergencyManager> emergency_manager_;
     std::unique_ptr<managers::SettingsManager> settings_manager_;
     std::unique_ptr<managers::SyncManager> sync_manager_;
+
+    std::optional<domain::crypto::CryptoSelfTestReport> last_self_test_report_;
+    std::shared_ptr<domain::crypto::CryptoSelfTest::FaultInjector> self_test_fault_injector_;
 };
 
 } // namespace securecloud::client::application

@@ -154,4 +154,24 @@ void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& u
     }
 }
 
+void ClientBootstrap::set_last_self_test_report(domain::crypto::CryptoSelfTestReport report) {
+    last_self_test_report_ = std::move(report);
+}
+
+void ClientBootstrap::set_self_test_fault_injector(domain::crypto::CryptoSelfTest::FaultInjector injector) {
+    if (injector) {
+        self_test_fault_injector_ =
+            std::make_shared<domain::crypto::CryptoSelfTest::FaultInjector>(std::move(injector));
+    } else {
+        self_test_fault_injector_.reset();
+    }
+}
+
+domain::crypto::CryptoSelfTest::FaultInjector ClientBootstrap::self_test_fault_injector() const {
+    if (self_test_fault_injector_ != nullptr) {
+        return *self_test_fault_injector_;
+    }
+    return {};
+}
+
 } // namespace securecloud::client::application
