@@ -5,6 +5,7 @@
 #include "application/managers/safety_number_engine.hpp"
 #include "domain/contact.hpp"
 #include "domain/conversation_id.hpp"
+#include "domain/crypto/recovery_phrase_engine.hpp"
 #include "domain/crypto_identity.hpp"
 #include "domain/device_id.hpp"
 #include "domain/file_transfer.hpp"
@@ -12,11 +13,13 @@
 #include "domain/realtime_events.hpp"
 #include "domain/user_id.hpp"
 #include "infrastructure/adapters/default_gateway_client.hpp"
+#include "ui/ui_theme.hpp"
 
 #include <QMetaObject>
 #include <QPointer>
 #include <QUrl>
 #include <algorithm>
+#include <cmath>
 #include <unordered_set>
 
 namespace securecloud::client::ui {
@@ -71,6 +74,7 @@ WorkspaceViewModel::WorkspaceViewModel(application::ClientApplication& app, Navi
     } else {
         seedDefaultWorkspaceData();
     }
+    hydrateSettingsAndProfile();
 
     realtime_sub_id_ = app_.bootstrap().gateway().subscribe_realtime_events([self](const domain::RealtimeEvent& event) {
         if (!self) {
@@ -155,6 +159,13 @@ void WorkspaceViewModel::reloadFromLocalStore() {
     emit selectedTransferChanged();
     emit pendingOutboxCountChanged();
     emit connectivityStateChanged();
+    hydrateSettingsAndProfile();
+    emit profileSettingsChanged();
+    emit appearanceSettingsChanged();
+    emit networkSettingsChanged();
+    emit privacySecuritySettingsChanged();
+    emit mfaPolicyChanged();
+    emit readReceiptsEnabledChanged();
 }
 
 QString WorkspaceViewModel::connectivityState() const {
@@ -319,6 +330,7 @@ void WorkspaceViewModel::hydrateFromLocalStore() {
                 total_devices,
                 ver_status,
                 static_cast<int>(conv.sender_key_epoch()),
+                conv.disappearing_ttl_seconds(),
             });
         }
     }
@@ -1647,18 +1659,22 @@ QVariantMap WorkspaceViewModel::localDeviceIdentity() const {
 }
 
 void WorkspaceViewModel::setMfaRequiredOnLogin(bool required) {
-    if (mfa_required_on_login_ == required) {
+    if (mfa_required_on_login_ == required && settings_.mfa_required_on_login == required) {
         return;
     }
     mfa_required_on_login_ = required;
+    settings_.mfa_required_on_login = required;
+    (void)persistCurrentSettings();
     emit mfaPolicyChanged();
 }
 
 void WorkspaceViewModel::setHardwareKeyEnforced(bool enforced) {
-    if (hardware_key_enforced_ == enforced) {
+    if (hardware_key_enforced_ == enforced && settings_.hardware_key_enforced == enforced) {
         return;
     }
     hardware_key_enforced_ = enforced;
+    settings_.hardware_key_enforced = enforced;
+    (void)persistCurrentSettings();
     emit mfaPolicyChanged();
 }
 
@@ -1667,10 +1683,13 @@ bool WorkspaceViewModel::readReceiptsEnabled() const {
 }
 
 void WorkspaceViewModel::setReadReceiptsEnabled(bool enabled) {
-    if (readReceiptsEnabled() == enabled) {
+    if (readReceiptsEnabled() == enabled && settings_.read_receipts_enabled == enabled) {
         return;
     }
-    (void)app_.bootstrap().messaging_manager().set_read_receipts_enabled(enabled);
+    settings_.read_receipts_enabled = enabled;
+    if (!persistCurrentSettings()) {
+        (void)app_.bootstrap().messaging_manager().set_read_receipts_enabled(enabled);
+    }
     emit readReceiptsEnabledChanged();
 }
 
@@ -1828,6 +1847,7 @@ void WorkspaceViewModel::selectConversation(const QString& conversationId) {
     emit conversationsChanged();
     emit contactsChanged();
     emit fileTransfersChanged();
+    emit privacySecuritySettingsChanged();
 }
 
 void WorkspaceViewModel::selectContact(const QString& peerUserId) {
@@ -2425,6 +2445,16 @@ void WorkspaceViewModel::resetForEmergencyWipe() {
     delivery_failure_simulated_ = false;
     local_prekey_count_ = 0;
     local_prekey_health_ = QStringLiteral("Cleared");
+    mfa_required_on_login_ = true;
+    hardware_key_enforced_ = true;
+    settings_ = domain::UserSettings{};
+    profile_ = domain::UserProfile{};
+    profile_sync_status_text_ = QStringLiteral("Cleared");
+    tls_last_inspected_info_.clear();
+    tls_pin_matches_ = true;
+    pending_recovery_mnemonic_.reset();
+    pending_recovery_challenge_indices_.clear();
+    syncUiThemeFromSettings();
     emit searchQueryChanged();
     emit conversationsChanged();
     emit contactsChanged();
@@ -2439,12 +2469,20 @@ void WorkspaceViewModel::resetForEmergencyWipe() {
     emit loadingMessagesChanged();
     emit deliveryFailureSimulatedChanged();
     emit pendingOutboxCountChanged();
+    emit profileSettingsChanged();
+    emit appearanceSettingsChanged();
+    emit networkSettingsChanged();
+    emit privacySecuritySettingsChanged();
+    emit mfaPolicyChanged();
+    emit readReceiptsEnabledChanged();
 }
 
 void WorkspaceViewModel::enterDecoyWorkspace() {
     resetForEmergencyWipe();
     local_prekey_health_ = QStringLiteral("Healthy");
+    profile_sync_status_text_ = QStringLiteral("Local Profile");
     emit localDeviceIdentityChanged();
+    emit profileSettingsChanged();
 }
 
 // -----------------------------------------------------------------------------
@@ -3104,6 +3142,523 @@ bool WorkspaceViewModel::acknowledgeEmergencyMessage(const QString& messageId) {
 
 void WorkspaceViewModel::clearSearchQuery() {
     setSearchQuery(QString());
+}
+
+void WorkspaceViewModel::setUiTheme(UiTheme* theme) noexcept {
+    ui_theme_ = theme;
+    syncUiThemeFromSettings();
+}
+
+QString WorkspaceViewModel::stripUrlScheme(const QString& urlOrHost) {
+    QString out = urlOrHost.trimmed();
+    if (out.startsWith(QStringLiteral("https://"), Qt::CaseInsensitive)) {
+        out = out.mid(8);
+    } else if (out.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive)) {
+        out = out.mid(7);
+    }
+    const qsizetype slashIdx = out.indexOf(QLatin1Char('/'));
+    if (slashIdx >= 0) {
+        out = out.left(slashIdx);
+    }
+    const qsizetype colonIdx = out.lastIndexOf(QLatin1Char(':'));
+    if (colonIdx > 0 && !out.startsWith(QLatin1Char('['))) {
+        out = out.left(colonIdx);
+    }
+    return out.trimmed();
+}
+
+void WorkspaceViewModel::syncUiThemeFromSettings() {
+    if (!ui_theme_) {
+        return;
+    }
+    ui_theme_->setThemeMode(settings_.theme_mode);
+    ui_theme_->setFontScale(settings_.font_scale);
+    ui_theme_->setHighContrastEnabled(settings_.high_contrast_enabled);
+}
+
+void WorkspaceViewModel::hydrateSettingsAndProfile() {
+    const auto persistedRow =
+        app_.bootstrap().local_store().get_user_settings(application::managers::SettingsManager::kDefaultSettingsKey);
+    if (persistedRow.is_ok() && persistedRow.value().has_value()) {
+        const auto loadRes = app_.bootstrap().settings_manager().load_settings();
+        if (loadRes.is_ok()) {
+            settings_ = loadRes.value();
+        } else {
+            settings_ = *persistedRow.value();
+        }
+    } else {
+        domain::UserSettings defaults{};
+        const auto& cfg = app_.bootstrap().config();
+        defaults.use_live_gateway_transport = cfg.use_live_gateway_transport;
+        const QString strippedHost = stripUrlScheme(QString::fromStdString(cfg.gateway_url));
+        if (!strippedHost.isEmpty()) {
+            defaults.tls.custom_gateway_host = strippedHost.toStdString();
+        }
+        defaults.tls.custom_gateway_port = (cfg.gateway_port > 0U) ? cfg.gateway_port : domain::kDefaultGatewayPort;
+        defaults.tls.pinned_spki_sha256_hex = domain::normalize_hex_lower(cfg.pinned_tls_spki_sha256);
+        defaults.tls.enforce_strict_pinning = cfg.enforce_tls_pinning;
+        defaults.proxy.type = cfg.proxy_type;
+        defaults.proxy.host = cfg.proxy_host;
+        defaults.proxy.port = cfg.proxy_port;
+        defaults.proxy.username = cfg.proxy_username;
+        defaults.read_receipts_enabled = app_.bootstrap().messaging_manager().read_receipts_enabled();
+        if (const auto preset = domain::disappearing_timer_preset_from_seconds(
+                app_.bootstrap().messaging_manager().default_disappearing_ttl_seconds());
+            preset.has_value()) {
+            defaults.default_disappearing_timer = *preset;
+        }
+        defaults.recovery_phrase_verified = app_.bootstrap().settings_manager().has_verified_recovery_phrase();
+        settings_ = defaults;
+    }
+
+    mfa_required_on_login_ = settings_.mfa_required_on_login;
+    hardware_key_enforced_ = settings_.hardware_key_enforced;
+
+    const domain::UserId selfUid = localUserId();
+    const auto localProfRes = app_.bootstrap().local_store().get_user_profile(selfUid);
+    if (localProfRes.is_ok() && localProfRes.value().has_value()) {
+        profile_ = *localProfRes.value();
+        profile_sync_status_text_ = QStringLiteral("Loaded Local Profile");
+    } else if (const auto cachedProf = app_.bootstrap().settings_manager().cached_profile();
+               cachedProf.has_value() && cachedProf->user_id == selfUid) {
+        profile_ = *cachedProf;
+        profile_sync_status_text_ = QStringLiteral("Loaded Local Profile");
+    } else {
+        profile_ = domain::UserProfile{};
+        profile_.user_id = selfUid;
+        profile_.display_name = selfUid.value();
+        profile_.allow_handle_discovery = true;
+        profile_sync_status_text_ = QStringLiteral("Local Profile");
+    }
+
+    syncUiThemeFromSettings();
+}
+
+bool WorkspaceViewModel::persistCurrentSettings() {
+    const auto saveRes = app_.bootstrap().settings_manager().save_settings(settings_);
+    if (saveRes.is_error()) {
+        emit workspaceError(QString::fromStdString(saveRes.error().user_message()));
+        return false;
+    }
+    settings_ = saveRes.value();
+    return true;
+}
+
+QString WorkspaceViewModel::profileDisplayName() const {
+    return QString::fromStdString(profile_.display_name);
+}
+
+QString WorkspaceViewModel::profileHandle() const {
+    return QString::fromStdString(profile_.public_handle);
+}
+
+QString WorkspaceViewModel::profileBio() const {
+    return QString::fromStdString(profile_.bio_status);
+}
+
+QString WorkspaceViewModel::profileAvatarFileId() const {
+    return QString::fromStdString(profile_.avatar_file_id);
+}
+
+QString WorkspaceViewModel::profileAvatarSha256() const {
+    return QString::fromStdString(profile_.avatar_sha256);
+}
+
+QString WorkspaceViewModel::gatewayHost() const {
+    if (!settings_.tls.custom_gateway_host.empty()) {
+        return QString::fromStdString(settings_.tls.custom_gateway_host);
+    }
+    return stripUrlScheme(QString::fromStdString(app_.bootstrap().config().gateway_url));
+}
+
+QString WorkspaceViewModel::proxyHost() const {
+    return QString::fromStdString(settings_.proxy.host);
+}
+
+QString WorkspaceViewModel::proxyUsername() const {
+    return QString::fromStdString(settings_.proxy.username);
+}
+
+bool WorkspaceViewModel::hasProxyPassword() const {
+    return app_.bootstrap().settings_manager().has_saved_proxy_password();
+}
+
+QString WorkspaceViewModel::tlsPinnedFingerprint() const {
+    return QString::fromStdString(settings_.tls.normalized_pin());
+}
+
+qint64 WorkspaceViewModel::defaultDisappearingTtlSeconds() const noexcept {
+    return static_cast<qint64>(settings_.default_disappearing_timer);
+}
+
+qint64 WorkspaceViewModel::activeConversationDisappearingTtlSeconds() const {
+    if (selected_conversation_id_.isEmpty()) {
+        return 0;
+    }
+    const auto convRes = app_.bootstrap().messaging_manager().get_conversation(
+        domain::ConversationId(selected_conversation_id_.toStdString()));
+    if (convRes.is_ok()) {
+        return convRes.value().disappearing_ttl_seconds();
+    }
+    if (const auto* conv = findConversation(selected_conversation_id_)) {
+        return conv->disappearingTtlSeconds;
+    }
+    return 0;
+}
+
+bool WorkspaceViewModel::recoveryPhraseVerified() const {
+    return app_.bootstrap().settings_manager().has_verified_recovery_phrase();
+}
+
+QString WorkspaceViewModel::recoveryPhraseStatusText() const {
+    if (recoveryPhraseVerified()) {
+        return QStringLiteral("Verified (Local Only)");
+    }
+    if (pending_recovery_mnemonic_.has_value()) {
+        return QStringLiteral("Awaiting 3-Word Confirmation");
+    }
+    return QStringLiteral("Not Backed Up");
+}
+
+QVariantList WorkspaceViewModel::pendingRecoveryChallengeIndices() const {
+    QVariantList out;
+    out.reserve(static_cast<qsizetype>(pending_recovery_challenge_indices_.size()));
+    for (const std::size_t idx : pending_recovery_challenge_indices_) {
+        out.append(static_cast<int>(idx));
+    }
+    return out;
+}
+
+bool WorkspaceViewModel::saveUserProfile(const QString& displayName, const QString& handle, const QString& bio,
+                                         bool allowDiscovery, bool syncToGateway) {
+    domain::UserProfile next = profile_;
+    next.user_id = localUserId();
+    QString cleanHandle = handle.trimmed();
+    if (cleanHandle.startsWith(QLatin1Char('@'))) {
+        cleanHandle = cleanHandle.mid(1);
+    }
+    next.public_handle = cleanHandle.toStdString();
+    next.display_name = displayName.trimmed().toStdString();
+    next.bio_status = bio.trimmed().toStdString();
+    next.allow_handle_discovery = allowDiscovery;
+    next.updated_at_ms = 0;
+
+    const auto res = app_.bootstrap().settings_manager().update_profile(std::move(next), syncToGateway);
+    if (res.is_error()) {
+        profile_sync_status_text_ = QStringLiteral("Save Failed");
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+        emit profileSettingsChanged();
+        return false;
+    }
+
+    profile_ = res.value().profile;
+    switch (res.value().sync_status) {
+    case application::interfaces::ProfileSyncStatus::Synced:
+        profile_sync_status_text_ = QStringLiteral("Synced with Gateway");
+        break;
+    case application::interfaces::ProfileSyncStatus::LocalOnlyServerUnsupported:
+        profile_sync_status_text_ = QStringLiteral("Saved Locally (Gateway Sync Pending Server Support)");
+        break;
+    case application::interfaces::ProfileSyncStatus::SyncDisabledByPrivacyPolicy:
+        profile_sync_status_text_ = QStringLiteral("Local Only (Discovery Disabled)");
+        break;
+    }
+
+    emit profileSettingsChanged();
+    return true;
+}
+
+bool WorkspaceViewModel::uploadAvatarImage(const QString& filePathOrUrl) {
+    const QString localPath = normalizeLocalPath(filePathOrUrl);
+    if (localPath.isEmpty()) {
+        emit workspaceError(QStringLiteral("Please select or enter a valid local image path (.png, .jpg, .webp)."));
+        return false;
+    }
+
+    const auto res = app_.bootstrap().settings_manager().upload_encrypted_avatar(localUserId(), localDeviceId(),
+                                                                                 localPath.toStdString());
+    if (res.is_error()) {
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+        return false;
+    }
+
+    profile_ = res.value();
+    profile_sync_status_text_ = QStringLiteral("Encrypted Avatar Uploaded Locally");
+    emit profileSettingsChanged();
+    return true;
+}
+
+bool WorkspaceViewModel::refreshUserProfile() {
+    const auto res = app_.bootstrap().settings_manager().load_profile(localUserId());
+    if (res.is_error()) {
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+        return false;
+    }
+
+    profile_ = res.value();
+    profile_sync_status_text_ = QStringLiteral("Refreshed Profile");
+    emit profileSettingsChanged();
+    return true;
+}
+
+bool WorkspaceViewModel::applyAndSaveAppearance(int themeMode, double fontScale, bool highContrast) {
+    const int clampedMode = (themeMode >= domain::kMinThemeMode && themeMode <= domain::kMaxThemeMode) ? themeMode : 1;
+    const double finiteScale = std::isfinite(fontScale) ? fontScale : 1.0;
+    const double clampedScale = std::clamp(finiteScale, domain::kMinFontScale, domain::kMaxFontScale);
+
+    settings_.theme_mode = clampedMode;
+    settings_.font_scale = clampedScale;
+    settings_.high_contrast_enabled = highContrast;
+
+    if (!persistCurrentSettings()) {
+        return false;
+    }
+
+    syncUiThemeFromSettings();
+    emit appearanceSettingsChanged();
+    return true;
+}
+
+bool WorkspaceViewModel::saveNetworkAndProxyConfig(bool useLiveTransport, const QString& gatewayHost, int gatewayPort,
+                                                   int proxyType, const QString& proxyHost, int proxyPort,
+                                                   const QString& proxyUsername, const QString& proxyPassword,
+                                                   bool clearProxyPassword, const QString& pinnedSpki,
+                                                   bool enforceStrictPinning) {
+    if (gatewayPort <= 0 || gatewayPort > 65535) {
+        emit workspaceError(QStringLiteral("Gateway port must be between 1 and 65535."));
+        return false;
+    }
+
+    domain::ProxyType mappedProxy = domain::ProxyType::None;
+    if (proxyType == 0) {
+        mappedProxy = domain::ProxyType::None;
+    } else if (proxyType == 1) {
+        mappedProxy = domain::ProxyType::Http;
+    } else if (proxyType == 2) {
+        mappedProxy = domain::ProxyType::Socks5;
+    } else {
+        emit workspaceError(QStringLiteral("Unsupported proxy type selection."));
+        return false;
+    }
+
+    domain::UserSettings next = settings_;
+    next.use_live_gateway_transport = useLiveTransport;
+    next.tls.custom_gateway_host = stripUrlScheme(gatewayHost).toStdString();
+    next.tls.custom_gateway_port = static_cast<uint16_t>(gatewayPort);
+    next.tls.pinned_spki_sha256_hex = pinnedSpki.trimmed().toStdString();
+    next.tls.enforce_strict_pinning = enforceStrictPinning;
+    next.proxy.type = mappedProxy;
+
+    if (mappedProxy == domain::ProxyType::None) {
+        next.proxy.host.clear();
+        next.proxy.port = 0U;
+        next.proxy.username.clear();
+    } else {
+        if (proxyPort <= 0 || proxyPort > 65535) {
+            emit workspaceError(QStringLiteral("Proxy port must be between 1 and 65535 when a proxy is enabled."));
+            return false;
+        }
+        next.proxy.host = stripUrlScheme(proxyHost).toStdString();
+        next.proxy.port = static_cast<uint16_t>(proxyPort);
+        next.proxy.username = proxyUsername.trimmed().toStdString();
+    }
+
+    std::optional<common::configuration::SecretString> pwOpt;
+    if (!clearProxyPassword && !proxyPassword.isEmpty()) {
+        pwOpt = common::configuration::SecretString(proxyPassword.toStdString());
+    }
+
+    const auto saveRes =
+        app_.bootstrap().settings_manager().save_settings(std::move(next), std::move(pwOpt), clearProxyPassword);
+    if (saveRes.is_error()) {
+        emit workspaceError(QString::fromStdString(saveRes.error().user_message()));
+        return false;
+    }
+
+    settings_ = saveRes.value();
+    const QString observedSpki = tls_last_inspected_info_.value(QStringLiteral("spkiSha256")).toString();
+    const QString savedPin = tlsPinnedFingerprint();
+    if (!observedSpki.isEmpty()) {
+        tls_pin_matches_ = savedPin.isEmpty() || (savedPin.compare(observedSpki, Qt::CaseInsensitive) == 0);
+        tls_last_inspected_info_.insert(QStringLiteral("hasPinnedKey"), !savedPin.isEmpty());
+        tls_last_inspected_info_.insert(QStringLiteral("matchesPinnedKey"), tls_pin_matches_);
+    } else {
+        tls_pin_matches_ = true;
+    }
+
+    emit networkSettingsChanged();
+    return true;
+}
+
+QVariantMap WorkspaceViewModel::inspectGatewayTlsFingerprint(const QString& host, int port, bool savePin) {
+    const QString effHost = host.trimmed().isEmpty() ? gatewayHost() : stripUrlScheme(host);
+    const uint16_t effPort =
+        (port > 0 && port <= 65535) ? static_cast<uint16_t>(port) : settings_.tls.custom_gateway_port;
+
+    const auto res = app_.bootstrap().settings_manager().inspect_and_optionally_pin_gateway_tls(effHost.toStdString(),
+                                                                                                effPort, savePin);
+    if (res.is_error()) {
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+        return QVariantMap{};
+    }
+
+    const auto& info = res.value();
+    QVariantMap out;
+    out.insert(QStringLiteral("host"), QString::fromStdString(info.host));
+    out.insert(QStringLiteral("port"), static_cast<int>(info.port));
+    out.insert(QStringLiteral("subjectCn"), QString::fromStdString(info.subject_cn));
+    out.insert(QStringLiteral("issuerCn"), QString::fromStdString(info.issuer_cn));
+    out.insert(QStringLiteral("spkiSha256"), QString::fromStdString(info.spki_sha256_hex));
+    out.insert(QStringLiteral("validFromMs"), static_cast<qint64>(info.valid_from_ms));
+    out.insert(QStringLiteral("validUntilMs"), static_cast<qint64>(info.valid_until_ms));
+    out.insert(QStringLiteral("hasPinnedKey"), info.has_pinned_key);
+    out.insert(QStringLiteral("matchesPinnedKey"), info.matches_pinned_key);
+
+    tls_last_inspected_info_ = out;
+    tls_pin_matches_ = info.matches_pinned_key;
+    if (savePin) {
+        settings_ = app_.bootstrap().settings_manager().current_settings();
+    }
+    emit networkSettingsChanged();
+    return out;
+}
+
+bool WorkspaceViewModel::setDefaultDisappearingTimer(qint64 ttlSeconds) {
+    const auto preset = domain::disappearing_timer_preset_from_seconds(ttlSeconds);
+    if (!preset.has_value()) {
+        emit workspaceError(QStringLiteral(
+            "Disappearing message default timer must be 0 (Off), 3600 (1h), 86400 (24h), or 604800 (7d)."));
+        return false;
+    }
+
+    settings_.default_disappearing_timer = *preset;
+    if (!persistCurrentSettings()) {
+        return false;
+    }
+    emit privacySecuritySettingsChanged();
+    return true;
+}
+
+bool WorkspaceViewModel::setConversationDisappearingTimer(const QString& conversationId, qint64 ttlSeconds) {
+    const QString cleanedId = conversationId.trimmed();
+    if (cleanedId.isEmpty() || ttlSeconds < 0) {
+        emit workspaceError(QStringLiteral("Valid conversation ID and non-negative timer TTL are required."));
+        return false;
+    }
+
+    const auto res = app_.bootstrap().messaging_manager().set_conversation_disappearing_timer(
+        domain::ConversationId(cleanedId.toStdString()), ttlSeconds);
+    if (res.is_error()) {
+        if (app_.bootstrap().config().database_path.empty()) {
+            if (auto* conv = findConversationMutable(cleanedId)) {
+                conv->disappearingTtlSeconds = ttlSeconds;
+                emit conversationsChanged();
+                emit selectedConversationChanged();
+                emit privacySecuritySettingsChanged();
+                return true;
+            }
+        }
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+        return false;
+    }
+
+    if (auto* conv = findConversationMutable(cleanedId)) {
+        conv->disappearingTtlSeconds = res.value().disappearing_ttl_seconds();
+    }
+    emit conversationsChanged();
+    emit selectedConversationChanged();
+    emit privacySecuritySettingsChanged();
+    return true;
+}
+
+QVariantMap WorkspaceViewModel::generateRecoveryPhraseWords(bool use24Words) {
+    const auto length =
+        use24Words ? domain::crypto::RecoveryPhraseLength::Words24 : domain::crypto::RecoveryPhraseLength::Words12;
+    const auto res = app_.bootstrap().settings_manager().generate_recovery_phrase(length);
+    if (res.is_error()) {
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+        return QVariantMap{};
+    }
+
+    pending_recovery_mnemonic_ = res.value().mnemonic;
+    pending_recovery_challenge_indices_ = res.value().challenge.word_indices;
+
+    const QStringList words = QString::fromStdString(res.value().mnemonic.expose_unredacted_secret())
+                                  .split(QLatin1Char(' '), Qt::SkipEmptyParts);
+    QVariantList zeroIndices;
+    QVariantList oneBasedPositions;
+    zeroIndices.reserve(static_cast<qsizetype>(pending_recovery_challenge_indices_.size()));
+    oneBasedPositions.reserve(static_cast<qsizetype>(pending_recovery_challenge_indices_.size()));
+    for (const std::size_t idx : pending_recovery_challenge_indices_) {
+        zeroIndices.append(static_cast<int>(idx));
+        oneBasedPositions.append(static_cast<int>(idx + 1U));
+    }
+
+    emit privacySecuritySettingsChanged();
+
+    QVariantMap out;
+    out.insert(QStringLiteral("words"), words);
+    out.insert(QStringLiteral("wordCount"), words.size());
+    out.insert(QStringLiteral("challengeIndices"), zeroIndices);
+    out.insert(QStringLiteral("challengePositions"), oneBasedPositions);
+    return out;
+}
+
+bool WorkspaceViewModel::confirmRecoveryPhraseChallenge(const QVariantList& wordIndices,
+                                                        const QVariantList& userWords) {
+    if (!pending_recovery_mnemonic_.has_value()) {
+        emit workspaceError(QStringLiteral("No pending recovery phrase session. Generate a recovery phrase first."));
+        return false;
+    }
+    if (wordIndices.isEmpty() || wordIndices.size() != userWords.size()) {
+        emit workspaceError(QStringLiteral("Complete all recovery phrase spot-check words before confirming."));
+        return false;
+    }
+
+    std::vector<std::pair<std::size_t, std::string>> answers;
+    answers.reserve(static_cast<std::size_t>(wordIndices.size()));
+    for (qsizetype i = 0; i < wordIndices.size(); ++i) {
+        const int idx = wordIndices[i].toInt();
+        if (idx < 0) {
+            emit workspaceError(QStringLiteral("Invalid recovery word challenge index."));
+            return false;
+        }
+        answers.emplace_back(static_cast<std::size_t>(idx), userWords[i].toString().trimmed().toLower().toStdString());
+    }
+
+    const auto res =
+        app_.bootstrap().settings_manager().confirm_recovery_phrase_backup(*pending_recovery_mnemonic_, answers);
+    if (res.is_error()) {
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+        return false;
+    }
+
+    pending_recovery_mnemonic_.reset();
+    pending_recovery_challenge_indices_.clear();
+    settings_ = app_.bootstrap().settings_manager().current_settings();
+    emit privacySecuritySettingsChanged();
+    return true;
+}
+
+bool WorkspaceViewModel::verifyRecoveryPhraseInput(const QString& wordsText) {
+    const QString normalized = wordsText.simplified().toLower();
+    if (normalized.isEmpty()) {
+        emit workspaceError(QStringLiteral("Enter a BIP-39 recovery phrase to verify."));
+        return false;
+    }
+    const common::configuration::SecretString candidate(normalized.toStdString());
+    const auto res = app_.bootstrap().settings_manager().verify_existing_recovery_phrase(candidate);
+    if (res.is_error()) {
+        emit workspaceError(QString::fromStdString(res.error().user_message()));
+        return false;
+    }
+    return res.value();
+}
+
+void WorkspaceViewModel::clearPendingRecoveryPhrase() {
+    pending_recovery_mnemonic_.reset();
+    pending_recovery_challenge_indices_.clear();
+    emit privacySecuritySettingsChanged();
 }
 
 } // namespace securecloud::client::ui

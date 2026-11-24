@@ -1,13 +1,18 @@
 #pragma once
 
 #include "application/client_application.hpp"
+#include "domain/user_profile.hpp"
+#include "domain/user_settings.hpp"
+#include "securecloud/configuration/secret_string.hpp"
 #include "ui/navigation_controller.hpp"
 
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <QVariantList>
 #include <QVariantMap>
 #include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace securecloud::client::domain {
@@ -16,6 +21,8 @@ struct RealtimeEvent;
 } // namespace securecloud::client::domain
 
 namespace securecloud::client::ui {
+
+class UiTheme;
 
 /**
  * @brief Authoritative C++ presentation coordinator for the 4-zone authenticated Workspace.
@@ -101,6 +108,44 @@ class WorkspaceViewModel : public QObject {
     Q_PROPERTY(bool hardwareKeyEnforced READ hardwareKeyEnforced WRITE setHardwareKeyEnforced NOTIFY mfaPolicyChanged)
     Q_PROPERTY(QString totpEnrollmentSecret READ totpEnrollmentSecret NOTIFY mfaPolicyChanged)
 
+    // User Profile & Discovery Privacy Bindings (CLIENT-014-T06)
+    Q_PROPERTY(QString profileDisplayName READ profileDisplayName NOTIFY profileSettingsChanged)
+    Q_PROPERTY(QString profileHandle READ profileHandle NOTIFY profileSettingsChanged)
+    Q_PROPERTY(QString profileBio READ profileBio NOTIFY profileSettingsChanged)
+    Q_PROPERTY(QString profileAvatarFileId READ profileAvatarFileId NOTIFY profileSettingsChanged)
+    Q_PROPERTY(QString profileAvatarSha256 READ profileAvatarSha256 NOTIFY profileSettingsChanged)
+    Q_PROPERTY(bool profileAllowDiscovery READ profileAllowDiscovery NOTIFY profileSettingsChanged)
+    Q_PROPERTY(QString profileSyncStatusText READ profileSyncStatusText NOTIFY profileSettingsChanged)
+
+    // Appearance & Accessibility Bindings (CLIENT-014-T06)
+    Q_PROPERTY(int themeMode READ themeMode NOTIFY appearanceSettingsChanged)
+    Q_PROPERTY(double fontScale READ fontScale NOTIFY appearanceSettingsChanged)
+    Q_PROPERTY(bool highContrastEnabled READ highContrastEnabled NOTIFY appearanceSettingsChanged)
+
+    // Network, Proxy & TLS Pinning Bindings (CLIENT-014-T06)
+    Q_PROPERTY(bool useLiveGatewayTransport READ useLiveGatewayTransport NOTIFY networkSettingsChanged)
+    Q_PROPERTY(QString gatewayHost READ gatewayHost NOTIFY networkSettingsChanged)
+    Q_PROPERTY(int gatewayPort READ gatewayPort NOTIFY networkSettingsChanged)
+    Q_PROPERTY(int proxyType READ proxyType NOTIFY networkSettingsChanged)
+    Q_PROPERTY(QString proxyHost READ proxyHost NOTIFY networkSettingsChanged)
+    Q_PROPERTY(int proxyPort READ proxyPort NOTIFY networkSettingsChanged)
+    Q_PROPERTY(QString proxyUsername READ proxyUsername NOTIFY networkSettingsChanged)
+    Q_PROPERTY(bool hasProxyPassword READ hasProxyPassword NOTIFY networkSettingsChanged)
+    Q_PROPERTY(QString tlsPinnedFingerprint READ tlsPinnedFingerprint NOTIFY networkSettingsChanged)
+    Q_PROPERTY(bool tlsEnforceStrictPinning READ tlsEnforceStrictPinning NOTIFY networkSettingsChanged)
+    Q_PROPERTY(QVariantMap tlsLastInspectedInfo READ tlsLastInspectedInfo NOTIFY networkSettingsChanged)
+    Q_PROPERTY(bool tlsPinMatches READ tlsPinMatches NOTIFY networkSettingsChanged)
+
+    // Disappearing Timers & Endpoint-Only BIP-39 Recovery Bindings (CLIENT-014-T06)
+    Q_PROPERTY(
+        qint64 defaultDisappearingTtlSeconds READ defaultDisappearingTtlSeconds NOTIFY privacySecuritySettingsChanged)
+    Q_PROPERTY(qint64 activeConversationDisappearingTtlSeconds READ activeConversationDisappearingTtlSeconds NOTIFY
+                   privacySecuritySettingsChanged)
+    Q_PROPERTY(bool recoveryPhraseVerified READ recoveryPhraseVerified NOTIFY privacySecuritySettingsChanged)
+    Q_PROPERTY(QString recoveryPhraseStatusText READ recoveryPhraseStatusText NOTIFY privacySecuritySettingsChanged)
+    Q_PROPERTY(QVariantList pendingRecoveryChallengeIndices READ pendingRecoveryChallengeIndices NOTIFY
+                   privacySecuritySettingsChanged)
+
   public:
     WorkspaceViewModel(application::ClientApplication& app, NavigationController& nav_controller,
                        QObject* parent = nullptr);
@@ -183,6 +228,40 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] QString totpEnrollmentSecret() const { return totp_enrollment_secret_; }
     [[nodiscard]] Q_INVOKABLE QVariantMap hardwareAttestationInfo() const;
 
+    void setUiTheme(UiTheme* theme) noexcept;
+
+    // Profile, Appearance, Network, Disappearing Timer & Recovery Getters (CLIENT-014-T06)
+    [[nodiscard]] QString profileDisplayName() const;
+    [[nodiscard]] QString profileHandle() const;
+    [[nodiscard]] QString profileBio() const;
+    [[nodiscard]] QString profileAvatarFileId() const;
+    [[nodiscard]] QString profileAvatarSha256() const;
+    [[nodiscard]] bool profileAllowDiscovery() const noexcept { return profile_.allow_handle_discovery; }
+    [[nodiscard]] QString profileSyncStatusText() const { return profile_sync_status_text_; }
+
+    [[nodiscard]] int themeMode() const noexcept { return settings_.theme_mode; }
+    [[nodiscard]] double fontScale() const noexcept { return settings_.font_scale; }
+    [[nodiscard]] bool highContrastEnabled() const noexcept { return settings_.high_contrast_enabled; }
+
+    [[nodiscard]] bool useLiveGatewayTransport() const noexcept { return settings_.use_live_gateway_transport; }
+    [[nodiscard]] QString gatewayHost() const;
+    [[nodiscard]] int gatewayPort() const noexcept { return static_cast<int>(settings_.tls.custom_gateway_port); }
+    [[nodiscard]] int proxyType() const noexcept { return static_cast<int>(settings_.proxy.type); }
+    [[nodiscard]] QString proxyHost() const;
+    [[nodiscard]] int proxyPort() const noexcept { return static_cast<int>(settings_.proxy.port); }
+    [[nodiscard]] QString proxyUsername() const;
+    [[nodiscard]] bool hasProxyPassword() const;
+    [[nodiscard]] QString tlsPinnedFingerprint() const;
+    [[nodiscard]] bool tlsEnforceStrictPinning() const noexcept { return settings_.tls.enforce_strict_pinning; }
+    [[nodiscard]] QVariantMap tlsLastInspectedInfo() const { return tls_last_inspected_info_; }
+    [[nodiscard]] bool tlsPinMatches() const noexcept { return tls_pin_matches_; }
+
+    [[nodiscard]] qint64 defaultDisappearingTtlSeconds() const noexcept;
+    [[nodiscard]] qint64 activeConversationDisappearingTtlSeconds() const;
+    [[nodiscard]] bool recoveryPhraseVerified() const;
+    [[nodiscard]] QString recoveryPhraseStatusText() const;
+    [[nodiscard]] QVariantList pendingRecoveryChallengeIndices() const;
+
     // Existing Invokables
     Q_INVOKABLE void selectConversation(const QString& conversationId);
     Q_INVOKABLE void selectContact(const QString& peerUserId);
@@ -241,6 +320,26 @@ class WorkspaceViewModel : public QObject {
     Q_INVOKABLE void setSimulatedOfflineMode(bool offline);
     Q_INVOKABLE bool triggerCatchUpSync();
 
+    // Settings, Profile, Accessibility, Proxy/TLS & Endpoint BIP-39 Invokables (CLIENT-014-T06)
+    Q_INVOKABLE bool saveUserProfile(const QString& displayName, const QString& handle, const QString& bio,
+                                     bool allowDiscovery, bool syncToGateway = true);
+    Q_INVOKABLE bool uploadAvatarImage(const QString& filePathOrUrl);
+    Q_INVOKABLE bool refreshUserProfile();
+    Q_INVOKABLE bool applyAndSaveAppearance(int themeMode, double fontScale, bool highContrast);
+    Q_INVOKABLE bool saveNetworkAndProxyConfig(bool useLiveTransport, const QString& gatewayHost, int gatewayPort,
+                                               int proxyType, const QString& proxyHost, int proxyPort,
+                                               const QString& proxyUsername, const QString& proxyPassword,
+                                               bool clearProxyPassword, const QString& pinnedSpki,
+                                               bool enforceStrictPinning);
+    Q_INVOKABLE QVariantMap inspectGatewayTlsFingerprint(const QString& host = QString(), int port = 0,
+                                                         bool savePin = false);
+    Q_INVOKABLE bool setDefaultDisappearingTimer(qint64 ttlSeconds);
+    Q_INVOKABLE bool setConversationDisappearingTimer(const QString& conversationId, qint64 ttlSeconds);
+    Q_INVOKABLE QVariantMap generateRecoveryPhraseWords(bool use24Words = false);
+    Q_INVOKABLE bool confirmRecoveryPhraseChallenge(const QVariantList& wordIndices, const QVariantList& userWords);
+    Q_INVOKABLE bool verifyRecoveryPhraseInput(const QString& wordsText);
+    Q_INVOKABLE void clearPendingRecoveryPhrase();
+
   signals:
     void activeSectionChanged();
     void searchQueryChanged();
@@ -260,6 +359,10 @@ class WorkspaceViewModel : public QObject {
     void readReceiptsEnabledChanged();
     void connectivityStateChanged();
     void pendingOutboxCountChanged();
+    void profileSettingsChanged();
+    void appearanceSettingsChanged();
+    void networkSettingsChanged();
+    void privacySecuritySettingsChanged();
     void workspaceError(const QString& message);
 
   private:
@@ -282,6 +385,7 @@ class WorkspaceViewModel : public QObject {
         int authorizedDeviceCount{1};
         QString verificationStatus{QStringLiteral("Verified")};
         int senderKeyEpoch{1};
+        qint64 disappearingTtlSeconds{0};
     };
 
     struct MessageEntry {
@@ -346,6 +450,10 @@ class WorkspaceViewModel : public QObject {
 
     void seedDefaultWorkspaceData();
     void hydrateFromLocalStore();
+    void hydrateSettingsAndProfile();
+    void syncUiThemeFromSettings();
+    bool persistCurrentSettings();
+    [[nodiscard]] static QString stripUrlScheme(const QString& urlOrHost);
     void handleRealtimeEvent(const domain::RealtimeEvent& event);
     void applyFileTransferUpdate(const domain::FileTransferRecord& record);
     [[nodiscard]] FileTransferEntry buildTransferEntry(const domain::FileTransferRecord& record) const;
@@ -390,6 +498,15 @@ class WorkspaceViewModel : public QObject {
     std::vector<MessageEntry> messages_;
     std::vector<FileTransferEntry> file_transfers_;
     std::vector<DeviceEntry> devices_;
+
+    QPointer<UiTheme> ui_theme_;
+    domain::UserSettings settings_{};
+    domain::UserProfile profile_{};
+    QString profile_sync_status_text_{QStringLiteral("Local Profile")};
+    QVariantMap tls_last_inspected_info_{};
+    bool tls_pin_matches_{true};
+    std::optional<common::configuration::SecretString> pending_recovery_mnemonic_;
+    std::vector<std::size_t> pending_recovery_challenge_indices_;
 };
 
 } // namespace securecloud::client::ui

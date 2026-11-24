@@ -75,6 +75,7 @@ int main(int argc, char* argv[]) {
     securecloud::client::ui::UiTheme uiTheme;
     securecloud::client::ui::WindowStateManager windowStateManager;
     appViewModel.setWorkspaceViewModel(&workspaceViewModel);
+    workspaceViewModel.setUiTheme(&uiTheme);
 
     QObject::connect(&appViewModel, &securecloud::client::ui::AppViewModel::emergencyWipedChanged, &workspaceViewModel,
                      [&appViewModel, &workspaceViewModel]() {
