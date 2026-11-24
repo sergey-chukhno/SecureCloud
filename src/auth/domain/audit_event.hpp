@@ -101,6 +101,7 @@ struct AuditEvent {
     std::string credential_identifier{};
     std::optional<Uuid> device_id{std::nullopt};
     std::optional<Uuid> session_id{std::nullopt};
+    std::string correlation_id{};
     std::string client_ip{"unknown"};
     std::string failure_reason{};
 

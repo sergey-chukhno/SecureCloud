@@ -164,6 +164,39 @@ MessagingConfig MessagingConfig::load(const common::configuration::Configuration
                      config.shutdown_grace_period_ms, out_errors, k_min_shutdown_grace_ms, k_max_shutdown_grace_ms);
     }
 
+    if (auto enabled = source.get("SECURECLOUD_MESSAGING_AUDIT_RELAY_ENABLED"); enabled.has_value()) {
+        if (auto parsed = common::configuration::ConfigParser::parse_bool("SECURECLOUD_MESSAGING_AUDIT_RELAY_ENABLED",
+                                                                          *enabled, out_errors)) {
+            config.audit.relay_enabled = *parsed;
+        }
+    }
+
+    auto parse_audit_string = [&](std::string_view key, std::string& target, bool allow_empty = false) {
+        if (auto value = source.get(key); value.has_value()) {
+            if (auto parsed = common::configuration::ConfigParser::parse_string(key, *value, out_errors, allow_empty)) {
+                target = *parsed;
+            }
+        }
+    };
+    parse_audit_string("SECURECLOUD_MESSAGING_AUDIT_ENDPOINT", config.audit.endpoint);
+    parse_audit_string("SECURECLOUD_MESSAGING_AUDIT_PEER_SAN", config.audit.expected_peer_san);
+    parse_audit_string("SECURECLOUD_MESSAGING_AUDIT_INSTANCE_ID", config.audit.producer_instance);
+
+    auto parse_audit_uint = [&](std::string_view key, uint32_t& target, uint32_t min_value, uint32_t max_value) {
+        if (auto value = source.get(key); value.has_value()) {
+            parse_uint32(key, *value, target, out_errors, min_value, max_value);
+        }
+    };
+    parse_audit_uint("SECURECLOUD_MESSAGING_AUDIT_WORKER_THREADS", config.audit.worker_threads, 1, 32);
+    parse_audit_uint("SECURECLOUD_MESSAGING_AUDIT_BATCH_SIZE", config.audit.batch_size, 1, 100);
+    parse_audit_uint("SECURECLOUD_MESSAGING_AUDIT_MAX_RETRIES", config.audit.max_retries, 1, 100);
+    parse_audit_uint("SECURECLOUD_MESSAGING_AUDIT_ACTIVE_POLL_INTERVAL_MS", config.audit.active_poll_interval_ms, 10,
+                     60000);
+    parse_audit_uint("SECURECLOUD_MESSAGING_AUDIT_IDLE_POLL_INTERVAL_MS", config.audit.idle_poll_interval_ms, 10,
+                     60000);
+    parse_audit_uint("SECURECLOUD_MESSAGING_AUDIT_LEASE_DURATION_SEC", config.audit.lease_duration_sec, 1, 3600);
+    parse_audit_uint("SECURECLOUD_MESSAGING_AUDIT_RPC_TIMEOUT_MS", config.audit.rpc_timeout_ms, 50, 60000);
+
     // Keep direct compatibility fields in sync
     config.scylla_host = config.scylla.host;
     config.scylla_port = config.scylla.port;

@@ -30,6 +30,22 @@ struct WorkerPoolConfig {
     uint32_t max_queued_syncs{1024};       // [16, 65536]
 };
 
+/// Central Audit producer configuration. Audit connectivity is deliberately optional at startup;
+/// the durable outbox relay retries independently after Messaging becomes available.
+struct MessagingAuditConfig {
+    bool relay_enabled{true};
+    std::string endpoint{"audit:50055"};
+    std::string expected_peer_san{"audit"};
+    std::string producer_instance{"messaging-1"};
+    uint32_t worker_threads{4};
+    uint32_t batch_size{100};
+    uint32_t max_retries{5};
+    uint32_t active_poll_interval_ms{50};
+    uint32_t idle_poll_interval_ms{500};
+    uint32_t lease_duration_sec{30};
+    uint32_t rpc_timeout_ms{5000};
+};
+
 /// Typed configuration model for Messaging service.
 /// Holds common service settings, ScyllaDB cluster configuration, and worker concurrency limits.
 /// Strictly excludes Auth/Files/Audit database credentials.
@@ -37,6 +53,7 @@ struct MessagingConfig {
     common::configuration::CommonServiceConfig common;
     ScyllaConfig scylla;
     WorkerPoolConfig workers;
+    MessagingAuditConfig audit;
     uint32_t shutdown_grace_period_ms{10000};
 
     // Direct compatibility fields matching earlier prototype call sites

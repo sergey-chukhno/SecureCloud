@@ -185,7 +185,10 @@ domain::AuthOutboxEntity OutboxEventMapper::to_outbox_entity(const domain::Audit
         metadata["failure_reason"] = safe_failure_reason;
     }
 
-    const std::string correlation_id = event.session_id.has_value() ? event.session_id->to_string() : eid.to_string();
+    const std::string correlation_id =
+        !event.correlation_id.empty()
+            ? event.correlation_id
+            : (event.session_id.has_value() ? event.session_id->to_string() : eid.to_string());
 
     nlohmann::json payload = {
         {"event_id", eid.to_string()},      {"occurred_at_ms", occurred_ms},

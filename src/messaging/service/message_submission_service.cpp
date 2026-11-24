@@ -57,7 +57,7 @@ void stage_submission_audit_events(repository::IMessagingAuditOutboxRepository* 
             .actor_device_id = cmd.sender_device_id,
             .target_resource = message_id.to_string(),
             .payload_json = meta.dump(),
-            .correlation_id = {},
+            .correlation_id = cmd.correlation_id,
         };
         audit::stage_canonical_audit_event(audit_repo, submitted_event, routing_key);
     }
@@ -82,7 +82,7 @@ void stage_submission_audit_events(repository::IMessagingAuditOutboxRepository* 
                 .actor_device_id = cmd.sender_device_id,
                 .target_resource = routing_key,
                 .payload_json = emergency_meta.dump(),
-                .correlation_id = {},
+                .correlation_id = cmd.correlation_id,
             };
             audit::stage_canonical_audit_event(audit_repo, emergency_event, routing_key);
         }
@@ -132,7 +132,7 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
             .actor_device_id = cmd.sender_device_id,
             .target_resource = cmd.conversation_id.to_string(),
             .payload_json = R"({"action":"SUBMIT_MESSAGE","reason":"NOT_AN_ACTIVE_MEMBER"})",
-            .correlation_id = {},
+            .correlation_id = cmd.correlation_id,
         };
         audit::stage_canonical_audit_event(audit_repo_.get(), denied_event, cmd.conversation_id.to_string());
 

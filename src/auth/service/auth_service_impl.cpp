@@ -8,6 +8,23 @@
 
 namespace securecloud::auth::service {
 
+void AuthServiceImpl::publish_audit_event(const ::grpc::ServerContext* context, domain::AuditEvent event) const {
+    if (!audit_publisher_) {
+        return;
+    }
+    if (context) {
+        const auto& metadata = context->client_metadata();
+        const auto it = metadata.find("x-correlation-id");
+        if (it != metadata.end()) {
+            const std::string candidate(it->second.data(), it->second.length());
+            if (domain::Uuid::from_string(candidate)) {
+                event.correlation_id = candidate;
+            }
+        }
+    }
+    audit_publisher_->publish(event);
+}
+
 // Temporary stub class definitions to satisfy std::unique_ptr<T> requirements
 // until full controller/manager implementations are added in future tickets.
 class AuthenticationController {};
@@ -164,9 +181,9 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
     auto id_res = domain::CredentialIdentifier::create(request->credential_identifier());
     if (!id_res.has_value()) {
         if (audit_publisher_) {
-            audit_publisher_->publish(domain::AuditEvent::login_failed(request->credential_identifier(),
-                                                                       "Invalid credential identifier format",
-                                                                       std::nullopt, std::nullopt, client_ip));
+            publish_audit_event(context, domain::AuditEvent::login_failed(request->credential_identifier(),
+                                                                          "Invalid credential identifier format",
+                                                                          std::nullopt, std::nullopt, client_ip));
         }
         auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid credential identifier format");
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -177,8 +194,9 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
     auto pass_res = domain::PasswordCredential::create(request->password());
     if (!pass_res.has_value()) {
         if (audit_publisher_) {
-            audit_publisher_->publish(domain::AuditEvent::login_failed(
-                id_res->value(), "Invalid password format or length", std::nullopt, std::nullopt, client_ip));
+            publish_audit_event(context,
+                                domain::AuditEvent::login_failed(id_res->value(), "Invalid password format or length",
+                                                                 std::nullopt, std::nullopt, client_ip));
         }
         auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid password format or length");
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -189,8 +207,8 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
     auto dev_id_res = domain::Uuid::from_string(request->device_id());
     if (!dev_id_res.has_value()) {
         if (audit_publisher_) {
-            audit_publisher_->publish(domain::AuditEvent::login_failed(id_res->value(), "Invalid device UUID format",
-                                                                       std::nullopt, std::nullopt, client_ip));
+            publish_audit_event(context, domain::AuditEvent::login_failed(id_res->value(), "Invalid device UUID format",
+                                                                          std::nullopt, std::nullopt, client_ip));
         }
         auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format");
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -202,8 +220,8 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
     auto auth_result = credential_verifier_->verify(*id_res, *pass_res);
     if (auth_result.status == domain::AuthenticationStatus::InvalidCredentials) {
         if (audit_publisher_) {
-            audit_publisher_->publish(domain::AuditEvent::login_failed(id_res->value(), "Invalid credentials",
-                                                                       std::nullopt, *dev_id_res, client_ip));
+            publish_audit_event(context, domain::AuditEvent::login_failed(id_res->value(), "Invalid credentials",
+                                                                          std::nullopt, *dev_id_res, client_ip));
         }
         auto status = ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED, "Invalid credentials");
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -215,8 +233,8 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
         std::optional<domain::Uuid> uid =
             auth_result.user.has_value() ? std::make_optional(auth_result.user->user_id) : std::nullopt;
         if (audit_publisher_) {
-            audit_publisher_->publish(domain::AuditEvent::account_disabled_attempt(
-                uid, id_res->value(), "Account is disabled", *dev_id_res, client_ip));
+            publish_audit_event(context, domain::AuditEvent::account_disabled_attempt(
+                                             uid, id_res->value(), "Account is disabled", *dev_id_res, client_ip));
         }
         auto status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, "Account is disabled");
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -236,8 +254,9 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
     auto session_result = session_manager_->establish_session(user, *dev_id_res);
     if (session_result.status == SessionEstablishmentStatus::DeviceNotFound) {
         if (audit_publisher_) {
-            audit_publisher_->publish(domain::AuditEvent::login_failed(
-                id_res->value(), "Device not found or not registered to user", user.user_id, *dev_id_res, client_ip));
+            publish_audit_event(context, domain::AuditEvent::login_failed(id_res->value(),
+                                                                          "Device not found or not registered to user",
+                                                                          user.user_id, *dev_id_res, client_ip));
         }
         auto status = ::grpc::Status(::grpc::StatusCode::NOT_FOUND, "Device not found or not registered to user");
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -247,8 +266,8 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
 
     if (session_result.status == SessionEstablishmentStatus::DeviceRevoked) {
         if (audit_publisher_) {
-            audit_publisher_->publish(domain::AuditEvent::login_failed(id_res->value(), "Device is revoked",
-                                                                       user.user_id, *dev_id_res, client_ip));
+            publish_audit_event(context, domain::AuditEvent::login_failed(id_res->value(), "Device is revoked",
+                                                                          user.user_id, *dev_id_res, client_ip));
         }
         auto status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, "Device is revoked");
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -266,8 +285,8 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
     // 4. Success Response and Audit Emission
     const auto& session = session_result.session.value();
     if (audit_publisher_) {
-        audit_publisher_->publish(domain::AuditEvent::login_succeeded(user.user_id, id_res->value(), *dev_id_res,
-                                                                      session.session_id, client_ip));
+        publish_audit_event(context, domain::AuditEvent::login_succeeded(user.user_id, id_res->value(), *dev_id_res,
+                                                                         session.session_id, client_ip));
     }
 
     // Check if MFA is enabled for this user

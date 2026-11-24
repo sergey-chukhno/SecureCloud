@@ -65,6 +65,22 @@ TEST_F(CanonicalAuditMapperTest, MapsValidRecordWithJsonPayloadCorrectly) {
     EXPECT_EQ(metadata.at("is_encrypted"), "true");
 }
 
+TEST_F(CanonicalAuditMapperTest, PreservesValidCorrelationAndFallsBackToEventUuid) {
+    auto record = create_base_record();
+    const std::string correlation_json = R"({"correlation_id":"018d0000-0000-7000-8000-000000000002"})";
+    record.payload_proto_bin.assign(correlation_json.begin(), correlation_json.end());
+
+    auto result = map_outbox_record_to_canonical_proto(record, "messaging-test-1");
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->correlation_id(), "018d0000-0000-7000-8000-000000000002");
+    EXPECT_EQ(result->producer_instance(), "messaging-test-1");
+
+    record.payload_proto_bin.clear();
+    result = map_outbox_record_to_canonical_proto(record);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result->correlation_id(), record.event_id);
+}
+
 TEST_F(CanonicalAuditMapperTest, ReturnsNulloptOnMalformedJson) {
     auto record = create_base_record();
     std::string bad_json = "{ malformed_json: ";
