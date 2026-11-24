@@ -19,6 +19,8 @@ if(Qt6_FOUND)
         domain/pairing_challenge_payload.cpp
         domain/device.cpp
         domain/user.cpp
+        domain/user_profile.cpp
+        domain/user_settings.cpp
         domain/contact.cpp
         domain/directory_user_entry.cpp
         domain/conversation.cpp

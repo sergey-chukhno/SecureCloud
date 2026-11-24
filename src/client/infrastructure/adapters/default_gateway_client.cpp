@@ -29,7 +29,8 @@ int64_t current_unix_ms() noexcept {
 
 } // namespace
 
-DefaultGatewayClient::DefaultGatewayClient(const application::ClientConfig& config) {
+DefaultGatewayClient::DefaultGatewayClient(const application::ClientConfig& config)
+    : pinned_tls_spki_sha256_(domain::normalize_hex_lower(config.pinned_tls_spki_sha256)) {
     std::ostringstream oss;
     oss << config.gateway_url << ":" << config.gateway_port;
     endpoint_ = oss.str();
@@ -1135,6 +1136,139 @@ std::vector<uint8_t> DefaultGatewayClient::stored_file_raw_bytes(std::string_vie
         combined.insert(combined.end(), chunk.begin(), chunk.end());
     }
     return combined;
+}
+
+application::ClientResult<domain::UserProfile> DefaultGatewayClient::get_user_profile(const domain::UserId& user_id) {
+    if (simulate_failure_) {
+        return application::ClientResult<domain::UserProfile>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (user_id.empty()) {
+        return application::ClientResult<domain::UserProfile>::error(
+            application::ClientError::validation("User ID cannot be empty"));
+    }
+
+    std::lock_guard<std::mutex> lock(profile_tls_mutex_);
+    if (const auto it = simulated_user_profiles_.find(user_id); it != simulated_user_profiles_.end()) {
+        return application::ClientResult<domain::UserProfile>::ok(it->second);
+    }
+
+    domain::UserProfile profile;
+    profile.user_id = user_id;
+    profile.display_name = "SecureCloud User";
+    profile.allow_handle_discovery = true;
+    profile.updated_at_ms = current_unix_ms();
+    return application::ClientResult<domain::UserProfile>::ok(std::move(profile));
+}
+
+application::ClientResult<application::interfaces::UserProfileSyncResult>
+DefaultGatewayClient::update_user_profile(const domain::UserProfile& public_profile) {
+    if (simulate_failure_) {
+        return application::ClientResult<application::interfaces::UserProfileSyncResult>::error(
+            application::ClientError::network(failure_message_));
+    }
+    const auto errors = public_profile.validate();
+    if (!errors.empty()) {
+        return application::ClientResult<application::interfaces::UserProfileSyncResult>::error(
+            application::ClientError::validation(errors.front()));
+    }
+
+    if (!public_profile.allow_handle_discovery) {
+        application::interfaces::UserProfileSyncResult res;
+        res.profile = public_profile;
+        res.sync_status = application::interfaces::ProfileSyncStatus::SyncDisabledByPrivacyPolicy;
+        return application::ClientResult<application::interfaces::UserProfileSyncResult>::ok(std::move(res));
+    }
+
+    std::lock_guard<std::mutex> lock(profile_tls_mutex_);
+    ++profile_update_call_count_;
+
+    if (simulate_profile_sync_unsupported_) {
+        application::interfaces::UserProfileSyncResult res;
+        res.profile = public_profile;
+        res.sync_status = application::interfaces::ProfileSyncStatus::LocalOnlyServerUnsupported;
+        return application::ClientResult<application::interfaces::UserProfileSyncResult>::ok(std::move(res));
+    }
+
+    domain::UserProfile stored = public_profile;
+    stored.avatar_sha256 = domain::normalize_hex_lower(stored.avatar_sha256);
+    if (stored.updated_at_ms == 0) {
+        stored.updated_at_ms = current_unix_ms();
+    }
+    simulated_user_profiles_[stored.user_id] = stored;
+
+    application::interfaces::UserProfileSyncResult res;
+    res.profile = std::move(stored);
+    res.sync_status = application::interfaces::ProfileSyncStatus::Synced;
+    return application::ClientResult<application::interfaces::UserProfileSyncResult>::ok(std::move(res));
+}
+
+application::ClientResult<application::interfaces::TlsCertificateInfo>
+DefaultGatewayClient::inspect_tls_certificate(std::string_view host, uint16_t port) {
+    if (simulate_failure_) {
+        return application::ClientResult<application::interfaces::TlsCertificateInfo>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (host.empty()) {
+        return application::ClientResult<application::interfaces::TlsCertificateInfo>::error(
+            application::ClientError::validation("TLS inspection host cannot be empty"));
+    }
+    if (port == 0U) {
+        return application::ClientResult<application::interfaces::TlsCertificateInfo>::error(
+            application::ClientError::validation("TLS inspection port must be non-zero"));
+    }
+
+    std::lock_guard<std::mutex> lock(profile_tls_mutex_);
+    application::interfaces::TlsCertificateInfo info;
+    if (simulated_tls_cert_.has_value()) {
+        info = *simulated_tls_cert_;
+        if (info.host.empty()) {
+            info.host = std::string(host);
+        }
+        if (info.port == 0U) {
+            info.port = port;
+        }
+    } else {
+        const int64_t now_ms = current_unix_ms();
+        info.host = std::string(host);
+        info.port = port;
+        info.subject_cn = std::string(host);
+        info.issuer_cn = "SecureCloud Local Dev CA";
+        info.spki_sha256_hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        info.valid_from_ms = now_ms - 86400000LL;
+        info.valid_until_ms = now_ms + 31536000000LL;
+    }
+
+    info.spki_sha256_hex = domain::normalize_hex_lower(info.spki_sha256_hex);
+    info.has_pinned_key = !pinned_tls_spki_sha256_.empty();
+    info.matches_pinned_key = !info.has_pinned_key || (info.spki_sha256_hex == pinned_tls_spki_sha256_);
+    return application::ClientResult<application::interfaces::TlsCertificateInfo>::ok(std::move(info));
+}
+
+void DefaultGatewayClient::set_simulated_user_profile(domain::UserProfile profile) {
+    std::lock_guard<std::mutex> lock(profile_tls_mutex_);
+    const domain::UserId uid = profile.user_id;
+    simulated_user_profiles_[uid] = std::move(profile);
+}
+
+void DefaultGatewayClient::set_simulated_profile_sync_unsupported(bool unsupported) {
+    std::lock_guard<std::mutex> lock(profile_tls_mutex_);
+    simulate_profile_sync_unsupported_ = unsupported;
+}
+
+void DefaultGatewayClient::set_simulated_tls_certificate(application::interfaces::TlsCertificateInfo cert_info) {
+    std::lock_guard<std::mutex> lock(profile_tls_mutex_);
+    simulated_tls_cert_ = std::move(cert_info);
+}
+
+void DefaultGatewayClient::set_pinned_tls_spki_sha256(std::string spki_sha256_hex) {
+    std::lock_guard<std::mutex> lock(profile_tls_mutex_);
+    pinned_tls_spki_sha256_ = domain::normalize_hex_lower(spki_sha256_hex);
+}
+
+std::size_t DefaultGatewayClient::profile_update_call_count() const {
+    std::lock_guard<std::mutex> lock(profile_tls_mutex_);
+    return profile_update_call_count_;
 }
 
 } // namespace securecloud::client::infrastructure::adapters

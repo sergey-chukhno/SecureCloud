@@ -104,6 +104,14 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
 
     application::ClientResult<void> delete_file(std::string_view file_id) override;
 
+    application::ClientResult<domain::UserProfile> get_user_profile(const domain::UserId& user_id) override;
+
+    application::ClientResult<application::interfaces::UserProfileSyncResult>
+    update_user_profile(const domain::UserProfile& public_profile) override;
+
+    application::ClientResult<application::interfaces::TlsCertificateInfo>
+    inspect_tls_certificate(std::string_view host, uint16_t port) override;
+
     // Test Hooks for deterministic simulation
     void set_simulated_inventory_status(domain::PrekeyInventoryStatus status);
     void set_simulated_registration_status(domain::DeviceAuthorizationStatus status, std::string pairing_code = "");
@@ -148,6 +156,13 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     [[nodiscard]] std::size_t uploaded_chunk_call_count(std::string_view file_id) const;
     [[nodiscard]] bool has_stored_file(std::string_view file_id) const;
     [[nodiscard]] std::vector<uint8_t> stored_file_raw_bytes(std::string_view file_id) const;
+
+    // Profile Sync & TLS Pin Inspection simulation hooks (CLIENT-014)
+    void set_simulated_user_profile(domain::UserProfile profile);
+    void set_simulated_profile_sync_unsupported(bool unsupported);
+    void set_simulated_tls_certificate(application::interfaces::TlsCertificateInfo cert_info);
+    void set_pinned_tls_spki_sha256(std::string spki_sha256_hex);
+    [[nodiscard]] std::size_t profile_update_call_count() const;
 
   private:
     std::string endpoint_;
@@ -221,6 +236,13 @@ class DefaultGatewayClient final : public application::interfaces::IGatewayClien
     std::unordered_map<std::string, SimulatedUploadSession> simulated_upload_sessions_;
     std::unordered_map<std::string, SimulatedStoredFile> simulated_stored_files_;
     std::unordered_map<std::string, std::size_t> uploaded_chunk_call_counts_;
+
+    mutable std::mutex profile_tls_mutex_;
+    std::string pinned_tls_spki_sha256_;
+    bool simulate_profile_sync_unsupported_{false};
+    std::size_t profile_update_call_count_{0U};
+    std::unordered_map<domain::UserId, domain::UserProfile> simulated_user_profiles_;
+    std::optional<application::interfaces::TlsCertificateInfo> simulated_tls_cert_;
 };
 
 } // namespace securecloud::client::infrastructure::adapters
