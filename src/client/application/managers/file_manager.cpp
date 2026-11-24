@@ -439,7 +439,11 @@ ClientResult<FileUploadResult> FileManager::execute_upload_loop(domain::FileTran
                 record.status = domain::FileTransferStatus::Paused;
                 record.error_message.clear();
                 (void)persist_and_notify(record);
-                return ClientResult<FileUploadResult>::ok(FileUploadResult{.record = std::move(record)});
+                return ClientResult<FileUploadResult>::ok(FileUploadResult{
+                    .record = std::move(record),
+                    .key_envelope = std::nullopt,
+                    .dispatched_message = std::nullopt,
+                });
             }
         }
 
@@ -501,7 +505,11 @@ ClientResult<FileUploadResult> FileManager::execute_upload_loop(domain::FileTran
         record.status = domain::FileTransferStatus::Paused;
         record.error_message.clear();
         (void)persist_and_notify(record);
-        return ClientResult<FileUploadResult>::ok(FileUploadResult{.record = std::move(record)});
+        return ClientResult<FileUploadResult>::ok(FileUploadResult{
+            .record = std::move(record),
+            .key_envelope = std::nullopt,
+            .dispatched_message = std::nullopt,
+        });
     }
 
     const auto pt_sha_res = plaintext_hasher.finalize_hex();
