@@ -55,6 +55,8 @@ if(Qt6_FOUND)
         infrastructure/gateway_adapter_stub.cpp
         infrastructure/client_logger.cpp
         infrastructure/adapters/default_gateway_client.cpp
+        infrastructure/adapters/qt_http_gateway_client.cpp
+        infrastructure/adapters/switchable_gateway_client.cpp
         infrastructure/adapters/memory_local_store.cpp
         infrastructure/adapters/sqlcipher_local_store.cpp
         infrastructure/adapters/file_shredder.cpp

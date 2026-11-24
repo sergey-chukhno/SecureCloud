@@ -108,15 +108,22 @@ ClientResult<domain::UserSettings> SettingsManager::load_settings() {
     }
 
     MessagingManager* msg_mgr = nullptr;
+    NetworkConfigReloadCallback reload_cb;
+    ClientConfig config_snapshot;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         apply_settings_to_runtime_locked(settings);
         msg_mgr = messaging_manager_;
+        reload_cb = network_reload_callback_;
+        config_snapshot = config_;
     }
 
     if (msg_mgr != nullptr) {
         (void)msg_mgr->set_read_receipts_enabled(settings.read_receipts_enabled);
         msg_mgr->set_default_disappearing_ttl_seconds(static_cast<int64_t>(settings.default_disappearing_timer));
+    }
+    if (reload_cb) {
+        reload_cb(config_snapshot);
     }
 
     return ClientResult<domain::UserSettings>::ok(std::move(settings));

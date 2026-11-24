@@ -3791,6 +3791,7 @@ if(Qt6_FOUND)
         client/settings_and_expiry_persistence_test.cpp
         client/recovery_phrase_engine_test.cpp
         client/settings_manager_pipeline_test.cpp
+        client/qt_http_gateway_client_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

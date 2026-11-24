@@ -28,6 +28,10 @@ class DevicePairingCoordinator;
 class SafetyNumberEngine;
 } // namespace securecloud::client::application::managers
 
+namespace securecloud::client::infrastructure::adapters {
+class SwitchableGatewayClient;
+} // namespace securecloud::client::infrastructure::adapters
+
 namespace securecloud::client::application {
 
 class ClientBootstrap {
@@ -48,7 +52,8 @@ class ClientBootstrap {
 
     [[nodiscard]] const ClientConfig& config() const noexcept { return config_; }
 
-    [[nodiscard]] interfaces::IGatewayClient& gateway() noexcept { return *gateway_; }
+    [[nodiscard]] interfaces::IGatewayClient& gateway() noexcept;
+    [[nodiscard]] bool is_live_gateway_transport_active() const noexcept;
     [[nodiscard]] interfaces::ILocalStore& local_store() noexcept { return *local_store_; }
     [[nodiscard]] interfaces::ISecureStorage& secure_storage() noexcept { return *secure_storage_; }
     [[nodiscard]] interfaces::ICryptoProvider& crypto_provider() noexcept { return *crypto_provider_; }
@@ -82,12 +87,13 @@ class ClientBootstrap {
 
     ClientConfig config_;
 
-    // Adapters (instantiated first)
-    std::unique_ptr<interfaces::IGatewayClient> gateway_;
-    std::unique_ptr<interfaces::ILocalStore> local_store_;
+    // Adapters (instantiated first; declared so secure_storage_ & crypto_provider_ outlive local_store_ & gateway_)
     std::unique_ptr<interfaces::ISecureStorage> secure_storage_;
     std::unique_ptr<interfaces::ICryptoProvider> crypto_provider_;
     std::unique_ptr<interfaces::IHardwareAuthenticator> hardware_authenticator_;
+    std::unique_ptr<interfaces::ILocalStore> local_store_;
+    std::unique_ptr<interfaces::IGatewayClient> gateway_;
+    infrastructure::adapters::SwitchableGatewayClient* switchable_gateway_{nullptr};
 
     // Managers (instantiated second, destroyed first)
     std::unique_ptr<managers::AuthManager> auth_manager_;
