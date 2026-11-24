@@ -199,6 +199,15 @@ class AckingAndCountingGateway final : public IGatewayClient {
         return inner_->download_file_chunk(file_id, chunk_index);
     }
     ClientResult<void> delete_file(std::string_view file_id) override { return inner_->delete_file(file_id); }
+    ClientResult<UserProfile> get_user_profile(const UserId& user_id) override {
+        return inner_->get_user_profile(user_id);
+    }
+    ClientResult<UserProfileSyncResult> update_user_profile(const UserProfile& public_profile) override {
+        return inner_->update_user_profile(public_profile);
+    }
+    ClientResult<TlsCertificateInfo> inspect_tls_certificate(std::string_view host, uint16_t port) override {
+        return inner_->inspect_tls_certificate(host, port);
+    }
 
   private:
     std::shared_ptr<DefaultGatewayClient> inner_;
@@ -365,7 +374,7 @@ TEST_F(EmergencyPanicWipeIntegrationTest, Scenario1_Sub500MsForensicWipeAcrossAc
     EXPECT_LT(report.duration_ms, 500);
     EXPECT_GE(report.secrets_purged_count, 5U);
     EXPECT_GE(report.files_shredded_count, 4U);
-    EXPECT_EQ(report.volatile_caches_cleared, 5U);
+    EXPECT_EQ(report.volatile_caches_cleared, 6U);
 
     EXPECT_FALSE(bootstrap.auth_manager().is_authenticated());
     EXPECT_EQ(bootstrap.ratchet_session_manager()->active_session_count(), 0U);

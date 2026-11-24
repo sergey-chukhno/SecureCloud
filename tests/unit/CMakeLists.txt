@@ -3787,6 +3787,13 @@ if(Qt6_FOUND)
         client/duress_pin_and_decoy_test.cpp
         client/workspace_view_model_emergency_test.cpp
         client/emergency_panic_wipe_integration_test.cpp
+        client/user_settings_and_profile_domain_test.cpp
+        client/settings_and_expiry_persistence_test.cpp
+        client/recovery_phrase_engine_test.cpp
+        client/settings_manager_pipeline_test.cpp
+        client/qt_http_gateway_client_test.cpp
+        client/workspace_view_model_settings_test.cpp
+        client/settings_and_profile_integration_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES
@@ -3807,6 +3814,7 @@ if(Qt6_FOUND)
         Qt6::Gui
         Qt6::Qml
         Qt6::Quick
+        Qt6::QuickControls2
         Qt6::Test
         GTest::gtest
     )

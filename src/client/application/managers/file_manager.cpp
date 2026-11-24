@@ -211,7 +211,7 @@ ClientResult<FileUploadResult> FileManager::start_upload(const FileUploadRequest
     }
 
     // ADR-008 pre-flight guard before encrypting or transferring any chunks
-    if (messaging_manager_ != nullptr) {
+    if (messaging_manager_ != nullptr && !(request.is_profile_asset && !request.dispatch_key_envelope)) {
         const auto elig_res =
             messaging_manager_->check_conversation_send_eligibility(request.conversation_id, effective_owner_user);
         if (elig_res.is_error()) {

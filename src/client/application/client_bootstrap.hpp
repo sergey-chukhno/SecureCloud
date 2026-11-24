@@ -11,6 +11,7 @@
 #include "application/managers/emergency_manager.hpp"
 #include "application/managers/file_manager.hpp"
 #include "application/managers/messaging_manager.hpp"
+#include "application/managers/settings_manager.hpp"
 #include "application/managers/sync_manager.hpp"
 #include "domain/device_id.hpp"
 #include "domain/user_id.hpp"
@@ -26,6 +27,10 @@ class RatchetSessionManager;
 class DevicePairingCoordinator;
 class SafetyNumberEngine;
 } // namespace securecloud::client::application::managers
+
+namespace securecloud::client::infrastructure::adapters {
+class SwitchableGatewayClient;
+} // namespace securecloud::client::infrastructure::adapters
 
 namespace securecloud::client::application {
 
@@ -47,7 +52,8 @@ class ClientBootstrap {
 
     [[nodiscard]] const ClientConfig& config() const noexcept { return config_; }
 
-    [[nodiscard]] interfaces::IGatewayClient& gateway() noexcept { return *gateway_; }
+    [[nodiscard]] interfaces::IGatewayClient& gateway() noexcept;
+    [[nodiscard]] bool is_live_gateway_transport_active() const noexcept;
     [[nodiscard]] interfaces::ILocalStore& local_store() noexcept { return *local_store_; }
     [[nodiscard]] interfaces::ISecureStorage& secure_storage() noexcept { return *secure_storage_; }
     [[nodiscard]] interfaces::ICryptoProvider& crypto_provider() noexcept { return *crypto_provider_; }
@@ -65,6 +71,7 @@ class ClientBootstrap {
     }
     [[nodiscard]] managers::FileManager& file_manager() noexcept { return *file_manager_; }
     [[nodiscard]] managers::EmergencyManager& emergency_manager() noexcept { return *emergency_manager_; }
+    [[nodiscard]] managers::SettingsManager& settings_manager() noexcept { return *settings_manager_; }
     [[nodiscard]] managers::SyncManager& sync_manager() noexcept { return *sync_manager_; }
     [[nodiscard]] managers::RatchetSessionManager* ratchet_session_manager() noexcept {
         return ratchet_session_manager_.get();
@@ -80,12 +87,13 @@ class ClientBootstrap {
 
     ClientConfig config_;
 
-    // Adapters (instantiated first)
-    std::unique_ptr<interfaces::IGatewayClient> gateway_;
-    std::unique_ptr<interfaces::ILocalStore> local_store_;
+    // Adapters (instantiated first; declared so secure_storage_ & crypto_provider_ outlive local_store_ & gateway_)
     std::unique_ptr<interfaces::ISecureStorage> secure_storage_;
     std::unique_ptr<interfaces::ICryptoProvider> crypto_provider_;
     std::unique_ptr<interfaces::IHardwareAuthenticator> hardware_authenticator_;
+    std::unique_ptr<interfaces::ILocalStore> local_store_;
+    std::unique_ptr<interfaces::IGatewayClient> gateway_;
+    infrastructure::adapters::SwitchableGatewayClient* switchable_gateway_{nullptr};
 
     // Managers (instantiated second, destroyed first)
     std::unique_ptr<managers::AuthManager> auth_manager_;
@@ -97,6 +105,7 @@ class ClientBootstrap {
     std::unique_ptr<managers::SafetyNumberEngine> safety_number_engine_;
     std::unique_ptr<managers::FileManager> file_manager_;
     std::unique_ptr<managers::EmergencyManager> emergency_manager_;
+    std::unique_ptr<managers::SettingsManager> settings_manager_;
     std::unique_ptr<managers::SyncManager> sync_manager_;
 };
 

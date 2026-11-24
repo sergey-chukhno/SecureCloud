@@ -181,6 +181,15 @@ class SharedGatewayAdapter final : public IGatewayClient {
         return inner_->download_file_chunk(file_id, chunk_index);
     }
     ClientResult<void> delete_file(std::string_view file_id) override { return inner_->delete_file(file_id); }
+    ClientResult<UserProfile> get_user_profile(const UserId& user_id) override {
+        return inner_->get_user_profile(user_id);
+    }
+    ClientResult<UserProfileSyncResult> update_user_profile(const UserProfile& public_profile) override {
+        return inner_->update_user_profile(public_profile);
+    }
+    ClientResult<TlsCertificateInfo> inspect_tls_certificate(std::string_view host, uint16_t port) override {
+        return inner_->inspect_tls_certificate(host, port);
+    }
 
   private:
     std::shared_ptr<DefaultGatewayClient> inner_;

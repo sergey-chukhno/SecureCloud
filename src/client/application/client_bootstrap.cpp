@@ -10,14 +10,14 @@
 #include "infrastructure/adapters/simulated_hardware_authenticator.hpp"
 #include "infrastructure/adapters/sqlcipher_local_store.hpp"
 #include "infrastructure/adapters/stub_crypto_provider.hpp"
+#include "infrastructure/adapters/switchable_gateway_client.hpp"
 
 #include <stdexcept>
 
 namespace securecloud::client::application {
 
 ClientBootstrap::ClientBootstrap(ClientConfig config)
-    : config_(std::move(config)), gateway_(std::make_unique<infrastructure::adapters::DefaultGatewayClient>(config_)),
-      secure_storage_(std::make_unique<infrastructure::adapters::MemorySecureStorage>()),
+    : config_(std::move(config)), secure_storage_(std::make_unique<infrastructure::adapters::MemorySecureStorage>()),
       hardware_authenticator_(std::make_unique<infrastructure::adapters::SimulatedHardwareAuthenticator>()) {
     if (!config_.database_path.empty()) {
         crypto_provider_ = std::make_unique<infrastructure::adapters::OpenSslCryptoProvider>();
@@ -32,7 +32,35 @@ ClientBootstrap::ClientBootstrap(ClientConfig config)
         crypto_provider_ = std::make_unique<infrastructure::adapters::StubCryptoProvider>();
         local_store_ = std::make_unique<infrastructure::adapters::MemoryLocalStore>();
     }
+
+    auto switchable = std::make_unique<infrastructure::adapters::SwitchableGatewayClient>(
+        config_, [storage = secure_storage_.get()]() -> std::optional<common::configuration::SecretString> {
+            if (storage == nullptr) {
+                return std::nullopt;
+            }
+            const auto res = storage->get_secret("session_auth_token");
+            if (res.is_ok()) {
+                return res.value();
+            }
+            return std::nullopt;
+        });
+    switchable_gateway_ = switchable.get();
+    gateway_ = std::move(switchable);
     wire_managers();
+}
+
+interfaces::IGatewayClient& ClientBootstrap::gateway() noexcept {
+    if (switchable_gateway_ != nullptr) {
+        return switchable_gateway_->active_gateway();
+    }
+    return *gateway_;
+}
+
+bool ClientBootstrap::is_live_gateway_transport_active() const noexcept {
+    if (switchable_gateway_ != nullptr) {
+        return switchable_gateway_->is_live_transport_active();
+    }
+    return config_.use_live_gateway_transport;
 }
 
 ClientBootstrap::~ClientBootstrap() = default;
@@ -69,6 +97,8 @@ void ClientBootstrap::wire_managers() {
     file_manager_ = std::make_unique<managers::FileManager>(*gateway_, *crypto_provider_, local_store_.get(),
                                                             secure_storage_.get(), messaging_manager_.get());
     emergency_manager_ = std::make_unique<managers::EmergencyManager>(*local_store_, *secure_storage_);
+    settings_manager_ = std::make_unique<managers::SettingsManager>(*local_store_, *secure_storage_, *gateway_, config_,
+                                                                    file_manager_.get(), messaging_manager_.get());
     sync_manager_ = std::make_unique<managers::SyncManager>(*gateway_, config_);
     sync_manager_->set_local_store(local_store_.get());
     sync_manager_->set_messaging_manager(messaging_manager_.get());
@@ -79,7 +109,14 @@ void ClientBootstrap::wire_managers() {
     emergency_manager_->set_file_manager(file_manager_.get());
     emergency_manager_->set_sync_manager(sync_manager_.get());
     emergency_manager_->set_auth_manager(auth_manager_.get());
+    emergency_manager_->set_settings_manager(settings_manager_.get());
     auth_manager_->set_emergency_manager(emergency_manager_.get());
+    if (switchable_gateway_ != nullptr) {
+        settings_manager_->set_network_config_reload_callback(
+            [switchable = switchable_gateway_](const ClientConfig& updated_config) {
+                switchable->reconfigure(updated_config);
+            });
+    }
 }
 
 void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& user_id,

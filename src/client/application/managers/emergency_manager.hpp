@@ -24,6 +24,7 @@ class AuthManager;
 class FileManager;
 class MessagingManager;
 class RatchetSessionManager;
+class SettingsManager;
 class SyncManager;
 
 class EmergencyManager {
@@ -44,6 +45,7 @@ class EmergencyManager {
     void set_file_manager(FileManager* file_manager) noexcept;
     void set_sync_manager(SyncManager* sync_manager) noexcept;
     void set_auth_manager(AuthManager* auth_manager) noexcept;
+    void set_settings_manager(SettingsManager* settings_manager) noexcept;
 
     // Additional filesystem artifacts to shred alongside SQLCipher vault & disk logs
     void register_shred_artifact_path(const std::filesystem::path& path);
@@ -100,6 +102,7 @@ class EmergencyManager {
     FileManager* file_manager_{nullptr};
     SyncManager* sync_manager_{nullptr};
     AuthManager* auth_manager_{nullptr};
+    SettingsManager* settings_manager_{nullptr};
 
     std::atomic<bool> is_wiped_{false};
     mutable std::mutex mutex_;

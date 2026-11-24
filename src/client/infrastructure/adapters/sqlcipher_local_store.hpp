@@ -67,6 +67,17 @@ class SqlCipherLocalStore final : public application::interfaces::ILocalStore {
     application::ClientResult<std::vector<domain::SyncCursorRecord>>
     list_sync_cursors(const domain::DeviceId& device_id) override;
 
+    application::ClientResult<void> save_user_profile(const domain::UserProfile& profile) override;
+    application::ClientResult<std::optional<domain::UserProfile>>
+    get_user_profile(const domain::UserId& user_id) override;
+
+    application::ClientResult<void> save_user_settings(std::string_view profile_key,
+                                                       const domain::UserSettings& settings) override;
+    application::ClientResult<std::optional<domain::UserSettings>>
+    get_user_settings(std::string_view profile_key) override;
+
+    application::ClientResult<std::size_t> delete_expired_messages(int64_t now_ms) override;
+
     [[nodiscard]] bool is_open() const noexcept;
 
   private:
@@ -74,6 +85,7 @@ class SqlCipherLocalStore final : public application::interfaces::ILocalStore {
     application::ClientResult<void> exec_delete_for_conversation_locked(const char* sql,
                                                                         const domain::ConversationId& id);
     application::ClientResult<void> initialize_schema_locked();
+    application::ClientResult<void> migrate_messages_expires_at_locked();
     void close_locked() noexcept;
 
     application::interfaces::ISecureStorage& secure_storage_;

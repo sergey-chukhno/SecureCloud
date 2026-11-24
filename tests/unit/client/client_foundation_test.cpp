@@ -4,6 +4,7 @@
 #include "ui/ui_controller.hpp"
 
 #include <QGuiApplication>
+#include <QQuickStyle>
 #include <QSignalSpy>
 #include <gtest/gtest.h>
 
@@ -104,6 +105,7 @@ TEST(ClientUiTest, UiControllerSignalAndPropertyBindings) {
 
 int main(int argc, char** argv) {
     QGuiApplication app(argc, argv);
+    QQuickStyle::setStyle(QStringLiteral("Basic"));
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

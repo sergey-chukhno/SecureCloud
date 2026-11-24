@@ -45,6 +45,10 @@ class Message {
     [[nodiscard]] const std::string& attachment_hash() const noexcept { return attachment_hash_; }
     [[nodiscard]] uint64_t server_sequence_number() const noexcept { return server_sequence_number_; }
     [[nodiscard]] std::optional<uint64_t> sender_key_epoch() const noexcept { return sender_key_epoch_; }
+    [[nodiscard]] int64_t expires_at_ms() const noexcept { return expires_at_ms_; }
+    [[nodiscard]] bool is_expired(int64_t now_ms) const noexcept {
+        return expires_at_ms_ > 0 && now_ms >= expires_at_ms_;
+    }
 
     void set_delivery_state(DeliveryState state) noexcept { delivery_state_ = state; }
     void set_encrypted_envelope_ref(std::string envelope_ref) { encrypted_envelope_ref_ = std::move(envelope_ref); }
@@ -60,6 +64,7 @@ class Message {
     }
     void set_server_sequence_number(uint64_t seq) noexcept { server_sequence_number_ = seq; }
     void set_sender_key_epoch(std::optional<uint64_t> epoch) noexcept { sender_key_epoch_ = epoch; }
+    void set_expires_at_ms(int64_t expires_at_ms) noexcept { expires_at_ms_ = expires_at_ms > 0 ? expires_at_ms : 0; }
 
     [[nodiscard]] std::string to_json() const;
     static std::optional<Message> from_json(std::string_view json_str);
@@ -84,6 +89,7 @@ class Message {
     std::string attachment_hash_;
     uint64_t server_sequence_number_{0};
     std::optional<uint64_t> sender_key_epoch_{std::nullopt};
+    int64_t expires_at_ms_{0};
 };
 
 } // namespace securecloud::client::domain
