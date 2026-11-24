@@ -21,6 +21,7 @@
 #include <chrono>
 #include <gtest/gtest.h>
 #include <memory>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
 #include <vector>
@@ -156,13 +157,16 @@ TEST_F(FilesLifecycleIntegrationTest, TC1_FullLifecycleProgressionAndOutbox) {
     ASSERT_TRUE(meta.has_value());
     EXPECT_EQ(meta->file.status, FileStatus::Created);
 
-    // Verify outbox contains FILE_CREATED event
+    // Verify outbox contains canonical file.created event with correlation metadata
     {
         pqxx::work tx;
         auto pending = outbox_repo_->fetch_pending_events(10, tx);
         ASSERT_FALSE(pending.empty());
-        EXPECT_EQ(pending[0].event_type, "FILE_CREATED");
+        EXPECT_EQ(pending[0].event_type, "file.created");
         EXPECT_EQ(pending[0].aggregate_id, file_id);
+        const auto payload = nlohmann::json::parse(pending[0].payload_json);
+        EXPECT_EQ(payload.value("actor_id", ""), user_id);
+        EXPECT_FALSE(payload.value("correlation_id", "").empty());
     }
 
     // 2. Transition CREATED -> UPLOADING
@@ -186,13 +190,13 @@ TEST_F(FilesLifecycleIntegrationTest, TC1_FullLifecycleProgressionAndOutbox) {
     ASSERT_TRUE(meta.has_value());
     EXPECT_EQ(meta->file.status, FileStatus::Available);
 
-    // Verify outbox contains FILE_AVAILABLE event
+    // Verify outbox contains canonical file.upload.completed event
     {
         pqxx::work tx;
         auto pending = outbox_repo_->fetch_pending_events(10, tx);
         bool found_available = false;
         for (const auto& ev : pending) {
-            if (ev.aggregate_id == file_id && ev.event_type == "FILE_AVAILABLE") {
+            if (ev.aggregate_id == file_id && ev.event_type == "file.upload.completed") {
                 found_available = true;
                 break;
             }
@@ -356,13 +360,13 @@ TEST_F(FilesLifecycleIntegrationTest, TC4_ExpirationWorkflow) {
     ASSERT_TRUE(meta.has_value());
     EXPECT_EQ(meta->file.status, FileStatus::Expired);
 
-    // Check that FILE_EXPIRED event was written to outbox
+    // Check that canonical file.expired event was written to outbox
     {
         pqxx::work tx;
         auto pending = outbox_repo_->fetch_pending_events(10, tx);
         bool found_expired = false;
         for (const auto& ev : pending) {
-            if (ev.aggregate_id == file_id && ev.event_type == "FILE_EXPIRED") {
+            if (ev.aggregate_id == file_id && ev.event_type == "file.expired") {
                 found_expired = true;
                 break;
             }

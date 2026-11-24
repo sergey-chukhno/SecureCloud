@@ -225,7 +225,7 @@ received_at = Audit Service ingestion time
 
 `event_type` identifies what happened.
 
-The MVP uses canonical hierarchical string values.
+The MVP uses canonical hierarchical string values matching `^[a-z0-9_]+(\.[a-z0-9_]+)+$`.
 
 Examples:
 
@@ -259,9 +259,22 @@ conversation.membership.changed
 message.submitted
 message.delivery.failed
 
+file.created
+file.version.created
+file.upload.initiated
 file.upload.completed
-file.available
+file.upload.cancelled
+file.upload.expired
+file.chunk.integrity_failed
+file.finalization.failed
+file.download.initiated
+file.access.granted
+file.access.revoked
+file.access.denied
+file.capability.issued
+file.capability.rejected
 file.deleted
+file.expired
 
 emergency.activated
 emergency.action.executed
@@ -270,6 +283,7 @@ emergency.action.executed
 Event types are part of the internal Audit Service contract.
 
 They must not be renamed without explicitly updating producers and consumers.
+
 ---
 
 # 5.9 Severity

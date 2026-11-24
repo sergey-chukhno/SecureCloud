@@ -5,6 +5,7 @@
 #include <charconv>
 #include <cstdio>
 #include <iomanip>
+#include <optional>
 #include <sstream>
 
 namespace securecloud::files::db {
@@ -45,6 +46,18 @@ int hex_char_to_val(char c) {
     if (c >= 'A' && c <= 'F')
         return c - 'A' + 10;
     return -1;
+}
+
+std::optional<std::string> find_optional_string(const pqxx::row& r, const char* name) noexcept {
+    try {
+        const auto& col = r[name];
+        if (col.is_null()) {
+            return std::nullopt;
+        }
+        return col.as<std::string>();
+    } catch (...) {
+        return std::nullopt;
+    }
 }
 
 } // namespace
@@ -193,6 +206,8 @@ std::string to_string(OutboxStatus status) {
         return "PUBLISHED";
     case OutboxStatus::Failed:
         return "FAILED";
+    case OutboxStatus::Quarantined:
+        return "QUARANTINED";
     }
     throw InvalidEnumException("Unknown OutboxStatus enum value: " + std::to_string(static_cast<int>(status)));
 }
@@ -204,7 +219,35 @@ OutboxStatus outbox_status_from_string(std::string_view str) {
         return OutboxStatus::Published;
     if (str == "FAILED")
         return OutboxStatus::Failed;
+    if (str == "QUARANTINED")
+        return OutboxStatus::Quarantined;
     throw InvalidEnumException("Invalid OutboxStatus string: " + std::string(str));
+}
+
+std::string to_string(OutboxSeverity severity) {
+    switch (severity) {
+    case OutboxSeverity::Info:
+        return "INFO";
+    case OutboxSeverity::Warning:
+        return "WARNING";
+    case OutboxSeverity::Security:
+        return "SECURITY";
+    case OutboxSeverity::Critical:
+        return "CRITICAL";
+    }
+    throw InvalidEnumException("Unknown OutboxSeverity enum value: " + std::to_string(static_cast<int>(severity)));
+}
+
+OutboxSeverity outbox_severity_from_string(std::string_view str) {
+    if (str == "INFO")
+        return OutboxSeverity::Info;
+    if (str == "WARNING")
+        return OutboxSeverity::Warning;
+    if (str == "SECURITY")
+        return OutboxSeverity::Security;
+    if (str == "CRITICAL")
+        return OutboxSeverity::Critical;
+    throw InvalidEnumException("Invalid OutboxSeverity string: " + std::string(str));
 }
 
 // --- Timestamp Conversions ---
@@ -249,17 +292,12 @@ std::chrono::system_clock::time_point from_iso8601(std::string_view str) {
         throw TimestampParseException("Empty timestamp string");
     }
 
-    // Expected format: YYYY-MM-DD[T ]HH:MM:SS[.ffffff][Z|(+|-)HH[:MM]]
     if (str.size() < 19) {
         throw TimestampParseException("Timestamp string too short: " + std::string(str));
     }
 
-    int year = 0;
-    unsigned month = 0;
-    unsigned day = 0;
-    int hour = 0;
-    int minute = 0;
-    int second = 0;
+    int year = 0, hour = 0, minute = 0, second = 0;
+    unsigned month = 0, day = 0;
 
     auto parse_int = [](std::string_view s) -> int {
         int val = 0;
@@ -304,7 +342,6 @@ std::chrono::system_clock::time_point from_iso8601(std::string_view str) {
     size_t pos = 19;
     int64_t microsec = 0;
 
-    // Optional fractional seconds
     if (pos < str.size() && str[pos] == '.') {
         pos++;
         size_t frac_start = pos;
@@ -316,7 +353,6 @@ std::chrono::system_clock::time_point from_iso8601(std::string_view str) {
             throw TimestampParseException("Missing fractional digits after decimal point: " + std::string(str));
         }
 
-        // Standardize to 6 digits (microseconds)
         int64_t factor = 100000;
         for (size_t i = 0; i < frac_part.size() && i < 6; ++i) {
             microsec += (frac_part[i] - '0') * factor;
@@ -506,14 +542,33 @@ FilesOutboxEntity files_outbox_from_row(const pqxx::row& row) {
     FilesOutboxEntity entity;
     entity.event_id = row["event_id"].as<std::string>();
     entity.aggregate_type = row["aggregate_type"].as<std::string>();
-    entity.aggregate_id = row["aggregate_id"].as<std::string>();
+
+    if (!row["aggregate_id"].is_null()) {
+        auto agg_id = row["aggregate_id"].as<std::string>();
+        if (!agg_id.empty()) {
+            entity.aggregate_id = std::move(agg_id);
+        }
+    }
+
     entity.event_type = row["event_type"].as<std::string>();
+
+    if (auto sev = find_optional_string(row, "severity"); sev.has_value()) {
+        entity.severity = outbox_severity_from_string(*sev);
+    }
+
     entity.payload_json = row["payload_json"].as<std::string>();
     entity.status = outbox_status_from_string(row["status"].as<std::string>());
     entity.retry_count = row["retry_count"].as<int32_t>();
     entity.created_at = from_iso8601(row["created_at"].as<std::string>());
+
     if (!row["processed_at"].is_null()) {
         entity.processed_at = from_iso8601(row["processed_at"].as<std::string>());
+    }
+    if (auto err = find_optional_string(row, "last_error"); err.has_value()) {
+        entity.last_error = std::move(*err);
+    }
+    if (auto lease = find_optional_string(row, "leased_until"); lease.has_value()) {
+        entity.leased_until = from_iso8601(*lease);
     }
     return entity;
 }

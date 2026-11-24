@@ -26,6 +26,7 @@
 
 #include <chrono>
 #include <gtest/gtest.h>
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -163,6 +164,12 @@ class TestIntegrationAuthContext : public grpc::AuthContext {
 };
 
 constexpr const char* k_test_owner_user_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d40";
+
+const std::multimap<grpc::string_ref, grpc::string_ref>& test_owner_metadata() {
+    static const std::multimap<grpc::string_ref, grpc::string_ref> metadata = {
+        {grpc::string_ref("x-user-id"), grpc::string_ref(k_test_owner_user_id)}};
+    return metadata;
+}
 constexpr const char* k_test_owner_device_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d41";
 constexpr const char* k_test_other_user_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d42";
 
@@ -256,7 +263,7 @@ class FilesDownloadIntegrationTest : public ::testing::Test {
                                             "\"}");
 
         v1::CreateFileUploadResponse init_resp;
-        auto init_stat = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp);
+        auto init_stat = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp, test_owner_metadata());
         EXPECT_TRUE(init_stat.ok()) << init_stat.error_message();
         std::string upload_id = init_resp.upload_id();
 
@@ -271,7 +278,7 @@ class FilesDownloadIntegrationTest : public ::testing::Test {
             req.set_ciphertext_sha256(compute_sha256_hex(chunks[i]));
 
             v1::UploadChunkResponse resp;
-            auto up_stat = service_->UploadChunk(&auth_ctx, &req, &resp);
+            auto up_stat = service_->UploadChunk(&auth_ctx, &req, &resp, test_owner_metadata());
             EXPECT_TRUE(up_stat.ok()) << up_stat.error_message();
         }
 
@@ -281,7 +288,7 @@ class FilesDownloadIntegrationTest : public ::testing::Test {
         fin_req.set_expected_ciphertext_sha256(compute_sha256_hex(concatenated_payload));
 
         v1::FinalizeFileUploadResponse fin_resp;
-        auto fin_stat = service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp);
+        auto fin_stat = service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp, test_owner_metadata());
         EXPECT_TRUE(fin_stat.ok()) << fin_stat.error_message();
         EXPECT_EQ(fin_resp.lifecycle_state(), v1::FILE_LIFECYCLE_STATE_AVAILABLE);
 
@@ -325,7 +332,7 @@ TEST_F(FilesDownloadIntegrationTest, TC1_HappyPathFullFileChunkedDownload) {
     req0.set_chunk_index(0);
 
     v1::DownloadChunkResponse resp0;
-    auto status0 = service_->DownloadChunk(&auth_ctx, &req0, &resp0);
+    auto status0 = service_->DownloadChunk(&auth_ctx, &req0, &resp0, test_owner_metadata());
     EXPECT_TRUE(status0.ok()) << status0.error_message();
     EXPECT_EQ(resp0.file_id(), file_id);
     EXPECT_EQ(resp0.chunk_index(), 0);
@@ -339,7 +346,7 @@ TEST_F(FilesDownloadIntegrationTest, TC1_HappyPathFullFileChunkedDownload) {
     req1.set_chunk_index(1);
 
     v1::DownloadChunkResponse resp1;
-    auto status1 = service_->DownloadChunk(&auth_ctx, &req1, &resp1);
+    auto status1 = service_->DownloadChunk(&auth_ctx, &req1, &resp1, test_owner_metadata());
     EXPECT_TRUE(status1.ok()) << status1.error_message();
     EXPECT_EQ(resp1.chunk_index(), 1);
     EXPECT_EQ(resp1.encrypted_data(), chunk1);
@@ -376,14 +383,14 @@ TEST_F(FilesDownloadIntegrationTest, TC2_CanonicalResumeFromStartingChunk) {
     req2.set_file_id(file_id);
     req2.set_chunk_index(2);
     v1::DownloadChunkResponse resp2;
-    EXPECT_TRUE(service_->DownloadChunk(&auth_ctx, &req2, &resp2).ok());
+    EXPECT_TRUE(service_->DownloadChunk(&auth_ctx, &req2, &resp2, test_owner_metadata()).ok());
     EXPECT_EQ(resp2.encrypted_data(), chunks[2]);
 
     v1::DownloadChunkRequest req3;
     req3.set_file_id(file_id);
     req3.set_chunk_index(3);
     v1::DownloadChunkResponse resp3;
-    EXPECT_TRUE(service_->DownloadChunk(&auth_ctx, &req3, &resp3).ok());
+    EXPECT_TRUE(service_->DownloadChunk(&auth_ctx, &req3, &resp3, test_owner_metadata()).ok());
     EXPECT_EQ(resp3.encrypted_data(), chunks[3]);
 }
 
@@ -432,7 +439,7 @@ TEST_F(FilesDownloadIntegrationTest, TC4_LifecycleStateGuardNotAvailable) {
                                         "\"}");
 
     v1::CreateFileUploadResponse init_resp;
-    EXPECT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp).ok());
+    EXPECT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp, test_owner_metadata()).ok());
 
     // File is in UPLOADING state, not AVAILABLE
     v1::DownloadChunkRequest req;
@@ -440,7 +447,7 @@ TEST_F(FilesDownloadIntegrationTest, TC4_LifecycleStateGuardNotAvailable) {
     req.set_chunk_index(0);
 
     v1::DownloadChunkResponse resp;
-    auto status = service_->DownloadChunk(&auth_ctx, &req, &resp);
+    auto status = service_->DownloadChunk(&auth_ctx, &req, &resp, test_owner_metadata());
     EXPECT_EQ(status.error_code(), grpc::StatusCode::FAILED_PRECONDITION);
 }
 
@@ -458,7 +465,7 @@ TEST_F(FilesDownloadIntegrationTest, TC5_OutOfBoundsChunkIndex) {
     req.set_chunk_index(99); // only chunk 0 exists
 
     v1::DownloadChunkResponse resp;
-    auto status = service_->DownloadChunk(&auth_ctx, &req, &resp);
+    auto status = service_->DownloadChunk(&auth_ctx, &req, &resp, test_owner_metadata());
     EXPECT_EQ(status.error_code(), grpc::StatusCode::OUT_OF_RANGE);
 }
 

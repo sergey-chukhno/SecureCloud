@@ -38,6 +38,32 @@ TEST(SchemaMigrationTest, V001FileExistsAndLoads) {
     EXPECT_NE(sql_from_disk.find("CREATE TABLE IF NOT EXISTS files"), std::string::npos);
 }
 
+TEST(SchemaMigrationTest, V002FileExistsAndLoads) {
+    auto repo_root = find_repo_root();
+    ASSERT_FALSE(repo_root.empty()) << "Could not locate repo root containing migrations";
+
+    auto migrations_dir = repo_root / "src" / "files" / "db" / "migrations";
+    std::filesystem::path v002_path;
+    for (const auto& entry : std::filesystem::directory_iterator(migrations_dir)) {
+        const auto filename = entry.path().filename().string();
+        if (filename.starts_with("V002__") && filename.ends_with(".sql")) {
+            v002_path = entry.path();
+            break;
+        }
+    }
+
+    ASSERT_FALSE(v002_path.empty()) << "Could not locate V002__*.sql migration file";
+
+    std::ifstream file(v002_path);
+    ASSERT_TRUE(file.is_open());
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string sql_from_disk = buffer.str();
+
+    EXPECT_FALSE(sql_from_disk.empty());
+    EXPECT_NE(sql_from_disk.find("files_outbox"), std::string::npos);
+}
+
 TEST(SchemaMigrationTest, SchemaContainsAllSevenRequiredTables) {
     std::string_view sql = MigrationRunner::get_v001_schema_sql();
 
@@ -49,6 +75,19 @@ TEST(SchemaMigrationTest, SchemaContainsAllSevenRequiredTables) {
         std::string needle = "CREATE TABLE IF NOT EXISTS " + table;
         EXPECT_NE(sql.find(needle), std::string_view::npos) << "Schema DDL missing required table: " << table;
     }
+}
+
+TEST(SchemaMigrationTest, V002SchemaAddsOutboxLeasingSeverityAndQuarantine) {
+    std::string_view sql = MigrationRunner::get_v002_schema_sql();
+    ASSERT_FALSE(sql.empty());
+
+    EXPECT_NE(sql.find("files_outbox"), std::string_view::npos);
+    EXPECT_NE(sql.find("QUARANTINED"), std::string_view::npos);
+    EXPECT_NE(sql.find("severity"), std::string_view::npos);
+    EXPECT_NE(sql.find("last_error"), std::string_view::npos);
+    EXPECT_NE(sql.find("leased_until"), std::string_view::npos);
+    EXPECT_NE(sql.find("aggregate_id"), std::string_view::npos);
+    EXPECT_NE(sql.find("CREATE INDEX IF NOT EXISTS"), std::string_view::npos);
 }
 
 TEST(SchemaMigrationTest, SchemaEnforcesZeroPlaintextInvariant) {
@@ -117,27 +156,48 @@ TEST(SchemaMigrationTest, StatementSplitterParsesCleanly) {
             << "Unexpected statement format: " << stmt;
         EXPECT_TRUE(stmt.ends_with(';'));
     }
+
+    std::string_view v002_sql = MigrationRunner::get_v002_schema_sql();
+    auto v002_statements = MigrationRunner::split_statements(v002_sql);
+    EXPECT_FALSE(v002_statements.empty());
+    for (const auto& stmt : v002_statements) {
+        EXPECT_FALSE(stmt.empty());
+        EXPECT_TRUE(stmt.ends_with(';'));
+    }
+}
+
+TEST(SchemaMigrationTest, ValidateV002SchemaDdlSyntax) {
+    std::vector<std::string> missing;
+    EXPECT_TRUE(MigrationRunner::validate_v002_schema_ddl_syntax(MigrationRunner::get_v002_schema_sql(), missing));
+    EXPECT_TRUE(missing.empty());
+
+    std::vector<std::string> bad_missing;
+    EXPECT_FALSE(
+        MigrationRunner::validate_v002_schema_ddl_syntax("ALTER TABLE unrelated ADD COLUMN x INT;", bad_missing));
+    EXPECT_FALSE(bad_missing.empty());
 }
 
 TEST(SchemaMigrationTest, MigrationRunnerTracksAppliedVersionsIdempotently) {
     MigrationRunner runner(nullptr);
     EXPECT_TRUE(runner.get_applied_versions().empty());
 
-    // First run applies V001
+    // First run applies V001 and V002 in order
     auto res1 = runner.run_migrations();
     EXPECT_TRUE(res1.success);
-    ASSERT_EQ(res1.applied_versions.size(), 1);
+    ASSERT_EQ(res1.applied_versions.size(), 2);
     EXPECT_EQ(res1.applied_versions[0], "V001");
+    EXPECT_EQ(res1.applied_versions[1], "V002");
 
     auto applied = runner.get_applied_versions();
-    ASSERT_EQ(applied.size(), 1);
+    ASSERT_EQ(applied.size(), 2);
     EXPECT_EQ(applied[0], "V001");
+    EXPECT_EQ(applied[1], "V002");
 
     // Second run is idempotent no-op
     auto res2 = runner.run_migrations();
     EXPECT_TRUE(res2.success);
     EXPECT_TRUE(res2.applied_versions.empty());
-    EXPECT_EQ(runner.get_applied_versions().size(), 1);
+    EXPECT_EQ(runner.get_applied_versions().size(), 2);
 }
 
 TEST(SchemaMigrationTest, MigrationRunnerRejectsInvalidDDL) {
@@ -149,8 +209,8 @@ TEST(SchemaMigrationTest, MigrationRunnerRejectsInvalidDDL) {
     EXPECT_FALSE(valid);
     EXPECT_FALSE(missing.empty());
 
-    bool applied = runner.apply_migration("V999", "bad migration", bad_sql);
-    EXPECT_FALSE(applied);
+    EXPECT_FALSE(runner.apply_migration("V001", "bad V001 migration", bad_sql));
+    EXPECT_FALSE(runner.apply_migration("V002", "bad V002 migration", bad_sql));
     EXPECT_TRUE(runner.get_applied_versions().empty());
 }
 

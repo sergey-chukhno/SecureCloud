@@ -5,6 +5,7 @@
 #include "files/domain/file_transfer_entity.hpp"
 #include "files/repository/file_chunk_repository.hpp"
 #include "files/repository/file_transfer_repository.hpp"
+#include "files/service/files_audit_event_publisher.hpp"
 #include "securecloud/files/v1/files.pb.h"
 
 #include <chrono>
@@ -103,7 +104,8 @@ class UploadSessionManager : public IUploadSessionManager {
   public:
     explicit UploadSessionManager(std::shared_ptr<db::FilesDbConnectionPool> pool = nullptr,
                                   std::shared_ptr<FileTransferRepository> transfer_repo = nullptr,
-                                  std::shared_ptr<FileChunkRepository> chunk_repo = nullptr);
+                                  std::shared_ptr<FileChunkRepository> chunk_repo = nullptr,
+                                  std::shared_ptr<FilesAuditEventPublisher> audit_publisher = nullptr);
 
     ~UploadSessionManager() override = default;
 
@@ -122,6 +124,7 @@ class UploadSessionManager : public IUploadSessionManager {
     std::shared_ptr<db::FilesDbConnectionPool> pool_;
     std::shared_ptr<FileTransferRepository> transfer_repo_;
     std::shared_ptr<FileChunkRepository> chunk_repo_;
+    std::shared_ptr<FilesAuditEventPublisher> audit_publisher_;
     mutable std::mutex session_mutex_;
     std::unordered_map<std::string, UploadSession> in_memory_cache_;
 };

@@ -24,6 +24,7 @@
 #include <chrono>
 #include <future>
 #include <gtest/gtest.h>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -144,6 +145,12 @@ class TestIntegrationAuthContext : public grpc::AuthContext {
 constexpr const char* k_test_owner_user_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d40";
 constexpr const char* k_test_owner_device_id = "018f6e80-7b23-74d1-81f8-8a8b1a2c3d41";
 
+const std::multimap<grpc::string_ref, grpc::string_ref>& test_owner_metadata() {
+    static const std::multimap<grpc::string_ref, grpc::string_ref> metadata = {
+        {grpc::string_ref("x-user-id"), grpc::string_ref(k_test_owner_user_id)}};
+    return metadata;
+}
+
 class FilesFinalizationIntegrationTest : public ::testing::Test {
   protected:
     void SetUp() override {
@@ -251,7 +258,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC1_HappyPathFinalizationMultiChunk) {
                                         "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
-    auto init_status = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp);
+    auto init_status = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp, test_owner_metadata());
     ASSERT_TRUE(init_status.ok()) << init_status.error_message();
     std::string upload_id = init_resp.upload_id();
 
@@ -266,7 +273,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC1_HappyPathFinalizationMultiChunk) {
         req.set_ciphertext_sha256(compute_sha256_hex(chunks[i]));
 
         v1::UploadChunkResponse resp;
-        auto status = service_->UploadChunk(&auth_ctx, &req, &resp);
+        auto status = service_->UploadChunk(&auth_ctx, &req, &resp, test_owner_metadata());
         ASSERT_TRUE(status.ok()) << status.error_message();
         ASSERT_TRUE(resp.accepted());
     }
@@ -278,7 +285,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC1_HappyPathFinalizationMultiChunk) {
     fin_req.set_expected_ciphertext_sha256(expected_whole_sha);
 
     v1::FinalizeFileUploadResponse fin_resp;
-    auto fin_status = service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp);
+    auto fin_status = service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp, test_owner_metadata());
     EXPECT_TRUE(fin_status.ok()) << fin_status.error_message();
     EXPECT_EQ(fin_resp.file_id(), file_id);
     EXPECT_EQ(fin_resp.lifecycle_state(), v1::FILE_LIFECYCLE_STATE_AVAILABLE);
@@ -322,7 +329,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC2_ConcurrentDuplicateFinalizationRace
                                         "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
-    auto init_status = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp);
+    auto init_status = service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp, test_owner_metadata());
     ASSERT_TRUE(init_status.ok());
     std::string upload_id = init_resp.upload_id();
 
@@ -335,7 +342,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC2_ConcurrentDuplicateFinalizationRace
     req.set_ciphertext_sha256(whole_sha);
 
     v1::UploadChunkResponse resp;
-    auto status = service_->UploadChunk(&auth_ctx, &req, &resp);
+    auto status = service_->UploadChunk(&auth_ctx, &req, &resp, test_owner_metadata());
     ASSERT_TRUE(status.ok());
 
     // Execute 2 concurrent/duplicate finalization requests
@@ -347,10 +354,12 @@ TEST_F(FilesFinalizationIntegrationTest, TC2_ConcurrentDuplicateFinalizationRace
     v1::FinalizeFileUploadResponse fin_resp1;
     v1::FinalizeFileUploadResponse fin_resp2;
 
-    auto fut1 =
-        std::async(std::launch::async, [&]() { return service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp1); });
-    auto fut2 =
-        std::async(std::launch::async, [&]() { return service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp2); });
+    auto fut1 = std::async(std::launch::async, [&]() {
+        return service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp1, test_owner_metadata());
+    });
+    auto fut2 = std::async(std::launch::async, [&]() {
+        return service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp2, test_owner_metadata());
+    });
 
     auto status1 = fut1.get();
     auto status2 = fut2.get();
@@ -389,7 +398,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC3_IncompleteUploadRejectionAndStagedC
                                         "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
-    ASSERT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp).ok());
+    ASSERT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp, test_owner_metadata()).ok());
     std::string upload_id = init_resp.upload_id();
 
     // Upload only chunk 0 (chunk 1 is missing!)
@@ -402,7 +411,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC3_IncompleteUploadRejectionAndStagedC
     req.set_ciphertext_sha256(compute_sha256_hex(chunk0));
 
     v1::UploadChunkResponse resp;
-    ASSERT_TRUE(service_->UploadChunk(&auth_ctx, &req, &resp).ok());
+    ASSERT_TRUE(service_->UploadChunk(&auth_ctx, &req, &resp, test_owner_metadata()).ok());
 
     // Attempt finalization
     v1::FinalizeFileUploadRequest fin_req;
@@ -410,7 +419,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC3_IncompleteUploadRejectionAndStagedC
     fin_req.set_file_id(file_id);
 
     v1::FinalizeFileUploadResponse fin_resp;
-    auto fin_status = service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp);
+    auto fin_status = service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp, test_owner_metadata());
 
     // Precondition failure must be reported
     EXPECT_EQ(fin_status.error_code(), grpc::StatusCode::FAILED_PRECONDITION);
@@ -447,7 +456,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC4_WholeCiphertextHashMismatchRejectio
                                         "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
-    ASSERT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp).ok());
+    ASSERT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp, test_owner_metadata()).ok());
     std::string upload_id = init_resp.upload_id();
 
     // Upload chunk 0
@@ -459,7 +468,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC4_WholeCiphertextHashMismatchRejectio
     req.set_ciphertext_sha256(compute_sha256_hex(chunk_data));
 
     v1::UploadChunkResponse resp;
-    ASSERT_TRUE(service_->UploadChunk(&auth_ctx, &req, &resp).ok());
+    ASSERT_TRUE(service_->UploadChunk(&auth_ctx, &req, &resp, test_owner_metadata()).ok());
 
     // Finalize with intentional bogus whole-ciphertext sha256
     v1::FinalizeFileUploadRequest fin_req;
@@ -468,7 +477,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC4_WholeCiphertextHashMismatchRejectio
     fin_req.set_expected_ciphertext_sha256("0000000000000000000000000000000000000000000000000000000000000000");
 
     v1::FinalizeFileUploadResponse fin_resp;
-    auto fin_status = service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp);
+    auto fin_status = service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp, test_owner_metadata());
 
     EXPECT_EQ(fin_status.error_code(), grpc::StatusCode::FAILED_PRECONDITION);
     EXPECT_NE(fin_resp.lifecycle_state(), v1::FILE_LIFECYCLE_STATE_AVAILABLE);
@@ -498,7 +507,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC5_CancelledSessionGuard) {
                                         "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
-    ASSERT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp).ok());
+    ASSERT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp, test_owner_metadata()).ok());
     std::string upload_id = init_resp.upload_id();
 
     // Cancel upload session
@@ -514,7 +523,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC5_CancelledSessionGuard) {
     fin_req.set_file_id(file_id);
 
     v1::FinalizeFileUploadResponse fin_resp;
-    auto fin_status = service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp);
+    auto fin_status = service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp, test_owner_metadata());
 
     EXPECT_EQ(fin_status.error_code(), grpc::StatusCode::FAILED_PRECONDITION);
     EXPECT_NE(fin_resp.lifecycle_state(), v1::FILE_LIFECYCLE_STATE_AVAILABLE);
@@ -543,7 +552,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC6_StagingCleanupVerification) {
                                         "\",\"metadata_tag_hex\":\"" + tag_hex + "\"}");
 
     v1::CreateFileUploadResponse init_resp;
-    ASSERT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp).ok());
+    ASSERT_TRUE(service_->CreateFileUpload(&auth_ctx, &init_req, &init_resp, test_owner_metadata()).ok());
     std::string upload_id = init_resp.upload_id();
 
     // Upload chunk 0
@@ -555,7 +564,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC6_StagingCleanupVerification) {
     req.set_ciphertext_sha256(expected_sha);
 
     v1::UploadChunkResponse resp;
-    ASSERT_TRUE(service_->UploadChunk(&auth_ctx, &req, &resp).ok());
+    ASSERT_TRUE(service_->UploadChunk(&auth_ctx, &req, &resp, test_owner_metadata()).ok());
 
     // Finalize upload
     v1::FinalizeFileUploadRequest fin_req;
@@ -564,7 +573,7 @@ TEST_F(FilesFinalizationIntegrationTest, TC6_StagingCleanupVerification) {
     fin_req.set_expected_ciphertext_sha256(expected_sha);
 
     v1::FinalizeFileUploadResponse fin_resp;
-    ASSERT_TRUE(service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp).ok());
+    ASSERT_TRUE(service_->FinalizeFileUpload(&auth_ctx, &fin_req, &fin_resp, test_owner_metadata()).ok());
 
     // Verify version record exists
     auto ver_opt = version_repo_->find_active_version(file_id);
