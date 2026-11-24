@@ -27,6 +27,7 @@ class IHardwareAuthenticator;
 namespace securecloud::client::application::managers {
 class RatchetSessionManager;
 class DevicePairingCoordinator;
+class DiagnosticsManager;
 class LocalAuditLogger;
 class SafetyNumberEngine;
 } // namespace securecloud::client::application::managers
@@ -83,6 +84,7 @@ class ClientBootstrap {
     [[nodiscard]] managers::EmergencyManager& emergency_manager() noexcept { return *emergency_manager_; }
     [[nodiscard]] managers::SettingsManager& settings_manager() noexcept { return *settings_manager_; }
     [[nodiscard]] managers::SyncManager& sync_manager() noexcept { return *sync_manager_; }
+    [[nodiscard]] managers::DiagnosticsManager& diagnostics_manager() noexcept { return *diagnostics_manager_; }
     [[nodiscard]] managers::RatchetSessionManager* ratchet_session_manager() noexcept {
         return ratchet_session_manager_.get();
     }
@@ -118,6 +120,7 @@ class ClientBootstrap {
     std::unique_ptr<managers::EmergencyManager> emergency_manager_;
     std::unique_ptr<managers::SettingsManager> settings_manager_;
     std::unique_ptr<managers::SyncManager> sync_manager_;
+    std::unique_ptr<managers::DiagnosticsManager> diagnostics_manager_;
 
     std::optional<domain::crypto::CryptoSelfTestReport> last_self_test_report_;
     std::shared_ptr<domain::crypto::CryptoSelfTest::FaultInjector> self_test_fault_injector_;

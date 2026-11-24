@@ -2,6 +2,7 @@
 
 #include "application/client_config.hpp"
 #include "application/interfaces/i_gateway_client.hpp"
+#include "domain/diagnostics_models.hpp"
 #include "securecloud/configuration/secret_string.hpp"
 
 #include <cstddef>
@@ -46,6 +47,7 @@ class QtHttpGatewayClient final : public application::interfaces::IGatewayClient
     void reconfigure(const application::ClientConfig& config);
     [[nodiscard]] application::ClientConfig current_config_snapshot() const;
     [[nodiscard]] EffectiveProxySnapshot effective_proxy_snapshot() const;
+    [[nodiscard]] domain::GatewayTransportMetrics transport_metrics() const noexcept;
 
     application::ClientResult<bool> probe_gateway(std::string_view path = "/health") override;
     application::ClientResult<std::string> send_message(const domain::ConversationId& conversation_id,

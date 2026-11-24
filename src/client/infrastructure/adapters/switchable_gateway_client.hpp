@@ -2,6 +2,7 @@
 
 #include "application/client_config.hpp"
 #include "application/interfaces/i_gateway_client.hpp"
+#include "domain/diagnostics_models.hpp"
 #include "infrastructure/adapters/default_gateway_client.hpp"
 #include "infrastructure/adapters/qt_http_gateway_client.hpp"
 
@@ -33,6 +34,7 @@ class SwitchableGatewayClient final : public application::interfaces::IGatewayCl
     [[nodiscard]] const application::interfaces::IGatewayClient& active_gateway() const noexcept;
     [[nodiscard]] DefaultGatewayClient& simulated_gateway() noexcept { return *simulated_; }
     [[nodiscard]] QtHttpGatewayClient& live_gateway() noexcept { return *live_; }
+    [[nodiscard]] domain::GatewayTransportMetrics transport_metrics() const noexcept;
 
     application::ClientResult<bool> probe_gateway(std::string_view path = "/health") override;
     application::ClientResult<std::string> send_message(const domain::ConversationId& conversation_id,

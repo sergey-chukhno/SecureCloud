@@ -29,6 +29,7 @@ if(Qt6_FOUND)
         domain/offline_sync_models.cpp
         domain/emergency_models.cpp
         domain/local_audit_event.cpp
+        domain/diagnostics_models.cpp
         domain/crypto/x3dh_models.cpp
         domain/crypto/x3dh_engine.cpp
         domain/crypto/ratchet_models.cpp
@@ -67,6 +68,7 @@ if(Qt6_FOUND)
         infrastructure/adapters/openssl_crypto_provider.cpp
         infrastructure/adapters/key_storage_helper.cpp
         infrastructure/adapters/simulated_hardware_authenticator.cpp
+        infrastructure/adapters/platform_telemetry_collector.cpp
     )
     add_library(securecloud::client_infra ALIAS securecloud_client_infra)
     target_include_directories(securecloud_client_infra PUBLIC
@@ -81,6 +83,9 @@ if(Qt6_FOUND)
         Qt6::Core
         Qt6::Network
     )
+    if(WIN32)
+        target_link_libraries(securecloud_client_infra PRIVATE psapi)
+    endif()
 
     # 3. Application Layer (Use Cases, Lifecycle, Context)
     add_library(securecloud_client_app STATIC
@@ -102,6 +107,8 @@ if(Qt6_FOUND)
         application/managers/emergency_manager.cpp
         application/managers/settings_manager.cpp
         application/managers/local_audit_logger.cpp
+        application/managers/diagnostic_sanitizer.cpp
+        application/managers/diagnostics_manager.cpp
         application/managers/sync_manager.cpp
     )
     add_library(securecloud::client_app ALIAS securecloud_client_app)

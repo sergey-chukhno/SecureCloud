@@ -24,7 +24,7 @@
 
 ```text
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│               NavigationShell.qml (Ctrl+6 -> NavigationState::Diagnostics = 6)         │
+│   SettingsPlaceholder.qml ("Advanced -> Diagnostics & Troubleshooting" / Ctrl+Shift+D) │
 │                        └── DiagnosticsView.qml <-> DiagnosticsViewModel                │
 │         • Boot KAT Badge   • Hash-Chain Integrity Badge   • Live Telemetry Metrics     │
 │         • Audit Timeline   • Encrypted Zero-PII Diagnostic Export (.scdiag AES-GCM)    │
@@ -65,7 +65,7 @@ graph TD
     T01 --> T02
     T01 --> T03["CLIENT-015-T03<br>PlatformTelemetryCollector, DiagnosticsManager & Encrypted .scdiag Exporter"]
     T02 --> T03
-    T03 --> T04["CLIENT-015-T04<br>DiagnosticsViewModel, NavigationState::Diagnostics (Ctrl+6) & DiagnosticsView.qml"]
+    T03 --> T04["CLIENT-015-T04<br>DiagnosticsViewModel, Settings->Advanced Entry (Ctrl+Shift+D) & DiagnosticsView.qml"]
     T03 --> T05["CLIENT-015-T05<br>Official Performance Benchmarking Harness & Benchmark Report (ADR-010)"]
     T02 --> T06["CLIENT-015-T06<br>Docker Compose MVP Gate, Live Auth Login, Client<->Backend E2E & Demo Runbook"]
     T04 --> T07["CLIENT-015-T07<br>Tier 1/2 Screenshots, Full Regressions, Sanitizers & walkthrough-client-015.md"]
@@ -79,8 +79,8 @@ graph TD
 |---|---|---|---|
 | **CLIENT-015-T01** | Tamper-Evident Local Hash-Chained Audit Trail & Sanitizer Hardening | **Completed** | `local_audit_event.{hpp,cpp}`, `local_audit_logger.{hpp,cpp}`, SQLCipher/Memory `local_audit_log` (Table #9), `verify_chain_integrity()`, extended `ClientLogger::sanitize()`, `EmergencyManager` Phase-1 hook, wiring into security managers |
 | **CLIENT-015-T02** | Fail-Closed Boot Cryptographic Self-Test Suite | **Completed** | `crypto_self_test.{hpp,cpp}` (`Ed25519`, `X25519`, `AES-256-GCM` + tamper fail, `HKDF-SHA256`, `RAND_status()`, `ISecureStorage` canary probe), integrated into `ClientApplication::initialize()` + `LocalAuditLogger` |
-| **CLIENT-015-T03** | Live Resource Telemetry Collector & Sanitized `.scdiag` Diagnostic Exporter | **Planned** | `diagnostics_models.{hpp,cpp}`, `platform_telemetry_collector.{hpp,cpp}` (`macOS`/`Linux`/`Windows` RSS & CPU), `diagnostic_sanitizer.{hpp,cpp}`, `diagnostics_manager.{hpp,cpp}`, `QtHttpGatewayClient` RTT metrics, AES-256-GCM `.scdiag` export |
-| **CLIENT-015-T04** | Dedicated `DiagnosticsView.qml`, `DiagnosticsViewModel` & `Ctrl+6` Navigation | **Planned** | `NavigationState::Diagnostics = 6`, `DiagnosticsViewModel` (following `client-architecture-and-foundation.md §8.1`), `DiagnosticsView.qml` (Dark/Light/High-Contrast + `fontScale`), `--capture-screenshots` additions |
+| **CLIENT-015-T03** | Live Resource Telemetry Collector & Sanitized `.scdiag` Diagnostic Exporter | **Completed** | `diagnostics_models.{hpp,cpp}`, `platform_telemetry_collector.{hpp,cpp}` (`macOS`/`Linux`/`Windows` RSS & CPU), `diagnostic_sanitizer.{hpp,cpp}`, `diagnostics_manager.{hpp,cpp}`, `QtHttpGatewayClient` RTT metrics, AES-256-GCM `.scdiag` export |
+| **CLIENT-015-T04** | Dedicated `DiagnosticsView.qml`, `DiagnosticsViewModel` & `Settings -> Advanced` Entry | **Planned** | `NavigationState::Diagnostics = 6` entered via `SettingsPlaceholder.qml` (`Advanced -> Diagnostics & Troubleshooting` + `Ctrl+Shift+D`, keeping primary sidebar rail clean), `DiagnosticsViewModel`, `DiagnosticsView.qml` (Dark/Light/High-Contrast + `fontScale`), `--capture-screenshots` additions |
 | **CLIENT-015-T05** | Official Client Performance Benchmarking Harness & Report | **Planned** | `client_performance_benchmark_test.cpp` validating `< 80 MB` idle RSS, `< 150 MB` loaded (`50` convs / `5,000` SQLCipher rows), `< 32 MB` streaming overhead, `< 1%` idle / `< 5%` scroll CPU (`60 fps`), `< 1.5 s` cold start, `< 2 ms` / `> 500 msg/s` ratchet + AEAD on padded payloads; `docs/final-reports/client-performance-benchmark-report.md` |
 | **CLIENT-015-T06** | Full-Stack Live Docker Compose MVP Gate, Live Client Auth, E2E Suite & Demo Runbook | **Planned** | Verify/close 5 Ubuntu 24.04 Dockerfiles (`SECURECLOUD_BUILD_CLIENT=OFF`), Gateway `:8443`/`:8080` + loopback dev-PKI SAN + Compose migrations (`scylla-init` `V001`–`V006` & Postgres `V001`–`V005`/`V001`–`V002`), Gateway `MessagingProxyHandler`, `AuthManager` live `POST /api/v1/auth/login`, `tests/integration/client_gateway_backend_integration_test.cpp`, and 2-client MVP demo runbook |
 | **CLIENT-015-T07** | Final Verification, Sanitizers, Tier 1/2 Visual Smoke & `walkthrough-client-015.md` | **Planned** | Full `check-format`, `-Werror` clean build, Tier 1/2 `--smoke-test` & `--capture-screenshots`, ASan/UBSan + TSan runs on crypto/audit/benchmark tests, `walkthrough-client-015.md` (`>= 1,000` lines), `docs/pull_requests/CLIENT-015.md` |
@@ -264,13 +264,14 @@ Direct inspection across `src/client/`, `src/gateway/`, `src/auth/`, `src/messag
 
 ---
 
-### `CLIENT-015-T04`: Dedicated `DiagnosticsView.qml`, `DiagnosticsViewModel` & `Ctrl+6` Navigation
+### `CLIENT-015-T04`: Dedicated `DiagnosticsView.qml`, `DiagnosticsViewModel` & `Settings → Advanced` Entry
 
 - **Components:**
   - `src/client/ui/navigation_controller.{hpp,cpp}` *(Add `NavigationState::Diagnostics = 6` behind authenticated route guard)*
   - `src/client/ui/diagnostics_view_model.{hpp,cpp}` *(New `QObject` following `client-architecture-and-foundation.md §8.1`)*
-  - `src/client/ui/qml/DiagnosticsView.qml` *(New declarative QML view built with `SC*` controls & `UiTheme`)*
-  - `src/client/ui/qml/NavigationShell.qml` *(Add "Diagnostics" rail item + `Ctrl+6` shortcut + Loader case `"Diagnostics"`)*
+  - `src/client/ui/qml/DiagnosticsView.qml` *(New lazy-loaded declarative QML view built with `SC*` controls & `UiTheme`, with back-to-settings action)*
+  - `src/client/ui/qml/SettingsPlaceholder.qml` *(Add compact `Advanced → Diagnostics & Troubleshooting` card with **"Open Diagnostics"** button)*
+  - `src/client/ui/qml/NavigationShell.qml` *(Add `Ctrl+Shift+D` shortcut + Loader case `"Diagnostics"` + breadcrumb `SecureCloud › Settings › Diagnostics`, keeping the primary sidebar rail uncluttered for everyday users)*
   - `src/client/ui/qml.qrc`, `src/client/main.cpp` *(Register `diagnosticsViewModel` context property + add `"diagnostics-{dark,light}-1200x800.png"` capture cases in `--capture-screenshots`)*
   - `src/client/CMakeLists.txt`, `tests/unit/CMakeLists.txt`, `tests/unit/client/workspace_view_model_diagnostics_test.cpp` *(New)*
 - **Technical Specification:**

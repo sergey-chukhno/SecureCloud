@@ -3796,6 +3796,7 @@ if(Qt6_FOUND)
         client/settings_and_profile_integration_test.cpp
         client/local_audit_log_test.cpp
         client/crypto_self_test_suite_test.cpp
+        client/diagnostics_telemetry_and_exporter_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

@@ -1,6 +1,7 @@
 #include "application/client_bootstrap.hpp"
 
 #include "application/managers/device_pairing_coordinator.hpp"
+#include "application/managers/diagnostics_manager.hpp"
 #include "application/managers/local_audit_logger.hpp"
 #include "application/managers/ratchet_session_manager.hpp"
 #include "application/managers/safety_number_engine.hpp"
@@ -124,6 +125,22 @@ void ClientBootstrap::wire_managers() {
                 switchable->reconfigure(updated_config);
             });
     }
+    diagnostics_manager_ = std::make_unique<managers::DiagnosticsManager>(
+        config_, local_audit_logger_.get(), messaging_manager_.get(), file_manager_.get(), sync_manager_.get(),
+        settings_manager_.get(), ratchet_session_manager_.get(),
+        [this]() -> std::optional<domain::crypto::CryptoSelfTestReport> { return last_self_test_report_; },
+        [switchable = switchable_gateway_]() -> domain::GatewayTransportMetrics {
+            if (switchable != nullptr) {
+                return switchable->transport_metrics();
+            }
+            return {};
+        },
+        [switchable = switchable_gateway_, &cfg = config_]() -> bool {
+            if (switchable != nullptr) {
+                return switchable->is_live_transport_active();
+            }
+            return cfg.use_live_gateway_transport;
+        });
 }
 
 void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& user_id,
@@ -151,6 +168,9 @@ void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& u
     }
     if (local_audit_logger_) {
         ratchet_session_manager_->set_local_audit_logger(local_audit_logger_.get());
+    }
+    if (diagnostics_manager_) {
+        diagnostics_manager_->set_ratchet_session_manager(ratchet_session_manager_.get());
     }
 }
 

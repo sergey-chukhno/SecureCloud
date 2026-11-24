@@ -531,6 +531,7 @@ struct QtHttpGatewayClient::Impl {
 
         const QNetworkProxy proxy = build_qt_proxy(cfg);
         const uint64_t expected_gen = config_generation_.load(std::memory_order_relaxed);
+        const auto req_start = std::chrono::steady_clock::now();
 
         ensure_worker_started();
         if (worker_obj_ == nullptr || !worker_thread_.isRunning()) {
@@ -852,11 +853,20 @@ struct QtHttpGatewayClient::Impl {
             Qt::QueuedConnection);
 
         if (!invoked) {
+            const int64_t rtt_ms = std::max<int64_t>(
+                0, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - req_start)
+                       .count());
+            record_request_metric(rtt_ms, false);
             return ClientResult<HttpResponse>::error(
                 ClientError::network("Failed to dispatch request onto HTTP worker thread", "", request_id));
         }
 
-        return future.get();
+        auto result = future.get();
+        const int64_t rtt_ms = std::max<int64_t>(
+            0, std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - req_start)
+                   .count());
+        record_request_metric(rtt_ms, result.is_ok());
+        return result;
     }
 
     ClientResult<TlsCertificateInfo> inspect_tls(std::string_view host, uint16_t port) {
@@ -1054,12 +1064,25 @@ struct QtHttpGatewayClient::Impl {
             Qt::QueuedConnection);
     }
 
+    void record_request_metric(int64_t rtt_ms, bool succeeded) noexcept {
+        last_rtt_ms_.store(rtt_ms, std::memory_order_relaxed);
+        rtt_sum_ms_.fetch_add(rtt_ms, std::memory_order_relaxed);
+        request_count_.fetch_add(1U, std::memory_order_relaxed);
+        if (!succeeded) {
+            failure_count_.fetch_add(1U, std::memory_order_relaxed);
+        }
+    }
+
     mutable std::mutex config_mutex_;
     ClientConfig config_;
     BearerTokenProvider token_provider_;
     std::atomic<uint64_t> config_generation_{1U};
     std::atomic<uint64_t> request_seq_{1U};
     std::atomic<bool> shutting_down_{false};
+    std::atomic<int64_t> last_rtt_ms_{0};
+    std::atomic<int64_t> rtt_sum_ms_{0};
+    std::atomic<uint64_t> request_count_{0U};
+    std::atomic<uint64_t> failure_count_{0U};
 
     std::mutex worker_mutex_;
     bool worker_started_{false};
@@ -1096,6 +1119,18 @@ QtHttpGatewayClient::EffectiveProxySnapshot QtHttpGatewayClient::effective_proxy
         .username = cfg.proxy_username,
         .has_password = !cfg.proxy_password.empty(),
     };
+}
+
+domain::GatewayTransportMetrics QtHttpGatewayClient::transport_metrics() const noexcept {
+    domain::GatewayTransportMetrics metrics;
+    metrics.last_rtt_ms = impl_->last_rtt_ms_.load(std::memory_order_relaxed);
+    metrics.requests_total = impl_->request_count_.load(std::memory_order_relaxed);
+    metrics.requests_failed = impl_->failure_count_.load(std::memory_order_relaxed);
+    if (metrics.requests_total > 0U) {
+        const int64_t total_ms = impl_->rtt_sum_ms_.load(std::memory_order_relaxed);
+        metrics.avg_rtt_ms = total_ms / static_cast<int64_t>(metrics.requests_total);
+    }
+    return metrics;
 }
 
 ClientResult<bool> QtHttpGatewayClient::probe_gateway(std::string_view path) {

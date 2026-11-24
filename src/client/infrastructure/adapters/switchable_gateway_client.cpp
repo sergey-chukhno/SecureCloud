@@ -24,6 +24,13 @@ const application::interfaces::IGatewayClient& SwitchableGatewayClient::active_g
                             : static_cast<const application::interfaces::IGatewayClient&>(*simulated_);
 }
 
+domain::GatewayTransportMetrics SwitchableGatewayClient::transport_metrics() const noexcept {
+    if (live_ != nullptr) {
+        return live_->transport_metrics();
+    }
+    return {};
+}
+
 application::ClientResult<bool> SwitchableGatewayClient::probe_gateway(std::string_view path) {
     return active_gateway().probe_gateway(path);
 }
