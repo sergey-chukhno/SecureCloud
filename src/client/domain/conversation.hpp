@@ -65,6 +65,7 @@ class Conversation {
     [[nodiscard]] bool is_muted() const noexcept { return is_muted_; }
     [[nodiscard]] GroupStatus group_status() const noexcept { return group_status_; }
     [[nodiscard]] uint64_t sender_key_epoch() const noexcept { return sender_key_epoch_; }
+    [[nodiscard]] int64_t disappearing_ttl_seconds() const noexcept { return disappearing_ttl_seconds_; }
 
     void set_title(std::string title) { title_ = std::move(title); }
     void add_participant(UserId user_id);
@@ -84,6 +85,9 @@ class Conversation {
     void set_group_status(GroupStatus status) noexcept { group_status_ = status; }
     void set_sender_key_epoch(uint64_t epoch) noexcept { sender_key_epoch_ = epoch; }
     uint64_t increment_sender_key_epoch() noexcept { return ++sender_key_epoch_; }
+    void set_disappearing_ttl_seconds(int64_t ttl_seconds) noexcept {
+        disappearing_ttl_seconds_ = ttl_seconds > 0 ? ttl_seconds : 0;
+    }
 
     [[nodiscard]] std::string to_json() const;
     static std::optional<Conversation> from_json(std::string_view json_str);
@@ -105,6 +109,7 @@ class Conversation {
     bool is_muted_{false};
     GroupStatus group_status_{GroupStatus::Active};
     uint64_t sender_key_epoch_{1};
+    int64_t disappearing_ttl_seconds_{0};
 };
 
 } // namespace securecloud::client::domain

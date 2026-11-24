@@ -55,6 +55,17 @@ class MemoryLocalStore final : public application::interfaces::ILocalStore {
     application::ClientResult<std::vector<domain::SyncCursorRecord>>
     list_sync_cursors(const domain::DeviceId& device_id) override;
 
+    application::ClientResult<void> save_user_profile(const domain::UserProfile& profile) override;
+    application::ClientResult<std::optional<domain::UserProfile>>
+    get_user_profile(const domain::UserId& user_id) override;
+
+    application::ClientResult<void> save_user_settings(std::string_view profile_key,
+                                                       const domain::UserSettings& settings) override;
+    application::ClientResult<std::optional<domain::UserSettings>>
+    get_user_settings(std::string_view profile_key) override;
+
+    application::ClientResult<std::size_t> delete_expired_messages(int64_t now_ms) override;
+
     void clear();
 
   private:
@@ -66,6 +77,8 @@ class MemoryLocalStore final : public application::interfaces::ILocalStore {
     std::unordered_map<std::string, domain::FileTransferRecord> file_transfers_;
     std::unordered_map<std::string, domain::OfflineOutboxRecord> outbox_records_;
     std::unordered_map<std::string, domain::SyncCursorRecord> sync_cursors_;
+    std::unordered_map<domain::UserId, domain::UserProfile> user_profiles_;
+    std::unordered_map<std::string, domain::UserSettings> user_settings_;
 };
 
 } // namespace securecloud::client::infrastructure::adapters

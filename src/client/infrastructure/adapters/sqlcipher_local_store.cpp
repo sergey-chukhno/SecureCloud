@@ -94,6 +94,11 @@ class SecretCleanseGuard {
     return std::string(reinterpret_cast<const char*>(ptr), static_cast<std::size_t>(bytes));
 }
 
+[[nodiscard]] int64_t current_unix_ms() noexcept {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
 } // namespace
 
 SqlCipherLocalStore::SqlCipherLocalStore(application::interfaces::ISecureStorage& secure_storage,
@@ -149,10 +154,23 @@ application::ClientResult<void> SqlCipherLocalStore::initialize_schema_locked() 
             message_id TEXT PRIMARY KEY,
             conversation_id TEXT NOT NULL,
             sent_at_ms INTEGER NOT NULL,
-            payload_json TEXT NOT NULL
+            payload_json TEXT NOT NULL,
+            expires_at_ms INTEGER NOT NULL DEFAULT 0
         );
         CREATE INDEX IF NOT EXISTS idx_messages_conv_time
             ON messages(conversation_id, sent_at_ms ASC);
+
+        CREATE TABLE IF NOT EXISTS user_profile (
+            user_id TEXT PRIMARY KEY,
+            updated_at_ms INTEGER NOT NULL,
+            payload_json TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS user_settings (
+            profile_key TEXT PRIMARY KEY,
+            updated_at_ms INTEGER NOT NULL,
+            payload_json TEXT NOT NULL
+        );
 
         CREATE TABLE IF NOT EXISTS contacts (
             user_id TEXT PRIMARY KEY,
@@ -190,7 +208,44 @@ application::ClientResult<void> SqlCipherLocalStore::initialize_schema_locked() 
             PRIMARY KEY (device_id, conversation_id)
         );
     )sql";
-    return exec_sql_locked(kSchemaSql);
+    auto schema_res = exec_sql_locked(kSchemaSql);
+    if (schema_res.is_error()) {
+        return schema_res;
+    }
+    return migrate_messages_expires_at_locked();
+}
+
+application::ClientResult<void> SqlCipherLocalStore::migrate_messages_expires_at_locked() {
+    bool has_expires_at = false;
+    {
+        StmtGuard stmt;
+        if (sqlite3_prepare_v2(db_, "PRAGMA table_info(messages);", -1, stmt.out(), nullptr) != SQLITE_OK) {
+            return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+        }
+        while (true) {
+            const int rc = sqlite3_step(stmt.get());
+            if (rc == SQLITE_ROW) {
+                if (column_text_string(stmt.get(), 1) == "expires_at_ms") {
+                    has_expires_at = true;
+                    break;
+                }
+            } else if (rc == SQLITE_DONE) {
+                break;
+            } else {
+                return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+            }
+        }
+    }
+
+    if (!has_expires_at) {
+        auto alter_res = exec_sql_locked("ALTER TABLE messages ADD COLUMN expires_at_ms INTEGER NOT NULL DEFAULT 0;");
+        if (alter_res.is_error()) {
+            return alter_res;
+        }
+    }
+
+    return exec_sql_locked("CREATE INDEX IF NOT EXISTS idx_messages_expires_at "
+                           "ON messages(expires_at_ms) WHERE expires_at_ms > 0;");
 }
 
 application::ClientResult<void> SqlCipherLocalStore::open(std::string_view path) {
@@ -529,12 +584,13 @@ application::ClientResult<void> SqlCipherLocalStore::save_message(const domain::
     }
 
     static constexpr const char* kSql = R"sql(
-        INSERT INTO messages (message_id, conversation_id, sent_at_ms, payload_json)
-        VALUES (?1, ?2, ?3, ?4)
+        INSERT INTO messages (message_id, conversation_id, sent_at_ms, payload_json, expires_at_ms)
+        VALUES (?1, ?2, ?3, ?4, ?5)
         ON CONFLICT(message_id) DO UPDATE SET
             conversation_id = excluded.conversation_id,
             sent_at_ms = excluded.sent_at_ms,
-            payload_json = excluded.payload_json;
+            payload_json = excluded.payload_json,
+            expires_at_ms = excluded.expires_at_ms;
     )sql";
 
     StmtGuard stmt;
@@ -552,6 +608,7 @@ application::ClientResult<void> SqlCipherLocalStore::save_message(const domain::
     sqlite3_bind_text(stmt.get(), 2, cid.c_str(), static_cast<int>(cid.size()), SQLITE_TRANSIENT);
     sqlite3_bind_int64(stmt.get(), 3, static_cast<sqlite3_int64>(sent_ms));
     sqlite3_bind_text(stmt.get(), 4, json.c_str(), static_cast<int>(json.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt.get(), 5, static_cast<sqlite3_int64>(message.expires_at_ms()));
 
     if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
         return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
@@ -567,11 +624,12 @@ SqlCipherLocalStore::get_messages(const domain::ConversationId& id, std::size_t 
             application::ClientError::storage("Storage is closed"));
     }
 
-    const char* sql =
-        (limit > 0)
-            ? "SELECT payload_json FROM messages WHERE conversation_id = ?1 ORDER BY sent_at_ms ASC, rowid ASC LIMIT "
-              "?2;"
-            : "SELECT payload_json FROM messages WHERE conversation_id = ?1 ORDER BY sent_at_ms ASC, rowid ASC;";
+    const char* sql = (limit > 0) ? "SELECT payload_json FROM messages WHERE conversation_id = ?1 "
+                                    "AND (expires_at_ms = 0 OR expires_at_ms > ?2) "
+                                    "ORDER BY sent_at_ms ASC, rowid ASC LIMIT ?3;"
+                                  : "SELECT payload_json FROM messages WHERE conversation_id = ?1 "
+                                    "AND (expires_at_ms = 0 OR expires_at_ms > ?2) "
+                                    "ORDER BY sent_at_ms ASC, rowid ASC;";
 
     StmtGuard stmt;
     if (sqlite3_prepare_v2(db_, sql, -1, stmt.out(), nullptr) != SQLITE_OK) {
@@ -579,9 +637,11 @@ SqlCipherLocalStore::get_messages(const domain::ConversationId& id, std::size_t 
             application::ClientError::storage(sqlite3_errmsg(db_)));
     }
 
+    const int64_t now_ms = current_unix_ms();
     sqlite3_bind_text(stmt.get(), 1, id.value().c_str(), static_cast<int>(id.value().size()), SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt.get(), 2, static_cast<sqlite3_int64>(now_ms));
     if (limit > 0) {
-        sqlite3_bind_int64(stmt.get(), 2, static_cast<sqlite3_int64>(limit));
+        sqlite3_bind_int64(stmt.get(), 3, static_cast<sqlite3_int64>(limit));
     }
 
     std::vector<domain::Message> result;
@@ -593,7 +653,9 @@ SqlCipherLocalStore::get_messages(const domain::ConversationId& id, std::size_t 
                 return application::ClientResult<std::vector<domain::Message>>::error(
                     application::ClientError::storage("Corrupt message JSON in SQLCipher store"));
             }
-            result.push_back(std::move(*msg_opt));
+            if (!msg_opt->is_expired(now_ms)) {
+                result.push_back(std::move(*msg_opt));
+            }
         } else if (rc == SQLITE_DONE) {
             break;
         } else {
@@ -613,17 +675,20 @@ SqlCipherLocalStore::get_message(const domain::ConversationId& conversation_id, 
     }
 
     static constexpr const char* kSql =
-        "SELECT payload_json FROM messages WHERE conversation_id = ?1 AND message_id = ?2;";
+        "SELECT payload_json FROM messages WHERE conversation_id = ?1 AND message_id = ?2 "
+        "AND (expires_at_ms = 0 OR expires_at_ms > ?3);";
     StmtGuard stmt;
     if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
         return application::ClientResult<domain::Message>::error(
             application::ClientError::storage(sqlite3_errmsg(db_)));
     }
 
+    const int64_t now_ms = current_unix_ms();
     sqlite3_bind_text(stmt.get(), 1, conversation_id.value().c_str(), static_cast<int>(conversation_id.value().size()),
                       SQLITE_TRANSIENT);
     sqlite3_bind_text(stmt.get(), 2, message_id.value().c_str(), static_cast<int>(message_id.value().size()),
                       SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt.get(), 3, static_cast<sqlite3_int64>(now_ms));
 
     const int rc = sqlite3_step(stmt.get());
     if (rc == SQLITE_ROW) {
@@ -631,6 +696,10 @@ SqlCipherLocalStore::get_message(const domain::ConversationId& conversation_id, 
         if (!msg_opt.has_value()) {
             return application::ClientResult<domain::Message>::error(
                 application::ClientError::storage("Corrupt message JSON in SQLCipher store"));
+        }
+        if (msg_opt->is_expired(now_ms)) {
+            return application::ClientResult<domain::Message>::error(
+                application::ClientError::storage("Message not found"));
         }
         return application::ClientResult<domain::Message>::ok(std::move(*msg_opt));
     }
@@ -647,8 +716,10 @@ application::ClientResult<void> SqlCipherLocalStore::update_message(const domain
         return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
     }
 
-    static constexpr const char* kSql =
-        "UPDATE messages SET sent_at_ms = ?1, payload_json = ?2 WHERE conversation_id = ?3 AND message_id = ?4;";
+    static constexpr const char* kSql = R"sql(
+        UPDATE messages SET sent_at_ms = ?1, payload_json = ?2, expires_at_ms = ?3
+        WHERE conversation_id = ?4 AND message_id = ?5;
+    )sql";
     StmtGuard stmt;
     if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
         return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
@@ -662,8 +733,9 @@ application::ClientResult<void> SqlCipherLocalStore::update_message(const domain
 
     sqlite3_bind_int64(stmt.get(), 1, static_cast<sqlite3_int64>(sent_ms));
     sqlite3_bind_text(stmt.get(), 2, json.c_str(), static_cast<int>(json.size()), SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt.get(), 3, cid.c_str(), static_cast<int>(cid.size()), SQLITE_TRANSIENT);
-    sqlite3_bind_text(stmt.get(), 4, mid.c_str(), static_cast<int>(mid.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt.get(), 3, static_cast<sqlite3_int64>(message.expires_at_ms()));
+    sqlite3_bind_text(stmt.get(), 4, cid.c_str(), static_cast<int>(cid.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 5, mid.c_str(), static_cast<int>(mid.size()), SQLITE_TRANSIENT);
 
     if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
         return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
@@ -1251,6 +1323,180 @@ SqlCipherLocalStore::list_sync_cursors(const domain::DeviceId& device_id) {
         }
     }
     return application::ClientResult<std::vector<domain::SyncCursorRecord>>::ok(std::move(result));
+}
+
+application::ClientResult<void> SqlCipherLocalStore::save_user_profile(const domain::UserProfile& profile) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+
+    const auto errors = profile.validate();
+    if (!errors.empty()) {
+        return application::ClientResult<void>::error(application::ClientError::validation(errors.front()));
+    }
+
+    static constexpr const char* kSql = R"sql(
+        INSERT INTO user_profile (user_id, updated_at_ms, payload_json)
+        VALUES (?1, ?2, ?3)
+        ON CONFLICT(user_id) DO UPDATE SET
+            updated_at_ms = excluded.updated_at_ms,
+            payload_json = excluded.payload_json;
+    )sql";
+
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    const std::string& uid = profile.user_id.value();
+    const std::string json = profile.to_json();
+    sqlite3_bind_text(stmt.get(), 1, uid.c_str(), static_cast<int>(uid.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt.get(), 2, static_cast<sqlite3_int64>(profile.updated_at_ms));
+    sqlite3_bind_text(stmt.get(), 3, json.c_str(), static_cast<int>(json.size()), SQLITE_TRANSIENT);
+
+    if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<std::optional<domain::UserProfile>>
+SqlCipherLocalStore::get_user_profile(const domain::UserId& user_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<std::optional<domain::UserProfile>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (user_id.empty()) {
+        return application::ClientResult<std::optional<domain::UserProfile>>::error(
+            application::ClientError::validation("User ID cannot be empty"));
+    }
+
+    static constexpr const char* kSql = "SELECT payload_json FROM user_profile WHERE user_id = ?1;";
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<std::optional<domain::UserProfile>>::error(
+            application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    const std::string& uid = user_id.value();
+    sqlite3_bind_text(stmt.get(), 1, uid.c_str(), static_cast<int>(uid.size()), SQLITE_TRANSIENT);
+
+    const int rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_DONE) {
+        return application::ClientResult<std::optional<domain::UserProfile>>::ok(std::nullopt);
+    }
+    if (rc == SQLITE_ROW) {
+        auto profile_opt = domain::UserProfile::from_json(column_text_string(stmt.get(), 0));
+        if (!profile_opt.has_value()) {
+            return application::ClientResult<std::optional<domain::UserProfile>>::error(
+                application::ClientError::storage("Corrupt user_profile JSON in SQLCipher store"));
+        }
+        return application::ClientResult<std::optional<domain::UserProfile>>::ok(std::move(profile_opt));
+    }
+    return application::ClientResult<std::optional<domain::UserProfile>>::error(
+        application::ClientError::storage(sqlite3_errmsg(db_)));
+}
+
+application::ClientResult<void> SqlCipherLocalStore::save_user_settings(std::string_view profile_key,
+                                                                        const domain::UserSettings& settings) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    if (profile_key.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Settings profile_key cannot be empty"));
+    }
+    const auto errors = settings.validate();
+    if (!errors.empty()) {
+        return application::ClientResult<void>::error(application::ClientError::validation(errors.front()));
+    }
+
+    static constexpr const char* kSql = R"sql(
+        INSERT INTO user_settings (profile_key, updated_at_ms, payload_json)
+        VALUES (?1, ?2, ?3)
+        ON CONFLICT(profile_key) DO UPDATE SET
+            updated_at_ms = excluded.updated_at_ms,
+            payload_json = excluded.payload_json;
+    )sql";
+
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    const std::string key_str(profile_key);
+    const std::string json = settings.to_json();
+    sqlite3_bind_text(stmt.get(), 1, key_str.c_str(), static_cast<int>(key_str.size()), SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt.get(), 2, static_cast<sqlite3_int64>(settings.updated_at_ms));
+    sqlite3_bind_text(stmt.get(), 3, json.c_str(), static_cast<int>(json.size()), SQLITE_TRANSIENT);
+
+    if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<std::optional<domain::UserSettings>>
+SqlCipherLocalStore::get_user_settings(std::string_view profile_key) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<std::optional<domain::UserSettings>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (profile_key.empty()) {
+        return application::ClientResult<std::optional<domain::UserSettings>>::error(
+            application::ClientError::validation("Settings profile_key cannot be empty"));
+    }
+
+    static constexpr const char* kSql = "SELECT payload_json FROM user_settings WHERE profile_key = ?1;";
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<std::optional<domain::UserSettings>>::error(
+            application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    const std::string key_str(profile_key);
+    sqlite3_bind_text(stmt.get(), 1, key_str.c_str(), static_cast<int>(key_str.size()), SQLITE_TRANSIENT);
+
+    const int rc = sqlite3_step(stmt.get());
+    if (rc == SQLITE_DONE) {
+        return application::ClientResult<std::optional<domain::UserSettings>>::ok(std::nullopt);
+    }
+    if (rc == SQLITE_ROW) {
+        auto settings_opt = domain::UserSettings::from_json(column_text_string(stmt.get(), 0));
+        if (!settings_opt.has_value()) {
+            return application::ClientResult<std::optional<domain::UserSettings>>::error(
+                application::ClientError::storage("Corrupt user_settings JSON in SQLCipher store"));
+        }
+        return application::ClientResult<std::optional<domain::UserSettings>>::ok(std::move(settings_opt));
+    }
+    return application::ClientResult<std::optional<domain::UserSettings>>::error(
+        application::ClientError::storage(sqlite3_errmsg(db_)));
+}
+
+application::ClientResult<std::size_t> SqlCipherLocalStore::delete_expired_messages(int64_t now_ms) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<std::size_t>::error(application::ClientError::storage("Storage is closed"));
+    }
+    if (now_ms <= 0) {
+        return application::ClientResult<std::size_t>::ok(0U);
+    }
+
+    static constexpr const char* kSql = "DELETE FROM messages WHERE expires_at_ms > 0 AND expires_at_ms <= ?1;";
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<std::size_t>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+
+    sqlite3_bind_int64(stmt.get(), 1, static_cast<sqlite3_int64>(now_ms));
+    if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
+        return application::ClientResult<std::size_t>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+    return application::ClientResult<std::size_t>::ok(static_cast<std::size_t>(sqlite3_changes(db_)));
 }
 
 } // namespace securecloud::client::infrastructure::adapters

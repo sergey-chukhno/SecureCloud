@@ -47,6 +47,7 @@ std::string Message::to_json() const {
     j["attachment_size"] = attachment_size_;
     j["attachment_hash"] = attachment_hash_;
     j["server_sequence_number"] = server_sequence_number_;
+    j["expires_at_ms"] = expires_at_ms_;
     if (sender_key_epoch_.has_value()) {
         j["sender_key_epoch"] = *sender_key_epoch_;
     } else {
@@ -98,6 +99,12 @@ std::optional<Message> Message::from_json(std::string_view json_str) {
         if (j.contains("sender_key_epoch") && j["sender_key_epoch"].is_number_unsigned()) {
             msg.set_sender_key_epoch(j["sender_key_epoch"].get<uint64_t>());
         }
+        if (j.contains("expires_at_ms")) {
+            if (!j["expires_at_ms"].is_number_integer()) {
+                return std::nullopt;
+            }
+            msg.set_expires_at_ms(j["expires_at_ms"].get<int64_t>());
+        }
 
         return msg;
     } catch (...) {
@@ -111,7 +118,8 @@ bool Message::operator==(const Message& other) const noexcept {
            delivery_state_ == other.delivery_state_ && priority_ == other.priority_ &&
            sender_display_name_ == other.sender_display_name_ && idempotency_key_ == other.idempotency_key_ &&
            emergency_acknowledged_ == other.emergency_acknowledged_ &&
-           server_sequence_number_ == other.server_sequence_number_ && sender_key_epoch_ == other.sender_key_epoch_;
+           server_sequence_number_ == other.server_sequence_number_ && sender_key_epoch_ == other.sender_key_epoch_ &&
+           expires_at_ms_ == other.expires_at_ms_;
 }
 
 } // namespace securecloud::client::domain

@@ -9,8 +9,11 @@
 #include "domain/message_id.hpp"
 #include "domain/offline_sync_models.hpp"
 #include "domain/user_id.hpp"
+#include "domain/user_profile.hpp"
+#include "domain/user_settings.hpp"
 
 #include <cstddef>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -59,6 +62,15 @@ class ILocalStore {
                                                                    const domain::ConversationId& conversation_id) = 0;
     virtual ClientResult<std::vector<domain::SyncCursorRecord>>
     list_sync_cursors(const domain::DeviceId& device_id) = 0;
+
+    virtual ClientResult<void> save_user_profile(const domain::UserProfile& profile) = 0;
+    virtual ClientResult<std::optional<domain::UserProfile>> get_user_profile(const domain::UserId& user_id) = 0;
+
+    virtual ClientResult<void> save_user_settings(std::string_view profile_key,
+                                                  const domain::UserSettings& settings) = 0;
+    virtual ClientResult<std::optional<domain::UserSettings>> get_user_settings(std::string_view profile_key) = 0;
+
+    virtual ClientResult<std::size_t> delete_expired_messages(int64_t now_ms) = 0;
 };
 
 } // namespace securecloud::client::application::interfaces
