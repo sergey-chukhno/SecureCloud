@@ -3789,6 +3789,7 @@ if(Qt6_FOUND)
         client/emergency_panic_wipe_integration_test.cpp
         client/user_settings_and_profile_domain_test.cpp
         client/settings_and_expiry_persistence_test.cpp
+        client/recovery_phrase_engine_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES

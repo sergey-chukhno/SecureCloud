@@ -37,6 +37,7 @@ if(Qt6_FOUND)
         domain/crypto/sender_key_models.cpp
         domain/crypto/sender_key_engine.cpp
         domain/crypto/file_crypto_engine.cpp
+        domain/crypto/recovery_phrase_engine.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)
     target_include_directories(securecloud_client_domain PUBLIC
