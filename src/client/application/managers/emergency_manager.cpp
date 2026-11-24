@@ -4,6 +4,7 @@
 #include "application/managers/file_manager.hpp"
 #include "application/managers/messaging_manager.hpp"
 #include "application/managers/ratchet_session_manager.hpp"
+#include "application/managers/settings_manager.hpp"
 #include "application/managers/sync_manager.hpp"
 #include "infrastructure/adapters/file_shredder.hpp"
 #include "infrastructure/client_logger.hpp"
@@ -126,6 +127,10 @@ void EmergencyManager::set_sync_manager(SyncManager* sync_manager) noexcept {
 
 void EmergencyManager::set_auth_manager(AuthManager* auth_manager) noexcept {
     auth_manager_ = auth_manager;
+}
+
+void EmergencyManager::set_settings_manager(SettingsManager* settings_manager) noexcept {
+    settings_manager_ = settings_manager;
 }
 
 void EmergencyManager::register_shred_artifact_path(const std::filesystem::path& path) {
@@ -445,6 +450,10 @@ EmergencyManager::run_destruction_phases(domain::PanicTriggerSource source, doma
     }
     if (auth_manager_ != nullptr) {
         auth_manager_->force_clear_session();
+        ++managers_cleared;
+    }
+    if (settings_manager_ != nullptr) {
+        settings_manager_->wipe_volatile_state();
         ++managers_cleared;
     }
 

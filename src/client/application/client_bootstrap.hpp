@@ -11,6 +11,7 @@
 #include "application/managers/emergency_manager.hpp"
 #include "application/managers/file_manager.hpp"
 #include "application/managers/messaging_manager.hpp"
+#include "application/managers/settings_manager.hpp"
 #include "application/managers/sync_manager.hpp"
 #include "domain/device_id.hpp"
 #include "domain/user_id.hpp"
@@ -65,6 +66,7 @@ class ClientBootstrap {
     }
     [[nodiscard]] managers::FileManager& file_manager() noexcept { return *file_manager_; }
     [[nodiscard]] managers::EmergencyManager& emergency_manager() noexcept { return *emergency_manager_; }
+    [[nodiscard]] managers::SettingsManager& settings_manager() noexcept { return *settings_manager_; }
     [[nodiscard]] managers::SyncManager& sync_manager() noexcept { return *sync_manager_; }
     [[nodiscard]] managers::RatchetSessionManager* ratchet_session_manager() noexcept {
         return ratchet_session_manager_.get();
@@ -97,6 +99,7 @@ class ClientBootstrap {
     std::unique_ptr<managers::SafetyNumberEngine> safety_number_engine_;
     std::unique_ptr<managers::FileManager> file_manager_;
     std::unique_ptr<managers::EmergencyManager> emergency_manager_;
+    std::unique_ptr<managers::SettingsManager> settings_manager_;
     std::unique_ptr<managers::SyncManager> sync_manager_;
 };
 

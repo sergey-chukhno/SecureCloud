@@ -51,6 +51,12 @@ class MessagingManager {
     ClientResult<void> set_read_receipts_enabled(bool enabled);
     [[nodiscard]] bool read_receipts_enabled() const noexcept;
 
+    void set_default_disappearing_ttl_seconds(int64_t ttl_seconds) noexcept;
+    [[nodiscard]] int64_t default_disappearing_ttl_seconds() const noexcept;
+    ClientResult<domain::Conversation>
+    set_conversation_disappearing_timer(const domain::ConversationId& conversation_id, int64_t ttl_seconds);
+    ClientResult<std::size_t> purge_expired_messages(int64_t now_ms = 0);
+
     // Direct and Group Conversations
     ClientResult<domain::Conversation> open_direct_conversation(const domain::UserId& local_user,
                                                                 const domain::UserId& peer_user,
@@ -158,6 +164,7 @@ class MessagingManager {
     ClientResult<domain::Message> persist_inbound_message(domain::Message msg);
     void dispatch_delivery_ack_if_configured(const domain::ConversationId& conversation_id,
                                              const domain::MessageId& message_id);
+    void apply_disappearing_expiry_if_configured(domain::Message& msg) const;
     void hydrate_read_receipt_policy();
     void purge_queued_read_receipts();
 
@@ -169,6 +176,7 @@ class MessagingManager {
     DeliveryRetryEngine retry_engine_;
     domain::DeviceId local_device_id_;
     domain::ReadReceiptPolicy read_receipt_policy_;
+    int64_t default_disappearing_ttl_seconds_{0};
     bool offline_mode_{false};
 };
 

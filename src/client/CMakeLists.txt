@@ -96,6 +96,7 @@ if(Qt6_FOUND)
         application/managers/ratchet_session_manager.cpp
         application/managers/file_manager.cpp
         application/managers/emergency_manager.cpp
+        application/managers/settings_manager.cpp
         application/managers/sync_manager.cpp
     )
     add_library(securecloud::client_app ALIAS securecloud_client_app)

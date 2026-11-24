@@ -69,6 +69,8 @@ void ClientBootstrap::wire_managers() {
     file_manager_ = std::make_unique<managers::FileManager>(*gateway_, *crypto_provider_, local_store_.get(),
                                                             secure_storage_.get(), messaging_manager_.get());
     emergency_manager_ = std::make_unique<managers::EmergencyManager>(*local_store_, *secure_storage_);
+    settings_manager_ = std::make_unique<managers::SettingsManager>(*local_store_, *secure_storage_, *gateway_, config_,
+                                                                    file_manager_.get(), messaging_manager_.get());
     sync_manager_ = std::make_unique<managers::SyncManager>(*gateway_, config_);
     sync_manager_->set_local_store(local_store_.get());
     sync_manager_->set_messaging_manager(messaging_manager_.get());
@@ -79,6 +81,7 @@ void ClientBootstrap::wire_managers() {
     emergency_manager_->set_file_manager(file_manager_.get());
     emergency_manager_->set_sync_manager(sync_manager_.get());
     emergency_manager_->set_auth_manager(auth_manager_.get());
+    emergency_manager_->set_settings_manager(settings_manager_.get());
     auth_manager_->set_emergency_manager(emergency_manager_.get());
 }
 

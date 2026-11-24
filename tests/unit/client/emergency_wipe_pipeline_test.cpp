@@ -340,7 +340,7 @@ TEST_F(EmergencyWipePipelineTest, FullThreePhaseDestructionCompletesUnder500MsAn
     EXPECT_FALSE(report.broadcast_attempted);
     EXPECT_GT(report.secrets_purged_count, 0U);
     EXPECT_GE(report.files_shredded_count, 4U);
-    EXPECT_EQ(report.volatile_caches_cleared, 5U);
+    EXPECT_EQ(report.volatile_caches_cleared, 6U);
 
     // Phase 1 volatile verification.
     EXPECT_FALSE(bootstrap.auth_manager().is_authenticated());

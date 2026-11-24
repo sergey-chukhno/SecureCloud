@@ -374,7 +374,7 @@ TEST_F(EmergencyPanicWipeIntegrationTest, Scenario1_Sub500MsForensicWipeAcrossAc
     EXPECT_LT(report.duration_ms, 500);
     EXPECT_GE(report.secrets_purged_count, 5U);
     EXPECT_GE(report.files_shredded_count, 4U);
-    EXPECT_EQ(report.volatile_caches_cleared, 5U);
+    EXPECT_EQ(report.volatile_caches_cleared, 6U);
 
     EXPECT_FALSE(bootstrap.auth_manager().is_authenticated());
     EXPECT_EQ(bootstrap.ratchet_session_manager()->active_session_count(), 0U);

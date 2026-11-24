@@ -35,6 +35,7 @@ struct FileUploadRequest {
     std::string sender_display_name;
     int32_t priority{0};
     bool dispatch_key_envelope{true};
+    bool is_profile_asset{false};
 };
 
 struct FileUploadResult {
