@@ -28,21 +28,23 @@ ChunkRecordResult FileChunkRepository::record_chunk(const FileChunkEntity& chunk
         throw RepositoryException("Chunk SHA-256 hash must not be empty");
     }
 
-    auto res = tx.exec("INSERT INTO file_chunks (chunk_id, transfer_id, chunk_index, byte_offset, chunk_size, "
-                       "chunk_hash_sha256, minio_chunk_key, status, created_at) "
-                       "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) "
-                       "ON CONFLICT (transfer_id, chunk_index) DO NOTHING",
-                       pqxx::params{chunk.chunk_id, chunk.transfer_id, chunk.chunk_index, chunk.byte_offset,
-                                    chunk.chunk_size, chunk.chunk_hash_sha256, chunk.minio_chunk_key,
-                                    db::to_string(chunk.status), db::to_iso8601(chunk.created_at)});
+    auto res = db::exec_sql(tx,
+                            "INSERT INTO file_chunks (chunk_id, transfer_id, chunk_index, byte_offset, chunk_size, "
+                            "chunk_hash_sha256, minio_chunk_key, status, created_at) "
+                            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) "
+                            "ON CONFLICT (transfer_id, chunk_index) DO NOTHING",
+                            pqxx::params{chunk.chunk_id, chunk.transfer_id, chunk.chunk_index, chunk.byte_offset,
+                                         chunk.chunk_size, chunk.chunk_hash_sha256, chunk.minio_chunk_key,
+                                         db::to_string(chunk.status), db::to_iso8601(chunk.created_at)});
 
     if (res.affected_rows() > 0) {
         return ChunkRecordResult::NewlyInserted;
     }
 
     // A conflict occurred on (transfer_id, chunk_index). Query the existing chunk's hash.
-    auto check_res = tx.exec("SELECT chunk_hash_sha256 FROM file_chunks WHERE transfer_id = $1 AND chunk_index = $2",
-                             pqxx::params{chunk.transfer_id, chunk.chunk_index});
+    auto check_res =
+        db::exec_sql(tx, "SELECT chunk_hash_sha256 FROM file_chunks WHERE transfer_id = $1 AND chunk_index = $2",
+                     pqxx::params{chunk.transfer_id, chunk.chunk_index});
 
     if (check_res.empty()) {
         throw RepositoryException("Conflict detected on chunk insert but existing chunk record was not found");
@@ -63,8 +65,8 @@ std::vector<int32_t> FileChunkRepository::get_accepted_chunk_indices(const std::
         return {};
     }
 
-    auto res = tx.exec("SELECT chunk_index FROM file_chunks WHERE transfer_id = $1 ORDER BY chunk_index ASC",
-                       pqxx::params{transfer_id});
+    auto res = db::exec_sql(tx, "SELECT chunk_index FROM file_chunks WHERE transfer_id = $1 ORDER BY chunk_index ASC",
+                            pqxx::params{transfer_id});
 
     std::vector<int32_t> indices;
     indices.reserve(static_cast<size_t>(res.size()));
@@ -93,7 +95,7 @@ int32_t FileChunkRepository::count_accepted_chunks(const std::string& transfer_i
         return 0;
     }
 
-    auto res = tx.exec("SELECT COUNT(*) FROM file_chunks WHERE transfer_id = $1", pqxx::params{transfer_id});
+    auto res = db::exec_sql(tx, "SELECT COUNT(*) FROM file_chunks WHERE transfer_id = $1", pqxx::params{transfer_id});
 
     if (res.empty()) {
         return 0;
@@ -121,8 +123,8 @@ bool FileChunkRepository::is_chunk_present(const std::string& transfer_id, int32
         return false;
     }
 
-    auto res = tx.exec("SELECT 1 FROM file_chunks WHERE transfer_id = $1 AND chunk_index = $2",
-                       pqxx::params{transfer_id, chunk_index});
+    auto res = db::exec_sql(tx, "SELECT 1 FROM file_chunks WHERE transfer_id = $1 AND chunk_index = $2",
+                            pqxx::params{transfer_id, chunk_index});
 
     return !res.empty();
 }
@@ -147,10 +149,11 @@ std::vector<FileChunkEntity> FileChunkRepository::list_chunks_for_transfer(const
         return {};
     }
 
-    auto res = tx.exec("SELECT chunk_id, transfer_id, chunk_index, byte_offset, chunk_size, chunk_hash_sha256, "
-                       "minio_chunk_key, status, created_at "
-                       "FROM file_chunks WHERE transfer_id = $1 ORDER BY chunk_index ASC",
-                       pqxx::params{transfer_id});
+    auto res = db::exec_sql(tx,
+                            "SELECT chunk_id, transfer_id, chunk_index, byte_offset, chunk_size, chunk_hash_sha256, "
+                            "minio_chunk_key, status, created_at "
+                            "FROM file_chunks WHERE transfer_id = $1 ORDER BY chunk_index ASC",
+                            pqxx::params{transfer_id});
 
     std::vector<FileChunkEntity> chunks;
     chunks.reserve(static_cast<size_t>(res.size()));

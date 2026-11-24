@@ -32,18 +32,19 @@ void FileAccessRepository::grant_access(const FileAccessEntity& grant, pqxx::wor
         revoked_str = db::to_iso8601(*grant.revoked_at);
     }
 
-    tx.exec("INSERT INTO file_access (access_id, file_id, grantee_user_id, grantee_device_id, permission, "
-            "granted_by, granted_at, revoked_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
-            "ON CONFLICT (file_id, grantee_user_id) DO UPDATE SET "
-            "permission = EXCLUDED.permission, "
-            "grantee_device_id = EXCLUDED.grantee_device_id, "
-            "granted_by = EXCLUDED.granted_by, "
-            "granted_at = EXCLUDED.granted_at, "
-            "revoked_at = EXCLUDED.revoked_at",
-            pqxx::params{grant.access_id, grant.file_id, grant.grantee_user_id, grant.grantee_device_id,
-                         db::to_string(grant.permission), grant.granted_by, db::to_iso8601(grant.granted_at),
-                         revoked_str});
+    db::exec_sql(tx,
+                 "INSERT INTO file_access (access_id, file_id, grantee_user_id, grantee_device_id, permission, "
+                 "granted_by, granted_at, revoked_at) "
+                 "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
+                 "ON CONFLICT (file_id, grantee_user_id) DO UPDATE SET "
+                 "permission = EXCLUDED.permission, "
+                 "grantee_device_id = EXCLUDED.grantee_device_id, "
+                 "granted_by = EXCLUDED.granted_by, "
+                 "granted_at = EXCLUDED.granted_at, "
+                 "revoked_at = EXCLUDED.revoked_at",
+                 pqxx::params{grant.access_id, grant.file_id, grant.grantee_user_id, grant.grantee_device_id,
+                              db::to_string(grant.permission), grant.granted_by, db::to_iso8601(grant.granted_at),
+                              revoked_str});
 }
 
 void FileAccessRepository::grant_access(const FileAccessEntity& grant) {
@@ -67,7 +68,7 @@ bool FileAccessRepository::check_access(const std::string& file_id, const std::s
 
     // 1. Ownership invariant (ADR-005, Files Design 6.15):
     // The file creator/owner implicitly possesses full ADMIN permission without needing a file_access row.
-    auto owner_res = tx.exec("SELECT owner_user_id FROM files WHERE file_id = $1", pqxx::params{file_id});
+    auto owner_res = db::exec_sql(tx, "SELECT owner_user_id FROM files WHERE file_id = $1", pqxx::params{file_id});
 
     if (owner_res.empty()) {
         return false;
@@ -78,7 +79,8 @@ bool FileAccessRepository::check_access(const std::string& file_id, const std::s
     }
 
     // 2. Non-owner authorization: check active, unrevoked grant
-    auto grant_res = tx.exec(
+    auto grant_res = db::exec_sql(
+        tx,
         "SELECT access_id, file_id, grantee_user_id, grantee_device_id, permission, granted_by, granted_at, revoked_at "
         "FROM file_access WHERE file_id = $1 AND grantee_user_id = $2 AND revoked_at IS NULL",
         pqxx::params{file_id, user_id});
@@ -123,8 +125,8 @@ bool FileAccessRepository::revoke_access(const std::string& file_id, const std::
     }
 
     auto now_iso = db::to_iso8601(std::chrono::system_clock::now());
-    auto res = tx.exec(
-        "UPDATE file_access SET revoked_at = $1 WHERE file_id = $2 AND grantee_user_id = $3 AND revoked_at IS NULL",
+    auto res = db::exec_sql(
+        tx, "UPDATE file_access SET revoked_at = $1 WHERE file_id = $2 AND grantee_user_id = $3 AND revoked_at IS NULL",
         pqxx::params{now_iso, file_id, user_id});
 
     return res.affected_rows() > 0;
@@ -151,7 +153,8 @@ std::vector<FileAccessEntity> FileAccessRepository::list_grantees(const std::str
         return {};
     }
 
-    auto res = tx.exec(
+    auto res = db::exec_sql(
+        tx,
         "SELECT access_id, file_id, grantee_user_id, grantee_device_id, permission, granted_by, granted_at, revoked_at "
         "FROM file_access WHERE file_id = $1 AND revoked_at IS NULL ORDER BY granted_at ASC",
         pqxx::params{file_id});
@@ -184,7 +187,8 @@ std::optional<FileAccessEntity> FileAccessRepository::find_grant(const std::stri
         return std::nullopt;
     }
 
-    auto res = tx.exec(
+    auto res = db::exec_sql(
+        tx,
         "SELECT access_id, file_id, grantee_user_id, grantee_device_id, permission, granted_by, granted_at, revoked_at "
         "FROM file_access WHERE file_id = $1 AND grantee_user_id = $2",
         pqxx::params{file_id, user_id});

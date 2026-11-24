@@ -2,6 +2,7 @@
 #include "files/audit/files_outbox_relay.hpp"
 #include "files/db/files_connection_pool.hpp"
 #include "files/db/migration_runner.hpp"
+#include "files/db/pqxx_compat.hpp"
 #include "files/repository/files_outbox_repository.hpp"
 
 #include <array>
@@ -132,7 +133,7 @@ class FilesOutboxTransactionTest : public ::testing::Test {
             return;
         pqxx::work tx(connection->native_handle());
         for (const auto& id : ids)
-            tx.exec("DELETE FROM files_outbox WHERE event_id = $1", pqxx::params{id});
+            db::exec_sql(tx, "DELETE FROM files_outbox WHERE event_id = $1", pqxx::params{id});
         tx.commit();
     }
 
@@ -231,8 +232,8 @@ TEST_F(FilesOutboxTransactionTest, ReclaimsExpiredLeaseDrainsAfterOutageAndQuara
         auto* connection = dynamic_cast<db::DefaultDbConnection*>(lease.get());
         ASSERT_NE(connection, nullptr);
         pqxx::work tx(connection->native_handle());
-        tx.exec("UPDATE files_outbox SET leased_until = NOW() - INTERVAL '1 minute' WHERE event_id = $1",
-                pqxx::params{event.event_id});
+        db::exec_sql(tx, "UPDATE files_outbox SET leased_until = NOW() - INTERVAL '1 minute' WHERE event_id = $1",
+                     pqxx::params{event.event_id});
         tx.commit();
     }
     const auto reclaimed = repository_->fetch_and_lease_pending_batch(1, std::chrono::seconds(30));
@@ -270,8 +271,8 @@ TEST_F(FilesOutboxTransactionTest, ReclaimsExpiredLeaseDrainsAfterOutageAndQuara
         auto* db_connection = dynamic_cast<db::DefaultDbConnection*>(lease.get());
         ASSERT_NE(db_connection, nullptr);
         pqxx::work tx(db_connection->native_handle());
-        tx.exec("UPDATE files_outbox SET processed_at = NOW() - INTERVAL '8 days' WHERE event_id = $1",
-                pqxx::params{event.event_id});
+        db::exec_sql(tx, "UPDATE files_outbox SET processed_at = NOW() - INTERVAL '8 days' WHERE event_id = $1",
+                     pqxx::params{event.event_id});
         tx.commit();
     }
     EXPECT_EQ(

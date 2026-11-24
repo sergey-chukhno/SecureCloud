@@ -21,7 +21,8 @@ void FileRepository::create_file(const FileEntity& file, const EncryptedFileMeta
     }
 
     // 1. Insert master file catalog entry
-    tx.exec(
+    db::exec_sql(
+        tx,
         "INSERT INTO files (file_id, owner_user_id, owner_device_id, conversation_id, encrypted_size, "
         "content_type, encryption_algorithm, status, retention_until, created_at, updated_at) "
         "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)",
@@ -33,15 +34,16 @@ void FileRepository::create_file(const FileEntity& file, const EncryptedFileMeta
                      db::to_iso8601(file.created_at), db::to_iso8601(file.updated_at)});
 
     // 2. Insert client-side encrypted metadata entry (Zero-Plaintext Invariant)
-    tx.exec("INSERT INTO encrypted_file_metadata (file_id, encrypted_filename, encrypted_mime_type, "
-            "metadata_nonce, metadata_tag, client_encryption_metadata, updated_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6, $7)",
-            pqxx::params{metadata.file_id, db::to_bytea_hex(metadata.encrypted_filename),
-                         metadata.encrypted_mime_type
-                             ? std::make_optional(db::to_bytea_hex(*metadata.encrypted_mime_type))
-                             : std::nullopt,
-                         db::to_bytea_hex(metadata.metadata_nonce), db::to_bytea_hex(metadata.metadata_tag),
-                         metadata.client_encryption_metadata_json, db::to_iso8601(metadata.updated_at)});
+    db::exec_sql(tx,
+                 "INSERT INTO encrypted_file_metadata (file_id, encrypted_filename, encrypted_mime_type, "
+                 "metadata_nonce, metadata_tag, client_encryption_metadata, updated_at) "
+                 "VALUES ($1, $2, $3, $4, $5, $6, $7)",
+                 pqxx::params{metadata.file_id, db::to_bytea_hex(metadata.encrypted_filename),
+                              metadata.encrypted_mime_type
+                                  ? std::make_optional(db::to_bytea_hex(*metadata.encrypted_mime_type))
+                                  : std::nullopt,
+                              db::to_bytea_hex(metadata.metadata_nonce), db::to_bytea_hex(metadata.metadata_tag),
+                              metadata.client_encryption_metadata_json, db::to_iso8601(metadata.updated_at)});
 }
 
 std::optional<FileEntity> FileRepository::find_by_id(const std::string& file_id, pqxx::work& tx) {
@@ -49,10 +51,11 @@ std::optional<FileEntity> FileRepository::find_by_id(const std::string& file_id,
         return std::nullopt;
     }
 
-    auto res = tx.exec("SELECT file_id, owner_user_id, owner_device_id, conversation_id, encrypted_size, "
-                       "content_type, encryption_algorithm, status, retention_until, created_at, updated_at "
-                       "FROM files WHERE file_id = $1",
-                       pqxx::params{file_id});
+    auto res = db::exec_sql(tx,
+                            "SELECT file_id, owner_user_id, owner_device_id, conversation_id, encrypted_size, "
+                            "content_type, encryption_algorithm, status, retention_until, created_at, updated_at "
+                            "FROM files WHERE file_id = $1",
+                            pqxx::params{file_id});
 
     if (res.empty()) {
         return std::nullopt;
@@ -82,10 +85,11 @@ std::optional<EncryptedFileMetadataEntity> FileRepository::find_encrypted_metada
         return std::nullopt;
     }
 
-    auto res = tx.exec("SELECT file_id, encrypted_filename, encrypted_mime_type, metadata_nonce, metadata_tag, "
-                       "client_encryption_metadata, updated_at "
-                       "FROM encrypted_file_metadata WHERE file_id = $1",
-                       pqxx::params{file_id});
+    auto res = db::exec_sql(tx,
+                            "SELECT file_id, encrypted_filename, encrypted_mime_type, metadata_nonce, metadata_tag, "
+                            "client_encryption_metadata, updated_at "
+                            "FROM encrypted_file_metadata WHERE file_id = $1",
+                            pqxx::params{file_id});
 
     if (res.empty()) {
         return std::nullopt;
@@ -117,8 +121,8 @@ bool FileRepository::update_status(const std::string& file_id, FileStatus expect
     }
 
     auto now_str = db::to_iso8601(std::chrono::system_clock::now());
-    auto res = tx.exec("UPDATE files SET status = $1, updated_at = $2 WHERE file_id = $3 AND status = $4",
-                       pqxx::params{db::to_string(new_status), now_str, file_id, db::to_string(expected_current)});
+    auto res = db::exec_sql(tx, "UPDATE files SET status = $1, updated_at = $2 WHERE file_id = $3 AND status = $4",
+                            pqxx::params{db::to_string(new_status), now_str, file_id, db::to_string(expected_current)});
 
     return res.affected_rows() > 0;
 }
@@ -142,8 +146,8 @@ bool FileRepository::update_status(const std::string& file_id, FileStatus expect
 
 bool FileRepository::delete_file_logical(const std::string& file_id, pqxx::work& tx) {
     auto now_str = db::to_iso8601(std::chrono::system_clock::now());
-    auto res = tx.exec("UPDATE files SET status = 'DELETED', updated_at = $1 WHERE file_id = $2",
-                       pqxx::params{now_str, file_id});
+    auto res = db::exec_sql(tx, "UPDATE files SET status = 'DELETED', updated_at = $1 WHERE file_id = $2",
+                            pqxx::params{now_str, file_id});
 
     return res.affected_rows() > 0;
 }
@@ -151,12 +155,13 @@ bool FileRepository::delete_file_logical(const std::string& file_id, pqxx::work&
 std::vector<FileEntity> FileRepository::find_expired_files(std::chrono::system_clock::time_point now, size_t limit,
                                                            pqxx::work& tx) {
     auto now_str = db::to_iso8601(now);
-    auto res = tx.exec("SELECT file_id, owner_user_id, owner_device_id, conversation_id, encrypted_size, "
-                       "content_type, encryption_algorithm, status, retention_until, created_at, updated_at "
-                       "FROM files "
-                       "WHERE retention_until IS NOT NULL AND retention_until <= $1 AND status != 'DELETED' "
-                       "ORDER BY retention_until ASC LIMIT $2",
-                       pqxx::params{now_str, limit});
+    auto res = db::exec_sql(tx,
+                            "SELECT file_id, owner_user_id, owner_device_id, conversation_id, encrypted_size, "
+                            "content_type, encryption_algorithm, status, retention_until, created_at, updated_at "
+                            "FROM files "
+                            "WHERE retention_until IS NOT NULL AND retention_until <= $1 AND status != 'DELETED' "
+                            "ORDER BY retention_until ASC LIMIT $2",
+                            pqxx::params{now_str, static_cast<int64_t>(limit)});
 
     std::vector<FileEntity> files;
     files.reserve(static_cast<size_t>(res.size()));

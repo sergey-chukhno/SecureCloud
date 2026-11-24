@@ -25,7 +25,8 @@ void FileTransferRepository::create_transfer(const FileTransferEntity& transfer,
         throw RepositoryException("Initiator user ID cannot be empty");
     }
 
-    tx.exec(
+    db::exec_sql(
+        tx,
         "INSERT INTO file_transfers (transfer_id, file_id, transfer_type, initiator_user_id, initiator_device_id, "
         "status, total_chunks, accepted_chunks, total_bytes, transferred_bytes, created_at, updated_at, expires_at) "
         "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
@@ -41,11 +42,12 @@ std::optional<FileTransferEntity> FileTransferRepository::find_by_id(const std::
         return std::nullopt;
     }
 
-    auto res =
-        tx.exec("SELECT transfer_id, file_id, transfer_type, initiator_user_id, initiator_device_id, status, "
-                "total_chunks, accepted_chunks, total_bytes, transferred_bytes, created_at, updated_at, expires_at "
-                "FROM file_transfers WHERE transfer_id = $1",
-                pqxx::params{transfer_id});
+    auto res = db::exec_sql(
+        tx,
+        "SELECT transfer_id, file_id, transfer_type, initiator_user_id, initiator_device_id, status, "
+        "total_chunks, accepted_chunks, total_bytes, transferred_bytes, created_at, updated_at, expires_at "
+        "FROM file_transfers WHERE transfer_id = $1",
+        pqxx::params{transfer_id});
 
     if (res.empty()) {
         return std::nullopt;
@@ -74,8 +76,8 @@ bool FileTransferRepository::update_status(const std::string& transfer_id, Trans
     }
 
     auto now_iso = db::to_iso8601(std::chrono::system_clock::now());
-    auto res = tx.exec("UPDATE file_transfers SET status = $1, updated_at = $2 WHERE transfer_id = $3",
-                       pqxx::params{db::to_string(status), now_iso, transfer_id});
+    auto res = db::exec_sql(tx, "UPDATE file_transfers SET status = $1, updated_at = $2 WHERE transfer_id = $3",
+                            pqxx::params{db::to_string(status), now_iso, transfer_id});
 
     return res.affected_rows() > 0;
 }
@@ -103,9 +105,10 @@ bool FileTransferRepository::increment_chunk_progress(const std::string& transfe
     }
 
     auto now_iso = db::to_iso8601(std::chrono::system_clock::now());
-    auto res = tx.exec("UPDATE file_transfers SET accepted_chunks = accepted_chunks + 1, transferred_bytes = "
-                       "transferred_bytes + $1, updated_at = $2 WHERE transfer_id = $3",
-                       pqxx::params{bytes_added, now_iso, transfer_id});
+    auto res = db::exec_sql(tx,
+                            "UPDATE file_transfers SET accepted_chunks = accepted_chunks + 1, transferred_bytes = "
+                            "transferred_bytes + $1, updated_at = $2 WHERE transfer_id = $3",
+                            pqxx::params{bytes_added, now_iso, transfer_id});
 
     return res.affected_rows() > 0;
 }

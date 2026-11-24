@@ -39,10 +39,12 @@ FilesOutboxEntity entity(std::string event_type) {
     e.aggregate_id = uuid_v7();
     e.event_type = std::move(event_type);
     e.created_at = std::chrono::system_clock::now();
-    e.payload_json =
-        nlohmann::json{
-            {"owner_user_id", uuid_v7()}, {"correlation_id", uuid_v7()}, {"file_size", 1024}, {"chunk_count", 2}}
-            .dump();
+    nlohmann::json payload;
+    payload["owner_user_id"] = uuid_v7();
+    payload["correlation_id"] = uuid_v7();
+    payload["file_size"] = 1024;
+    payload["chunk_count"] = 2;
+    e.payload_json = payload.dump();
     return e;
 }
 } // namespace

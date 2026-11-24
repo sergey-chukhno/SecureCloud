@@ -24,12 +24,13 @@ void FileVersionRepository::create_version(const FileVersionEntity& version, pqx
     }
 
     try {
-        tx.exec("INSERT INTO file_versions (version_id, file_id, version_number, encrypted_size, "
-                "minio_object_key, checksum_sha256, created_at, is_active) "
-                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-                pqxx::params{version.version_id, version.file_id, version.version_number, version.encrypted_size,
-                             version.minio_object_key, version.checksum_sha256, db::to_iso8601(version.created_at),
-                             version.is_active});
+        db::exec_sql(tx,
+                     "INSERT INTO file_versions (version_id, file_id, version_number, encrypted_size, "
+                     "minio_object_key, checksum_sha256, created_at, is_active) "
+                     "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                     pqxx::params{version.version_id, version.file_id, version.version_number, version.encrypted_size,
+                                  version.minio_object_key, version.checksum_sha256, db::to_iso8601(version.created_at),
+                                  version.is_active});
     } catch (const std::exception& e) {
         std::string msg = e.what();
         if (msg.find("unique") != std::string::npos || msg.find("UNIQUE") != std::string::npos ||
@@ -41,8 +42,8 @@ void FileVersionRepository::create_version(const FileVersionEntity& version, pqx
     }
 
     if (version.is_active) {
-        tx.exec("UPDATE file_versions SET is_active = FALSE WHERE file_id = $1 AND version_number != $2",
-                pqxx::params{version.file_id, version.version_number});
+        db::exec_sql(tx, "UPDATE file_versions SET is_active = FALSE WHERE file_id = $1 AND version_number != $2",
+                     pqxx::params{version.file_id, version.version_number});
     }
 }
 
@@ -52,7 +53,8 @@ std::optional<FileVersionEntity> FileVersionRepository::find_active_version(cons
         return std::nullopt;
     }
 
-    auto res = tx.exec(
+    auto res = db::exec_sql(
+        tx,
         "SELECT version_id, file_id, version_number, encrypted_size, minio_object_key, checksum_sha256, created_at, "
         "is_active "
         "FROM file_versions WHERE file_id = $1 AND is_active = TRUE ORDER BY version_number DESC LIMIT 1",
@@ -84,10 +86,11 @@ std::vector<FileVersionEntity> FileVersionRepository::list_versions(const std::s
         return {};
     }
 
-    auto res = tx.exec("SELECT version_id, file_id, version_number, encrypted_size, minio_object_key, "
-                       "checksum_sha256, created_at, is_active "
-                       "FROM file_versions WHERE file_id = $1 ORDER BY version_number ASC",
-                       pqxx::params{file_id});
+    auto res = db::exec_sql(tx,
+                            "SELECT version_id, file_id, version_number, encrypted_size, minio_object_key, "
+                            "checksum_sha256, created_at, is_active "
+                            "FROM file_versions WHERE file_id = $1 ORDER BY version_number ASC",
+                            pqxx::params{file_id});
 
     std::vector<FileVersionEntity> versions;
     versions.reserve(static_cast<size_t>(res.size()));
