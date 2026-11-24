@@ -1,5 +1,6 @@
 #include "service/read_receipt_service.hpp"
 
+#include "audit/audit_outbox_payload.hpp"
 #include "domain/message_bucket.hpp"
 
 #include <chrono>
@@ -134,10 +135,11 @@ ServiceResult<ReadReceiptResponse> ReadReceiptService::record_read_receipt(const
 
     if (audit_repo_) {
         repository::AuditOutboxRecord audit_read;
+        audit::set_outbox_correlation_id(audit_read, cmd.correlation_id);
         audit_read.outbox_bucket = domain::MessageBucket::from_time_point(effective_read_at).value();
         audit_read.shard_id = std::hash<std::string>{}(cmd.conversation_id.to_string()) % 16;
         audit_read.created_at = effective_read_at;
-        audit_read.event_id = cmd.message_id.to_string() + "_read_" + cmd.reader_device_id.str();
+        audit_read.event_id = domain::MessageId::generate_v7().to_string();
         audit_read.event_type = "message.read";
         audit_read.severity = "INFO";
         audit_read.actor_user_id = cmd.caller_user_id.str();

@@ -1,5 +1,9 @@
+#include "audit/messaging_audit_client.hpp"
+#include "audit/messaging_outbox_relay.hpp"
 #include "concurrency/bounded_worker_pool.hpp"
+#include "db/scylla_session.hpp"
 #include "messaging_config.hpp"
+#include "repository/scylla_messaging_audit_outbox_repository.hpp"
 #include "securecloud/common/v1/health.grpc.pb.h"
 #include "securecloud/common/version.hpp"
 #include "securecloud/configuration/configuration_source.hpp"
@@ -82,10 +86,35 @@ int run_service() {
               << " workers, queue " << config.workers.max_queued_deliveries << "), sync ("
               << config.workers.sync_workers << " workers, queue " << config.workers.max_queued_syncs << ")\n";
 
-    // 3. Instantiate MessagingServiceImpl
+    // 3. Construct the durable audit outbox and independent retry relay. Audit is not
+    // a Messaging startup dependency; unavailable Audit leaves rows pending for retry.
+    auto scylla_session = std::make_shared<securecloud::messaging::db::ScyllaSession>(config.scylla);
+    auto audit_outbox =
+        std::make_shared<securecloud::messaging::repository::ScyllaMessagingAuditOutboxRepository>(scylla_session);
+    securecloud::messaging::audit::AuditClientConfig audit_client_config;
+    audit_client_config.target_address = config.audit.endpoint;
+    audit_client_config.tls_credentials = config.common.tls_credentials;
+    audit_client_config.expected_peer_san = config.audit.expected_peer_san;
+    audit_client_config.timeout = std::chrono::milliseconds(config.audit.rpc_timeout_ms);
+    auto audit_client = std::make_shared<securecloud::messaging::audit::MessagingAuditClient>(audit_client_config);
+    securecloud::messaging::audit::OutboxRelayConfig audit_relay_config;
+    audit_relay_config.worker_threads = config.audit.worker_threads;
+    audit_relay_config.batch_size = config.audit.batch_size;
+    audit_relay_config.max_retries = static_cast<int32_t>(config.audit.max_retries);
+    audit_relay_config.producer_instance = config.audit.producer_instance;
+    audit_relay_config.active_poll_interval = std::chrono::milliseconds(config.audit.active_poll_interval_ms);
+    audit_relay_config.idle_poll_interval = std::chrono::milliseconds(config.audit.idle_poll_interval_ms);
+    audit_relay_config.lease_duration = std::chrono::seconds(config.audit.lease_duration_sec);
+    auto audit_relay = std::make_unique<securecloud::messaging::audit::MessagingOutboxRelay>(audit_outbox, audit_client,
+                                                                                             audit_relay_config);
+    if (config.audit.relay_enabled) {
+        audit_relay->start();
+    }
+
+    // 4. Instantiate MessagingServiceImpl
     securecloud::messaging::service::MessagingServiceImpl messaging_service(submission_pool, delivery_pool, sync_pool);
 
-    // 4. Initialize health status manager and health service
+    // 5. Initialize health status manager and health service
     const std::string server_address = config.common.listen_address();
     securecloud::common::health::HealthStatusManager health_manager(config.common.service_name);
     health_manager.set_readiness_evaluator([&config] {
@@ -93,7 +122,7 @@ int run_service() {
     });
     securecloud::common::health::HealthServiceImpl health_service(config.common.service_name, health_manager);
 
-    // 5. Construct and start gRPC server strictly over mTLS
+    // 6. Construct and start gRPC server strictly over mTLS
     grpc::ServerBuilder builder;
     builder.AddListeningPort(server_address, server_creds);
     builder.RegisterService(&messaging_service);
@@ -112,12 +141,12 @@ int run_service() {
     std::cout << "[SecureCloud] [" << config.common.service_name << "] mTLS server listening strictly on "
               << server_address << " with service identity 'DNS:" << config.common.service_name << "'\n";
 
-    // 6. Main service loop waiting for shutdown signal
+    // 7. Main service loop waiting for shutdown signal
     while (!g_shutdown_requested.load(std::memory_order_relaxed)) {
         std::this_thread::sleep_for(k_poll_interval);
     }
 
-    // 7. Deterministic Graceful Drain Sequence (ADR-009, ADR-010)
+    // 8. Deterministic Graceful Drain Sequence (ADR-009, ADR-010)
     std::cout << "[SecureCloud] [" << config.common.service_name
               << "] Shutdown signal received; initiating graceful drain...\n";
     health_manager.set_shutting_down(true);
@@ -128,10 +157,13 @@ int run_service() {
               << "] Draining gRPC server (deadline: " << config.shutdown_grace_period_ms << "ms)...\n";
     server->Shutdown(drain_deadline);
 
+    audit_relay->stop();
+
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Draining bounded worker pools...\n";
     submission_pool->drain_and_stop();
     delivery_pool->drain_and_stop();
     sync_pool->drain_and_stop();
+    scylla_session->close();
 
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Graceful shutdown completed successfully.\n";
     return 0;

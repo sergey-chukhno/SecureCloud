@@ -34,6 +34,7 @@ struct OutboxRelayConfig {
     std::chrono::seconds lease_duration{30};
     size_t batch_size{100}; // Bound to AUDIT-005 limits
     int32_t max_retries{5}; // Quarantine threshold
+    std::string producer_instance{"messaging-1"};
 };
 
 /**

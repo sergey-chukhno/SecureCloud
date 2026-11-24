@@ -67,27 +67,32 @@ class ConversationService {
                         ConversationAuthorizationService& auth_service,
                         std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo = nullptr);
 
-    [[nodiscard]] ServiceResult<domain::ConversationEntity> create_direct_conversation(const domain::UserId& caller,
-                                                                                       const domain::UserId& recipient);
+    [[nodiscard]] ServiceResult<domain::ConversationEntity>
+    create_direct_conversation(const domain::UserId& caller, const domain::UserId& recipient,
+                               std::string_view correlation_id = {});
 
     [[nodiscard]] ServiceResult<domain::ConversationEntity>
     create_group_conversation(const domain::UserId& caller, std::string_view title,
-                              const std::vector<domain::UserId>& initial_participant_user_ids);
+                              const std::vector<domain::UserId>& initial_participant_user_ids,
+                              std::string_view correlation_id = {});
 
     [[nodiscard]] ServiceResult<void> add_participant(const domain::UserId& caller,
                                                       const domain::ConversationId& conv_id,
-                                                      const domain::UserId& target_user);
+                                                      const domain::UserId& target_user,
+                                                      std::string_view correlation_id = {});
 
     [[nodiscard]] ServiceResult<void> remove_participant(const domain::UserId& caller,
                                                          const domain::ConversationId& conv_id,
-                                                         const domain::UserId& target_user);
+                                                         const domain::UserId& target_user,
+                                                         std::string_view correlation_id = {});
 
     [[nodiscard]] ServiceResult<void> leave_conversation(const domain::UserId& caller,
-                                                         const domain::ConversationId& conv_id);
+                                                         const domain::ConversationId& conv_id,
+                                                         std::string_view correlation_id = {});
 
     [[nodiscard]] ServiceResult<domain::GroupMetadataEntity>
     update_group_metadata(const domain::UserId& caller, const domain::ConversationId& conv_id,
-                          std::string_view new_title);
+                          std::string_view new_title, std::string_view correlation_id = {});
 
     [[nodiscard]] ServiceResult<ConversationDetails> get_conversation(const domain::UserId& caller,
                                                                       const domain::ConversationId& conv_id);

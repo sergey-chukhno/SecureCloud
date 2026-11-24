@@ -2,12 +2,16 @@
 
 #include "audit/audit_diagnostics.hpp"
 #include "audit/messaging_audit_metrics.hpp"
+#include "canonical_audit_mapper.hpp"
+#include "securecloud/grpc/caller_context.hpp"
 
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <ctime>
+#include <grpcpp/grpcpp.h>
 #include <iomanip>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <string_view>
@@ -146,13 +150,23 @@ void MessagingOutboxRelay::worker_loop(uint32_t worker_index) {
         const std::string current_bucket = get_current_hourly_bucket();
         const std::string previous_bucket = get_previous_hourly_bucket();
 
-        processed_any |= process_shard(previous_bucket, shard_id);
-        processed_any |= process_shard(current_bucket, shard_id);
+        try {
+            processed_any |= process_shard(previous_bucket, shard_id);
+            processed_any |= process_shard(current_bucket, shard_id);
 
-        // Refresh per-shard backlog gauge across active + boundary buckets
-        const size_t pending_prev = repository_->count_pending_backlog(previous_bucket, shard_id);
-        const size_t pending_curr = repository_->count_pending_backlog(current_bucket, shard_id);
-        metrics.set_shard_backlog(shard_id, static_cast<int64_t>(pending_prev + pending_curr));
+            // Refresh per-shard backlog gauge across active + boundary buckets.
+            const size_t pending_prev = repository_->count_pending_backlog(previous_bucket, shard_id);
+            const size_t pending_curr = repository_->count_pending_backlog(current_bucket, shard_id);
+            metrics.set_shard_backlog(shard_id, static_cast<int64_t>(pending_prev + pending_curr));
+        } catch (const std::exception& ex) {
+            AuditDiagnostics::log_connection_failure(current_bucket, shard_id, 0,
+                                                     static_cast<int32_t>(grpc::StatusCode::UNAVAILABLE), ex.what(),
+                                                     config_.idle_poll_interval);
+        } catch (...) {
+            AuditDiagnostics::log_connection_failure(current_bucket, shard_id, 0,
+                                                     static_cast<int32_t>(grpc::StatusCode::UNAVAILABLE),
+                                                     "unknown outbox repository failure", config_.idle_poll_interval);
+        }
 
         current_shard_idx = (current_shard_idx + 1) % assigned_shards.size();
 
@@ -184,7 +198,24 @@ bool MessagingOutboxRelay::process_shard(const std::string& bucket, int32_t shar
     // 1. Serialization & Local Validation Phase
     for (const auto& record : records) {
         securecloud::audit::v1::AuditEventProto event;
-        if (event.ParseFromArray(record.payload_proto_bin.data(), static_cast<int>(record.payload_proto_bin.size()))) {
+        const bool is_serialized_proto =
+            !record.payload_proto_bin.empty() &&
+            event.ParseFromArray(record.payload_proto_bin.data(), static_cast<int>(record.payload_proto_bin.size()));
+        const auto mapped = is_serialized_proto
+                                ? std::optional<securecloud::audit::v1::AuditEventProto>{}
+                                : map_outbox_record_to_canonical_proto(record, config_.producer_instance);
+        if (is_serialized_proto || mapped.has_value()) {
+            if (!is_serialized_proto) {
+                event = *mapped;
+            } else {
+                if (event.producer_instance().empty()) {
+                    event.set_producer_instance(config_.producer_instance);
+                }
+                if (!securecloud::common::rpc::is_valid_uuid(event.correlation_id())) {
+                    event.set_correlation_id(
+                        securecloud::common::rpc::is_valid_uuid(event.event_id()) ? event.event_id() : std::string{});
+                }
+            }
             batch.push_back(std::move(event));
             valid_records.push_back(&record);
         } else {

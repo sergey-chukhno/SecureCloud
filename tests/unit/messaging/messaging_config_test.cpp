@@ -84,6 +84,25 @@ TEST(MessagingConfigTest, EnvironmentVariableOverrides) {
     EXPECT_EQ(config.scylla_keyspace, "sc_msg_prod");
 }
 
+TEST(MessagingConfigTest, LoadsAuditRelaySettingsAndValidatesBounds) {
+    common::configuration::InMemoryConfigurationSource source;
+    source.set("SECURECLOUD_MESSAGING_AUDIT_ENDPOINT", "audit:50055");
+    source.set("SECURECLOUD_MESSAGING_AUDIT_PEER_SAN", "audit");
+    source.set("SECURECLOUD_MESSAGING_AUDIT_INSTANCE_ID", "messaging-blue-1");
+    source.set("SECURECLOUD_MESSAGING_AUDIT_RELAY_ENABLED", "true");
+    source.set("SECURECLOUD_MESSAGING_AUDIT_BATCH_SIZE", "80");
+
+    common::configuration::ValidationResult errors;
+    const auto config = MessagingConfig::load(source, errors);
+
+    EXPECT_TRUE(errors.is_valid()) << errors.to_string();
+    EXPECT_EQ(config.audit.endpoint, "audit:50055");
+    EXPECT_EQ(config.audit.expected_peer_san, "audit");
+    EXPECT_EQ(config.audit.producer_instance, "messaging-blue-1");
+    EXPECT_TRUE(config.audit.relay_enabled);
+    EXPECT_EQ(config.audit.batch_size, 80U);
+}
+
 TEST(MessagingConfigTest, InvalidScyllaPortValidation) {
     {
         common::configuration::InMemoryConfigurationSource source({

@@ -227,7 +227,7 @@
       "displayName": "Test CI Windows MinGW",
       "configurePreset": "ci-windows-mingw",
       "environment": {
-        "PATH": "C:/msys64/mingw64/bin;C:/msys64/usr/bin;$penv{PATH}"
+        "PATH": "C:/Qt/6.8.3/mingw_64/bin;C:/msys64/mingw64/bin;C:/msys64/usr/bin;$penv{PATH}"
       },
       "output": {
         "outputOnFailure": true

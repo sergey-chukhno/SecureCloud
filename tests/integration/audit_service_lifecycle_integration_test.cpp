@@ -369,6 +369,11 @@ TEST_F(AuditServerIntegrationTest, GracefulShutdownDrainsCleanly) {
     });
 
     wait_until_server_running(server);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (!server.is_healthy() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     EXPECT_TRUE(server.is_healthy());
 
     auto start_time = std::chrono::steady_clock::now();

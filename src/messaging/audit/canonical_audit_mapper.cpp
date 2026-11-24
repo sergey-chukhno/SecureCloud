@@ -1,5 +1,7 @@
 #include "canonical_audit_mapper.hpp"
 
+#include "securecloud/grpc/caller_context.hpp"
+
 #include <chrono>
 #include <nlohmann/json.hpp> // Supposé via le target securecloud::json
 
@@ -24,12 +26,14 @@ SeverityProto parse_severity(const std::string& sev) {
 }
 } // namespace
 
-std::optional<AuditEventProto> map_outbox_record_to_canonical_proto(const repository::AuditOutboxRecord& record) {
+std::optional<AuditEventProto> map_outbox_record_to_canonical_proto(const repository::AuditOutboxRecord& record,
+                                                                    std::string_view producer_instance) {
     AuditEventProto proto;
 
     // 1. Core Event Metadata
     proto.set_event_id(record.event_id);
     proto.set_producer_service(securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING);
+    proto.set_producer_instance(std::string(producer_instance));
     proto.set_event_type(record.event_type);
     proto.set_severity(parse_severity(record.severity));
 
@@ -59,13 +63,27 @@ std::optional<AuditEventProto> map_outbox_record_to_canonical_proto(const reposi
             std::string raw_json(record.payload_proto_bin.begin(), record.payload_proto_bin.end());
             auto j = nlohmann::json::parse(raw_json);
             auto* proto_metadata = proto.mutable_metadata();
+            if (j.is_object()) {
+                const auto corr = j.value("correlation_id", std::string{});
+                if (securecloud::common::rpc::is_valid_uuid(corr)) {
+                    proto.set_correlation_id(corr);
+                }
+            }
             for (auto& [key, value] : j.items()) {
+                if (key == "correlation_id") {
+                    continue;
+                }
                 (*proto_metadata)[key] = value.is_string() ? value.get<std::string>() : value.dump();
             }
         } catch (...) {
             // Failure to parse JSON payload invalidates canonical compliance
             return std::nullopt;
         }
+    }
+
+    if (proto.correlation_id().empty()) {
+        proto.set_correlation_id(securecloud::common::rpc::is_valid_uuid(record.event_id) ? record.event_id
+                                                                                          : std::string{});
     }
 
     // (Optional) Integration with securecloud::audit::domain::validate_canonical_event()

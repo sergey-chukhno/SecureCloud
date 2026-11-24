@@ -253,6 +253,7 @@ void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Respon
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &auth_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->authenticate(auth_req, call_ctx);
                                           });
@@ -337,6 +338,7 @@ void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Resp
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &refresh_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->refresh_session(refresh_req, call_ctx);
                                           });
@@ -428,6 +430,7 @@ void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Respo
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &revoke_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->revoke_session(revoke_req, call_ctx);
                                           });
@@ -489,6 +492,7 @@ void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Respo
                                           OperationIdempotency::SAFE_READONLY,
                                           [this, &user_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->get_user(user_req, call_ctx);
                                           });
@@ -586,6 +590,7 @@ void AuthProxyHandler::handle_register_device(const httplib::Request& req, httpl
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &dev_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->register_device(dev_req, call_ctx);
                                           });
@@ -672,6 +677,7 @@ void AuthProxyHandler::handle_get_device_crypto_directory(const httplib::Request
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
         [this, &dir_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -762,6 +768,7 @@ void AuthProxyHandler::handle_get_crypto_identity(const httplib::Request& req, h
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
         [this, &ident_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -877,6 +884,7 @@ void AuthProxyHandler::handle_update_crypto_prekeys(const httplib::Request& req,
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
         [this, &upd_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -961,6 +969,7 @@ void AuthProxyHandler::handle_get_prekey_inventory(const httplib::Request& req, 
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
         [this, &inv_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -1044,6 +1053,7 @@ void AuthProxyHandler::handle_claim_device_prekey(const httplib::Request& req, h
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
         [this, &claim_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -1160,6 +1170,7 @@ void AuthProxyHandler::handle_initiate_mfa_enrollment(const httplib::Request& re
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->initiate_mfa_enrollment(rpc_req, call_ctx);
                                           });
@@ -1234,6 +1245,7 @@ void AuthProxyHandler::handle_confirm_mfa_enrollment(const httplib::Request& req
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->confirm_mfa_enrollment(rpc_req, call_ctx);
                                           });
@@ -1318,6 +1330,7 @@ void AuthProxyHandler::handle_verify_mfa_challenge(const httplib::Request& req, 
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->verify_mfa_challenge(rpc_req, call_ctx);
                                           });
@@ -1406,6 +1419,7 @@ void AuthProxyHandler::handle_disable_mfa(const httplib::Request& req, httplib::
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->disable_mfa(rpc_req, call_ctx);
                                           });
@@ -1474,6 +1488,7 @@ void AuthProxyHandler::handle_list_devices(const httplib::Request& req, httplib:
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
         [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -1559,6 +1574,7 @@ void AuthProxyHandler::handle_get_device(const httplib::Request& req, httplib::R
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
         [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -1657,6 +1673,7 @@ void AuthProxyHandler::handle_initiate_device_pairing(const httplib::Request& re
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
         [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -1769,6 +1786,7 @@ void AuthProxyHandler::handle_authorize_device(const httplib::Request& req, http
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               call_ctx.add_metadata("x-user-id", ctx.user_id());
                                               if (!ctx.device_id().empty()) {
@@ -1871,6 +1889,7 @@ void AuthProxyHandler::handle_revoke_device(const httplib::Request& req, httplib
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               call_ctx.add_metadata("x-user-id", ctx.user_id());
                                               if (!ctx.device_id().empty()) {

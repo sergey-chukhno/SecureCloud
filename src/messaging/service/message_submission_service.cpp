@@ -1,5 +1,6 @@
 #include "service/message_submission_service.hpp"
 
+#include "audit/audit_outbox_payload.hpp"
 #include "domain/submission_fingerprint.hpp"
 #include "service/submission_validator.hpp"
 
@@ -42,6 +43,7 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
     auto auth_result = auth_service_->can_send_message(cmd.caller_user_id, cmd.conversation_id);
     if (!auth_result) {
         repository::AuditOutboxRecord audit_rec;
+        audit::set_outbox_correlation_id(audit_rec, cmd.correlation_id);
         audit_rec.outbox_bucket = domain::MessageBucket::from_time_point(std::chrono::system_clock::now()).value();
         audit_rec.shard_id = std::hash<std::string>{}(cmd.conversation_id.to_string()) % 16;
         audit_rec.created_at = std::chrono::system_clock::now();
@@ -133,6 +135,7 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
         const auto& record = *idem_result.cached_record;
 
         repository::AuditOutboxRecord audit_rec;
+        audit::set_outbox_correlation_id(audit_rec, cmd.correlation_id);
         audit_rec.outbox_bucket = domain::MessageBucket::from_time_point(record.created_at).value();
         audit_rec.shard_id = std::hash<std::string>{}(cmd.conversation_id.to_string()) % 16;
         audit_rec.created_at = record.created_at;
@@ -245,6 +248,7 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
         outbox_repo_->enqueue_event(outbox_evt);
 
         repository::AuditOutboxRecord audit_rec;
+        audit::set_outbox_correlation_id(audit_rec, cmd.correlation_id);
         audit_rec.outbox_bucket = message_bucket.value();
         audit_rec.shard_id = std::hash<std::string>{}(cmd.conversation_id.to_string()) % 16;
         audit_rec.created_at = accepted_at;

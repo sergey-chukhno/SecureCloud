@@ -1,5 +1,6 @@
 #include "service/conversation_service.hpp"
 
+#include "audit/audit_outbox_payload.hpp"
 #include "domain/message_bucket.hpp"
 
 #include <mutex>
@@ -15,7 +16,8 @@ ConversationService::ConversationService(repository::IConversationRepository& co
       audit_repo_(std::move(audit_repo)) {}
 
 ServiceResult<domain::ConversationEntity>
-ConversationService::create_direct_conversation(const domain::UserId& caller, const domain::UserId& recipient) {
+ConversationService::create_direct_conversation(const domain::UserId& caller, const domain::UserId& recipient,
+                                                std::string_view correlation_id) {
     if (caller == recipient) {
         return ServiceResult<domain::ConversationEntity>::fail(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
                                                                "Cannot create a direct conversation with yourself");
@@ -77,6 +79,7 @@ ConversationService::create_direct_conversation(const domain::UserId& caller, co
 
     if (audit_repo_) {
         repository::AuditOutboxRecord audit_rec;
+        audit::set_outbox_correlation_id(audit_rec, correlation_id);
         audit_rec.outbox_bucket = domain::MessageBucket::from_time_point(now).value();
         audit_rec.shard_id = std::hash<std::string>{}(conv_id.to_string()) % 16;
         audit_rec.created_at = now;
@@ -93,7 +96,8 @@ ConversationService::create_direct_conversation(const domain::UserId& caller, co
 
 ServiceResult<domain::ConversationEntity>
 ConversationService::create_group_conversation(const domain::UserId& caller, std::string_view title,
-                                               const std::vector<domain::UserId>& initial_participant_user_ids) {
+                                               const std::vector<domain::UserId>& initial_participant_user_ids,
+                                               std::string_view correlation_id) {
     if (title.empty() || title.size() > 256) {
         return ServiceResult<domain::ConversationEntity>::fail(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
                                                                "Group title must be between 1 and 256 characters");
@@ -161,6 +165,7 @@ ConversationService::create_group_conversation(const domain::UserId& caller, std
 
     if (audit_repo_) {
         repository::AuditOutboxRecord audit_rec;
+        audit::set_outbox_correlation_id(audit_rec, correlation_id);
         audit_rec.outbox_bucket = domain::MessageBucket::from_time_point(now).value();
         audit_rec.shard_id = std::hash<std::string>{}(conv_id.to_string()) % 16;
         audit_rec.created_at = now;
@@ -177,7 +182,8 @@ ConversationService::create_group_conversation(const domain::UserId& caller, std
 
 ServiceResult<void> ConversationService::add_participant(const domain::UserId& caller,
                                                          const domain::ConversationId& conv_id,
-                                                         const domain::UserId& target_user) {
+                                                         const domain::UserId& target_user,
+                                                         std::string_view correlation_id) {
     auto auth_res = auth_service_.can_add_participant(caller, conv_id);
     if (!auth_res) {
         return ServiceResult<void>::fail(auth_res.error_code, auth_res.reason);
@@ -217,6 +223,7 @@ ServiceResult<void> ConversationService::add_participant(const domain::UserId& c
 
     if (audit_repo_) {
         repository::AuditOutboxRecord audit_add;
+        audit::set_outbox_correlation_id(audit_add, correlation_id);
         audit_add.outbox_bucket = domain::MessageBucket::from_time_point(now).value();
         audit_add.shard_id = std::hash<std::string>{}(conv_id.to_string()) % 16;
         audit_add.created_at = now;
@@ -233,7 +240,8 @@ ServiceResult<void> ConversationService::add_participant(const domain::UserId& c
 
 ServiceResult<void> ConversationService::remove_participant(const domain::UserId& caller,
                                                             const domain::ConversationId& conv_id,
-                                                            const domain::UserId& target_user) {
+                                                            const domain::UserId& target_user,
+                                                            std::string_view correlation_id) {
     auto auth_res = auth_service_.can_remove_participant(caller, conv_id, target_user);
     if (!auth_res) {
         return ServiceResult<void>::fail(auth_res.error_code, auth_res.reason);
@@ -258,11 +266,26 @@ ServiceResult<void> ConversationService::remove_participant(const domain::UserId
     record_outbox_event(conv_id, domain::ConversationOutboxEventType::ParticipantRemoved,
                         "{\"user_id\":\"" + target_user.str() + "\",\"removed_by\":\"" + caller.str() + "\"}");
 
+    if (audit_repo_) {
+        repository::AuditOutboxRecord audit_remove;
+        audit::set_outbox_correlation_id(audit_remove, correlation_id);
+        audit_remove.outbox_bucket = domain::MessageBucket::from_time_point(now).value();
+        audit_remove.shard_id = std::hash<std::string>{}(conv_id.to_string()) % 16;
+        audit_remove.created_at = now;
+        audit_remove.event_id = domain::ConversationId::generate_v7().to_string();
+        audit_remove.event_type = "conversation.membership.changed";
+        audit_remove.severity = "INFO";
+        audit_remove.actor_user_id = caller.str();
+        audit_remove.target_resource = target_user.str();
+        audit_repo_->enqueue_audit_event(audit_remove);
+    }
+
     return ServiceResult<void>::ok();
 }
 
 ServiceResult<void> ConversationService::leave_conversation(const domain::UserId& caller,
-                                                            const domain::ConversationId& conv_id) {
+                                                            const domain::ConversationId& conv_id,
+                                                            std::string_view correlation_id) {
     auto auth_res = auth_service_.can_leave_conversation(caller, conv_id);
     if (!auth_res) {
         return ServiceResult<void>::fail(auth_res.error_code, auth_res.reason);
@@ -301,6 +324,7 @@ ServiceResult<void> ConversationService::leave_conversation(const domain::UserId
 
             if (audit_repo_) {
                 repository::AuditOutboxRecord audit_close;
+                audit::set_outbox_correlation_id(audit_close, correlation_id);
                 audit_close.outbox_bucket = domain::MessageBucket::from_time_point(now).value();
                 audit_close.shard_id = std::hash<std::string>{}(conv_id.to_string()) % 16;
                 audit_close.created_at = now;
@@ -319,7 +343,7 @@ ServiceResult<void> ConversationService::leave_conversation(const domain::UserId
 
 ServiceResult<domain::GroupMetadataEntity>
 ConversationService::update_group_metadata(const domain::UserId& caller, const domain::ConversationId& conv_id,
-                                           std::string_view new_title) {
+                                           std::string_view new_title, std::string_view correlation_id) {
     if (new_title.empty() || new_title.size() > 256) {
         return ServiceResult<domain::GroupMetadataEntity>::fail(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
                                                                 "Group title must be between 1 and 256 characters");
@@ -345,6 +369,20 @@ ConversationService::update_group_metadata(const domain::UserId& caller, const d
 
     record_outbox_event(conv_id, domain::ConversationOutboxEventType::GroupMetadataUpdated,
                         "{\"new_title\":\"" + std::string(new_title) + "\",\"updated_by\":\"" + caller.str() + "\"}");
+
+    if (audit_repo_) {
+        repository::AuditOutboxRecord audit_update;
+        audit::set_outbox_correlation_id(audit_update, correlation_id);
+        audit_update.outbox_bucket = domain::MessageBucket::from_time_point(now).value();
+        audit_update.shard_id = std::hash<std::string>{}(conv_id.to_string()) % 16;
+        audit_update.created_at = now;
+        audit_update.event_id = domain::ConversationId::generate_v7().to_string();
+        audit_update.event_type = "conversation.metadata.updated";
+        audit_update.severity = "INFO";
+        audit_update.actor_user_id = caller.str();
+        audit_update.target_resource = conv_id.to_string();
+        audit_repo_->enqueue_audit_event(audit_update);
+    }
 
     return ServiceResult<domain::GroupMetadataEntity>::ok(updated);
 }

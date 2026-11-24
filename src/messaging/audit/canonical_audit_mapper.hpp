@@ -4,6 +4,7 @@
 #include "securecloud/audit/v1/audit.pb.h"
 
 #include <optional>
+#include <string_view>
 
 namespace securecloud::messaging::audit {
 
@@ -12,6 +13,7 @@ namespace securecloud::messaging::audit {
  * Performs validation and returns std::nullopt if the event is malformed.
  */
 std::optional<securecloud::audit::v1::AuditEventProto>
-map_outbox_record_to_canonical_proto(const repository::AuditOutboxRecord& record);
+map_outbox_record_to_canonical_proto(const repository::AuditOutboxRecord& record,
+                                     std::string_view producer_instance = "messaging-1");
 
 } // namespace securecloud::messaging::audit
