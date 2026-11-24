@@ -2,8 +2,11 @@
 
 #include "files/audit/audit_client_interface.hpp"
 #include "securecloud/audit/v1/audit.grpc.pb.h"
+#include "securecloud/security/mtls_config.hpp"
 
 #include <chrono>
+#include <cstddef>
+#include <grpcpp/grpcpp.h>
 #include <memory>
 #include <string>
 #include <vector>
@@ -11,30 +14,45 @@
 namespace securecloud::files::audit {
 
 struct GrpcAuditClientConfig {
-    std::string target_endpoint{"127.0.0.1:50054"};
-    std::string ca_cert_path;
-    std::string client_cert_path;
-    std::string client_key_path;
-    std::chrono::milliseconds timeout{5000};
-    bool use_tls{false};
+    std::string target_endpoint{"audit:50055"};
+    std::chrono::milliseconds timeout{std::chrono::milliseconds{2000}};
+    common::security::SecurityCredentialsConfig tls_credentials;
+    std::string expected_peer_san{"audit"};
 };
 
 /**
- * @brief Production gRPC implementation of IFilesAuditClient connecting to securecloud-audit.
+ * @brief Fail-closed mTLS gRPC implementation of IFilesAuditClient connecting to securecloud-audit.
+ *
+ * Enforces:
+ * - Mandatory mTLS client credentials (no plaintext channel fallback)
+ * - SSL target name override + post-RPC peer SAN DNS verification (`audit` / `audit.securecloud.internal`)
+ * - Bounded batch size (<= 100 events per AUDIT-005)
+ * - Strict per-RPC deadline
  */
-class GrpcAuditClient : public IFilesAuditClient {
+class GrpcAuditClient final : public IFilesAuditClient {
   public:
-    explicit GrpcAuditClient(std::shared_ptr<securecloud::audit::v1::AuditIngestionService::StubInterface> stub,
-                             std::chrono::milliseconds timeout = std::chrono::milliseconds(5000));
+    static constexpr std::size_t k_max_batch_size = 100;
 
-    explicit GrpcAuditClient(const GrpcAuditClientConfig& config);
+    /// Constructs a production mTLS gRPC client. Fails closed if TLS credentials are missing or invalid.
+    explicit GrpcAuditClient(GrpcAuditClientConfig config);
+
+    /// Constructs a client around an injected gRPC StubInterface with explicit config (for unit tests).
+    GrpcAuditClient(GrpcAuditClientConfig config,
+                    std::shared_ptr<securecloud::audit::v1::AuditIngestionService::StubInterface> stub);
+
+    /// Convenience unit-test constructor around an injected gRPC StubInterface.
+    explicit GrpcAuditClient(std::shared_ptr<securecloud::audit::v1::AuditIngestionService::StubInterface> stub,
+                             std::chrono::milliseconds timeout = std::chrono::milliseconds{2000});
+
     ~GrpcAuditClient() override = default;
 
-    bool submit_batch(const std::vector<securecloud::audit::v1::AuditEventProto>& events) override;
+    [[nodiscard]] FilesAuditBatchSubmitResult
+    submit_batch(const std::vector<securecloud::audit::v1::AuditEventProto>& events) override;
 
   private:
+    GrpcAuditClientConfig config_;
+    std::shared_ptr<grpc::Channel> channel_;
     std::shared_ptr<securecloud::audit::v1::AuditIngestionService::StubInterface> stub_;
-    std::chrono::milliseconds timeout_;
 };
 
 } // namespace securecloud::files::audit

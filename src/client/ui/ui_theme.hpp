@@ -22,6 +22,8 @@ class UiTheme : public QObject {
     Q_PROPERTY(ThemeMode themeMode READ themeMode WRITE setThemeMode NOTIFY themeModeChanged)
     Q_PROPERTY(int themeModeInt READ themeModeInt NOTIFY themeModeChanged)
     Q_PROPERTY(bool isDark READ isDark NOTIFY themeChanged)
+    Q_PROPERTY(double fontScale READ fontScale WRITE setFontScale NOTIFY themeChanged)
+    Q_PROPERTY(bool highContrastEnabled READ highContrastEnabled WRITE setHighContrastEnabled NOTIFY themeChanged)
 
     // Surface & Background Colors
     Q_PROPERTY(QString backgroundPrimary READ backgroundPrimary NOTIFY themeChanged)
@@ -61,14 +63,14 @@ class UiTheme : public QObject {
     Q_PROPERTY(QString shadowColor READ shadowColor NOTIFY themeChanged)
 
     // Typography Scales (Point Sizes)
-    Q_PROPERTY(int fontMicro READ fontMicro CONSTANT)
-    Q_PROPERTY(int fontCaption READ fontCaption CONSTANT)
-    Q_PROPERTY(int fontBody READ fontBody CONSTANT)
-    Q_PROPERTY(int fontSubtitle READ fontSubtitle CONSTANT)
-    Q_PROPERTY(int fontHeader READ fontSubtitle CONSTANT)
-    Q_PROPERTY(int fontTitle READ fontTitle CONSTANT)
-    Q_PROPERTY(int fontHeadline READ fontHeadline CONSTANT)
-    Q_PROPERTY(int fontDisplay READ fontDisplay CONSTANT)
+    Q_PROPERTY(int fontMicro READ fontMicro NOTIFY themeChanged)
+    Q_PROPERTY(int fontCaption READ fontCaption NOTIFY themeChanged)
+    Q_PROPERTY(int fontBody READ fontBody NOTIFY themeChanged)
+    Q_PROPERTY(int fontSubtitle READ fontSubtitle NOTIFY themeChanged)
+    Q_PROPERTY(int fontHeader READ fontSubtitle NOTIFY themeChanged)
+    Q_PROPERTY(int fontTitle READ fontTitle NOTIFY themeChanged)
+    Q_PROPERTY(int fontHeadline READ fontHeadline NOTIFY themeChanged)
+    Q_PROPERTY(int fontDisplay READ fontDisplay NOTIFY themeChanged)
 
     // Font Families
     Q_PROPERTY(QString fontFamilyPrimary READ fontFamilyPrimary CONSTANT)
@@ -98,12 +100,17 @@ class UiTheme : public QObject {
     explicit UiTheme(QObject* parent = nullptr);
     ~UiTheme() override = default;
 
-    // Theme Mode Accessors
+    // Theme Mode & Accessibility Accessors
     [[nodiscard]] ThemeMode themeMode() const noexcept;
     [[nodiscard]] int themeModeInt() const noexcept { return static_cast<int>(theme_mode_); }
     void setThemeMode(ThemeMode mode);
     Q_INVOKABLE void setThemeMode(int mode);
     [[nodiscard]] bool isDark() const noexcept;
+
+    [[nodiscard]] double fontScale() const noexcept { return font_scale_; }
+    Q_INVOKABLE void setFontScale(double scale);
+    [[nodiscard]] bool highContrastEnabled() const noexcept { return high_contrast_enabled_; }
+    Q_INVOKABLE void setHighContrastEnabled(bool enabled);
 
     // Q_INVOKABLE Actions
     Q_INVOKABLE void toggleTheme();
@@ -139,13 +146,13 @@ class UiTheme : public QObject {
     [[nodiscard]] QString shadowColor() const;
 
     // Typography Metrics Accessors
-    [[nodiscard]] int fontMicro() const noexcept { return 10; }
-    [[nodiscard]] int fontCaption() const noexcept { return 11; }
-    [[nodiscard]] int fontBody() const noexcept { return 13; }
-    [[nodiscard]] int fontSubtitle() const noexcept { return 15; }
-    [[nodiscard]] int fontTitle() const noexcept { return 18; }
-    [[nodiscard]] int fontHeadline() const noexcept { return 24; }
-    [[nodiscard]] int fontDisplay() const noexcept { return 28; }
+    [[nodiscard]] int fontMicro() const noexcept { return scaledFont(10); }
+    [[nodiscard]] int fontCaption() const noexcept { return scaledFont(11); }
+    [[nodiscard]] int fontBody() const noexcept { return scaledFont(13); }
+    [[nodiscard]] int fontSubtitle() const noexcept { return scaledFont(15); }
+    [[nodiscard]] int fontTitle() const noexcept { return scaledFont(18); }
+    [[nodiscard]] int fontHeadline() const noexcept { return scaledFont(24); }
+    [[nodiscard]] int fontDisplay() const noexcept { return scaledFont(28); }
 
     [[nodiscard]] QString fontFamilyPrimary() const;
     [[nodiscard]] QString fontFamilyMonospace() const;
@@ -201,10 +208,15 @@ class UiTheme : public QObject {
 
     static const Palette& darkPalette();
     static const Palette& lightPalette();
+    static const Palette& highContrastDarkPalette();
+    static const Palette& highContrastLightPalette();
     [[nodiscard]] const Palette& currentPalette() const;
     [[nodiscard]] bool resolveSystemIsDark() const;
+    [[nodiscard]] int scaledFont(int basePointSize) const noexcept;
 
     ThemeMode theme_mode_{ThemeMode::Dark};
+    double font_scale_{1.0};
+    bool high_contrast_enabled_{false};
 };
 
 } // namespace securecloud::client::ui

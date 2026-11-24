@@ -227,6 +227,7 @@ std::string Conversation::to_json() const {
         std::chrono::duration_cast<std::chrono::milliseconds>(last_activity_at_.time_since_epoch()).count();
     j["unread_count"] = unread_count_;
     j["is_muted"] = is_muted_;
+    j["disappearing_ttl_seconds"] = disappearing_ttl_seconds_;
 
     nlohmann::json recs = nlohmann::json::array();
     for (const auto& rec : participant_records_) {
@@ -292,6 +293,13 @@ std::optional<Conversation> Conversation::from_json(std::string_view json_str) {
             conv.set_sender_key_epoch(j["sender_key_epoch"].get<uint64_t>());
         }
 
+        if (j.contains("disappearing_ttl_seconds")) {
+            if (!j["disappearing_ttl_seconds"].is_number_integer()) {
+                return std::nullopt;
+            }
+            conv.set_disappearing_ttl_seconds(j["disappearing_ttl_seconds"].get<int64_t>());
+        }
+
         if (j.contains("participant_records") && j["participant_records"].is_array()) {
             std::vector<GroupParticipant> records;
             records.reserve(j["participant_records"].size());
@@ -330,7 +338,7 @@ bool Conversation::operator==(const Conversation& other) const noexcept {
     return conversation_id_ == other.conversation_id_ && type_ == other.type_ && title_ == other.title_ &&
            participants_ == other.participants_ && unread_count_ == other.unread_count_ &&
            is_muted_ == other.is_muted_ && group_status_ == other.group_status_ &&
-           sender_key_epoch_ == other.sender_key_epoch_;
+           sender_key_epoch_ == other.sender_key_epoch_ && disappearing_ttl_seconds_ == other.disappearing_ttl_seconds_;
 }
 
 } // namespace securecloud::client::domain

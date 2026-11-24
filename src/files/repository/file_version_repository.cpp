@@ -1,11 +1,19 @@
 #include "files/repository/file_version_repository.hpp"
 
+#include "files/db/files_connection_pool.hpp"
+
 #include <chrono>
+#include <cstddef>
 
 namespace securecloud::files {
 
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+FileVersionRepository::FileVersionRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
+    : pool_(pool ? std::move(pool) : db::test_files_db_connection_pool()) {}
+#else
 FileVersionRepository::FileVersionRepository(std::shared_ptr<db::FilesDbConnectionPool> pool)
     : pool_(std::move(pool)) {}
+#endif
 
 void FileVersionRepository::create_version(const FileVersionEntity& version, pqxx::work& tx) {
     if (version.version_id.empty() || version.file_id.empty()) {
@@ -16,12 +24,13 @@ void FileVersionRepository::create_version(const FileVersionEntity& version, pqx
     }
 
     try {
-        tx.exec_params("INSERT INTO file_versions (version_id, file_id, version_number, encrypted_size, "
-                       "minio_object_key, checksum_sha256, created_at, is_active) "
-                       "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-                       version.version_id, version.file_id, version.version_number, version.encrypted_size,
-                       version.minio_object_key, version.checksum_sha256, db::to_iso8601(version.created_at),
-                       version.is_active);
+        db::exec_sql(tx,
+                     "INSERT INTO file_versions (version_id, file_id, version_number, encrypted_size, "
+                     "minio_object_key, checksum_sha256, created_at, is_active) "
+                     "VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+                     pqxx::params{version.version_id, version.file_id, version.version_number, version.encrypted_size,
+                                  version.minio_object_key, version.checksum_sha256, db::to_iso8601(version.created_at),
+                                  version.is_active});
     } catch (const std::exception& e) {
         std::string msg = e.what();
         if (msg.find("unique") != std::string::npos || msg.find("UNIQUE") != std::string::npos ||
@@ -33,8 +42,8 @@ void FileVersionRepository::create_version(const FileVersionEntity& version, pqx
     }
 
     if (version.is_active) {
-        tx.exec_params("UPDATE file_versions SET is_active = FALSE WHERE file_id = $1 AND version_number != $2",
-                       version.file_id, version.version_number);
+        db::exec_sql(tx, "UPDATE file_versions SET is_active = FALSE WHERE file_id = $1 AND version_number != $2",
+                     pqxx::params{version.file_id, version.version_number});
     }
 }
 
@@ -44,22 +53,32 @@ std::optional<FileVersionEntity> FileVersionRepository::find_active_version(cons
         return std::nullopt;
     }
 
-    auto res = tx.exec_params(
+    auto res = db::exec_sql(
+        tx,
         "SELECT version_id, file_id, version_number, encrypted_size, minio_object_key, checksum_sha256, created_at, "
         "is_active "
         "FROM file_versions WHERE file_id = $1 AND is_active = TRUE ORDER BY version_number DESC LIMIT 1",
-        file_id);
+        pqxx::params{file_id});
 
     if (res.empty()) {
         return std::nullopt;
     }
 
-    return db::file_version_from_row(res[0]);
+    return db::file_version_from_row(pqxx::row(res[0]));
 }
 
 std::optional<FileVersionEntity> FileVersionRepository::find_active_version(const std::string& file_id) {
-    pqxx::work tx;
-    return find_active_version(file_id, tx);
+    if (!pool_)
+        throw RepositoryException("Connection pool not initialized");
+    auto lease = pool_->acquire();
+    auto* pg_conn = dynamic_cast<db::DefaultDbConnection*>(lease.get());
+    if (!pg_conn)
+        throw RepositoryException("Database connection is not a PostgreSQL connection");
+
+    pqxx::work tx(pg_conn->native_handle());
+    auto result = find_active_version(file_id, tx);
+    tx.commit();
+    return result;
 }
 
 std::vector<FileVersionEntity> FileVersionRepository::list_versions(const std::string& file_id, pqxx::work& tx) {
@@ -67,22 +86,32 @@ std::vector<FileVersionEntity> FileVersionRepository::list_versions(const std::s
         return {};
     }
 
-    auto res = tx.exec_params("SELECT version_id, file_id, version_number, encrypted_size, minio_object_key, "
-                              "checksum_sha256, created_at, is_active "
-                              "FROM file_versions WHERE file_id = $1 ORDER BY version_number ASC",
-                              file_id);
+    auto res = db::exec_sql(tx,
+                            "SELECT version_id, file_id, version_number, encrypted_size, minio_object_key, "
+                            "checksum_sha256, created_at, is_active "
+                            "FROM file_versions WHERE file_id = $1 ORDER BY version_number ASC",
+                            pqxx::params{file_id});
 
     std::vector<FileVersionEntity> versions;
-    versions.reserve(res.size());
-    for (size_t i = 0; i < res.size(); ++i) {
-        versions.push_back(db::file_version_from_row(res[i]));
+    versions.reserve(static_cast<size_t>(res.size()));
+    for (decltype(res.size()) i = 0; i < res.size(); ++i) {
+        versions.push_back(db::file_version_from_row(pqxx::row(res[i])));
     }
     return versions;
 }
 
 std::vector<FileVersionEntity> FileVersionRepository::list_versions(const std::string& file_id) {
-    pqxx::work tx;
-    return list_versions(file_id, tx);
+    if (!pool_)
+        throw RepositoryException("Connection pool not initialized");
+    auto lease = pool_->acquire();
+    auto* pg_conn = dynamic_cast<db::DefaultDbConnection*>(lease.get());
+    if (!pg_conn)
+        throw RepositoryException("Database connection is not a PostgreSQL connection");
+
+    pqxx::work tx(pg_conn->native_handle());
+    auto result = list_versions(file_id, tx);
+    tx.commit();
+    return result;
 }
 
 } // namespace securecloud::files

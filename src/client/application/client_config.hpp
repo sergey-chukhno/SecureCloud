@@ -1,5 +1,6 @@
 #pragma once
 
+#include "domain/user_settings.hpp"
 #include "securecloud/configuration/secret_string.hpp"
 
 #include <chrono>
@@ -21,6 +22,15 @@ struct ClientConfig {
     std::chrono::milliseconds sync_poll_interval_ms{5000};
     uint32_t max_retry_attempts{3};
     securecloud::common::configuration::SecretString auth_token{};
+
+    bool use_live_gateway_transport{false};
+    domain::ProxyType proxy_type{domain::ProxyType::None};
+    std::string proxy_host{};
+    uint16_t proxy_port{0};
+    std::string proxy_username{};
+    securecloud::common::configuration::SecretString proxy_password{};
+    std::string pinned_tls_spki_sha256{};
+    bool enforce_tls_pinning{true};
 
     static ClientConfig create_default();
     static ClientConfig from_environment();

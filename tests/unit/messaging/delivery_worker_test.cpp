@@ -2,7 +2,10 @@
 #include "delivery/delivery_worker.hpp"
 #include "delivery/device_connection_registry.hpp"
 #include "delivery/mock_device_delivery_channel.hpp"
+#include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
 #include "domain/message_bucket.hpp"
+#include "securecloud/audit/v1/audit.pb.h"
 
 #include <gtest/gtest.h>
 #include <memory>
@@ -122,6 +125,30 @@ DeliveryTask create_test_task(const DeviceId& device_id, const MessageId& messag
     return task;
 }
 
+class MockMessagingAuditOutboxRepository final : public repository::IMessagingAuditOutboxRepository {
+  public:
+    void enqueue_audit_event(const repository::AuditOutboxRecord& record) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        enqueued_events_.push_back(record);
+    }
+
+    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
+                                                                    std::chrono::seconds) override {
+        return {};
+    }
+
+    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
+                        const std::string&) override {}
+
+    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
+                        const std::string&, bool) override {}
+
+    size_t count_pending_backlog(const std::string&, int32_t) override { return 0; }
+
+    std::mutex mutex_;
+    std::vector<repository::AuditOutboxRecord> enqueued_events_;
+};
+
 // ============================================================================
 // DeliveryWorker Test Suite
 // ============================================================================
@@ -133,6 +160,7 @@ class DeliveryWorkerTest : public ::testing::Test {
         connection_registry_ = std::make_shared<DeviceConnectionRegistry>();
         delivery_repo_ = std::make_shared<MockDeliveryStateRepository>();
         outbox_repo_ = std::make_shared<MockOutboxRepository>();
+        audit_repo_ = std::make_shared<MockMessagingAuditOutboxRepository>();
         retry_policy_ = std::make_shared<service::DeliveryRetryPolicy>();
 
         DeliveryWorkerConfig config;
@@ -141,13 +169,14 @@ class DeliveryWorkerTest : public ::testing::Test {
         config.worker_threads = 2;
 
         worker_ = std::make_unique<DeliveryWorker>(scheduler_, connection_registry_, delivery_repo_, outbox_repo_,
-                                                   retry_policy_, config);
+                                                   audit_repo_, retry_policy_, config);
     }
 
     std::shared_ptr<BoundedDeliveryScheduler> scheduler_;
     std::shared_ptr<DeviceConnectionRegistry> connection_registry_;
     std::shared_ptr<MockDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<MockOutboxRepository> outbox_repo_;
+    std::shared_ptr<MockMessagingAuditOutboxRepository> audit_repo_;
     std::shared_ptr<service::DeliveryRetryPolicy> retry_policy_;
     std::unique_ptr<DeliveryWorker> worker_;
 };
@@ -184,6 +213,25 @@ TEST_F(DeliveryWorkerTest, SuccessfulDeliveryUpdatesDurableStateAndEmitsOutboxAc
     ASSERT_EQ(outbox_repo_->enqueued_events_.size(), 1u);
     EXPECT_EQ(outbox_repo_->enqueued_events_[0].event_type, ConversationOutboxEventType::MessageDelivered);
     EXPECT_NE(outbox_repo_->enqueued_events_[0].payload_json.find(msg_id.to_string()), std::string::npos);
+
+    // Verify audit event
+    ASSERT_EQ(audit_repo_->enqueued_events_.size(), 1u);
+    const auto& audit_rec = audit_repo_->enqueued_events_[0];
+    EXPECT_EQ(audit_rec.event_type, "message.delivered");
+    EXPECT_EQ(audit_rec.severity, "INFO");
+    EXPECT_TRUE(domain::is_valid_audit_uuid_v7(audit_rec.event_id));
+    EXPECT_EQ(audit_rec.event_id, domain::generate_message_audit_event_id(
+                                      msg_id, dev_id, domain::MessagingAuditEventType::MessageDelivered));
+    EXPECT_EQ(audit_rec.outbox_bucket, domain::compute_outbox_bucket_utc(audit_rec.created_at));
+    EXPECT_EQ(audit_rec.shard_id, domain::compute_outbox_shard_id(task.conversation_id.to_string()));
+    ASSERT_FALSE(audit_rec.payload_proto_bin.empty());
+    securecloud::audit::v1::AuditEventProto proto;
+    ASSERT_TRUE(
+        proto.ParseFromArray(audit_rec.payload_proto_bin.data(), static_cast<int>(audit_rec.payload_proto_bin.size())));
+    EXPECT_EQ(proto.event_id(), audit_rec.event_id);
+    EXPECT_EQ(proto.event_type(), "message.delivered");
+    EXPECT_EQ(proto.severity(), securecloud::audit::v1::SEVERITY_INFO);
+    EXPECT_EQ(proto.producer_service(), securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING);
 }
 
 TEST_F(DeliveryWorkerTest, RecipientOfflineRevertsToQueuedWithoutRetryPenalty) {
@@ -275,6 +323,25 @@ TEST_F(DeliveryWorkerTest, ExhaustedRetriesTransitionToExpired) {
 
     // Scheduler should not have re-enqueued
     EXPECT_EQ(scheduler_->global_queue_depth(), 0u);
+
+    // Verify audit event for retry exhaustion
+    ASSERT_EQ(audit_repo_->enqueued_events_.size(), 1u);
+    const auto& audit_rec = audit_repo_->enqueued_events_[0];
+    EXPECT_EQ(audit_rec.event_type, "message.delivery.failed");
+    EXPECT_EQ(audit_rec.severity, "WARNING");
+    EXPECT_TRUE(domain::is_valid_audit_uuid_v7(audit_rec.event_id));
+    EXPECT_EQ(audit_rec.event_id, domain::generate_message_audit_event_id(
+                                      msg_id, dev_id, domain::MessagingAuditEventType::MessageDeliveryFailed));
+    EXPECT_EQ(audit_rec.outbox_bucket, domain::compute_outbox_bucket_utc(audit_rec.created_at));
+    EXPECT_EQ(audit_rec.shard_id, domain::compute_outbox_shard_id(task.conversation_id.to_string()));
+    ASSERT_FALSE(audit_rec.payload_proto_bin.empty());
+    securecloud::audit::v1::AuditEventProto proto;
+    ASSERT_TRUE(
+        proto.ParseFromArray(audit_rec.payload_proto_bin.data(), static_cast<int>(audit_rec.payload_proto_bin.size())));
+    EXPECT_EQ(proto.actor_type(), securecloud::audit::v1::ACTOR_TYPE_SYSTEM);
+    EXPECT_EQ(proto.severity(), securecloud::audit::v1::SEVERITY_WARNING);
+    ASSERT_TRUE(proto.metadata().contains("reason"));
+    EXPECT_EQ(proto.metadata().at("reason"), "MAX_RETRIES_EXHAUSTED");
 }
 
 TEST_F(DeliveryWorkerTest, TerminalFailureTransitionsToExpired) {
@@ -295,6 +362,25 @@ TEST_F(DeliveryWorkerTest, TerminalFailureTransitionsToExpired) {
     ASSERT_GE(delivery_repo_->status_updates_.size(), 2u);
     EXPECT_EQ(delivery_repo_->status_updates_[0].state, DeliveryState::Delivering);
     EXPECT_EQ(delivery_repo_->status_updates_[1].state, DeliveryState::Expired);
+
+    // Verify audit event for terminal failure
+    ASSERT_EQ(audit_repo_->enqueued_events_.size(), 1u);
+    const auto& audit_rec = audit_repo_->enqueued_events_[0];
+    EXPECT_EQ(audit_rec.event_type, "message.delivery.failed");
+    EXPECT_EQ(audit_rec.severity, "WARNING");
+    EXPECT_TRUE(domain::is_valid_audit_uuid_v7(audit_rec.event_id));
+    EXPECT_EQ(audit_rec.event_id, domain::generate_message_audit_event_id(
+                                      msg_id, dev_id, domain::MessagingAuditEventType::MessageDeliveryFailed));
+    EXPECT_EQ(audit_rec.outbox_bucket, domain::compute_outbox_bucket_utc(audit_rec.created_at));
+    EXPECT_EQ(audit_rec.shard_id, domain::compute_outbox_shard_id(task.conversation_id.to_string()));
+    ASSERT_FALSE(audit_rec.payload_proto_bin.empty());
+    securecloud::audit::v1::AuditEventProto proto;
+    ASSERT_TRUE(
+        proto.ParseFromArray(audit_rec.payload_proto_bin.data(), static_cast<int>(audit_rec.payload_proto_bin.size())));
+    EXPECT_EQ(proto.actor_type(), securecloud::audit::v1::ACTOR_TYPE_SYSTEM);
+    EXPECT_EQ(proto.severity(), securecloud::audit::v1::SEVERITY_WARNING);
+    ASSERT_TRUE(proto.metadata().contains("reason"));
+    EXPECT_EQ(proto.metadata().at("reason"), "TERMINAL_FAILURE");
 }
 
 TEST_F(DeliveryWorkerTest, WorkerThreadPoolProcessesTasksConcurrentlyAndStopsGracefully) {

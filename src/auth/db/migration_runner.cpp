@@ -130,6 +130,35 @@ ON device_public_keys(device_id, created_at)
 WHERE key_type = 'ONE_TIME_PREKEY' AND key_status = 'Active';
 )SQL";
 
+constexpr std::string_view kV005Sql = R"SQL(
+CREATE TABLE IF NOT EXISTS auth_outbox (
+    event_id UUID PRIMARY KEY,
+    aggregate_type VARCHAR(32) NOT NULL,
+    aggregate_id UUID,
+    event_type VARCHAR(64) NOT NULL,
+    severity VARCHAR(16) NOT NULL CHECK (severity IN ('INFO', 'WARNING', 'SECURITY', 'CRITICAL')),
+    payload_json JSONB NOT NULL,
+    status VARCHAR(32) NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'PUBLISHED', 'FAILED', 'QUARANTINED')),
+    retry_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    processed_at TIMESTAMPTZ,
+    last_error TEXT,
+    leased_until TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_outbox_pending_polling
+    ON auth_outbox (created_at ASC)
+    WHERE status = 'PENDING';
+
+CREATE INDEX IF NOT EXISTS idx_auth_outbox_leased
+    ON auth_outbox (leased_until)
+    WHERE status = 'PENDING' AND leased_until IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS idx_auth_outbox_cleanup
+    ON auth_outbox (processed_at)
+    WHERE status = 'PUBLISHED';
+)SQL";
+
 class AdvisoryLockGuard {
   public:
     AdvisoryLockGuard(pqxx::connection& conn, int64_t lock_id) : conn_(conn), lock_id_(lock_id) {
@@ -208,6 +237,7 @@ std::vector<MigrationScript> MigrationRunner::get_standard_migrations() {
         {2, "create_auth_tables", std::string(kV002Sql), calculate_checksum(kV002Sql)},
         {3, "create_auth_indexes", std::string(kV003Sql), calculate_checksum(kV003Sql)},
         {4, "add_device_public_key_signature", std::string(kV004Sql), calculate_checksum(kV004Sql)},
+        {5, "create_auth_outbox_table", std::string(kV005Sql), calculate_checksum(kV005Sql)},
     };
 }
 

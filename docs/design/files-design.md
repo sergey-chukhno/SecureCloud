@@ -876,39 +876,46 @@ Receiving the expected number of bytes alone is insufficient to declare a file v
 
 ## 6.22 Audit Events
 
-The Files Service publishes audit events asynchronously through its transactional outbox.
+The Files Service publishes canonical audit events asynchronously to the Centralized Audit Service (`securecloud-audit`) through its PostgreSQL transactional outbox (`files_outbox`, hardened in migration `V002` per `AUDIT-015` and `docs/design/files-audit-producer.md`).
 
-Possible events include:
+Canonical event types follow the `AUDIT-002` hierarchical naming contract (`file.*`) across two durability categories (`ADR-007` §18–§23):
 
-* `FILE_UPLOAD_CREATED`
-* `FILE_UPLOAD_COMPLETED`
-* `FILE_UPLOAD_FAILED`
-* `FILE_DOWNLOAD_STARTED`
-* `FILE_DOWNLOAD_COMPLETED`
-* `FILE_ACCESS_DENIED`
-* `FILE_EXPIRED`
-* `FILE_DELETED`
+* **Category A — State-Mutating Operations (Committed atomically in the business PostgreSQL transaction)**:
+    * `file.created`
+    * `file.version.created`
+    * `file.upload.initiated`
+    * `file.upload.completed`
+    * `file.upload.cancelled`
+    * `file.upload.expired`
+    * `file.access.granted`
+    * `file.access.revoked`
+    * `file.deleted`
+    * `file.expired`
+* **Category B — Read-Only & Security Rejection Operations (Committed via autonomous outbox transactions)**:
+    * `file.chunk.integrity_failed`
+    * `file.finalization.failed`
+    * `file.download.initiated` (emitted once per transfer initiation / resume start, never per chunk)
+    * `file.access.denied`
+    * `file.capability.issued`
+    * `file.capability.rejected`
 
-Events contain only the metadata required for security and operational auditing.
+Events contain only bounded, non-sensitive operational metadata and verified caller/target identifiers. They must never contain:
 
-They must never contain:
+* plaintext or encrypted file content;
+* file-encryption keys or private cryptographic keys;
+* client-encrypted filename or MIME metadata (`encrypted_filename`, `encrypted_mime_type`, `metadata_nonce`, `metadata_tag`, `client_encryption_metadata`);
+* signed Ed25519 file capability tokens, bearer credentials, or infrastructure passwords.
 
-* plaintext file contents;
-* file-encryption keys;
-* private cryptographic keys.
-
-Audit publication is not part of the critical file-persistence transaction.
-
-Therefore:
+Audit publication is completely decoupled from the critical file-persistence path (`ADR-009`). Concurrent relay workers acquire time-bounded row leases (`FOR UPDATE SKIP LOCKED` with `leased_until`), retry transient gRPC failures with exponential backoff and jitter, and isolate permanently malformed events into `QUARANTINED` state without blocking healthy throughput:
 
 ```text
 Audit unavailable
       ↓
 File persistence continues
       ↓
-Audit event remains in outbox
+Audit event remains durable in files_outbox (PENDING)
       ↓
-Publication resumes later
+Publication resumes automatically upon recovery
 ```
 
 ---

@@ -13,6 +13,7 @@
 #include "domain/prekey_inventory_status.hpp"
 #include "domain/realtime_events.hpp"
 #include "domain/user_id.hpp"
+#include "domain/user_profile.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -128,6 +129,33 @@ struct FileChunkDownloadResult {
     std::string ciphertext_sha256;
 };
 
+enum class ProfileSyncStatus {
+    Synced,
+    LocalOnlyServerUnsupported,
+    SyncDisabledByPrivacyPolicy,
+};
+
+struct UserProfileSyncResult {
+    domain::UserProfile profile{};
+    ProfileSyncStatus sync_status{ProfileSyncStatus::Synced};
+
+    bool operator==(const UserProfileSyncResult& other) const noexcept = default;
+};
+
+struct TlsCertificateInfo {
+    std::string host{};
+    uint16_t port{8443};
+    std::string subject_cn{};
+    std::string issuer_cn{};
+    std::string spki_sha256_hex{};
+    int64_t valid_from_ms{0};
+    int64_t valid_until_ms{0};
+    bool matches_pinned_key{true};
+    bool has_pinned_key{false};
+
+    bool operator==(const TlsCertificateInfo& other) const noexcept = default;
+};
+
 class IGatewayClient {
   public:
     using RealtimeEventHandler = std::function<void(const domain::RealtimeEvent&)>;
@@ -205,6 +233,12 @@ class IGatewayClient {
                                                                       uint32_t chunk_index) = 0;
 
     virtual ClientResult<void> delete_file(std::string_view file_id) = 0;
+
+    virtual ClientResult<domain::UserProfile> get_user_profile(const domain::UserId& user_id) = 0;
+
+    virtual ClientResult<UserProfileSyncResult> update_user_profile(const domain::UserProfile& public_profile) = 0;
+
+    virtual ClientResult<TlsCertificateInfo> inspect_tls_certificate(std::string_view host, uint16_t port) = 0;
 };
 
 } // namespace securecloud::client::application::interfaces

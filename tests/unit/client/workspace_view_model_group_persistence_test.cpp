@@ -49,6 +49,10 @@ class ForwardingSecureStorage final : public ISecureStorage {
 
     ClientResult<bool> has_secret(std::string_view key_id) override { return inner_->has_secret(key_id); }
 
+    ClientResult<std::vector<std::string>> list_secret_keys() override { return inner_->list_secret_keys(); }
+
+    ClientResult<std::size_t> purge_all_secrets() override { return inner_->purge_all_secrets(); }
+
   private:
     std::shared_ptr<MemorySecureStorage> inner_;
 };

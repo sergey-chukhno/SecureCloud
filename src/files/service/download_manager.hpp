@@ -7,6 +7,7 @@
 #include "files/repository/file_version_repository.hpp"
 #include "files/service/chunk_download_engine.hpp"
 #include "files/service/file_lifecycle_service.hpp"
+#include "files/service/files_audit_event_publisher.hpp"
 #include "securecloud/files/v1/files.pb.h"
 
 #include <cstdint>
@@ -71,7 +72,8 @@ class DownloadManager : public IDownloadManager {
                              std::shared_ptr<ChunkDownloadEngine> download_engine = nullptr,
                              std::shared_ptr<FileRepository> file_repo = nullptr,
                              std::shared_ptr<FileVersionRepository> version_repo = nullptr,
-                             std::shared_ptr<FileAccessRepository> access_repo = nullptr);
+                             std::shared_ptr<FileAccessRepository> access_repo = nullptr,
+                             std::shared_ptr<FilesAuditEventPublisher> audit_publisher = nullptr);
 
     ~DownloadManager() override = default;
 
@@ -96,6 +98,7 @@ class DownloadManager : public IDownloadManager {
     std::shared_ptr<FileRepository> file_repo_;
     std::shared_ptr<FileVersionRepository> version_repo_;
     std::shared_ptr<FileAccessRepository> access_repo_;
+    std::shared_ptr<FilesAuditEventPublisher> audit_publisher_;
 };
 
 } // namespace securecloud::files::service

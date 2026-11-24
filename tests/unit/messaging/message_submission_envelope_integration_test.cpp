@@ -6,6 +6,7 @@
 #include "messaging/domain/submission_types.hpp"
 #include "messaging/repository/in_memory_conversation_repository.hpp"
 #include "messaging/repository/in_memory_membership_repository.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/service/conversation_authorization_service.hpp"
 #include "messaging/service/e2e_envelope_validator.hpp"
 #include "messaging/service/idempotency_guard.hpp"
@@ -134,6 +135,24 @@ class MockIdempotencyRepository : public repository::IIdempotencyRepository {
     std::unordered_map<std::string, IdempotencyRecord> records_;
 };
 
+class MockMessagingAuditOutboxRepository : public repository::IMessagingAuditOutboxRepository {
+  public:
+    void enqueue_audit_event(const repository::AuditOutboxRecord&) override {}
+
+    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
+                                                                    std::chrono::seconds) override {
+        return {};
+    }
+
+    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
+                        const std::string&) override {}
+
+    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
+                        const std::string&, bool) override {}
+
+    size_t count_pending_backlog(const std::string&, int32_t) override { return 0; }
+};
+
 class MockAuthCryptoClient : public IAuthCryptoDirectoryClient {
   public:
     void set_user_devices(const UserId& user_id, std::vector<DeviceCryptoRecord> devices) {
@@ -189,13 +208,14 @@ class MessageSubmissionEnvelopeIntegrationTest : public ::testing::Test {
         message_repo_ = std::make_shared<MockMessageRepository>();
         delivery_repo_ = std::make_shared<MockDeliveryStateRepository>();
         outbox_repo_ = std::make_shared<MockOutboxRepository>();
+        audit_repo_ = std::make_shared<MockMessagingAuditOutboxRepository>();
 
         auth_crypto_client_ = std::make_shared<MockAuthCryptoClient>();
         resolution_service_ = std::make_shared<RecipientDeviceResolutionService>(auth_crypto_client_);
         envelope_validator_ = std::make_shared<E2EEnvelopeValidator>(resolution_service_);
 
         service_ = std::make_unique<MessageSubmissionService>(auth_service_, sequence_allocator_, idempotency_guard_,
-                                                              message_repo_, delivery_repo_, outbox_repo_,
+                                                              message_repo_, delivery_repo_, outbox_repo_, audit_repo_,
                                                               envelope_validator_, resolution_service_);
 
         // Setup test users & devices
@@ -256,6 +276,7 @@ class MessageSubmissionEnvelopeIntegrationTest : public ::testing::Test {
     std::shared_ptr<MockMessageRepository> message_repo_;
     std::shared_ptr<MockDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<MockOutboxRepository> outbox_repo_;
+    std::shared_ptr<MockMessagingAuditOutboxRepository> audit_repo_;
 
     std::shared_ptr<MockAuthCryptoClient> auth_crypto_client_;
     std::shared_ptr<RecipientDeviceResolutionService> resolution_service_;

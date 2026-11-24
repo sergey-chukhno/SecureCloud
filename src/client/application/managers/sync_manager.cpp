@@ -521,4 +521,15 @@ ClientResult<std::size_t> SyncManager::poll_realtime_updates(const domain::Devic
     return ClientResult<std::size_t>::ok(processed);
 }
 
+std::size_t SyncManager::wipe_volatile_state() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    const std::size_t cleared_cursors = conversation_cursors_.size();
+    conversation_cursors_.clear();
+    local_user_id_ = domain::UserId{};
+    local_device_id_ = domain::DeviceId{};
+    is_syncing_.store(false);
+    simulated_offline_.store(false);
+    return cleared_cursors;
+}
+
 } // namespace securecloud::client::application::managers

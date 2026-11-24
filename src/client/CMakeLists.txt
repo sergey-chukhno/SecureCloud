@@ -19,12 +19,15 @@ if(Qt6_FOUND)
         domain/pairing_challenge_payload.cpp
         domain/device.cpp
         domain/user.cpp
+        domain/user_profile.cpp
+        domain/user_settings.cpp
         domain/contact.cpp
         domain/directory_user_entry.cpp
         domain/conversation.cpp
         domain/message.cpp
         domain/file_transfer.cpp
         domain/offline_sync_models.cpp
+        domain/emergency_models.cpp
         domain/crypto/x3dh_models.cpp
         domain/crypto/x3dh_engine.cpp
         domain/crypto/ratchet_models.cpp
@@ -34,6 +37,7 @@ if(Qt6_FOUND)
         domain/crypto/sender_key_models.cpp
         domain/crypto/sender_key_engine.cpp
         domain/crypto/file_crypto_engine.cpp
+        domain/crypto/recovery_phrase_engine.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)
     target_include_directories(securecloud_client_domain PUBLIC
@@ -51,8 +55,11 @@ if(Qt6_FOUND)
         infrastructure/gateway_adapter_stub.cpp
         infrastructure/client_logger.cpp
         infrastructure/adapters/default_gateway_client.cpp
+        infrastructure/adapters/qt_http_gateway_client.cpp
+        infrastructure/adapters/switchable_gateway_client.cpp
         infrastructure/adapters/memory_local_store.cpp
         infrastructure/adapters/sqlcipher_local_store.cpp
+        infrastructure/adapters/file_shredder.cpp
         infrastructure/adapters/memory_secure_storage.cpp
         infrastructure/adapters/stub_crypto_provider.cpp
         infrastructure/adapters/openssl_crypto_provider.cpp
@@ -91,6 +98,7 @@ if(Qt6_FOUND)
         application/managers/ratchet_session_manager.cpp
         application/managers/file_manager.cpp
         application/managers/emergency_manager.cpp
+        application/managers/settings_manager.cpp
         application/managers/sync_manager.cpp
     )
     add_library(securecloud::client_app ALIAS securecloud_client_app)

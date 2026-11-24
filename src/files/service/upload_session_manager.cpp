@@ -1,6 +1,9 @@
 #include "files/service/upload_session_manager.hpp"
 
+#include "files/db/files_connection_pool.hpp"
 #include "files/domain/metadata_validator.hpp"
+#include "files/repository/files_outbox_repository.hpp"
+#include "files/service/files_caller_context.hpp"
 
 #include <algorithm>
 #include <iostream>
@@ -8,15 +11,31 @@
 
 namespace securecloud::files::service {
 
+namespace {
+
+[[nodiscard]] std::string resolve_session_correlation_id() {
+    if (const auto ctx = current_files_caller_context(); ctx && !ctx->correlation_id.empty()) {
+        return ctx->correlation_id;
+    }
+    return generate_uuid_v7();
+}
+
+} // namespace
+
 UploadSessionManager::UploadSessionManager(std::shared_ptr<db::FilesDbConnectionPool> pool,
                                            std::shared_ptr<FileTransferRepository> transfer_repo,
-                                           std::shared_ptr<FileChunkRepository> chunk_repo)
-    : pool_(std::move(pool)), transfer_repo_(std::move(transfer_repo)), chunk_repo_(std::move(chunk_repo)) {
+                                           std::shared_ptr<FileChunkRepository> chunk_repo,
+                                           std::shared_ptr<FilesAuditEventPublisher> audit_publisher)
+    : pool_(std::move(pool)), transfer_repo_(std::move(transfer_repo)), chunk_repo_(std::move(chunk_repo)),
+      audit_publisher_(std::move(audit_publisher)) {
     if (!transfer_repo_ && pool_) {
         transfer_repo_ = std::make_shared<FileTransferRepository>(pool_);
     }
     if (!chunk_repo_ && pool_) {
         chunk_repo_ = std::make_shared<FileChunkRepository>(pool_);
+    }
+    if (!audit_publisher_ && pool_) {
+        audit_publisher_ = std::make_shared<FilesAuditEventPublisher>(std::make_shared<FilesOutboxRepository>(pool_));
     }
 }
 
@@ -45,9 +64,31 @@ std::optional<UploadSession> UploadSessionManager::create_session(const v1::Crea
                 .expires_at = expires_at,
             };
             if (pool_) {
-                pqxx::work tx;
+                auto conn = pool_->acquire();
+
+                auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+                pqxx::work tx(default_conn.native_handle());
+
                 transfer_repo_->create_transfer(transfer, tx);
+                if (audit_publisher_) {
+                    FilesAuditRecord record;
+                    record.event_type = "file.upload.initiated";
+                    record.severity = "INFO";
+                    record.actor_type = request.owner_user_id().empty() ? "SYSTEM" : "USER";
+                    record.actor_id = request.owner_user_id().empty() ? "system" : request.owner_user_id();
+                    record.target_type = request.file_id().empty() ? "SERVICE" : "FILE";
+                    record.target_id = request.file_id().empty() ? "files" : request.file_id();
+                    record.correlation_id = resolve_session_correlation_id();
+                    record.metadata = {{"upload_id", upload_id},
+                                       {"owner_device_id", request.owner_device_id()},
+                                       {"expected_chunk_count", std::to_string(request.expected_chunk_count())},
+                                       {"encrypted_size_bytes", std::to_string(request.encrypted_size_bytes())}};
+                    audit_publisher_->publish_in_tx(record, tx);
+                }
                 tx.commit();
+                if (audit_publisher_) {
+                    audit_publisher_->notify_relay();
+                }
             } else {
                 // Autonomous or mock repository handling
             }
@@ -192,17 +233,6 @@ TransferProgress UploadSessionManager::get_transfer_progress(const std::string& 
         auto transfer = *transfer_opt;
         bool is_expired = (transfer.expires_at <= now);
 
-        if (is_expired && transfer.status != TransferStatus::Cancelled &&
-            transfer.status != TransferStatus::Completed) {
-            transfer.status = TransferStatus::Expired;
-            if (transfer_repo_) {
-                try {
-                    transfer_repo_->update_status(upload_id, TransferStatus::Expired);
-                } catch (...) {
-                }
-            }
-        }
-
         std::vector<int32_t> accepted;
         if (chunk_repo_) {
             try {
@@ -212,6 +242,44 @@ TransferProgress UploadSessionManager::get_transfer_progress(const std::string& 
             }
         }
         std::sort(accepted.begin(), accepted.end());
+
+        const bool transition_to_expired = is_expired && transfer.status != TransferStatus::Cancelled &&
+                                           transfer.status != TransferStatus::Completed &&
+                                           transfer.status != TransferStatus::Expired;
+        if (transition_to_expired) {
+            transfer.status = TransferStatus::Expired;
+            if (transfer_repo_) {
+                try {
+                    if (pool_) {
+                        auto conn = pool_->acquire();
+                        auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+                        pqxx::work tx(default_conn.native_handle());
+                        transfer_repo_->update_status(upload_id, TransferStatus::Expired, tx);
+                        if (audit_publisher_) {
+                            FilesAuditRecord record;
+                            record.event_type = "file.upload.expired";
+                            record.severity = "WARNING";
+                            record.actor_type = "SYSTEM";
+                            record.actor_id = "files";
+                            record.target_type = transfer.file_id.empty() ? "SERVICE" : "FILE";
+                            record.target_id = transfer.file_id.empty() ? "files" : transfer.file_id;
+                            record.correlation_id = resolve_session_correlation_id();
+                            record.metadata = {{"upload_id", upload_id},
+                                               {"accepted_chunks", std::to_string(accepted.size())},
+                                               {"total_chunks", std::to_string(transfer.total_chunks)}};
+                            audit_publisher_->publish_in_tx(record, tx);
+                        }
+                        tx.commit();
+                        if (audit_publisher_) {
+                            audit_publisher_->notify_relay();
+                        }
+                    } else {
+                        transfer_repo_->update_status(upload_id, TransferStatus::Expired);
+                    }
+                } catch (...) {
+                }
+            }
+        }
 
         std::set<int32_t> accepted_set(accepted.begin(), accepted.end());
         std::vector<int32_t> missing;
@@ -287,16 +355,51 @@ std::vector<int32_t> UploadSessionManager::get_missing_chunk_indices(const std::
     return get_transfer_progress(upload_id).missing_chunk_indices;
 }
 
-bool UploadSessionManager::cancel_session(const std::string& upload_id, const std::string& /*reason*/) {
+bool UploadSessionManager::cancel_session(const std::string& upload_id, const std::string& reason) {
     std::lock_guard<std::mutex> lock(session_mutex_);
 
     bool found = false;
     if (transfer_repo_) {
         try {
-            auto transfer_opt = transfer_repo_->find_by_id(upload_id);
-            if (transfer_opt) {
-                transfer_repo_->update_status(upload_id, TransferStatus::Cancelled);
-                found = true;
+            if (pool_) {
+                auto conn = pool_->acquire();
+                auto& default_conn = dynamic_cast<securecloud::files::db::DefaultDbConnection&>(*conn);
+                pqxx::work tx(default_conn.native_handle());
+                auto transfer_opt = transfer_repo_->find_by_id(upload_id, tx);
+                if (transfer_opt) {
+                    transfer_repo_->update_status(upload_id, TransferStatus::Cancelled, tx);
+                    if (audit_publisher_) {
+                        std::string actor_id = transfer_opt->initiator_user_id;
+                        if (const auto ctx = current_files_caller_context();
+                            ctx && !ctx->user_id.empty() && ctx->user_id != "unauthenticated") {
+                            actor_id = ctx->user_id;
+                        }
+                        FilesAuditRecord record;
+                        record.event_type = "file.upload.cancelled";
+                        record.severity = "INFO";
+                        record.actor_type = actor_id.empty() || actor_id == "system" ? "SYSTEM" : "USER";
+                        record.actor_id = actor_id.empty() ? "system" : actor_id;
+                        record.target_type = transfer_opt->file_id.empty() ? "SERVICE" : "FILE";
+                        record.target_id = transfer_opt->file_id.empty() ? "files" : transfer_opt->file_id;
+                        record.correlation_id = resolve_session_correlation_id();
+                        record.metadata = {{"upload_id", upload_id}};
+                        if (!reason.empty()) {
+                            record.metadata.emplace("reason", reason);
+                        }
+                        audit_publisher_->publish_in_tx(record, tx);
+                    }
+                    tx.commit();
+                    if (audit_publisher_) {
+                        audit_publisher_->notify_relay();
+                    }
+                    found = true;
+                }
+            } else {
+                auto transfer_opt = transfer_repo_->find_by_id(upload_id);
+                if (transfer_opt) {
+                    transfer_repo_->update_status(upload_id, TransferStatus::Cancelled);
+                    found = true;
+                }
             }
         } catch (const std::exception& ex) {
             std::cerr << "[SecureCloud] [files] Failed to cancel transfer in DB: " << ex.what() << "\n";

@@ -40,6 +40,7 @@
 #include "messaging/repository/in_memory_conversation_repository.hpp"
 #include "messaging/repository/in_memory_membership_repository.hpp"
 #include "messaging/repository/message_repository_interface.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/repository/outbox_repository_interface.hpp"
 #include "messaging/repository/sync_cursor_repository_interface.hpp"
 #include "securecloud/messaging/v1/messaging.grpc.pb.h"
@@ -312,6 +313,34 @@ class ThreadSafeOutboxRepository final : public repository::IOutboxRepository {
     std::vector<ConversationOutboxEvent> events_;
 };
 
+class ThreadSafeAuditOutboxRepository final : public repository::IMessagingAuditOutboxRepository {
+  public:
+    void enqueue_audit_event(const repository::AuditOutboxRecord& record) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        records_.push_back(record);
+    }
+
+    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
+                                                                    std::chrono::seconds) override {
+        return {};
+    }
+
+    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
+                        const std::string&) override {}
+
+    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
+                        const std::string&, bool) override {}
+
+    size_t count_pending_backlog(const std::string&, int32_t) override {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return records_.size();
+    }
+
+  private:
+    mutable std::mutex mutex_;
+    std::vector<repository::AuditOutboxRecord> records_;
+};
+
 class ThreadSafeIdempotencyRepository final : public repository::IIdempotencyRepository {
   public:
     std::optional<IdempotencyRecord> find_submission(const DeviceId& sender_device_id,
@@ -477,6 +506,7 @@ class MessagingMultiDeviceIntegrationTest : public ::testing::Test {
         message_repo_ = std::make_shared<ThreadSafeMessageRepository>();
         delivery_repo_ = std::make_shared<ThreadSafeDeliveryStateRepository>();
         outbox_repo_ = std::make_shared<ThreadSafeOutboxRepository>();
+        audit_repo_ = std::make_shared<ThreadSafeAuditOutboxRepository>();
         idem_repo_ = std::make_shared<ThreadSafeIdempotencyRepository>();
         cursor_repo_ = std::make_shared<ThreadSafeSyncCursorRepository>();
         auth_dir_client_ = std::make_shared<ThreadSafeAuthDirectoryClient>();
@@ -511,7 +541,7 @@ class MessagingMultiDeviceIntegrationTest : public ::testing::Test {
         envelope_validator_ = std::make_shared<service::E2EEnvelopeValidator>(resolution_service_);
 
         submission_service_ = std::make_shared<service::MessageSubmissionService>(
-            auth_service_, seq_allocator_, idem_guard_, message_repo_, delivery_repo_, outbox_repo_,
+            auth_service_, seq_allocator_, idem_guard_, message_repo_, delivery_repo_, outbox_repo_, audit_repo_,
             envelope_validator_, resolution_service_);
 
         delivery_service_ =
@@ -528,7 +558,7 @@ class MessagingMultiDeviceIntegrationTest : public ::testing::Test {
             });
 
         read_receipt_service_ = std::make_shared<service::ReadReceiptService>(
-            delivery_repo_, member_repo_, outbox_repo_, [](const DeviceId&) { return true; });
+            delivery_repo_, member_repo_, outbox_repo_, audit_repo_, [](const DeviceId&) { return true; });
 
         cursor_manager_ = std::make_shared<service::SyncCursorManager>(cursor_repo_, message_repo_);
         sync_service_ = std::make_shared<service::MessageSyncService>(message_repo_, cursor_manager_, auth_service_,
@@ -599,6 +629,7 @@ class MessagingMultiDeviceIntegrationTest : public ::testing::Test {
     std::shared_ptr<ThreadSafeMessageRepository> message_repo_;
     std::shared_ptr<ThreadSafeDeliveryStateRepository> delivery_repo_;
     std::shared_ptr<ThreadSafeOutboxRepository> outbox_repo_;
+    std::shared_ptr<ThreadSafeAuditOutboxRepository> audit_repo_;
     std::shared_ptr<ThreadSafeIdempotencyRepository> idem_repo_;
     std::shared_ptr<ThreadSafeSyncCursorRepository> cursor_repo_;
     std::shared_ptr<ThreadSafeAuthDirectoryClient> auth_dir_client_;

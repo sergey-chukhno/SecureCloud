@@ -30,6 +30,7 @@
 #include "messaging/repository/in_memory_conversation_repository.hpp"
 #include "messaging/repository/in_memory_membership_repository.hpp"
 #include "messaging/repository/message_repository_interface.hpp"
+#include "messaging/repository/messaging_audit_outbox_repository_interface.hpp"
 #include "messaging/repository/outbox_repository_interface.hpp"
 #include "messaging/repository/scylla_delivery_state_repository.hpp"
 #include "messaging/repository/scylla_idempotency_repository.hpp"
@@ -405,6 +406,24 @@ class SimpleOutboxRepository final : public repository::IOutboxRepository {
                               std::chrono::system_clock::time_point /*published_at*/) override {}
 };
 
+class SimpleAuditOutboxRepository final : public repository::IMessagingAuditOutboxRepository {
+  public:
+    void enqueue_audit_event(const repository::AuditOutboxRecord& /*record*/) override {}
+
+    std::vector<repository::AuditOutboxRecord> fetch_pending_events(const std::string&, int32_t, size_t,
+                                                                    std::chrono::seconds) override {
+        return {};
+    }
+
+    void mark_published(const std::string&, int32_t, const std::chrono::system_clock::time_point&,
+                        const std::string&) override {}
+
+    void record_failure(const std::string&, int32_t, const std::chrono::system_clock::time_point&, const std::string&,
+                        const std::string&, bool) override {}
+
+    size_t count_pending_backlog(const std::string&, int32_t) override { return 0; }
+};
+
 class SimpleSyncCursorRepository final : public repository::ISyncCursorRepository {
   public:
     std::optional<DeviceSyncCursor> get_sync_cursor(const DeviceId& dev, const ConversationId& conv) override {
@@ -526,6 +545,7 @@ class MessagingFaultRecoveryIntegrationTest : public ::testing::Test {
         delivery_repo_ = std::make_shared<FaultInjectableDeliveryRepository>();
         idempotency_repo_ = std::make_shared<FaultInjectableIdempotencyRepository>();
         outbox_repo_ = std::make_shared<SimpleOutboxRepository>();
+        audit_repo_ = std::make_shared<SimpleAuditOutboxRepository>();
         sync_cursor_repo_ = std::make_shared<SimpleSyncCursorRepository>();
         crypto_client_ = std::make_shared<SimpleCryptoClient>();
 
@@ -537,7 +557,7 @@ class MessagingFaultRecoveryIntegrationTest : public ::testing::Test {
         delivery_service_ = std::make_shared<service::DeliveryService>(delivery_repo_, outbox_repo_);
 
         submission_service_ = std::make_shared<service::MessageSubmissionService>(
-            authz_service_, seq_allocator_, idempotency_guard_, msg_repo_, delivery_repo_, outbox_repo_,
+            authz_service_, seq_allocator_, idempotency_guard_, msg_repo_, delivery_repo_, outbox_repo_, audit_repo_,
             envelope_validator_, device_resolver_);
 
         sync_cursor_mgr_ = std::make_shared<service::SyncCursorManager>(sync_cursor_repo_, msg_repo_, seq_allocator_);
@@ -545,7 +565,7 @@ class MessagingFaultRecoveryIntegrationTest : public ::testing::Test {
             std::make_shared<service::MessageSyncService>(msg_repo_, sync_cursor_mgr_, authz_service_, delivery_repo_);
 
         read_receipt_service_ =
-            std::make_shared<service::ReadReceiptService>(delivery_repo_, membership_repo_, outbox_repo_);
+            std::make_shared<service::ReadReceiptService>(delivery_repo_, membership_repo_, outbox_repo_, audit_repo_);
 
         submission_pool_ = std::make_shared<concurrency::BoundedWorkerPool>(4, 128, "sub_pool");
         delivery_pool_ = std::make_shared<concurrency::BoundedWorkerPool>(4, 128, "del_pool");
@@ -586,6 +606,7 @@ class MessagingFaultRecoveryIntegrationTest : public ::testing::Test {
     std::shared_ptr<FaultInjectableDeliveryRepository> delivery_repo_;
     std::shared_ptr<FaultInjectableIdempotencyRepository> idempotency_repo_;
     std::shared_ptr<SimpleOutboxRepository> outbox_repo_;
+    std::shared_ptr<SimpleAuditOutboxRepository> audit_repo_;
     std::shared_ptr<SimpleSyncCursorRepository> sync_cursor_repo_;
     std::shared_ptr<SimpleCryptoClient> crypto_client_;
 
@@ -637,7 +658,7 @@ TEST_F(MessagingFaultRecoveryIntegrationTest, MidFlightTransportDisconnectionAnd
 
     auto scheduler = std::make_shared<BoundedDeliveryScheduler>();
     auto retry_policy = std::make_shared<service::DeliveryRetryPolicy>();
-    DeliveryWorker worker(scheduler, conn_registry, delivery_repo_, outbox_repo_, retry_policy);
+    DeliveryWorker worker(scheduler, conn_registry, delivery_repo_, outbox_repo_, audit_repo_, retry_policy);
 
     // 1. Submit message
     MessageSubmissionCommand cmd;
@@ -799,7 +820,7 @@ TEST_F(MessagingFaultRecoveryIntegrationTest, MessagingServiceAbruptRestartDurab
 
     // 5. Verify worker drains scheduled recovery tasks cleanly to the reconnected device
     auto retry_policy = std::make_shared<service::DeliveryRetryPolicy>();
-    DeliveryWorker worker(new_scheduler, new_conn_registry, delivery_repo_, outbox_repo_, retry_policy);
+    DeliveryWorker worker(new_scheduler, new_conn_registry, delivery_repo_, outbox_repo_, audit_repo_, retry_policy);
     for (size_t i = 0; i < kStagedMessages; ++i) {
         ASSERT_TRUE(worker.process_single_task(std::chrono::milliseconds(10)));
     }

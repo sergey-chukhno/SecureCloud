@@ -1,8 +1,12 @@
 #include "service/message_submission_service.hpp"
 
+#include "audit/canonical_audit_mapper.hpp"
+#include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
 #include "domain/submission_fingerprint.hpp"
 #include "service/submission_validator.hpp"
 
+#include <nlohmann/json.hpp>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -10,41 +14,132 @@
 
 namespace securecloud::messaging::service {
 
-MessageSubmissionService::MessageSubmissionService(std::shared_ptr<ConversationAuthorizationService> auth_service,
-                                                   std::shared_ptr<ISequenceAllocator> sequence_allocator,
-                                                   std::shared_ptr<MessageSubmissionIdempotencyGuard> idempotency_guard,
-                                                   std::shared_ptr<repository::IMessageRepository> message_repo,
-                                                   std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
-                                                   std::shared_ptr<repository::IOutboxRepository> outbox_repo,
-                                                   std::shared_ptr<E2EEnvelopeValidator> envelope_validator,
-                                                   std::shared_ptr<RecipientDeviceResolutionService> resolution_service)
+namespace {
+
+void stage_submission_audit_events(repository::IMessagingAuditOutboxRepository* audit_repo,
+                                   const domain::MessageSubmissionCommand& cmd, const domain::MessageId& message_id,
+                                   uint64_t sequence, std::chrono::system_clock::time_point occurred_at,
+                                   bool check_existing) {
+    if (audit_repo == nullptr) {
+        return;
+    }
+
+    const std::string routing_key = cmd.conversation_id.to_string();
+    const std::string bucket = domain::compute_outbox_bucket_utc(occurred_at);
+    const int32_t shard_id = domain::compute_outbox_shard_id(routing_key);
+
+    size_t total_envelope_bytes = 0;
+    for (const auto& target : cmd.delivery_targets) {
+        total_envelope_bytes += target.ciphertext_blob.size();
+    }
+
+    const std::string submitted_event_id =
+        domain::generate_message_audit_event_id(message_id, domain::MessagingAuditEventType::MessageSubmitted);
+    if (!check_existing || !audit_repo->has_event(bucket, shard_id, occurred_at, submitted_event_id)) {
+        nlohmann::json meta = {
+            {"conversation_id", routing_key},
+            {"sequence", sequence},
+            {"priority", domain::to_string(cmd.priority)},
+            {"recipient_device_count", cmd.delivery_targets.size()},
+            {"envelope_bytes", total_envelope_bytes},
+            {"protocol_version", static_cast<int32_t>(cmd.protocol_version)},
+        };
+        if (check_existing) {
+            meta["forward_recovered"] = true;
+        }
+
+        domain::MessagingAuditEvent submitted_event{
+            .event_id = submitted_event_id,
+            .event_type = domain::MessagingAuditEventType::MessageSubmitted,
+            .severity = domain::MessagingAuditSeverity::Info,
+            .occurred_at = occurred_at,
+            .actor_user_id = cmd.caller_user_id,
+            .actor_device_id = cmd.sender_device_id,
+            .target_resource = message_id.to_string(),
+            .payload_json = meta.dump(),
+            .correlation_id = {},
+        };
+        audit::stage_canonical_audit_event(audit_repo, submitted_event, routing_key);
+    }
+
+    if (cmd.priority == domain::MessagePriority::Emergency) {
+        const std::string emergency_event_id =
+            domain::generate_message_audit_event_id(message_id, domain::MessagingAuditEventType::EmergencyActivated);
+        if (!check_existing || !audit_repo->has_event(bucket, shard_id, occurred_at, emergency_event_id)) {
+            const nlohmann::json emergency_meta = {
+                {"conversation_id", routing_key},
+                {"message_id", message_id.to_string()},
+                {"priority", "EMERGENCY"},
+                {"recipient_device_count", cmd.delivery_targets.size()},
+            };
+
+            domain::MessagingAuditEvent emergency_event{
+                .event_id = emergency_event_id,
+                .event_type = domain::MessagingAuditEventType::EmergencyActivated,
+                .severity = domain::MessagingAuditSeverity::Critical,
+                .occurred_at = occurred_at,
+                .actor_user_id = cmd.caller_user_id,
+                .actor_device_id = cmd.sender_device_id,
+                .target_resource = routing_key,
+                .payload_json = emergency_meta.dump(),
+                .correlation_id = {},
+            };
+            audit::stage_canonical_audit_event(audit_repo, emergency_event, routing_key);
+        }
+    }
+}
+
+} // namespace
+
+MessageSubmissionService::MessageSubmissionService(
+    std::shared_ptr<ConversationAuthorizationService> auth_service,
+    std::shared_ptr<ISequenceAllocator> sequence_allocator,
+    std::shared_ptr<MessageSubmissionIdempotencyGuard> idempotency_guard,
+    std::shared_ptr<repository::IMessageRepository> message_repo,
+    std::shared_ptr<repository::IDeliveryStateRepository> delivery_repo,
+    std::shared_ptr<repository::IOutboxRepository> outbox_repo,
+    std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo,
+    std::shared_ptr<E2EEnvelopeValidator> envelope_validator,
+    std::shared_ptr<RecipientDeviceResolutionService> resolution_service)
     : auth_service_(std::move(auth_service)), sequence_allocator_(std::move(sequence_allocator)),
       idempotency_guard_(std::move(idempotency_guard)), message_repo_(std::move(message_repo)),
       delivery_repo_(std::move(delivery_repo)), outbox_repo_(std::move(outbox_repo)),
-      envelope_validator_(std::move(envelope_validator)), resolution_service_(std::move(resolution_service)) {
+      audit_repo_(std::move(audit_repo)), envelope_validator_(std::move(envelope_validator)),
+      resolution_service_(std::move(resolution_service)) {
     if (!auth_service_ || !sequence_allocator_ || !idempotency_guard_ || !message_repo_ || !delivery_repo_ ||
-        !outbox_repo_) {
+        !outbox_repo_ || !audit_repo_) {
         throw std::invalid_argument("MessageSubmissionService requires non-null dependencies");
     }
 }
 
 ServiceResult<MessageSubmissionResponse>
 MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand& cmd) {
-    // 1. Syntactic & Cryptographic Envelope Validation (SubmissionValidator)
     auto val_result = SubmissionValidator::validate(cmd);
     if (!val_result) {
         return ServiceResult<MessageSubmissionResponse>::fail(
             val_result.error_code, util::ZeroPlaintextGuard::sanitize_error_message(val_result.error_message));
     }
 
-    // 2. Participant Authorization & Active Standing Check (ConversationAuthorizationService)
     auto auth_result = auth_service_->can_send_message(cmd.caller_user_id, cmd.conversation_id);
     if (!auth_result) {
+        const auto denied_at = std::chrono::system_clock::now();
+        domain::MessagingAuditEvent denied_event{
+            .event_id = domain::generate_audit_event_id(),
+            .event_type = domain::MessagingAuditEventType::SecurityAuthorizationDenied,
+            .severity = domain::MessagingAuditSeverity::Security,
+            .occurred_at = denied_at,
+            .actor_user_id = cmd.caller_user_id,
+            .actor_device_id = cmd.sender_device_id,
+            .target_resource = cmd.conversation_id.to_string(),
+            .payload_json = R"({"action":"SUBMIT_MESSAGE","reason":"NOT_AN_ACTIVE_MEMBER"})",
+            .correlation_id = {},
+        };
+        audit::stage_canonical_audit_event(audit_repo_.get(), denied_event, cmd.conversation_id.to_string());
+
         return ServiceResult<MessageSubmissionResponse>::fail(
             auth_result.error_code, util::ZeroPlaintextGuard::sanitize_error_message(auth_result.reason));
     }
 
-    // 2b. Comprehensive E2E Envelope Security & Anti-Plaintext Validation (ADR-008, MSG-006)
     if (envelope_validator_) {
         domain::E2EMessageEnvelope env;
         env.conversation_id = cmd.conversation_id;
@@ -95,7 +190,6 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
         }
     }
 
-    // Synchronize concurrent submissions with identical idempotency keys (ADR-009, MSG-005-T04)
     size_t stripe_idx = 0;
     if (!cmd.client_idempotency_token.empty()) {
         stripe_idx =
@@ -103,13 +197,10 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
     }
     std::lock_guard<std::mutex> lock(submission_stripes_[stripe_idx]);
 
-    // 3. Cryptographic Payload Fingerprint Calculation (ADR-008 SHA-256)
     std::string fingerprint = domain::calculate_submission_fingerprint(cmd);
 
-    // 4. Client Idempotency Evaluation
     auto idem_result = idempotency_guard_->evaluate_submission(cmd, fingerprint);
     if (idem_result.action == IdempotencyAction::RetryWait) {
-        // Bounded wait to allow in-flight duplicate submission to commit (MSG-005-T03)
         for (int retry = 0; retry < 20; ++retry) {
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
             idem_result = idempotency_guard_->evaluate_submission(cmd, fingerprint);
@@ -122,6 +213,11 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
     switch (idem_result.action) {
     case IdempotencyAction::ReturnCached: {
         const auto& record = *idem_result.cached_record;
+
+        // Idempotent forward recovery: only stage if missing from audit outbox so PUBLISHED rows stay intact
+        stage_submission_audit_events(audit_repo_.get(), cmd, record.message_id, record.message_sequence,
+                                      record.created_at, /*check_existing=*/true);
+
         MessageSubmissionResponse resp;
         resp.message_id = record.message_id;
         resp.conversation_id = record.conversation_id;
@@ -144,19 +240,15 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
         break;
     }
 
-    // 5. Global Message Identifier and Acceptance Timestamp Generation (UUIDv7)
     auto message_id = domain::MessageId::generate_v7();
     auto accepted_at = std::chrono::system_clock::now();
 
-    // 6. Claim token in database: mark idempotency as PROCESSING
     idempotency_guard_->mark_processing(cmd, fingerprint, message_id);
 
     try {
-        // 7. Time-bucketing and monotonic sequence allocation within monthly UTC partition
         auto message_bucket = domain::MessageBucket::from_time_point(accepted_at);
         uint64_t sequence = sequence_allocator_->allocate_sequence(cmd.conversation_id, message_bucket);
 
-        // 8. Durably persist immutable MessageEntity in messages_by_conversation
         domain::MessageEntity msg_entity;
         msg_entity.conversation_id = cmd.conversation_id;
         msg_entity.message_bucket = message_bucket;
@@ -171,7 +263,6 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
 
         message_repo_->save_message(msg_entity);
 
-        // 9. Durably persist initial active delivery queues and fan-out tracking state
         std::vector<domain::DeviceDeliveryRecord> pending_records;
         pending_records.reserve(cmd.delivery_targets.size());
         std::vector<domain::RecipientDeliveryState> recipient_states;
@@ -189,7 +280,6 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
             d_rec.delivery_state = domain::DeliveryState::Pending;
             d_rec.attempt_count = 0;
 
-            // Envelope fields (MSG-006-T04 / T05)
             d_rec.ciphertext_blob = target.ciphertext_blob;
             d_rec.ephemeral_public_key = target.ephemeral_public_key;
             d_rec.iv = target.iv;
@@ -211,7 +301,6 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
         delivery_repo_->save_pending_deliveries(pending_records);
         delivery_repo_->save_recipient_delivery_states(recipient_states);
 
-        // 10. Durably persist Transactional Outbox Event for decoupled worker fan-out
         domain::ConversationOutboxEvent outbox_evt;
         outbox_evt.event_id = domain::MessageId::generate_v7().to_string();
         outbox_evt.conversation_id = cmd.conversation_id;
@@ -228,10 +317,11 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
 
         outbox_repo_->enqueue_event(outbox_evt);
 
-        // 11. Durably mark Idempotency Record as COMMITTED
+        stage_submission_audit_events(audit_repo_.get(), cmd, message_id, sequence, accepted_at,
+                                      /*check_existing=*/false);
+
         idempotency_guard_->mark_committed(cmd, fingerprint, message_id, sequence, accepted_at);
 
-        // 12. Return success response (Initial acceptance boundary committed)
         MessageSubmissionResponse response;
         response.message_id = message_id;
         response.conversation_id = cmd.conversation_id;
@@ -242,7 +332,6 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
 
         return ServiceResult<MessageSubmissionResponse>::ok(response);
     } catch (const std::exception& ex) {
-        // Upon persistence failure, mark idempotency as failed so client can safely retry
         idempotency_guard_->mark_failed(cmd.sender_device_id, cmd.client_idempotency_token);
         return ServiceResult<MessageSubmissionResponse>::fail(
             v1::MESSAGING_ERROR_CODE_UNSPECIFIED,

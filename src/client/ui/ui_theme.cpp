@@ -4,6 +4,8 @@
 #include <QFontDatabase>
 #include <QGuiApplication>
 #include <QStyleHints>
+#include <algorithm>
+#include <cmath>
 
 namespace securecloud::client::ui {
 
@@ -60,6 +62,29 @@ void UiTheme::toggleTheme() {
     } else {
         setThemeMode(ThemeMode::Dark);
     }
+}
+
+void UiTheme::setFontScale(double scale) {
+    const double sanitized = std::isnan(scale) ? 1.0 : scale;
+    const double clamped = std::clamp(sanitized, 0.85, 1.40);
+    if (std::abs(clamped - font_scale_) < 1e-6) {
+        return;
+    }
+    font_scale_ = clamped;
+    emit themeChanged();
+}
+
+void UiTheme::setHighContrastEnabled(bool enabled) {
+    if (high_contrast_enabled_ == enabled) {
+        return;
+    }
+    high_contrast_enabled_ = enabled;
+    emit themeChanged();
+}
+
+int UiTheme::scaledFont(int basePointSize) const noexcept {
+    const long scaled = std::lround(static_cast<double>(basePointSize) * font_scale_);
+    return std::max(8, static_cast<int>(scaled));
 }
 
 bool UiTheme::resolveSystemIsDark() const {
@@ -126,7 +151,64 @@ const UiTheme::Palette& UiTheme::lightPalette() {
     return palette;
 }
 
+const UiTheme::Palette& UiTheme::highContrastDarkPalette() {
+    static const Palette palette{
+        QStringLiteral("#000000"),            // backgroundPrimary
+        QStringLiteral("#0A0A0A"),            // backgroundSecondary
+        QStringLiteral("#121212"),            // backgroundElevated
+        QStringLiteral("#CBD5E1"),            // borderSubtle
+        QStringLiteral("#7DD3FC"),            // borderFocused
+        QStringLiteral("#FFFFFF"),            // textPrimary
+        QStringLiteral("#F1F5F9"),            // textSecondary
+        QStringLiteral("#E2E8F0"),            // textMuted
+        QStringLiteral("#000000"),            // textInverse
+        QStringLiteral("#7DD3FC"),            // accentPrimary
+        QStringLiteral("#BAE6FD"),            // accentHover
+        QStringLiteral("#38BDF8"),            // accentActive
+        QStringLiteral("#4ADE80"),            // statusSuccess
+        QStringLiteral("#FDE047"),            // statusWarning
+        QStringLiteral("#FCA5A5"),            // statusDanger
+        QStringLiteral("#7DD3FC"),            // statusInfo
+        QStringLiteral("#002F87"),            // bubbleSelf
+        QStringLiteral("#121212"),            // bubblePeer
+        QStringLiteral("#FFFFFF"),            // bubbleSelfText
+        QStringLiteral("#FFFFFF"),            // bubblePeerText
+        QStringLiteral("rgba(0, 0, 0, 0.75)") // shadowColor
+    };
+    return palette;
+}
+
+const UiTheme::Palette& UiTheme::highContrastLightPalette() {
+    static const Palette palette{
+        QStringLiteral("#FFFFFF"),            // backgroundPrimary
+        QStringLiteral("#F8FAFC"),            // backgroundSecondary
+        QStringLiteral("#FFFFFF"),            // backgroundElevated
+        QStringLiteral("#1E293B"),            // borderSubtle
+        QStringLiteral("#002F87"),            // borderFocused
+        QStringLiteral("#000000"),            // textPrimary
+        QStringLiteral("#0F172A"),            // textSecondary
+        QStringLiteral("#1E293B"),            // textMuted
+        QStringLiteral("#FFFFFF"),            // textInverse
+        QStringLiteral("#003399"),            // accentPrimary
+        QStringLiteral("#002673"),            // accentHover
+        QStringLiteral("#001A4D"),            // accentActive
+        QStringLiteral("#064E3B"),            // statusSuccess
+        QStringLiteral("#78350F"),            // statusWarning
+        QStringLiteral("#991B1B"),            // statusDanger
+        QStringLiteral("#003399"),            // statusInfo
+        QStringLiteral("#002F87"),            // bubbleSelf
+        QStringLiteral("#F8FAFC"),            // bubblePeer
+        QStringLiteral("#FFFFFF"),            // bubbleSelfText
+        QStringLiteral("#000000"),            // bubblePeerText
+        QStringLiteral("rgba(0, 0, 0, 0.20)") // shadowColor
+    };
+    return palette;
+}
+
 const UiTheme::Palette& UiTheme::currentPalette() const {
+    if (high_contrast_enabled_) {
+        return isDark() ? highContrastDarkPalette() : highContrastLightPalette();
+    }
     return isDark() ? darkPalette() : lightPalette();
 }
 

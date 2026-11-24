@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <gtest/gtest.h>
+#include <limits>
 
 namespace {
 
@@ -244,6 +245,96 @@ TEST(UiThemeTest, InvokableThemeModeIntSwitching) {
     EXPECT_EQ(theme.themeMode(), ThemeMode::Dark);
     EXPECT_TRUE(theme.isDark());
     EXPECT_EQ(modeSpy.count(), 3);
+}
+
+TEST(UiThemeTest, FontScaleClampingAndDynamicTypography) {
+    UiTheme theme;
+    QSignalSpy themeSpy(&theme, &UiTheme::themeChanged);
+
+    EXPECT_DOUBLE_EQ(theme.fontScale(), 1.0);
+    EXPECT_EQ(theme.fontMicro(), 10);
+    EXPECT_EQ(theme.fontCaption(), 11);
+    EXPECT_EQ(theme.fontBody(), 13);
+    EXPECT_EQ(theme.fontSubtitle(), 15);
+    EXPECT_EQ(theme.fontTitle(), 18);
+    EXPECT_EQ(theme.fontHeadline(), 24);
+    EXPECT_EQ(theme.fontDisplay(), 28);
+
+    // Clamp below minimum 0.85
+    theme.setFontScale(0.40);
+    EXPECT_DOUBLE_EQ(theme.fontScale(), 0.85);
+    EXPECT_EQ(themeSpy.count(), 1);
+    EXPECT_GE(theme.fontMicro(), 8);
+    EXPECT_LE(theme.fontMicro(), theme.fontCaption());
+    EXPECT_LT(theme.fontCaption(), theme.fontBody());
+    EXPECT_LT(theme.fontBody(), theme.fontSubtitle());
+    EXPECT_LT(theme.fontSubtitle(), theme.fontTitle());
+    EXPECT_LT(theme.fontTitle(), theme.fontHeadline());
+    EXPECT_LT(theme.fontHeadline(), theme.fontDisplay());
+
+    // Idempotent at clamped boundary
+    theme.setFontScale(0.50);
+    EXPECT_EQ(themeSpy.count(), 1);
+
+    // Clamp above maximum 1.40
+    theme.setFontScale(2.50);
+    EXPECT_DOUBLE_EQ(theme.fontScale(), 1.40);
+    EXPECT_EQ(themeSpy.count(), 2);
+    EXPECT_EQ(theme.fontMicro(), 14);
+    EXPECT_EQ(theme.fontBody(), 18);
+    EXPECT_EQ(theme.fontHeadline(), 34);
+    EXPECT_EQ(theme.fontDisplay(), 39);
+
+    // NaN resets cleanly to 1.0
+    theme.setFontScale(std::numeric_limits<double>::quiet_NaN());
+    EXPECT_DOUBLE_EQ(theme.fontScale(), 1.0);
+    EXPECT_EQ(themeSpy.count(), 3);
+    EXPECT_EQ(theme.fontBody(), 13);
+}
+
+TEST(UiThemeTest, HighContrastPalettesMeetWcagAaaInvariants) {
+    UiTheme theme;
+    QSignalSpy themeSpy(&theme, &UiTheme::themeChanged);
+
+    EXPECT_FALSE(theme.highContrastEnabled());
+
+    auto assert_aaa_for_all_surfaces = [](const UiTheme& t) {
+        const QString surfaces[3] = {t.backgroundPrimary(), t.backgroundSecondary(), t.backgroundElevated()};
+        for (const auto& bg : surfaces) {
+            EXPECT_GE(contrastRatio(t.textPrimary(), bg), 7.0);
+            EXPECT_GE(contrastRatio(t.textSecondary(), bg), 7.0);
+            EXPECT_GE(contrastRatio(t.textMuted(), bg), 7.0);
+            EXPECT_GE(contrastRatio(t.accentPrimary(), bg), 7.0);
+            EXPECT_GE(contrastRatio(t.statusSuccess(), bg), 7.0);
+            EXPECT_GE(contrastRatio(t.statusWarning(), bg), 7.0);
+            EXPECT_GE(contrastRatio(t.statusDanger(), bg), 7.0);
+            EXPECT_GE(contrastRatio(t.statusInfo(), bg), 7.0);
+        }
+        EXPECT_GE(contrastRatio(t.bubbleSelfText(), t.bubbleSelf()), 7.0);
+        EXPECT_GE(contrastRatio(t.bubblePeerText(), t.bubblePeer()), 7.0);
+    };
+
+    // High-Contrast Dark Mode (WCAG AAA >= 7:1)
+    theme.setHighContrastEnabled(true);
+    EXPECT_TRUE(theme.highContrastEnabled());
+    EXPECT_EQ(themeSpy.count(), 1);
+    EXPECT_EQ(theme.backgroundPrimary(), "#000000");
+    EXPECT_EQ(theme.textPrimary(), "#FFFFFF");
+    assert_aaa_for_all_surfaces(theme);
+
+    // High-Contrast Light Mode (WCAG AAA >= 7:1)
+    theme.setThemeMode(ThemeMode::Light);
+    EXPECT_FALSE(theme.isDark());
+    EXPECT_EQ(theme.backgroundPrimary(), "#FFFFFF");
+    EXPECT_EQ(theme.textPrimary(), "#000000");
+    assert_aaa_for_all_surfaces(theme);
+
+    // Toggling off High-Contrast restores exact standard Light/Dark palettes
+    theme.setHighContrastEnabled(false);
+    EXPECT_FALSE(theme.highContrastEnabled());
+    EXPECT_EQ(theme.backgroundPrimary(), "#F1F5F9");
+    theme.setThemeMode(ThemeMode::Dark);
+    EXPECT_EQ(theme.backgroundPrimary(), "#0B0F17");
 }
 
 } // namespace

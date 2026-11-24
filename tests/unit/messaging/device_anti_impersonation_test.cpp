@@ -273,7 +273,7 @@ class DeviceAntiImpersonationTest : public ::testing::Test {
 
         delivery_service_ = std::make_shared<DeliveryService>(delivery_repo_, outbox_repo_);
         read_receipt_service_ = std::make_shared<ReadReceiptService>(delivery_repo_, member_repo_, outbox_repo_,
-                                                                     [](const DeviceId&) { return true; });
+                                                                     nullptr, [](const DeviceId&) { return true; });
 
         auth_service_ = std::make_shared<ConversationAuthorizationService>(*conv_repo_, *member_repo_);
         cursor_manager_ = std::make_shared<SyncCursorManager>(cursor_repo_, message_repo_);

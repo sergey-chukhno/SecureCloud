@@ -211,7 +211,7 @@ ClientResult<FileUploadResult> FileManager::start_upload(const FileUploadRequest
     }
 
     // ADR-008 pre-flight guard before encrypting or transferring any chunks
-    if (messaging_manager_ != nullptr) {
+    if (messaging_manager_ != nullptr && !(request.is_profile_asset && !request.dispatch_key_envelope)) {
         const auto elig_res =
             messaging_manager_->check_conversation_send_eligibility(request.conversation_id, effective_owner_user);
         if (elig_res.is_error()) {
@@ -1105,6 +1105,36 @@ FileManager::list_transfers(const domain::ConversationId& conversation_id) {
         return ClientResult<std::vector<domain::FileTransferRecord>>::error(deps.error());
     }
     return local_store_->list_file_transfers(conversation_id);
+}
+
+std::vector<std::filesystem::path> FileManager::wipe_volatile_state() {
+    std::vector<std::filesystem::path> part_paths;
+    if (local_store_ != nullptr) {
+        const auto transfers_res = local_store_->list_file_transfers();
+        if (transfers_res.is_ok()) {
+            part_paths.reserve(transfers_res.value().size());
+            for (const auto& rec : transfers_res.value()) {
+                if (rec.local_path.empty()) {
+                    continue;
+                }
+                static constexpr std::string_view kPartExt = ".part";
+                if (rec.local_path.size() >= kPartExt.size() &&
+                    rec.local_path.compare(rec.local_path.size() - kPartExt.size(), kPartExt.size(), kPartExt) == 0) {
+                    part_paths.emplace_back(rec.local_path);
+                } else {
+                    part_paths.emplace_back(rec.local_path + ".part");
+                }
+            }
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(control_mutex_);
+    active_transfers_.clear();
+    pause_requested_transfers_.clear();
+    cancel_requested_transfers_.clear();
+    local_user_id_ = domain::UserId{};
+    local_device_id_ = domain::DeviceId{};
+    return part_paths;
 }
 
 ClientResult<std::string> FileManager::prepare_encrypted_upload(std::string_view local_file_path) {

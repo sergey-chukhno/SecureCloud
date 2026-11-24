@@ -57,6 +57,9 @@ FilePermission file_permission_from_string(std::string_view str);
 std::string to_string(OutboxStatus status);
 OutboxStatus outbox_status_from_string(std::string_view str);
 
+std::string to_string(OutboxSeverity severity);
+OutboxSeverity outbox_severity_from_string(std::string_view str);
+
 // --- Timestamp Conversions ---
 
 std::string to_iso8601(std::chrono::system_clock::time_point tp);

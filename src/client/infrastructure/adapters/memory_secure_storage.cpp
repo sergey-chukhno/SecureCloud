@@ -1,5 +1,7 @@
 #include "infrastructure/adapters/memory_secure_storage.hpp"
 
+#include <algorithm>
+
 namespace securecloud::client::infrastructure::adapters {
 
 application::ClientResult<void>
@@ -35,8 +37,32 @@ application::ClientResult<bool> MemorySecureStorage::has_secret(std::string_view
     return application::ClientResult<bool>::ok(secrets_.find(std::string(key_id)) != secrets_.end());
 }
 
+application::ClientResult<std::vector<std::string>> MemorySecureStorage::list_secret_keys() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    std::vector<std::string> keys;
+    keys.reserve(secrets_.size());
+    for (const auto& [key, _] : secrets_) {
+        keys.push_back(key);
+    }
+    std::sort(keys.begin(), keys.end());
+    return application::ClientResult<std::vector<std::string>>::ok(std::move(keys));
+}
+
+application::ClientResult<std::size_t> MemorySecureStorage::purge_all_secrets() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const std::size_t purged_count = secrets_.size();
+    for (auto& [_, secret] : secrets_) {
+        secret = securecloud::common::configuration::SecretString{};
+    }
+    secrets_.clear();
+    return application::ClientResult<std::size_t>::ok(purged_count);
+}
+
 void MemorySecureStorage::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
+    for (auto& [_, secret] : secrets_) {
+        secret = securecloud::common::configuration::SecretString{};
+    }
     secrets_.clear();
 }
 

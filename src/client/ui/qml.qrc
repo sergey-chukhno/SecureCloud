@@ -1,5 +1,6 @@
 <RCC>
     <qresource prefix="/">
+        <file>qtquickcontrols2.conf</file>
         <file>qml/Main.qml</file>
         <file>qml/NavigationShell.qml</file>
         <file>qml/LoginPlaceholder.qml</file>

@@ -12,6 +12,7 @@
 #include "domain/user_id.hpp"
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <optional>
@@ -34,6 +35,7 @@ struct FileUploadRequest {
     std::string sender_display_name;
     int32_t priority{0};
     bool dispatch_key_envelope{true};
+    bool is_profile_asset{false};
 };
 
 struct FileUploadResult {
@@ -82,6 +84,7 @@ class FileManager {
     ClientResult<domain::FileTransferRecord> resume_download(std::string_view transfer_id);
     ClientResult<domain::FileTransferRecord> resume_transfer(std::string_view transfer_id);
     ClientResult<std::size_t> resume_interrupted_transfers();
+    std::vector<std::filesystem::path> wipe_volatile_state();
 
     ClientResult<void> pause_transfer(std::string_view transfer_id);
     ClientResult<void> cancel_transfer(std::string_view transfer_id);

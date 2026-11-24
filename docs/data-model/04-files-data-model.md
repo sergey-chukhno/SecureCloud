@@ -896,38 +896,44 @@ The file cannot become `AVAILABLE` before successful final object verification.
 
 # 4.18 Transactional Outbox
 
-The Files Service uses the Transactional Outbox pattern.
+The Files Service uses the Transactional Outbox pattern (`ADR-007` §18–§23, `AUDIT-015`).
 
 The outbox guarantees atomicity between:
 
-```text id="b9oz7x"
+```text
 Files Service database state
 +
-Domain event creation
+Domain / security audit event creation
 ```
 
-The canonical table is:
+The canonical table (created in `V001` and hardened in `V002`) is:
 
-## Table: `outbox_events`
+## Table: `files_outbox`
 
-```text id="x5w8ea"
-outbox_events
-├── event_id
-├── aggregate_type
-├── aggregate_id
-├── event_type
-├── payload
-├── created_at
-├── published_at
-└── publication_status
+```text
+files_outbox
+├── event_id          -- UUIDv7 canonical idempotency identifier
+├── aggregate_type    -- 'FILE' (or 'SERVICE' when rejected prior to file_id assignment)
+├── aggregate_id      -- FileId UUID (nullable for pre-file rejections)
+├── event_type        -- Canonical dot-separated name (e.g. 'file.upload.completed')
+├── severity          -- 'INFO' | 'WARNING' | 'SECURITY' | 'CRITICAL'
+├── payload_json      -- Bounded, zero-plaintext JSON metadata
+├── status            -- 'PENDING' | 'PUBLISHED' | 'FAILED' | 'QUARANTINED'
+├── retry_count       -- Delivery attempt counter
+├── created_at        -- Event occurrence timestamp (UTC)
+├── processed_at      -- Publication or quarantine timestamp (UTC)
+├── last_error        -- Sanitized diagnostic error summary
+└── leased_until      -- Time-bounded worker lease expiration (UTC)
 ```
 
-For the Files Service:
+For file-scoped operations:
 
-```text id="tgmby4"
+```text
 aggregate_type = FILE
 aggregate_id   = FileId
 ```
+
+Relay workers claim batches atomically using `UPDATE ... WHERE event_id IN (SELECT ... FOR UPDATE SKIP LOCKED)` with an expiring `leased_until` timestamp, preventing double-dispatch across horizontal replicas while self-healing if a worker crashes mid-RPC. Permanently rejected or malformed rows transition to `QUARANTINED` without blocking healthy events, and `PUBLISHED` rows older than 7 days are pruned in bounded batches.
 
 ---
 
@@ -935,25 +941,26 @@ aggregate_id   = FileId
 
 The most important Files Service outbox transition is:
 
-```text id="ygxrrj"
+```text
 File becomes AVAILABLE
 ```
 
 The PostgreSQL transaction performs:
 
-```text id="lmmw24"
+```text
 UPDATE files
 SET lifecycle_state = AVAILABLE
 ```
 
 and:
 
-```text id="zeykyz"
-INSERT INTO outbox_events
+```text
+INSERT INTO files_outbox
 (
-    aggregate_type = FILE,
-    aggregate_id = FileId,
-    event_type = FILE_AVAILABLE
+    aggregate_type = 'FILE',
+    aggregate_id   = FileId,
+    event_type     = 'file.upload.completed',
+    severity       = 'INFO'
 )
 ```
 
@@ -961,13 +968,13 @@ in the same transaction.
 
 Therefore:
 
-```text id="qysu5t"
+```text
 File AVAILABLE committed
         ⇔
-FILE_AVAILABLE outbox event committed
+file.upload.completed outbox event committed
 ```
 
-The outbox publisher later publishes the event using the architecture defined in ADR-004.
+The outbox relay (`FilesOutboxRelay`) later publishes the event asynchronously over mTLS gRPC (`BatchSubmitAuditEvents`) using the architecture defined in `ADR-004` and `AUDIT-004`. 
 
 The Files Service does not depend on synchronous event publication to complete the database transaction.
 
@@ -1432,13 +1439,13 @@ The Files Service must preserve the following invariants:
 
 # 4.31 Files Service Data Model Summary
 
-| Storage / Table              | Responsibility                                        |
-| ---------------------------- | ----------------------------------------------------- |
-| `files`                      | Canonical file metadata and lifecycle                 |
-| `upload_sessions`            | Durable resumable upload session state                |
-| `upload_chunks`              | Completed encrypted chunk metadata                    |
-| `outbox_events`              | Transactionally committed Files Service domain events |
-| S3-compatible object storage | Encrypted file binary objects                         |
+| Storage / Table              | Responsibility                                                       |
+| ---------------------------- | -----------------------------------------------------                |
+| `files`                      | Canonical file metadata and lifecycle                                |
+| `upload_sessions`            | Durable resumable upload session state                               |
+| `upload_chunks`              | Completed encrypted chunk metadata                                   |
+| `files_outbox`               | Transactionally committed Files Service audit outbox events (`V002`) |
+| S3-compatible object storage | Encrypted file binary objects                                        |
 
 The final Files Service persistence architecture is:
 

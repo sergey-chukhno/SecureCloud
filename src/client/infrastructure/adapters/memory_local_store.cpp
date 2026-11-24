@@ -1,8 +1,17 @@
 #include "infrastructure/adapters/memory_local_store.hpp"
 
 #include <algorithm>
+#include <chrono>
 
 namespace securecloud::client::infrastructure::adapters {
+namespace {
+
+int64_t current_unix_ms() noexcept {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
+} // namespace
 
 application::ClientResult<void> MemoryLocalStore::open(std::string_view /*path*/) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -14,6 +23,24 @@ application::ClientResult<void> MemoryLocalStore::close() {
     std::lock_guard<std::mutex> lock(mutex_);
     is_open_ = false;
     return application::ClientResult<void>::ok();
+}
+
+std::string MemoryLocalStore::database_path() const {
+    return {};
+}
+
+application::ClientResult<std::size_t> MemoryLocalStore::destroy_and_shred() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    conversations_.clear();
+    messages_.clear();
+    contacts_.clear();
+    file_transfers_.clear();
+    outbox_records_.clear();
+    sync_cursors_.clear();
+    user_profiles_.clear();
+    user_settings_.clear();
+    is_open_ = false;
+    return application::ClientResult<std::size_t>::ok(0U);
 }
 
 application::ClientResult<void> MemoryLocalStore::save_conversation(const domain::Conversation& conversation) {
@@ -91,9 +118,17 @@ application::ClientResult<std::vector<domain::Message>> MemoryLocalStore::get_me
         return application::ClientResult<std::vector<domain::Message>>::ok(std::vector<domain::Message>{});
     }
 
-    const auto& all = it->second;
-    const std::size_t count = (limit > 0 && limit < all.size()) ? limit : all.size();
-    std::vector<domain::Message> result(all.begin(), all.begin() + static_cast<std::ptrdiff_t>(count));
+    const int64_t now_ms = current_unix_ms();
+    std::vector<domain::Message> result;
+    for (const auto& msg : it->second) {
+        if (msg.is_expired(now_ms)) {
+            continue;
+        }
+        result.push_back(msg);
+        if (limit > 0 && result.size() >= limit) {
+            break;
+        }
+    }
     return application::ClientResult<std::vector<domain::Message>>::ok(std::move(result));
 }
 
@@ -109,8 +144,9 @@ application::ClientResult<domain::Message> MemoryLocalStore::get_message(const d
         return application::ClientResult<domain::Message>::error(
             application::ClientError::storage("Message not found"));
     }
+    const int64_t now_ms = current_unix_ms();
     for (const auto& msg : it->second) {
-        if (msg.message_id() == message_id) {
+        if (msg.message_id() == message_id && !msg.is_expired(now_ms)) {
             return application::ClientResult<domain::Message>::ok(msg);
         }
     }
@@ -425,6 +461,90 @@ void MemoryLocalStore::clear() {
     file_transfers_.clear();
     outbox_records_.clear();
     sync_cursors_.clear();
+    user_profiles_.clear();
+    user_settings_.clear();
+}
+
+application::ClientResult<void> MemoryLocalStore::save_user_profile(const domain::UserProfile& profile) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    const auto errors = profile.validate();
+    if (!errors.empty()) {
+        return application::ClientResult<void>::error(application::ClientError::validation(errors.front()));
+    }
+    user_profiles_[profile.user_id] = profile;
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<std::optional<domain::UserProfile>>
+MemoryLocalStore::get_user_profile(const domain::UserId& user_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<std::optional<domain::UserProfile>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (user_id.empty()) {
+        return application::ClientResult<std::optional<domain::UserProfile>>::error(
+            application::ClientError::validation("User ID cannot be empty"));
+    }
+    const auto it = user_profiles_.find(user_id);
+    if (it == user_profiles_.end()) {
+        return application::ClientResult<std::optional<domain::UserProfile>>::ok(std::nullopt);
+    }
+    return application::ClientResult<std::optional<domain::UserProfile>>::ok(it->second);
+}
+
+application::ClientResult<void> MemoryLocalStore::save_user_settings(std::string_view profile_key,
+                                                                     const domain::UserSettings& settings) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    if (profile_key.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Settings profile_key cannot be empty"));
+    }
+    const auto errors = settings.validate();
+    if (!errors.empty()) {
+        return application::ClientResult<void>::error(application::ClientError::validation(errors.front()));
+    }
+    user_settings_[std::string(profile_key)] = settings;
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<std::optional<domain::UserSettings>>
+MemoryLocalStore::get_user_settings(std::string_view profile_key) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<std::optional<domain::UserSettings>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (profile_key.empty()) {
+        return application::ClientResult<std::optional<domain::UserSettings>>::error(
+            application::ClientError::validation("Settings profile_key cannot be empty"));
+    }
+    const auto it = user_settings_.find(std::string(profile_key));
+    if (it == user_settings_.end()) {
+        return application::ClientResult<std::optional<domain::UserSettings>>::ok(std::nullopt);
+    }
+    return application::ClientResult<std::optional<domain::UserSettings>>::ok(it->second);
+}
+
+application::ClientResult<std::size_t> MemoryLocalStore::delete_expired_messages(int64_t now_ms) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<std::size_t>::error(application::ClientError::storage("Storage is closed"));
+    }
+    if (now_ms <= 0) {
+        return application::ClientResult<std::size_t>::ok(0U);
+    }
+    std::size_t removed = 0U;
+    for (auto& [_, msgs] : messages_) {
+        removed += std::erase_if(msgs, [now_ms](const domain::Message& m) { return m.is_expired(now_ms); });
+    }
+    return application::ClientResult<std::size_t>::ok(removed);
 }
 
 } // namespace securecloud::client::infrastructure::adapters

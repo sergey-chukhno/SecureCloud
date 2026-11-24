@@ -274,6 +274,7 @@ ClientResult<domain::Conversation> MessagingManager::open_direct_conversation(co
     std::vector<domain::UserId> participants = {local_user, peer_user};
     domain::Conversation conv(cid, domain::ConversationType::Direct, conv_title, std::move(participants),
                               std::chrono::system_clock::now(), std::chrono::system_clock::now());
+    conv.set_disappearing_ttl_seconds(default_disappearing_ttl_seconds_);
 
     const auto save_res = local_store_.save_conversation(conv);
     if (save_res.is_error()) {
@@ -304,6 +305,7 @@ MessagingManager::create_group_conversation(const domain::UserId& creator, const
     domain::Conversation conv(cid, domain::ConversationType::Group, title, std::move(all_participants),
                               std::chrono::system_clock::now(), std::chrono::system_clock::now());
     conv.set_participant_role(creator, domain::ParticipantRole::Admin);
+    conv.set_disappearing_ttl_seconds(default_disappearing_ttl_seconds_);
 
     const auto save_res = local_store_.save_conversation(conv);
     if (save_res.is_error()) {
@@ -565,6 +567,7 @@ ClientResult<domain::Message> MessagingManager::send_message(const domain::Conve
     const domain::MessageId mid(send_res.value());
     domain::Message msg(mid, conversation_id, sender_user_id, sender_device_id, domain::DeliveryState::Accepted,
                         std::chrono::system_clock::now(), std::move(ciphertext), 0);
+    apply_disappearing_expiry_if_configured(msg);
 
     const auto save_res = local_store_.save_message(msg);
     if (save_res.is_error()) {
@@ -762,6 +765,7 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
     if (group_epoch_used.has_value()) {
         msg.set_sender_key_epoch(*group_epoch_used);
     }
+    apply_disappearing_expiry_if_configured(msg);
 
     const auto save_res = local_store_.save_message(msg);
     if (save_res.is_error()) {
@@ -1285,6 +1289,7 @@ ClientResult<domain::Message> MessagingManager::process_inbound_message(
     domain::Message msg(mid, conversation_id, sender_user_id, sender_device_id, domain::DeliveryState::Delivered,
                         std::chrono::system_clock::now(), std::move(decrypted_plaintext), priority, disp_name,
                         idem_key);
+    apply_disappearing_expiry_if_configured(msg);
 
     const auto save_res = local_store_.save_message(msg);
     if (save_res.is_error()) {
@@ -1335,6 +1340,7 @@ ClientResult<domain::Message> MessagingManager::process_inbound_message(
     domain::Message msg(mid, conversation_id, sender_user_id, sender_device_id, domain::DeliveryState::Delivered,
                         std::chrono::system_clock::now(), std::move(decrypted_plaintext), priority, disp_name,
                         idem_key);
+    apply_disappearing_expiry_if_configured(msg);
 
     const auto save_res = local_store_.save_message(msg);
     if (save_res.is_error()) {
@@ -1527,6 +1533,7 @@ ClientResult<domain::Message> MessagingManager::process_inbound_group_message(
     domain::Message msg(mid, conversation_id, sender_user_id, sender_device_id, domain::DeliveryState::Delivered,
                         std::chrono::system_clock::now(), decrypted_plaintext, priority, disp_name, idem_key);
     msg.set_sender_key_epoch(env.id.key_epoch);
+    apply_disappearing_expiry_if_configured(msg);
 
     const auto save_res = local_store_.save_message(msg);
     if (save_res.is_error()) {
@@ -1545,6 +1552,7 @@ ClientResult<domain::Message> MessagingManager::process_inbound_group_message(
 }
 
 ClientResult<domain::Message> MessagingManager::persist_inbound_message(domain::Message msg) {
+    apply_disappearing_expiry_if_configured(msg);
     const auto save_res = local_store_.save_message(msg);
     if (save_res.is_error()) {
         return ClientResult<domain::Message>::error(save_res.error());
@@ -1711,6 +1719,72 @@ MessagingManager::process_inbound_realtime_event(const domain::RealtimeEvent& ev
         return ClientResult<std::optional<domain::Message>>::ok(std::nullopt);
     }
     return ClientResult<std::optional<domain::Message>>::ok(std::nullopt);
+}
+
+std::size_t MessagingManager::wipe_volatile_state() {
+    const std::size_t cleared = retry_engine_.clear();
+    offline_mode_ = false;
+    default_disappearing_ttl_seconds_ = 0;
+    local_device_id_ = domain::DeviceId{};
+    return cleared;
+}
+
+void MessagingManager::set_default_disappearing_ttl_seconds(int64_t ttl_seconds) noexcept {
+    default_disappearing_ttl_seconds_ = ttl_seconds > 0 ? ttl_seconds : 0;
+}
+
+int64_t MessagingManager::default_disappearing_ttl_seconds() const noexcept {
+    return default_disappearing_ttl_seconds_;
+}
+
+ClientResult<domain::Conversation>
+MessagingManager::set_conversation_disappearing_timer(const domain::ConversationId& conversation_id,
+                                                      int64_t ttl_seconds) {
+    if (conversation_id.empty()) {
+        return ClientResult<domain::Conversation>::error(ClientError::validation("Conversation ID cannot be empty"));
+    }
+    if (ttl_seconds < 0) {
+        return ClientResult<domain::Conversation>::error(
+            ClientError::validation("Disappearing timer TTL seconds must be non-negative"));
+    }
+
+    auto conv_res = local_store_.get_conversation(conversation_id);
+    if (conv_res.is_error()) {
+        return ClientResult<domain::Conversation>::error(conv_res.error());
+    }
+
+    domain::Conversation conv = conv_res.value();
+    conv.set_disappearing_ttl_seconds(ttl_seconds);
+    const auto save_res = local_store_.save_conversation(conv);
+    if (save_res.is_error()) {
+        return ClientResult<domain::Conversation>::error(save_res.error());
+    }
+    return ClientResult<domain::Conversation>::ok(std::move(conv));
+}
+
+ClientResult<std::size_t> MessagingManager::purge_expired_messages(int64_t now_ms) {
+    const int64_t effective_now = (now_ms > 0) ? now_ms : current_unix_ms();
+    return local_store_.delete_expired_messages(effective_now);
+}
+
+void MessagingManager::apply_disappearing_expiry_if_configured(domain::Message& msg) const {
+    if (msg.expires_at_ms() > 0) {
+        return;
+    }
+
+    int64_t ttl_sec = default_disappearing_ttl_seconds_;
+    if (!msg.conversation_id().empty()) {
+        const auto conv_res = local_store_.get_conversation(msg.conversation_id());
+        if (conv_res.is_ok() && conv_res.value().disappearing_ttl_seconds() > 0) {
+            ttl_sec = conv_res.value().disappearing_ttl_seconds();
+        }
+    }
+
+    if (ttl_sec > 0) {
+        const int64_t sent_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(msg.sent_at().time_since_epoch()).count();
+        msg.set_expires_at_ms(sent_ms + ttl_sec * 1000LL);
+    }
 }
 
 } // namespace securecloud::client::application::managers

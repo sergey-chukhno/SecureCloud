@@ -1,18 +1,47 @@
 #include "service/conversation_service.hpp"
 
+#include "audit/canonical_audit_mapper.hpp"
+#include "domain/audit_event.hpp"
+#include "domain/audit_event_id.hpp"
+
 #include <mutex>
+#include <nlohmann/json.hpp>
 #include <unordered_set>
 
 namespace securecloud::messaging::service {
 
+namespace {
+
+void stage_conversation_audit(repository::IMessagingAuditOutboxRepository* audit_repo,
+                              domain::MessagingAuditEventType type, std::chrono::system_clock::time_point now,
+                              domain::UserId actor_user_id, const domain::ConversationId& conv_id,
+                              const nlohmann::json& metadata) {
+    if (audit_repo == nullptr) {
+        return;
+    }
+    const std::string conv_str = conv_id.to_string();
+    domain::MessagingAuditEvent event{
+        .event_id = domain::generate_audit_event_id(),
+        .event_type = type,
+        .severity = domain::default_severity(type),
+        .occurred_at = now,
+        .actor_user_id = std::move(actor_user_id),
+        .actor_device_id = {},
+        .target_resource = conv_str,
+        .payload_json = metadata.dump(),
+        .correlation_id = {},
+    };
+    audit::stage_canonical_audit_event(audit_repo, event, conv_str);
+}
+
+} // namespace
+
 ConversationService::ConversationService(repository::IConversationRepository& conversation_repo,
                                          repository::IMembershipRepository& membership_repo,
-                                         ConversationAuthorizationService& auth_service)
-    : conversation_repo_(conversation_repo), membership_repo_(membership_repo), auth_service_(auth_service) {}
-
-// ============================================================================
-// 1. create_direct_conversation
-// ============================================================================
+                                         ConversationAuthorizationService& auth_service,
+                                         std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo)
+    : conversation_repo_(conversation_repo), membership_repo_(membership_repo), auth_service_(auth_service),
+      audit_repo_(std::move(audit_repo)) {}
 
 ServiceResult<domain::ConversationEntity>
 ConversationService::create_direct_conversation(const domain::UserId& caller, const domain::UserId& recipient) {
@@ -23,7 +52,6 @@ ConversationService::create_direct_conversation(const domain::UserId& caller, co
 
     domain::DirectPair pair(caller, recipient);
 
-    // Idempotent lookup
     auto existing_id = conversation_repo_.find_direct_conversation(pair);
     if (existing_id) {
         auto existing_conv = conversation_repo_.find_conversation_by_id(*existing_id);
@@ -76,12 +104,11 @@ ConversationService::create_direct_conversation(const domain::UserId& caller, co
     record_outbox_event(conv_id, domain::ConversationOutboxEventType::ConversationCreated,
                         "{\"type\":\"direct\",\"creator\":\"" + caller.str() + "\"}");
 
+    stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationCreated, now, caller,
+                             conv_id, {{"conversation_type", "DIRECT"}, {"initial_member_count", 2}});
+
     return ServiceResult<domain::ConversationEntity>::ok(conv);
 }
-
-// ============================================================================
-// 2. create_group_conversation
-// ============================================================================
 
 ServiceResult<domain::ConversationEntity>
 ConversationService::create_group_conversation(const domain::UserId& caller, std::string_view title,
@@ -114,7 +141,6 @@ ConversationService::create_group_conversation(const domain::UserId& caller, std
     conversation_repo_.save_conversation(conv);
     conversation_repo_.save_group_metadata(meta);
 
-    // Caller is Admin
     domain::ConversationParticipantEntity admin_part{
         .conversation_id = conv_id,
         .user_id = caller,
@@ -152,12 +178,11 @@ ConversationService::create_group_conversation(const domain::UserId& caller, std
                         "{\"type\":\"group\",\"creator\":\"" + caller.str() + "\",\"title\":\"" + std::string(title) +
                             "\"}");
 
+    stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationCreated, now, caller,
+                             conv_id, {{"conversation_type", "GROUP"}, {"initial_member_count", added.size()}});
+
     return ServiceResult<domain::ConversationEntity>::ok(conv);
 }
-
-// ============================================================================
-// 3. add_participant
-// ============================================================================
 
 ServiceResult<void> ConversationService::add_participant(const domain::UserId& caller,
                                                          const domain::ConversationId& conv_id,
@@ -172,7 +197,7 @@ ServiceResult<void> ConversationService::add_participant(const domain::UserId& c
 
     if (existing) {
         if (existing->status == domain::MembershipStatus::Active) {
-            return ServiceResult<void>::ok(); // Idempotent success
+            return ServiceResult<void>::ok();
         }
         auto updated = *existing;
         updated.status = domain::MembershipStatus::Active;
@@ -199,12 +224,12 @@ ServiceResult<void> ConversationService::add_participant(const domain::UserId& c
     record_outbox_event(conv_id, domain::ConversationOutboxEventType::ParticipantJoined,
                         "{\"user_id\":\"" + target_user.str() + "\"}");
 
+    stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationMembershipChanged, now,
+                             caller, conv_id,
+                             {{"action", "MEMBER_ADDED"}, {"affected_user_id", target_user.str()}, {"role", "MEMBER"}});
+
     return ServiceResult<void>::ok();
 }
-
-// ============================================================================
-// 4. remove_participant
-// ============================================================================
 
 ServiceResult<void> ConversationService::remove_participant(const domain::UserId& caller,
                                                             const domain::ConversationId& conv_id,
@@ -233,12 +258,11 @@ ServiceResult<void> ConversationService::remove_participant(const domain::UserId
     record_outbox_event(conv_id, domain::ConversationOutboxEventType::ParticipantRemoved,
                         "{\"user_id\":\"" + target_user.str() + "\",\"removed_by\":\"" + caller.str() + "\"}");
 
+    stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationMembershipChanged, now,
+                             caller, conv_id, {{"action", "MEMBER_REMOVED"}, {"affected_user_id", target_user.str()}});
+
     return ServiceResult<void>::ok();
 }
-
-// ============================================================================
-// 5. leave_conversation
-// ============================================================================
 
 ServiceResult<void> ConversationService::leave_conversation(const domain::UserId& caller,
                                                             const domain::ConversationId& conv_id) {
@@ -265,7 +289,9 @@ ServiceResult<void> ConversationService::leave_conversation(const domain::UserId
     record_outbox_event(conv_id, domain::ConversationOutboxEventType::ParticipantLeft,
                         "{\"user_id\":\"" + caller.str() + "\"}");
 
-    // If zero active participants remain, automatically close the group conversation
+    stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationMembershipChanged, now,
+                             caller, conv_id, {{"action", "MEMBER_LEFT"}, {"affected_user_id", caller.str()}});
+
     auto active = membership_repo_.list_active_participants(conv_id);
     if (active.empty()) {
         auto meta = conversation_repo_.find_group_metadata(conv_id);
@@ -278,15 +304,15 @@ ServiceResult<void> ConversationService::leave_conversation(const domain::UserId
 
             record_outbox_event(conv_id, domain::ConversationOutboxEventType::ConversationClosed,
                                 "{\"reason\":\"all_participants_left\"}");
+
+            // Empty actor routes cleanly to ACTOR_TYPE_SYSTEM in canonical mapper
+            stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationClosed, now, {},
+                                     conv_id, {{"reason", "all_participants_left"}});
         }
     }
 
     return ServiceResult<void>::ok();
 }
-
-// ============================================================================
-// 6. update_group_metadata
-// ============================================================================
 
 ServiceResult<domain::GroupMetadataEntity>
 ConversationService::update_group_metadata(const domain::UserId& caller, const domain::ConversationId& conv_id,
@@ -320,10 +346,6 @@ ConversationService::update_group_metadata(const domain::UserId& caller, const d
     return ServiceResult<domain::GroupMetadataEntity>::ok(updated);
 }
 
-// ============================================================================
-// 7. get_conversation
-// ============================================================================
-
 ServiceResult<ConversationDetails> ConversationService::get_conversation(const domain::UserId& caller,
                                                                          const domain::ConversationId& conv_id) {
     auto auth_res = auth_service_.can_view_conversation(caller, conv_id);
@@ -348,20 +370,12 @@ ServiceResult<ConversationDetails> ConversationService::get_conversation(const d
     return ServiceResult<ConversationDetails>::ok(details);
 }
 
-// ============================================================================
-// 8. list_user_conversations
-// ============================================================================
-
 ServiceResult<repository::UserConversationsPage>
 ConversationService::list_user_conversations(const domain::UserId& caller, int limit,
                                              const std::optional<std::string>& page_token) {
     auto page = membership_repo_.list_user_conversations(caller, limit, page_token);
     return ServiceResult<repository::UserConversationsPage>::ok(page);
 }
-
-// ============================================================================
-// Outbox Management
-// ============================================================================
 
 std::vector<domain::ConversationOutboxEvent> ConversationService::get_outbox_events() const {
     std::lock_guard<std::mutex> lock(outbox_mutex_);

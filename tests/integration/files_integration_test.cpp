@@ -214,6 +214,7 @@ class FilesIntegrationTest : public ::testing::Test {
         db::ConnectionPoolConfig db_cfg;
         db_cfg.host = "127.0.0.1";
         db_cfg.port = 5433;
+        db_cfg.db_password = common::configuration::SecretString("files_dev_db_secret");
         db_pool_ = std::make_shared<db::FilesDbConnectionPool>(db_cfg);
 
         storage::S3ClientConfig s3_cfg;

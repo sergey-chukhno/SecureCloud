@@ -373,6 +373,27 @@ class MockGatewayClient final : public IGatewayClient {
     }
 
     ClientResult<void> delete_file(std::string_view /*file_id*/) override { return ClientResult<void>::ok(); }
+
+    ClientResult<UserProfile> get_user_profile(const UserId& user_id) override {
+        UserProfile profile;
+        profile.user_id = user_id;
+        profile.display_name = "Mock User";
+        return ClientResult<UserProfile>::ok(std::move(profile));
+    }
+
+    ClientResult<UserProfileSyncResult> update_user_profile(const UserProfile& public_profile) override {
+        UserProfileSyncResult res;
+        res.profile = public_profile;
+        res.sync_status = ProfileSyncStatus::Synced;
+        return ClientResult<UserProfileSyncResult>::ok(std::move(res));
+    }
+
+    ClientResult<TlsCertificateInfo> inspect_tls_certificate(std::string_view host, uint16_t port) override {
+        TlsCertificateInfo info;
+        info.host = std::string(host);
+        info.port = port;
+        return ClientResult<TlsCertificateInfo>::ok(std::move(info));
+    }
 };
 
 TEST(ApplicationInterfacesTest, InterfacePolymorphismAndContracts) {

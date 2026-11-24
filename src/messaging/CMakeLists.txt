@@ -19,6 +19,8 @@ add_library(securecloud_messaging_config STATIC
     domain/conversation_lifecycle.cpp
     domain/message_bucket.cpp
     domain/submission_fingerprint.cpp
+    domain/audit_event.cpp
+    domain/audit_event_id.cpp
     service/submission_validator.cpp
     service/in_memory_sequence_allocator.cpp
     service/conversation_sequence_allocator.cpp
@@ -42,6 +44,13 @@ add_library(securecloud_messaging_config STATIC
     repository/scylla_delivery_state_repository.cpp
     repository/scylla_sync_cursor_repository.cpp
     repository/scylla_idempotency_repository.cpp
+    repository/scylla_messaging_audit_outbox_repository.cpp
+    repository/in_memory_messaging_audit_outbox_repository.cpp
+    audit/canonical_audit_mapper.cpp
+    audit/messaging_audit_client.cpp
+    audit/messaging_outbox_relay.cpp
+    audit/messaging_audit_metrics.cpp
+    audit/audit_diagnostics.cpp
     service/conversation_authorization_service.cpp
     service/conversation_service.cpp
     db/migration_runner.cpp

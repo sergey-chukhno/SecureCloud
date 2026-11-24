@@ -1594,10 +1594,9 @@ add_executable(securecloud_files_service_impl_test
 )
 
 target_link_libraries(securecloud_files_service_impl_test PRIVATE
-    securecloud::files_service
+    securecloud::files_service_test
     securecloud::files_storage
-    securecloud::files_db
-    securecloud::files_config
+    securecloud::files_db_test
     securecloud::common
     securecloud::compiler_flags
     GTest::gtest_main
@@ -1642,7 +1641,7 @@ add_executable(securecloud_domain_entities_test
 )
 
 target_link_libraries(securecloud_domain_entities_test PRIVATE
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud::compiler_flags
@@ -1657,7 +1656,7 @@ add_executable(securecloud_file_repository_test
 )
 
 target_link_libraries(securecloud_file_repository_test PRIVATE
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud::compiler_flags
@@ -1672,7 +1671,7 @@ add_executable(securecloud_transfer_chunk_repository_test
 )
 
 target_link_libraries(securecloud_transfer_chunk_repository_test PRIVATE
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud::compiler_flags
@@ -1687,7 +1686,7 @@ add_executable(securecloud_access_outbox_repository_test
 )
 
 target_link_libraries(securecloud_access_outbox_repository_test PRIVATE
-    securecloud::files_db
+    securecloud::files_db_test
     securecloud::files_config
     securecloud::common
     securecloud::compiler_flags
@@ -2048,6 +2047,33 @@ target_link_libraries(securecloud_files_outbox_relay_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_files_outbox_relay_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Outbox mapper, validator, and negative-security coverage (AUDIT-015-T07)
+add_executable(securecloud_files_outbox_audit_test
+    files/files_outbox_audit_test.cpp
+)
+target_link_libraries(securecloud_files_outbox_audit_test PRIVATE
+    securecloud::files_audit
+    securecloud::files_db
+    securecloud::files_config
+    securecloud::common
+    securecloud::compiler_flags
+    securecloud_proto
+    securecloud::json
+    GTest::gtest_main
+)
+gtest_discover_tests(securecloud_files_outbox_audit_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files Outbox producer metrics and diagnostics (AUDIT-015-T07)
+add_executable(securecloud_files_outbox_metrics_test
+    files/files_outbox_metrics_test.cpp
+)
+target_link_libraries(securecloud_files_outbox_metrics_test PRIVATE
+    securecloud::files_outbox_observability
+    securecloud::compiler_flags
+    GTest::gtest_main
+)
+gtest_discover_tests(securecloud_files_outbox_metrics_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Messaging Service Configuration Unit Test Suite (MSG-001-T02)
 add_executable(securecloud_messaging_config_test
@@ -3755,6 +3781,19 @@ if(Qt6_FOUND)
         client/catchup_sync_reconciliation_test.cpp
         client/workspace_view_model_offline_sync_test.cpp
         client/offline_catchup_sync_integration_test.cpp
+        client/emergency_domain_and_storage_test.cpp
+        client/forensic_file_shredder_test.cpp
+        client/emergency_wipe_pipeline_test.cpp
+        client/duress_pin_and_decoy_test.cpp
+        client/workspace_view_model_emergency_test.cpp
+        client/emergency_panic_wipe_integration_test.cpp
+        client/user_settings_and_profile_domain_test.cpp
+        client/settings_and_expiry_persistence_test.cpp
+        client/recovery_phrase_engine_test.cpp
+        client/settings_manager_pipeline_test.cpp
+        client/qt_http_gateway_client_test.cpp
+        client/workspace_view_model_settings_test.cpp
+        client/settings_and_profile_integration_test.cpp
         ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
     )
     set_target_properties(securecloud_client_foundation_test PROPERTIES
@@ -3775,6 +3814,7 @@ if(Qt6_FOUND)
         Qt6::Gui
         Qt6::Qml
         Qt6::Quick
+        Qt6::QuickControls2
         Qt6::Test
         GTest::gtest
     )
@@ -4040,3 +4080,114 @@ target_link_libraries(securecloud_auth_outbox_test PRIVATE
 )
 
 gtest_discover_tests(securecloud_auth_outbox_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Audit Event Domain & Zero-Plaintext Guard Unit Test Suite (AUDIT-014-T01)
+add_executable(securecloud_messaging_audit_event_test
+        messaging/audit_event_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_audit_event_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud::compiler_flags
+        OpenSSL::Crypto
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_audit_event_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging ScyllaDB Audit Outbox Repository Unit Test Suite (AUDIT-014-T02)
+add_executable(securecloud_scylla_messaging_audit_outbox_repository_test
+        messaging/scylla_messaging_audit_outbox_repository_test.cpp
+)
+
+target_link_libraries(securecloud_scylla_messaging_audit_outbox_repository_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud::compiler_flags
+        OpenSSL::Crypto
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_scylla_messaging_audit_outbox_repository_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Canonical Audit Mapper Unit Test Suite (AUDIT-014-T04)
+add_executable(securecloud_messaging_canonical_audit_mapper_test
+        messaging/canonical_audit_mapper_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_canonical_audit_mapper_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud_proto
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_canonical_audit_mapper_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Audit Producer Observability & Diagnostics Unit Test Suite (AUDIT-014-T06)
+add_executable(securecloud_messaging_audit_observability_test
+        messaging/messaging_audit_observability_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_audit_observability_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud_proto
+        securecloud::json
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_audit_observability_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Asynchronous Outbox Relay Unit Test Suite (AUDIT-014-T07)
+add_executable(securecloud_messaging_outbox_relay_test
+        messaging/messaging_outbox_relay_test.cpp
+)
+
+target_link_libraries(securecloud_messaging_outbox_relay_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud_proto
+        securecloud::json
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_messaging_outbox_relay_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Messaging Zero-Plaintext Audit Security Negative Test Suite (AUDIT-014-T07)
+add_executable(securecloud_zero_plaintext_audit_security_test
+        messaging/zero_plaintext_audit_security_test.cpp
+)
+
+target_link_libraries(securecloud_zero_plaintext_audit_security_test PRIVATE
+        securecloud::messaging
+        securecloud::common
+        securecloud_proto
+        securecloud::json
+        securecloud::compiler_flags
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_zero_plaintext_audit_security_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Files mTLS gRPC Audit Client Unit Test Suite (AUDIT-015-T04)
+add_executable(securecloud_files_grpc_audit_client_test
+        files/files_grpc_audit_client_test.cpp
+)
+
+target_link_libraries(securecloud_files_grpc_audit_client_test PRIVATE
+        securecloud::files_audit
+        securecloud::files_config
+        securecloud::common
+        securecloud::compiler_flags
+        securecloud_proto
+        OpenSSL::Crypto
+        GTest::gmock
+        GTest::gtest_main
+)
+
+gtest_discover_tests(securecloud_files_grpc_audit_client_test ${SECURECLOUD_TEST_PROPERTIES})

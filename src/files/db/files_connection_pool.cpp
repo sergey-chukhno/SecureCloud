@@ -1,5 +1,6 @@
 #include "files/db/files_connection_pool.hpp"
 
+#include "files/db/pqxx_compat.hpp"
 #include "securecloud/health/transport_probe.hpp"
 
 #include <iostream>
@@ -54,11 +55,23 @@ void ConnectionPoolConfig::validate() const {
 
 // --- DefaultDbConnection Implementation ---
 
-DefaultDbConnection::DefaultDbConnection(std::string id, std::string host, uint16_t port,
-                                         std::chrono::milliseconds connect_timeout)
-    : id_(std::move(id)), host_(std::move(host)), port_(port), timeout_(connect_timeout) {
+DefaultDbConnection::DefaultDbConnection(std::string id, const ConnectionPoolConfig& config)
+    : id_(std::move(id)), host_(config.host), port_(config.port), timeout_(config.connect_timeout) {
+
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+    is_open_ = true;
+    native_conn_ = std::make_unique<pqxx::connection>();
+#else
     // Basic connectivity probe on construction
     is_open_ = common::health::probe_tcp_connectivity(host_, port_, timeout_);
+
+    if (is_open_) {
+        std::string conn_str = "host=" + config.host + " port=" + std::to_string(config.port) +
+                               " dbname=" + config.db_name + " user=" + config.db_user +
+                               " password=" + config.db_password.expose_unredacted_secret(); // CORRECTION ICI
+        native_conn_ = std::make_unique<pqxx::connection>(conn_str);
+    }
+#endif
 }
 
 DefaultDbConnection::~DefaultDbConnection() {
@@ -66,22 +79,37 @@ DefaultDbConnection::~DefaultDbConnection() {
 }
 
 bool DefaultDbConnection::is_open() const noexcept {
-    return is_open_;
+    return is_open_ && native_conn_ && native_conn_->is_open();
 }
 
 void DefaultDbConnection::close() noexcept {
     is_open_ = false;
+    if (native_conn_ && native_conn_->is_open()) {
+        native_conn_->close();
+    }
 }
 
 bool DefaultDbConnection::execute_ping(std::chrono::milliseconds timeout) {
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+    (void)timeout;
+    return is_open_;
+#else
     if (!is_open_) {
         return false;
     }
     return common::health::probe_tcp_connectivity(host_, port_, timeout);
+#endif
 }
 
 const std::string& DefaultDbConnection::connection_id() const noexcept {
     return id_;
+}
+
+pqxx::connection& DefaultDbConnection::native_handle() {
+    if (!native_conn_) {
+        throw std::runtime_error("Native pqxx connection is not initialized");
+    }
+    return *native_conn_;
 }
 
 // --- FilesDbConnectionPool Implementation ---
@@ -92,7 +120,7 @@ FilesDbConnectionPool::FilesDbConnectionPool(ConnectionPoolConfig config, Connec
 
     if (!factory_) {
         factory_ = [](const ConnectionPoolConfig& cfg, const std::string& id) -> std::unique_ptr<IDbConnection> {
-            return std::make_unique<DefaultDbConnection>(id, cfg.host, cfg.port, cfg.connect_timeout);
+            return std::make_unique<DefaultDbConnection>(id, cfg);
         };
     }
 
@@ -289,5 +317,19 @@ size_t FilesDbConnectionPool::waiting_threads() const noexcept {
 const ConnectionPoolConfig& FilesDbConnectionPool::config() const noexcept {
     return config_;
 }
+
+#if defined(SECURECLOUD_FILES_TEST_PQXX)
+std::shared_ptr<FilesDbConnectionPool> test_files_db_connection_pool() {
+    static const auto pool = [] {
+        ConnectionPoolConfig config;
+        config.min_connections = 1;
+        config.max_connections = 4;
+        config.host = "mock-pqxx";
+        config.port = 5433;
+        return std::make_shared<FilesDbConnectionPool>(config);
+    }();
+    return pool;
+}
+#endif
 
 } // namespace securecloud::files::db
