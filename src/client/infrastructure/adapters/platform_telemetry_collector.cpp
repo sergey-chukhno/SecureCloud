@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <thread>
 
 #if defined(__APPLE__)
 #include <mach/mach.h>
@@ -108,9 +109,13 @@ ProcessResourceSample PlatformTelemetryCollector::sample() {
         const auto wall_us = std::chrono::duration_cast<std::chrono::microseconds>(now_wall - prev_wall_time_).count();
         if (wall_us > 0 && cpu_us >= prev_cpu_us_) {
             const uint64_t delta_cpu_us = cpu_us - prev_cpu_us_;
-            cpu_percent = (100.0 * static_cast<double>(delta_cpu_us)) / static_cast<double>(wall_us);
+            const unsigned int logical_cores = std::max(1U, std::thread::hardware_concurrency());
+            cpu_percent = (100.0 * static_cast<double>(delta_cpu_us)) /
+                          (static_cast<double>(wall_us) * static_cast<double>(logical_cores));
             if (!std::isfinite(cpu_percent) || cpu_percent < 0.0) {
                 cpu_percent = 0.0;
+            } else if (cpu_percent > 100.0) {
+                cpu_percent = 100.0;
             }
         }
     }

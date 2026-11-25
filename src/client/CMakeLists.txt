@@ -47,7 +47,7 @@ if(Qt6_FOUND)
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
     target_link_libraries(securecloud_client_domain PUBLIC
-        securecloud::common
+        securecloud::common_core
         securecloud::json
         securecloud::compiler_flags
         OpenSSL::Crypto
@@ -76,7 +76,7 @@ if(Qt6_FOUND)
     )
     target_link_libraries(securecloud_client_infra PUBLIC
         securecloud_client_domain
-        securecloud::common
+        securecloud::common_core
         securecloud::compiler_flags
         securecloud::sqlcipher
         OpenSSL::Crypto
@@ -121,7 +121,7 @@ if(Qt6_FOUND)
     target_link_libraries(securecloud_client_app PUBLIC
         securecloud_client_domain
         securecloud_client_infra
-        securecloud::common
+        securecloud::common_core
         securecloud::compiler_flags
         Qt6::Core
     )
@@ -172,7 +172,7 @@ if(Qt6_FOUND)
         securecloud_client_app
         securecloud_client_infra
         securecloud_client_domain
-        securecloud::common
+        securecloud::common_core
         securecloud::compiler_flags
         Qt6::Core
         Qt6::Gui

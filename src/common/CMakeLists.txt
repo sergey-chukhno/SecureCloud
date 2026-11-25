@@ -1,8 +1,23 @@
-add_library(securecloud_common STATIC
+add_library(securecloud_common_core STATIC
     src/version.cpp
+    src/configuration/secret_string.cpp
+)
+
+add_library(securecloud::common_core ALIAS securecloud_common_core)
+
+target_include_directories(securecloud_common_core PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+
+target_link_libraries(securecloud_common_core PUBLIC
+    securecloud::compiler_flags
+    OpenSSL::Crypto
+)
+
+add_library(securecloud_common STATIC
     src/security/mtls_config.cpp
     src/configuration/configuration_source.cpp
-    src/configuration/secret_string.cpp
     src/configuration/validation_error.cpp
     src/configuration/config_parser.cpp
     src/configuration/common_service_config.cpp
@@ -21,6 +36,7 @@ target_include_directories(securecloud_common PUBLIC
 )
 
 target_link_libraries(securecloud_common PUBLIC
+    securecloud_common_core
     securecloud::compiler_flags
     securecloud_proto
     gRPC::grpc++

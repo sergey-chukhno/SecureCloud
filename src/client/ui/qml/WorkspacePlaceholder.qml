@@ -960,10 +960,13 @@ Rectangle {
                 // Active Conversation Messages & Inline Encrypted File Cards
                 ListView {
                     id: messageListView
+                    objectName: "messageListView"
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     spacing: Theme.space12
                     clip: true
+                    reuseItems: true
+                    cacheBuffer: 400
                     model: workspaceRoot.wvm ? workspaceRoot.wvm.activeMessages : []
 
                     header: Item { width: 1; height: Theme.space12 }
@@ -973,6 +976,10 @@ Rectangle {
                         id: msgDelegate
                         width: messageListView.width
                         height: delegateOuterCol.implicitHeight
+                        ListView.onReused: {
+                            opacity = 1.0
+                            entryTranslate.y = 0
+                        }
 
                         readonly property int msgPriority: modelData.priority || 1
                         readonly property bool isEmergency: msgPriority === 3

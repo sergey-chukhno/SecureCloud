@@ -3812,7 +3812,7 @@ if(Qt6_FOUND)
         securecloud_client_app
         securecloud_client_infra
         securecloud_client_domain
-        securecloud::common
+        securecloud::common_core
         securecloud::compiler_flags
         Qt6::Core
         Qt6::Gui
@@ -3835,6 +3835,38 @@ if(Qt6_FOUND)
     if(WIN32 AND DEFINED _TEST_ENV_MODS)
         set_tests_properties(client_startup_smoke_test PROPERTIES ENVIRONMENT_MODIFICATION "${_TEST_ENV_MODS}")
     endif()
+
+    # Official Client Performance Benchmarking Harness (CLIENT-015-T05)
+    add_executable(securecloud_client_performance_benchmark_test
+        client/client_performance_benchmark_test.cpp
+        ${CMAKE_SOURCE_DIR}/src/client/ui/qml.qrc
+    )
+    set_target_properties(securecloud_client_performance_benchmark_test PROPERTIES
+        AUTOMOC ON
+        AUTORCC ON
+    )
+    target_include_directories(securecloud_client_performance_benchmark_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/client
+    )
+    target_compile_definitions(securecloud_client_performance_benchmark_test PRIVATE
+        SECURECLOUD_CLIENT_BINARY_PATH="$<TARGET_FILE:securecloud-client>"
+    )
+    target_link_libraries(securecloud_client_performance_benchmark_test PRIVATE
+        securecloud_client_ui
+        securecloud_client_app
+        securecloud_client_infra
+        securecloud_client_domain
+        securecloud::common_core
+        securecloud::compiler_flags
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Qml
+        Qt6::Quick
+        Qt6::QuickControls2
+        GTest::gtest
+    )
+    add_dependencies(securecloud_client_performance_benchmark_test securecloud-client)
+    gtest_discover_tests(securecloud_client_performance_benchmark_test ${SECURECLOUD_TEST_PROPERTIES})
 endif()
 
 # Gateway Audit Event Factory & Local Validation Test Suite (AUDIT-012-T02)
