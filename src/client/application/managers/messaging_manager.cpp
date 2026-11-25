@@ -604,7 +604,7 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
         return ClientResult<domain::Message>::error(guard_res.error());
     }
 
-    const domain::MessageId mid(generate_unique_id("msg"));
+    domain::MessageId mid(generate_unique_id("msg"));
     const std::string idem_key = generate_unique_id("idem");
     const bool is_file_key_envelope = domain::FileAttachmentKeyEnvelope::is_file_attachment_envelope(plaintext);
     const auto msg_op_type = is_file_key_envelope ? domain::OfflineOutboxOperationType::FileKeyEnvelopeSubmission
@@ -693,6 +693,8 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
                 } else {
                     return ClientResult<domain::Message>::error(submit_res.error());
                 }
+            } else if (!submit_res.value().empty()) {
+                mid = domain::MessageId(submit_res.value());
             }
         }
         group_epoch_used = conv.sender_key_epoch();
@@ -724,6 +726,8 @@ MessagingManager::stage_outbound_message(const domain::ConversationId& conversat
                     } else {
                         return ClientResult<domain::Message>::error(submit_res.error());
                     }
+                } else if (!submit_res.value().empty()) {
+                    mid = domain::MessageId(submit_res.value());
                 }
             }
         }

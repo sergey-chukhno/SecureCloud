@@ -140,6 +140,12 @@ class SwitchableGatewayClient final : public application::interfaces::IGatewayCl
     application::ClientResult<application::interfaces::ConversationCreateResult>
     create_direct_conversation(const domain::UserId& peer_user_id) override;
 
+    application::ClientResult<void> update_presence(std::string_view status,
+                                                    std::string_view custom_status_message = "") override;
+
+    application::ClientResult<std::vector<application::interfaces::IGatewayClient::PeerPresenceInfo>>
+    batch_get_presence(const std::vector<domain::UserId>& user_ids) override;
+
   private:
     enum class TargetAdapter { Simulated, Live };
 

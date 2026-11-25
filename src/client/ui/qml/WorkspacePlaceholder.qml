@@ -13,6 +13,7 @@ Rectangle {
     readonly property int currentPriority: wvm ? wvm.composerPriority : 1
     property bool animateNewMessages: false
     property int stagedFileCounter: 0
+    property string workspaceErrorBannerText: ""
 
     readonly property var sampleAttachmentNames: [
         "audit-key-bundle.enc",
@@ -101,6 +102,44 @@ Rectangle {
                     messageListView.positionViewAtEnd()
                 }
             })
+        }
+        function onWorkspaceError(message) {
+            workspaceRoot.workspaceErrorBannerText = message
+        }
+    }
+
+    Rectangle {
+        id: workspaceErrorBanner
+        z: 100
+        visible: workspaceRoot.workspaceErrorBannerText.length > 0
+        anchors.top: parent.top
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.topMargin: Theme.space12
+        width: Math.min(parent.width - 48, 620)
+        height: errorRow.implicitHeight + 16
+        radius: Theme.radiusMedium
+        color: Theme.backgroundElevated
+        border.color: Theme.statusDanger
+        border.width: 1
+
+        RowLayout {
+            id: errorRow
+            anchors.fill: parent
+            anchors.margins: Theme.space8
+            spacing: Theme.space8
+
+            Label {
+                Layout.fillWidth: true
+                text: workspaceRoot.workspaceErrorBannerText
+                color: Theme.statusDanger
+                font.pixelSize: 13
+                wrapMode: Text.WordWrap
+            }
+
+            Button {
+                text: qsTr("Dismiss")
+                onClicked: workspaceRoot.workspaceErrorBannerText = ""
+            }
         }
     }
 
@@ -1873,7 +1912,7 @@ Rectangle {
                         iconName: "plus"
                         variant: "Primary"
                         buttonHeight: 34
-                        onClicked: workspaceRoot.isNewConversationModalOpen = true
+                        onClicked: newConversationDialog.open()
                     }
 
                     SCButton {

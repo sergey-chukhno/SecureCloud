@@ -2559,4 +2559,65 @@ QtHttpGatewayClient::create_direct_conversation(const domain::UserId& peer_user_
     }
 }
 
+ClientResult<void> QtHttpGatewayClient::update_presence(std::string_view status,
+                                                        std::string_view custom_status_message) {
+    nlohmann::json payload = {
+        {"status", std::string(status)},
+    };
+    if (!custom_status_message.empty()) {
+        payload["custom_status_message"] = std::string(custom_status_message);
+    }
+    const auto res = impl_->perform_http("PUT", "/api/v1/presence/me", payload.dump());
+    if (res.is_error()) {
+        return ClientResult<void>::error(res.error());
+    }
+    return ClientResult<void>::ok();
+}
+
+ClientResult<std::vector<application::interfaces::IGatewayClient::PeerPresenceInfo>>
+QtHttpGatewayClient::batch_get_presence(const std::vector<domain::UserId>& user_ids) {
+    if (user_ids.empty()) {
+        return ClientResult<std::vector<application::interfaces::IGatewayClient::PeerPresenceInfo>>::ok({});
+    }
+    nlohmann::json ids = nlohmann::json::array();
+    for (const auto& uid : user_ids) {
+        if (!uid.empty()) {
+            ids.push_back(uid.value());
+        }
+    }
+    if (ids.empty()) {
+        return ClientResult<std::vector<application::interfaces::IGatewayClient::PeerPresenceInfo>>::ok({});
+    }
+    nlohmann::json payload = {{"user_ids", std::move(ids)}};
+    const auto res = impl_->perform_http("POST", "/api/v1/presence/batch", payload.dump());
+    if (res.is_error()) {
+        return ClientResult<std::vector<application::interfaces::IGatewayClient::PeerPresenceInfo>>::error(res.error());
+    }
+    try {
+        const auto j = nlohmann::json::parse(res.value().body);
+        std::vector<application::interfaces::IGatewayClient::PeerPresenceInfo> out;
+        if (j.is_array()) {
+            for (const auto& item : j) {
+                if (!item.is_object()) {
+                    continue;
+                }
+                const std::string uid_str = item.value("user_id", std::string{});
+                if (uid_str.empty()) {
+                    continue;
+                }
+                application::interfaces::IGatewayClient::PeerPresenceInfo info;
+                info.user_id = domain::UserId(uid_str);
+                info.status = item.value("status", std::string{"offline"});
+                info.last_active_unix_ms = item.value("last_active_unix_ms", int64_t{0});
+                info.custom_status_message = item.value("custom_status_message", std::string{});
+                out.push_back(std::move(info));
+            }
+        }
+        return ClientResult<std::vector<application::interfaces::IGatewayClient::PeerPresenceInfo>>::ok(std::move(out));
+    } catch (...) {
+        return ClientResult<std::vector<application::interfaces::IGatewayClient::PeerPresenceInfo>>::error(
+            ClientError::network("Malformed Gateway batch_get_presence JSON response"));
+    }
+}
+
 } // namespace securecloud::client::infrastructure::adapters

@@ -989,12 +989,17 @@ MessagingServiceImpl::ListConversations(::grpc::ServerContext* context,
             continue;
         }
         auto* conv_meta = response->add_conversations();
-        conv_meta->set_conversation_id(item.conversation_id.to_string());
-        conv_meta->set_type(item.type == domain::ConversationType::Direct ? v1::CONVERSATION_TYPE_DIRECT
-                                                                          : v1::CONVERSATION_TYPE_GROUP);
-        auto ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(item.last_activity_at.time_since_epoch()).count();
-        conv_meta->set_created_at_unix_ms(ms);
+        auto details = conversation_service_->get_conversation(*caller_id, item.conversation_id);
+        if (details) {
+            populate_conversation_metadata(details.value, conv_meta);
+        } else {
+            conv_meta->set_conversation_id(item.conversation_id.to_string());
+            conv_meta->set_type(item.type == domain::ConversationType::Direct ? v1::CONVERSATION_TYPE_DIRECT
+                                                                              : v1::CONVERSATION_TYPE_GROUP);
+            auto ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(item.last_activity_at.time_since_epoch()).count();
+            conv_meta->set_created_at_unix_ms(ms);
+        }
     }
 
     if (result.value.next_page_token) {
@@ -1534,6 +1539,10 @@ MessagingServiceImpl::UpdateSyncCursor(::grpc::ServerContext* context,
 
     const std::string sanitized_message = domain::sanitize_status_message(request->custom_status_message());
     const auto target_status = domain::from_proto(request->status());
+
+    if (target_status == domain::PresenceStatus::Online && !caller_ctx.device_id().empty()) {
+        presence_coordinator_->on_device_heartbeat(*caller_id, domain::DeviceId(caller_ctx.device_id()));
+    }
 
     if (target_status == domain::PresenceStatus::Unspecified ||
         (target_status == domain::PresenceStatus::Online && sanitized_message.empty())) {

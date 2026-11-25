@@ -9,10 +9,12 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QTimer>
 #include <QVariantList>
 #include <QVariantMap>
 #include <cstdint>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace securecloud::client::domain {
@@ -453,6 +455,7 @@ class WorkspaceViewModel : public QObject {
     void hydrateSettingsAndProfile();
     void syncUiThemeFromSettings();
     bool persistCurrentSettings();
+    void pollLiveSync();
     [[nodiscard]] static QString stripUrlScheme(const QString& urlOrHost);
     void handleRealtimeEvent(const domain::RealtimeEvent& event);
     void applyFileTransferUpdate(const domain::FileTransferRecord& record);
@@ -492,6 +495,9 @@ class WorkspaceViewModel : public QObject {
     bool delivery_failure_simulated_{false};
     uint64_t realtime_sub_id_{0};
     uint64_t connectivity_sub_id_{0};
+    QTimer live_sync_timer_;
+    int64_t last_presence_heartbeat_ms_{0};
+    std::unordered_map<std::string, QString> peer_presence_cache_;
     QString totp_enrollment_secret_{QStringLiteral("JBSWY3DPEHPK3PXP · SHA-256 (6-digit / 30s)")};
 
     std::vector<ConversationEntry> conversations_;

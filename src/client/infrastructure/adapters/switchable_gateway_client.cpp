@@ -263,4 +263,14 @@ SwitchableGatewayClient::create_direct_conversation(const domain::UserId& peer_u
     return active_gateway().create_direct_conversation(peer_user_id);
 }
 
+application::ClientResult<void> SwitchableGatewayClient::update_presence(std::string_view status,
+                                                                         std::string_view custom_status_message) {
+    return active_gateway().update_presence(status, custom_status_message);
+}
+
+application::ClientResult<std::vector<application::interfaces::IGatewayClient::PeerPresenceInfo>>
+SwitchableGatewayClient::batch_get_presence(const std::vector<domain::UserId>& user_ids) {
+    return active_gateway().batch_get_presence(user_ids);
+}
+
 } // namespace securecloud::client::infrastructure::adapters

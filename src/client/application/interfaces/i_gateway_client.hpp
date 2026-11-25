@@ -308,6 +308,23 @@ class IGatewayClient {
                 .count();
         return ClientResult<ConversationCreateResult>::ok(std::move(synthetic));
     }
+
+    struct PeerPresenceInfo {
+        domain::UserId user_id;
+        std::string status{"offline"};
+        int64_t last_active_unix_ms{0};
+        std::string custom_status_message;
+    };
+
+    virtual ClientResult<void> update_presence(std::string_view /*status*/,
+                                               std::string_view /*custom_status_message*/ = "") {
+        return ClientResult<void>::ok();
+    }
+
+    virtual ClientResult<std::vector<PeerPresenceInfo>>
+    batch_get_presence(const std::vector<domain::UserId>& /*user_ids*/) {
+        return ClientResult<std::vector<PeerPresenceInfo>>::ok({});
+    }
 };
 
 } // namespace securecloud::client::application::interfaces
