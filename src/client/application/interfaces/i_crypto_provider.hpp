@@ -7,6 +7,7 @@
 #include "domain/user_id.hpp"
 #include "securecloud/configuration/secret_string.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -92,6 +93,24 @@ class ICryptoProvider {
                                                          std::span<const uint8_t> iv,
                                                          std::span<const uint8_t> plaintext,
                                                          std::span<const uint8_t> associated_data = {}) = 0;
+
+    virtual ClientResult<void> encrypt_aes_gcm_into(const securecloud::common::configuration::SecretString& key,
+                                                    std::span<const uint8_t> iv, std::span<const uint8_t> plaintext,
+                                                    std::span<const uint8_t> associated_data,
+                                                    std::span<uint8_t> out_ciphertext,
+                                                    std::span<uint8_t> out_auth_tag) {
+        const auto res = encrypt_aes_gcm(key, iv, plaintext, associated_data);
+        if (res.is_error()) {
+            return ClientResult<void>::error(res.error());
+        }
+        const auto& aead = res.value();
+        if (aead.ciphertext.size() != out_ciphertext.size() || aead.auth_tag.size() != out_auth_tag.size()) {
+            return ClientResult<void>::error(ClientError::crypto("Unexpected AEAD output buffer size"));
+        }
+        std::copy(aead.ciphertext.begin(), aead.ciphertext.end(), out_ciphertext.begin());
+        std::copy(aead.auth_tag.begin(), aead.auth_tag.end(), out_auth_tag.begin());
+        return ClientResult<void>::ok();
+    }
 
     virtual ClientResult<securecloud::common::configuration::SecretString>
     decrypt_aes_gcm(const securecloud::common::configuration::SecretString& key, std::span<const uint8_t> iv,

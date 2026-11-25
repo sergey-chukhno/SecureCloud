@@ -491,76 +491,12 @@ application::ClientResult<application::interfaces::AeadCiphertext>
 OpenSslCryptoProvider::encrypt_aes_gcm(const securecloud::common::configuration::SecretString& key,
                                        std::span<const uint8_t> iv, std::span<const uint8_t> plaintext,
                                        std::span<const uint8_t> associated_data) {
-    if (key.size() != domain::PrekeyPolicy::kAes256KeySize) {
-        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
-            application::ClientError::crypto("AES key must be 32 bytes"));
-    }
-    if (iv.size() != domain::PrekeyPolicy::kAeadGcmIvSize) {
-        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
-            application::ClientError::crypto("AES GCM IV must be 12 bytes"));
-    }
-
-    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
-    if (!ctx) {
-        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
-            application::ClientError::crypto("Failed to create EVP_CIPHER_CTX"));
-    }
-
-    if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
-        EVP_CIPHER_CTX_free(ctx);
-        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
-            application::ClientError::crypto("Failed to init AES-256-GCM cipher"));
-    }
-
-    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(iv.size()), nullptr) != 1) {
-        EVP_CIPHER_CTX_free(ctx);
-        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
-            application::ClientError::crypto("Failed to set GCM IV length"));
-    }
-
-    const auto& key_bytes = key.expose_unredacted_secret();
-    if (EVP_EncryptInit_ex(ctx, nullptr, nullptr, reinterpret_cast<const unsigned char*>(key_bytes.data()),
-                           iv.data()) != 1) {
-        EVP_CIPHER_CTX_free(ctx);
-        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
-            application::ClientError::crypto("Failed to set GCM key and IV"));
-    }
-
-    int out_len = 0;
-    if (!associated_data.empty()) {
-        if (EVP_EncryptUpdate(ctx, nullptr, &out_len, associated_data.data(),
-                              static_cast<int>(associated_data.size())) != 1) {
-            EVP_CIPHER_CTX_free(ctx);
-            return application::ClientResult<application::interfaces::AeadCiphertext>::error(
-                application::ClientError::crypto("Failed to process GCM AAD"));
-        }
-    }
-
     std::vector<uint8_t> ciphertext(plaintext.size());
-    if (!plaintext.empty()) {
-        if (EVP_EncryptUpdate(ctx, ciphertext.data(), &out_len, plaintext.data(), static_cast<int>(plaintext.size())) !=
-            1) {
-            EVP_CIPHER_CTX_free(ctx);
-            return application::ClientResult<application::interfaces::AeadCiphertext>::error(
-                application::ClientError::crypto("Failed to encrypt GCM plaintext"));
-        }
-    }
-
-    int final_len = 0;
-    if (EVP_EncryptFinal_ex(ctx, ciphertext.data() + out_len, &final_len) != 1) {
-        EVP_CIPHER_CTX_free(ctx);
-        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
-            application::ClientError::crypto("Failed to finalize GCM encryption"));
-    }
-
     std::vector<uint8_t> tag(domain::PrekeyPolicy::kAeadGcmTagSize);
-    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, static_cast<int>(tag.size()), tag.data()) != 1) {
-        EVP_CIPHER_CTX_free(ctx);
-        return application::ClientResult<application::interfaces::AeadCiphertext>::error(
-            application::ClientError::crypto("Failed to retrieve GCM auth tag"));
+    const auto enc_res = encrypt_aes_gcm_into(key, iv, plaintext, associated_data, ciphertext, tag);
+    if (enc_res.is_error()) {
+        return application::ClientResult<application::interfaces::AeadCiphertext>::error(enc_res.error());
     }
-
-    EVP_CIPHER_CTX_free(ctx);
 
     std::vector<uint8_t> iv_copy(iv.begin(), iv.end());
     return application::ClientResult<application::interfaces::AeadCiphertext>::ok(
@@ -569,6 +505,89 @@ OpenSslCryptoProvider::encrypt_aes_gcm(const securecloud::common::configuration:
             .iv = std::move(iv_copy),
             .auth_tag = std::move(tag),
         });
+}
+
+application::ClientResult<void>
+OpenSslCryptoProvider::encrypt_aes_gcm_into(const securecloud::common::configuration::SecretString& key,
+                                            std::span<const uint8_t> iv, std::span<const uint8_t> plaintext,
+                                            std::span<const uint8_t> associated_data, std::span<uint8_t> out_ciphertext,
+                                            std::span<uint8_t> out_auth_tag) {
+    if (key.size() != domain::PrekeyPolicy::kAes256KeySize) {
+        return application::ClientResult<void>::error(application::ClientError::crypto("AES key must be 32 bytes"));
+    }
+    if (iv.size() != domain::PrekeyPolicy::kAeadGcmIvSize) {
+        return application::ClientResult<void>::error(application::ClientError::crypto("AES GCM IV must be 12 bytes"));
+    }
+    if (out_ciphertext.size() != plaintext.size()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::crypto("AES GCM ciphertext buffer size mismatch"));
+    }
+    if (out_auth_tag.size() != domain::PrekeyPolicy::kAeadGcmTagSize) {
+        return application::ClientResult<void>::error(
+            application::ClientError::crypto("AES GCM auth tag buffer size mismatch"));
+    }
+
+    EVP_CIPHER_CTX* ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) {
+        return application::ClientResult<void>::error(
+            application::ClientError::crypto("Failed to create EVP_CIPHER_CTX"));
+    }
+
+    if (EVP_EncryptInit_ex(ctx, EVP_aes_256_gcm(), nullptr, nullptr, nullptr) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<void>::error(
+            application::ClientError::crypto("Failed to init AES-256-GCM cipher"));
+    }
+
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_SET_IVLEN, static_cast<int>(iv.size()), nullptr) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<void>::error(application::ClientError::crypto("Failed to set GCM IV length"));
+    }
+
+    const auto& key_bytes = key.expose_unredacted_secret();
+    if (EVP_EncryptInit_ex(ctx, nullptr, nullptr, reinterpret_cast<const unsigned char*>(key_bytes.data()),
+                           iv.data()) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<void>::error(application::ClientError::crypto("Failed to set GCM key and IV"));
+    }
+
+    int out_len = 0;
+    if (!associated_data.empty()) {
+        if (EVP_EncryptUpdate(ctx, nullptr, &out_len, associated_data.data(),
+                              static_cast<int>(associated_data.size())) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return application::ClientResult<void>::error(
+                application::ClientError::crypto("Failed to process GCM AAD"));
+        }
+    }
+
+    if (!plaintext.empty()) {
+        if (EVP_EncryptUpdate(ctx, out_ciphertext.data(), &out_len, plaintext.data(),
+                              static_cast<int>(plaintext.size())) != 1) {
+            EVP_CIPHER_CTX_free(ctx);
+            return application::ClientResult<void>::error(
+                application::ClientError::crypto("Failed to encrypt GCM plaintext"));
+        }
+    }
+
+    int final_len = 0;
+    uint8_t empty_sink = 0U;
+    uint8_t* final_out = out_ciphertext.empty() ? &empty_sink : (out_ciphertext.data() + out_len);
+    if (EVP_EncryptFinal_ex(ctx, final_out, &final_len) != 1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<void>::error(
+            application::ClientError::crypto("Failed to finalize GCM encryption"));
+    }
+
+    if (EVP_CIPHER_CTX_ctrl(ctx, EVP_CTRL_GCM_GET_TAG, static_cast<int>(out_auth_tag.size()), out_auth_tag.data()) !=
+        1) {
+        EVP_CIPHER_CTX_free(ctx);
+        return application::ClientResult<void>::error(
+            application::ClientError::crypto("Failed to retrieve GCM auth tag"));
+    }
+
+    EVP_CIPHER_CTX_free(ctx);
+    return application::ClientResult<void>::ok();
 }
 
 application::ClientResult<securecloud::common::configuration::SecretString>
