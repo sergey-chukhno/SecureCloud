@@ -456,6 +456,7 @@ class WorkspaceViewModel : public QObject {
     void syncUiThemeFromSettings();
     bool persistCurrentSettings();
     void pollLiveSync();
+    void markSelectedConversationReadIfActive();
     [[nodiscard]] static QString stripUrlScheme(const QString& urlOrHost);
     void handleRealtimeEvent(const domain::RealtimeEvent& event);
     void applyFileTransferUpdate(const domain::FileTransferRecord& record);

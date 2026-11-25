@@ -15,6 +15,7 @@
 #include "infrastructure/adapters/default_gateway_client.hpp"
 #include "ui/ui_theme.hpp"
 
+#include <QGuiApplication>
 #include <QMetaObject>
 #include <QPointer>
 #include <QUrl>
@@ -28,8 +29,19 @@ namespace securecloud::client::ui {
 WorkspaceViewModel::WorkspaceViewModel(application::ClientApplication& app, NavigationController& nav_controller,
                                        QObject* parent)
     : QObject(parent), app_(app), nav_controller_(nav_controller) {
-    connect(&nav_controller_, &NavigationController::workspaceSectionChanged, this,
-            [this](const QString&) { emit activeSectionChanged(); });
+    connect(&nav_controller_, &NavigationController::workspaceSectionChanged, this, [this](const QString& section) {
+        emit activeSectionChanged();
+        if (section == QStringLiteral("Messages")) {
+            markSelectedConversationReadIfActive();
+        }
+    });
+    if (qGuiApp != nullptr) {
+        connect(qGuiApp, &QGuiApplication::applicationStateChanged, this, [this](Qt::ApplicationState state) {
+            if (state == Qt::ApplicationActive) {
+                markSelectedConversationReadIfActive();
+            }
+        });
+    }
 
     QPointer<WorkspaceViewModel> self(this);
     app_.bootstrap().contact_manager().set_key_change_alert_callback(
@@ -240,6 +252,23 @@ bool WorkspaceViewModel::triggerCatchUpSync() {
     return true;
 }
 
+void WorkspaceViewModel::markSelectedConversationReadIfActive() {
+    if (!app_.bootstrap().is_live_gateway_transport_active() || !app_.bootstrap().auth_manager().is_authenticated() ||
+        selected_conversation_id_.isEmpty() || activeSection() != QStringLiteral("Messages")) {
+        return;
+    }
+    if (qGuiApp != nullptr && qGuiApp->applicationState() != Qt::ApplicationActive) {
+        return;
+    }
+    const auto* conv = findConversation(selected_conversation_id_);
+    if (conv == nullptr || conv->unreadCount <= 0) {
+        return;
+    }
+    (void)app_.bootstrap().messaging_manager().mark_conversation_read(
+        domain::ConversationId(selected_conversation_id_.toStdString()), localUserId(), localDeviceId());
+    reloadFromLocalStore();
+}
+
 void WorkspaceViewModel::pollLiveSync() {
     if (!app_.bootstrap().is_live_gateway_transport_active() || !app_.bootstrap().auth_manager().is_authenticated() ||
         isOffline() || isSyncing()) {
@@ -275,7 +304,10 @@ void WorkspaceViewModel::pollLiveSync() {
         should_reload = true;
     }
 
-    if (new_messages_arrived && !selected_conversation_id_.isEmpty()) {
+    const bool is_viewing_active_thread = !selected_conversation_id_.isEmpty() &&
+                                          activeSection() == QStringLiteral("Messages") &&
+                                          (qGuiApp == nullptr || qGuiApp->applicationState() == Qt::ApplicationActive);
+    if (new_messages_arrived && is_viewing_active_thread) {
         (void)app_.bootstrap().messaging_manager().mark_conversation_read(
             domain::ConversationId(selected_conversation_id_.toStdString()), localUserId(), localDeviceId());
         should_reload = true;
