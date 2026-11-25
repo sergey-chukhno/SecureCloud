@@ -61,6 +61,11 @@ Item {
         onActivated: navigationController.navigateTo(5) // StyleGuide
     }
     Shortcut {
+        sequence: "Ctrl+Shift+D"
+        enabled: navigationController.isAuthenticated
+        onActivated: navigationController.navigateTo(6) // Diagnostics
+    }
+    Shortcut {
         sequence: "Ctrl+Shift+E"
         enabled: navigationController.isAuthenticated
         onActivated: navShell.emergencyWipeRequested()
@@ -382,7 +387,8 @@ Item {
                     labelText: qsTr("Settings")
                     iconName: "settings"
                     shortcutHint: "Ctrl+4"
-                    isActive: navigationController.currentViewName === "Settings"
+                    isActive: navigationController.currentViewName === "Settings" ||
+                              navigationController.currentViewName === "Diagnostics"
                     onActivated: navigationController.navigateTo(3)
                 }
 
@@ -525,6 +531,21 @@ Item {
                     }
 
                     Label {
+                        visible: navigationController.currentViewName === "Diagnostics"
+                        text: qsTr("Settings")
+                        font.pixelSize: Theme.fontCaption
+                        font.family: Theme.fontFamilyPrimary
+                        color: Theme.textMuted
+                    }
+
+                    Label {
+                        visible: navigationController.currentViewName === "Diagnostics"
+                        text: "›"
+                        font.pixelSize: Theme.fontCaption
+                        color: Theme.textMuted
+                    }
+
+                    Label {
                         text: navigationController.currentViewName
                         font.pixelSize: Theme.fontCaption
                         font.bold: true
@@ -602,6 +623,8 @@ Item {
                             return "WorkspacePlaceholder.qml"
                         case "Settings":
                             return "SettingsPlaceholder.qml"
+                        case "Diagnostics":
+                            return "DiagnosticsView.qml"
                         case "Emergency":
                             return "EmergencyPlaceholder.qml"
                         case "StyleGuide":

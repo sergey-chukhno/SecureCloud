@@ -3,6 +3,7 @@
 #include "infrastructure/client_logger.hpp"
 #include "securecloud/common/version.hpp"
 #include "ui/app_view_model.hpp"
+#include "ui/diagnostics_view_model.hpp"
 #include "ui/navigation_controller.hpp"
 #include "ui/ui_theme.hpp"
 #include "ui/window_state_manager.hpp"
@@ -73,6 +74,7 @@ int main(int argc, char* argv[]) {
     // UI Controllers and Presentation Wiring
     securecloud::client::ui::NavigationController navController;
     securecloud::client::ui::AppViewModel appViewModel(clientApp, navController);
+    securecloud::client::ui::DiagnosticsViewModel diagnosticsViewModel(clientApp, navController);
     securecloud::client::ui::WorkspaceViewModel workspaceViewModel(clientApp, navController);
     securecloud::client::ui::UiTheme uiTheme;
     securecloud::client::ui::WindowStateManager windowStateManager;
@@ -80,10 +82,11 @@ int main(int argc, char* argv[]) {
     workspaceViewModel.setUiTheme(&uiTheme);
 
     QObject::connect(&appViewModel, &securecloud::client::ui::AppViewModel::emergencyWipedChanged, &workspaceViewModel,
-                     [&appViewModel, &workspaceViewModel]() {
+                     [&appViewModel, &diagnosticsViewModel, &workspaceViewModel]() {
                          if (appViewModel.isDecoySession()) {
                              workspaceViewModel.enterDecoyWorkspace();
                          } else if (appViewModel.isEmergencyWiped()) {
+                             diagnosticsViewModel.resetForEmergencyWipe();
                              workspaceViewModel.resetForEmergencyWipe();
                          }
                      });
@@ -97,6 +100,7 @@ int main(int argc, char* argv[]) {
     qmlRegisterSingletonInstance<securecloud::client::ui::UiTheme>("SecureCloud.Theme", 1, 0, "Theme", &uiTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("navigationController"), &navController);
     engine.rootContext()->setContextProperty(QStringLiteral("appViewModel"), &appViewModel);
+    engine.rootContext()->setContextProperty(QStringLiteral("diagnosticsViewModel"), &diagnosticsViewModel);
     engine.rootContext()->setContextProperty(QStringLiteral("workspaceViewModel"), &workspaceViewModel);
     engine.rootContext()->setContextProperty(QStringLiteral("Theme"), &uiTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("windowStateManager"), &windowStateManager);
@@ -353,6 +357,15 @@ int main(int argc, char* argv[]) {
 
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
         captureWindow(QStringLiteral("settings-duress-light-1200x800.png"), 1200, 800);
+
+        // 8b. Authenticated Settings -> Advanced -> Diagnostics & Troubleshooting (CLIENT-015-T04)
+        (void)navController.navigateTo(securecloud::client::ui::NavigationController::NavigationState::Diagnostics);
+        diagnosticsViewModel.refreshDiagnostics();
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("diagnostics-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("diagnostics-light-1200x800.png"), 1200, 800);
 
         // 9. Upgraded Panic Confirmation Modal with Pre-Wipe E2EE Broadcast (CLIENT-013, Dark & Light 1200x800)
         (void)navController.navigateTo(securecloud::client::ui::NavigationController::NavigationState::MainWorkspace);

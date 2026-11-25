@@ -1958,6 +1958,65 @@ Rectangle {
                 }
             }
 
+            // 8. Advanced -> Diagnostics & Troubleshooting
+            SCCard {
+                id: advancedDiagnosticsCard
+                objectName: "advancedDiagnosticsCard"
+                Layout.fillWidth: true
+                headerText: qsTr("8. Advanced -> Diagnostics & Troubleshooting")
+                headerIconName: "monitor"
+                elevation: "Base"
+
+                ColumnLayout {
+                    width: parent.width
+                    spacing: Theme.space12
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.space12
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+
+                            Label {
+                                text: qsTr("Security Health, Telemetry & Support Archive")
+                                font.bold: true
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontBody
+                                color: Theme.textPrimary
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+
+                            Label {
+                                text: qsTr("Inspect OpenSSL self-test results, live CPU/RSS/session metrics, tamper-evident local audit logs, and export encrypted .scdiag bundles.")
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontCaption
+                                color: Theme.textSecondary
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        SCBadge {
+                            text: "Ctrl+Shift+D"
+                            type: "Info"
+                            hasDot: false
+                        }
+
+                        SCButton {
+                            objectName: "openDiagnosticsButton"
+                            text: qsTr("Open Diagnostics")
+                            iconName: "shield-check"
+                            variant: "Secondary"
+                            buttonHeight: 36
+                            onClicked: navigationController.navigateTo(6)
+                        }
+                    }
+                }
+            }
+
             Item { width: 1; height: Theme.space16 }
         }
     }

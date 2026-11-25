@@ -21,7 +21,8 @@ class NavigationController : public QObject {
         MainWorkspace,
         Settings,
         EmergencyMode,
-        StyleGuide
+        StyleGuide,
+        Diagnostics
     };
     Q_ENUM(NavigationState)
 
