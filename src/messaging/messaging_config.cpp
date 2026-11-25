@@ -181,6 +181,8 @@ MessagingConfig MessagingConfig::load(const common::configuration::Configuration
     parse_audit_string("SECURECLOUD_MESSAGING_AUDIT_ENDPOINT", config.audit.endpoint);
     parse_audit_string("SECURECLOUD_MESSAGING_AUDIT_PEER_SAN", config.audit.expected_peer_san);
     parse_audit_string("SECURECLOUD_MESSAGING_AUDIT_INSTANCE_ID", config.audit.producer_instance);
+    parse_audit_string("SECURECLOUD_MESSAGING_AUTH_ENDPOINT", config.auth.endpoint);
+    parse_audit_string("SECURECLOUD_MESSAGING_AUTH_PEER_SAN", config.auth.expected_peer_san);
 
     auto parse_audit_uint = [&](std::string_view key, uint32_t& target, uint32_t min_value, uint32_t max_value) {
         if (auto value = source.get(key); value.has_value()) {

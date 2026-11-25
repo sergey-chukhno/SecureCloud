@@ -118,8 +118,15 @@ RecipientDeviceResolutionService::RecipientDeviceResolutionService(
 
 client::Result<std::vector<client::DeviceCryptoRecord>, client::CryptoDirectoryError>
 RecipientDeviceResolutionService::resolve_devices_for_user(const domain::UserId& user_id) {
+    bool cache_hit = false;
+    return resolve_devices_for_user_tracked(user_id, cache_hit);
+}
+
+client::Result<std::vector<client::DeviceCryptoRecord>, client::CryptoDirectoryError>
+RecipientDeviceResolutionService::resolve_devices_for_user_tracked(const domain::UserId& user_id, bool& cache_hit) {
     auto cached = cache_.get(user_id);
     if (cached.has_value()) {
+        cache_hit = true;
         return cached.value();
     }
 
@@ -143,6 +150,14 @@ RecipientDeviceResolutionService::resolve_devices_for_user(const domain::UserId&
 client::Result<std::unordered_map<domain::UserId, std::vector<client::DeviceCryptoRecord>>,
                client::CryptoDirectoryError>
 RecipientDeviceResolutionService::resolve_devices_for_users(const std::vector<domain::UserId>& user_ids) {
+    bool any_cache_hit = false;
+    return resolve_devices_for_users_tracked(user_ids, any_cache_hit);
+}
+
+client::Result<std::unordered_map<domain::UserId, std::vector<client::DeviceCryptoRecord>>,
+               client::CryptoDirectoryError>
+RecipientDeviceResolutionService::resolve_devices_for_users_tracked(const std::vector<domain::UserId>& user_ids,
+                                                                    bool& any_cache_hit) {
     std::unordered_map<domain::UserId, std::vector<client::DeviceCryptoRecord>> directory_map;
 
     for (const auto& uid : user_ids) {
@@ -150,7 +165,7 @@ RecipientDeviceResolutionService::resolve_devices_for_users(const std::vector<do
             continue;
         }
 
-        auto res = resolve_devices_for_user(uid);
+        auto res = resolve_devices_for_user_tracked(uid, any_cache_hit);
         if (!res.has_value()) {
             return res.error();
         }
@@ -199,12 +214,33 @@ TargetDeviceValidationResult RecipientDeviceResolutionService::validate_submissi
         }
     }
 
-    // 2. Resolve device directories for all participants (and sender user if not in participants)
     std::vector<domain::UserId> query_users = conversation_participant_ids;
     if (!sender_user_id.empty() && !participant_set.contains(sender_user_id)) {
         query_users.push_back(sender_user_id);
     }
-    auto dir_res = resolve_devices_for_users(query_users);
+
+    bool any_cache_hit = false;
+    auto result = validate_against_directory(conversation_participant_ids, target_envelopes, sender_device_id,
+                                             sender_user_id, enforce_completeness, query_users, any_cache_hit);
+    if (!result.is_valid && any_cache_hit && result.error_code != v1::MESSAGING_ERROR_CODE_UNSPECIFIED) {
+        for (const auto& uid : query_users) {
+            invalidate_user_cache(uid);
+        }
+        bool retry_cache_hit = false;
+        return validate_against_directory(conversation_participant_ids, target_envelopes, sender_device_id,
+                                          sender_user_id, enforce_completeness, query_users, retry_cache_hit);
+    }
+
+    return result;
+}
+
+TargetDeviceValidationResult RecipientDeviceResolutionService::validate_against_directory(
+    const std::vector<domain::UserId>& conversation_participant_ids,
+    const std::vector<domain::PerDeviceEnvelope>& target_envelopes, const domain::DeviceId& sender_device_id,
+    const domain::UserId& sender_user_id, bool enforce_completeness, const std::vector<domain::UserId>& query_users,
+    bool& any_cache_hit) {
+    // 2. Resolve device directories for all participants (and sender user if not in participants)
+    auto dir_res = resolve_devices_for_users_tracked(query_users, any_cache_hit);
     if (!dir_res.has_value()) {
         return TargetDeviceValidationResult{
             .is_valid = false,

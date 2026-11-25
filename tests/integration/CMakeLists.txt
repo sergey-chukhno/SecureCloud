@@ -1343,3 +1343,46 @@ if(WIN32)
 endif()
 
 gtest_discover_tests(securecloud_messaging_audit_outbox_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+
+# Client <-> Gateway <-> Full Backend Stack Live Docker Compose E2E Suite (CLIENT-015-T06)
+if(SECURECLOUD_BUILD_CLIENT)
+    add_executable(securecloud_client_gateway_backend_integration_test
+        client_gateway_backend_integration_test.cpp
+    )
+
+    target_include_directories(securecloud_client_gateway_backend_integration_test PRIVATE
+        ${CMAKE_SOURCE_DIR}/src/client
+        ${CMAKE_SOURCE_DIR}/src
+    )
+
+    target_link_libraries(securecloud_client_gateway_backend_integration_test PRIVATE
+        securecloud_client_app
+        securecloud_client_infra
+        securecloud_client_domain
+        securecloud::auth
+        securecloud::messaging
+        securecloud::files_storage
+        securecloud::libpqxx
+        securecloud::httplib
+        securecloud::json
+        securecloud::common
+        securecloud_proto
+        gRPC::grpc++
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        Qt6::Core
+        Qt6::Network
+        securecloud::compiler_flags
+        GTest::gtest
+    )
+
+    target_compile_definitions(securecloud_client_gateway_backend_integration_test PRIVATE
+        SECURECLOUD_DEV_PKI_DIR="${CMAKE_SOURCE_DIR}/deploy/dev-pki"
+    )
+
+    if(WIN32)
+        target_link_libraries(securecloud_client_gateway_backend_integration_test PRIVATE ws2_32)
+    endif()
+
+    gtest_discover_tests(securecloud_client_gateway_backend_integration_test ${SECURECLOUD_TEST_PROPERTIES})
+endif()

@@ -213,6 +213,22 @@ Running the `dev-release` suite exposed three concrete bottlenecks — all fixed
 
 ---
 
-## 8. Live Full-Stack Docker Compose Latency Addendum *(Reserved for `CLIENT-015-T06`)*
+## 8. Live Full-Stack Docker Compose Latency Addendum (`CLIENT-015-T06`)
 
-*To be populated during `CLIENT-015-T06` once end-to-end live TLS 1.3 `QtHttpGatewayClient` ↔ `Gateway :8443` ↔ `Auth` / `Messaging` / `Files` / `Audit` Docker Compose integration runs complete, adding real end-to-end network RTT, message send, and encrypted chunked transfer `p50` / `p95` / `p99` tables.*
+End-to-end live TLS 1.3 latency metrics were captured during `CLIENT-015-T06` (`Scenario5_EmergencyPanicWipeAuditContinuityAndLiveLatencyMetrics`) with `QtHttpGatewayClient` communicating over HTTPS (`127.0.0.1:8443`, TLS 1.3 + SPKI SHA-256 pinning) against the 5-service Docker Compose stack (`gateway` -> `auth`, `messaging`, `files`, `audit`) backed by PostgreSQL, ScyllaDB, MinIO, and ClickHouse (`build/dev-debug` client + Debian Trixie Release backend containers):
+
+| Metric | Scope | Observed Value |
+|---|---|---|
+| TLS 1.3 Gateway `/health` Probe (`n = 20`) | Mean / p50 / p95 / p99 / Max | `3.15 ms` / `3.12 ms` / `4.06 ms` / `4.06 ms` / `4.06 ms` |
+| Live E2EE Message Send (`msg_send_ms`) | `Client -> Gateway -> Messaging -> ScyllaDB` | `45.66 ms` |
+| Live Encrypted File Upload (`file_upload_ms`) | `4 KiB` AES-256-GCM + `FileKeyEnvelope` (`Client -> Gateway -> Files -> MinIO/Postgres`) | `65.89 ms` |
+| Client Diagnostics Gateway RTT (`gateway_avg_rtt_ms`) | Rolling average across `34` live requests | `7 ms` (`34` requests) |
+
+**Reproduction command:**
+
+```bash
+SECURECLOUD_RUN_LIVE_COMPOSE_E2E=1 QT_QPA_PLATFORM=offscreen \
+  ./build/dev-debug/tests/integration/securecloud_client_gateway_backend_integration_test
+```
+
+All 5 end-to-end scenarios (`Scenario1`–`Scenario5`) passed (`5/5 PASS`, `5,559 ms` total), including zero-plaintext verification across ScyllaDB, PostgreSQL, MinIO, and cross-service ClickHouse `AuditQueryService` continuity (`GATEWAY`, `AUTH`, `MESSAGING`, `FILES`).

@@ -46,6 +46,12 @@ struct MessagingAuditConfig {
     uint32_t rpc_timeout_ms{5000};
 };
 
+/// Auth service mTLS client config used by Messaging for recipient device key resolution.
+struct MessagingAuthDirectoryConfig {
+    std::string endpoint{"auth:50052"};
+    std::string expected_peer_san{"auth"};
+};
+
 /// Typed configuration model for Messaging service.
 /// Holds common service settings, ScyllaDB cluster configuration, and worker concurrency limits.
 /// Strictly excludes Auth/Files/Audit database credentials.
@@ -54,6 +60,7 @@ struct MessagingConfig {
     ScyllaConfig scylla;
     WorkerPoolConfig workers;
     MessagingAuditConfig audit;
+    MessagingAuthDirectoryConfig auth;
     uint32_t shutdown_grace_period_ms{10000};
 
     // Direct compatibility fields matching earlier prototype call sites

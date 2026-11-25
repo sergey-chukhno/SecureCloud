@@ -4,12 +4,15 @@
 #include "domain/crypto/file_crypto_engine.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <openssl/rand.h>
 #include <span>
 
 namespace securecloud::client::application::managers {
@@ -27,6 +30,32 @@ std::string make_unique_id(std::string_view prefix) {
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
             .count();
     return std::string(prefix) + "-" + std::to_string(now_ns) + "-" + std::to_string(seq);
+}
+
+std::string bytes_to_hex(std::span<const uint8_t> bytes) {
+    static constexpr char kHex[] = "0123456789abcdef";
+    std::string out;
+    out.reserve(bytes.size() * 2U);
+    for (const uint8_t b : bytes) {
+        out.push_back(kHex[(b >> 4U) & 0x0FU]);
+        out.push_back(kHex[b & 0x0FU]);
+    }
+    return out;
+}
+
+ClientResult<std::string> generate_uuid_v4() {
+    std::array<uint8_t, 16> bytes{};
+    if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
+        return ClientResult<std::string>::error(
+            ClientError::crypto("OpenSSL RAND_bytes failed for file_id UUIDv4 generation"));
+    }
+    bytes[6] = static_cast<uint8_t>((bytes[6] & 0x0FU) | 0x40U);
+    bytes[8] = static_cast<uint8_t>((bytes[8] & 0x3FU) | 0x80U);
+    char buf[37];
+    std::snprintf(buf, sizeof(buf), "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", bytes[0],
+                  bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10],
+                  bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
+    return ClientResult<std::string>::ok(std::string(buf, 36));
 }
 
 std::string to_lower_ascii(std::string_view sv) {
@@ -248,7 +277,11 @@ ClientResult<FileUploadResult> FileManager::start_upload(const FileUploadRequest
     }
 
     const std::string transfer_id = make_unique_id("tx-up");
-    const std::string file_id = make_unique_id("file");
+    const auto uuid_res = generate_uuid_v4();
+    if (uuid_res.is_error()) {
+        return ClientResult<FileUploadResult>::error(uuid_res.error());
+    }
+    const std::string file_id = uuid_res.value();
 
     const auto key_res = domain::crypto::FileCryptoEngine::generate_file_key();
     if (key_res.is_error()) {
@@ -265,9 +298,29 @@ ClientResult<FileUploadResult> FileManager::start_upload(const FileUploadRequest
         return ClientResult<FileUploadResult>::error(store_key_res.error());
     }
 
+    std::array<uint8_t, 24> metadata_nonce{};
+    if (RAND_bytes(metadata_nonce.data(), static_cast<int>(metadata_nonce.size())) != 1) {
+        (void)secure_storage_->delete_secret(storage_key);
+        return ClientResult<FileUploadResult>::error(
+            ClientError::crypto("OpenSSL RAND_bytes failed for encrypted file metadata nonce"));
+    }
+    const std::string fname_raw = src_path.filename().string();
+    const std::string fname_str = fname_raw.empty() ? std::string("file") : fname_raw;
+    const std::span<const uint8_t> iv12(metadata_nonce.data(), domain::crypto::FileCryptoEngine::kIvBytes);
+    const std::span<const uint8_t> fname_bytes(reinterpret_cast<const uint8_t*>(fname_str.data()), fname_str.size());
+    const std::span<const uint8_t> file_id_aad(reinterpret_cast<const uint8_t*>(file_id.data()), file_id.size());
+    const auto enc_meta_res = crypto_provider_.encrypt_aes_gcm(key_res.value(), iv12, fname_bytes, file_id_aad);
+    if (enc_meta_res.is_error()) {
+        (void)secure_storage_->delete_secret(storage_key);
+        return ClientResult<FileUploadResult>::error(enc_meta_res.error());
+    }
+
     nlohmann::json crypto_meta;
     crypto_meta["cipher_suite"] = std::string(domain::kDefaultFileCipherSuite);
     crypto_meta["chunk_size_bytes"] = engine.wire_chunk_size();
+    crypto_meta["encrypted_filename_hex"] = bytes_to_hex(enc_meta_res.value().ciphertext);
+    crypto_meta["metadata_nonce_hex"] = bytes_to_hex(metadata_nonce);
+    crypto_meta["metadata_tag_hex"] = bytes_to_hex(enc_meta_res.value().auth_tag);
 
     const auto init_res = gateway_.init_file_upload(interfaces::FileUploadInitRequest{
         .file_id = file_id,

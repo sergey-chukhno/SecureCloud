@@ -88,12 +88,8 @@ ClientResult<domain::Device> DeviceManager::register_device(const domain::UserId
 
     std::vector<domain::OneTimePrekeyRecord> pub_records;
     pub_records.reserve(otpk_pairs.size());
-    std::unordered_map<std::string, securecloud::common::configuration::SecretString> otpk_privates;
-    otpk_privates.reserve(otpk_pairs.size());
-
-    for (auto& p : otpk_pairs) {
+    for (const auto& p : otpk_pairs) {
         pub_records.push_back(p.record);
-        otpk_privates.emplace(p.record.id(), std::move(p.private_key));
     }
 
     // 4. Package into public PrekeyBundle
@@ -107,6 +103,15 @@ ClientResult<domain::Device> DeviceManager::register_device(const domain::UserId
     }
     const auto& reg_result = reg_res.value();
     const domain::DeviceId assigned_id = reg_result.device_id;
+
+    // Derive deterministic UUIDv5 key_id matching Auth persistence for each uploaded OTPK
+    std::unordered_map<std::string, securecloud::common::configuration::SecretString> otpk_privates;
+    otpk_privates.reserve(otpk_pairs.size());
+    for (auto& p : otpk_pairs) {
+        std::string derived_id =
+            infrastructure::adapters::KeyStorageHelper::derive_one_time_prekey_id(assigned_id, p.record.public_key());
+        otpk_privates.emplace(std::move(derived_id), std::move(p.private_key));
+    }
 
     // 6. Assemble DevicePrivateBundle and store in ISecureStorage
     domain::DevicePrivateBundle priv_bundle(assigned_id, id_pair.public_key, std::move(id_pair.private_key),

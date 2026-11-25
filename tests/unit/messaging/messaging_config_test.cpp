@@ -103,6 +103,25 @@ TEST(MessagingConfigTest, LoadsAuditRelaySettingsAndValidatesBounds) {
     EXPECT_EQ(config.audit.batch_size, 80U);
 }
 
+TEST(MessagingConfigTest, LoadsAuthDirectorySettingsAndDefaults) {
+    common::configuration::InMemoryConfigurationSource default_source;
+    common::configuration::ValidationResult default_errors;
+    const auto default_cfg = MessagingConfig::load(default_source, default_errors);
+    EXPECT_TRUE(default_errors.is_valid()) << default_errors.to_string();
+    EXPECT_EQ(default_cfg.auth.endpoint, "auth:50052");
+    EXPECT_EQ(default_cfg.auth.expected_peer_san, "auth");
+
+    common::configuration::InMemoryConfigurationSource override_source({
+        {"SECURECLOUD_MESSAGING_AUTH_ENDPOINT", "auth.internal:50052"},
+        {"SECURECLOUD_MESSAGING_AUTH_PEER_SAN", "auth.securecloud.internal"},
+    });
+    common::configuration::ValidationResult override_errors;
+    const auto override_cfg = MessagingConfig::load(override_source, override_errors);
+    EXPECT_TRUE(override_errors.is_valid()) << override_errors.to_string();
+    EXPECT_EQ(override_cfg.auth.endpoint, "auth.internal:50052");
+    EXPECT_EQ(override_cfg.auth.expected_peer_san, "auth.securecloud.internal");
+}
+
 TEST(MessagingConfigTest, InvalidScyllaPortValidation) {
     {
         common::configuration::InMemoryConfigurationSource source({

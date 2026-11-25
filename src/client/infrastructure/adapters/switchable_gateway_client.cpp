@@ -242,4 +242,25 @@ SwitchableGatewayClient::inspect_tls_certificate(std::string_view host, uint16_t
     return active_gateway().inspect_tls_certificate(host, port);
 }
 
+application::ClientResult<application::interfaces::AuthSessionResult>
+SwitchableGatewayClient::authenticate_user(std::string_view identifier, std::string_view credential,
+                                           std::string_view device_id) {
+    return active_gateway().authenticate_user(identifier, credential, device_id);
+}
+
+application::ClientResult<application::interfaces::AuthSessionResult>
+SwitchableGatewayClient::refresh_session(std::string_view refresh_token, std::string_view device_id) {
+    return active_gateway().refresh_session(refresh_token, device_id);
+}
+
+application::ClientResult<void> SwitchableGatewayClient::revoke_session(std::string_view session_id,
+                                                                        std::string_view reason) {
+    return active_gateway().revoke_session(session_id, reason);
+}
+
+application::ClientResult<application::interfaces::ConversationCreateResult>
+SwitchableGatewayClient::create_direct_conversation(const domain::UserId& peer_user_id) {
+    return active_gateway().create_direct_conversation(peer_user_id);
+}
+
 } // namespace securecloud::client::infrastructure::adapters

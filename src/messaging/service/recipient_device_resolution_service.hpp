@@ -158,6 +158,20 @@ class RecipientDeviceResolutionService {
   private:
     std::shared_ptr<client::IAuthCryptoDirectoryClient> auth_client_;
     DeviceDirectoryCache cache_;
+
+    client::Result<std::vector<client::DeviceCryptoRecord>, client::CryptoDirectoryError>
+    resolve_devices_for_user_tracked(const domain::UserId& user_id, bool& cache_hit);
+
+    client::Result<std::unordered_map<domain::UserId, std::vector<client::DeviceCryptoRecord>>,
+                   client::CryptoDirectoryError>
+    resolve_devices_for_users_tracked(const std::vector<domain::UserId>& user_ids, bool& any_cache_hit);
+
+    TargetDeviceValidationResult
+    validate_against_directory(const std::vector<domain::UserId>& conversation_participant_ids,
+                               const std::vector<domain::PerDeviceEnvelope>& target_envelopes,
+                               const domain::DeviceId& sender_device_id, const domain::UserId& sender_user_id,
+                               bool enforce_completeness, const std::vector<domain::UserId>& query_users,
+                               bool& any_cache_hit);
 };
 
 } // namespace securecloud::messaging::service

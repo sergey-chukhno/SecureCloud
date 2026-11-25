@@ -175,7 +175,7 @@ void ScyllaDeliveryStateRepository::init_prepared_statements() {
         "message_priority, delivery_state, attempt_count, next_retry_at, "
         "ciphertext_blob, ephemeral_public_key, iv, auth_tag, algorithm, protocol_version, one_time_prekey_id "
         "FROM securecloud_messaging.pending_deliveries_by_device "
-        "WHERE device_id = ? AND message_id = ?;");
+        "WHERE device_id = ? AND message_id = ? ALLOW FILTERING;");
 }
 
 void ScyllaDeliveryStateRepository::save_pending_deliveries(const std::vector<domain::DeviceDeliveryRecord>& records) {

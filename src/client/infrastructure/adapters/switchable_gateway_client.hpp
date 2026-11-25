@@ -127,6 +127,19 @@ class SwitchableGatewayClient final : public application::interfaces::IGatewayCl
     application::ClientResult<application::interfaces::TlsCertificateInfo>
     inspect_tls_certificate(std::string_view host, uint16_t port) override;
 
+    application::ClientResult<application::interfaces::AuthSessionResult>
+    authenticate_user(std::string_view identifier, std::string_view credential,
+                      std::string_view device_id = "") override;
+
+    application::ClientResult<application::interfaces::AuthSessionResult>
+    refresh_session(std::string_view refresh_token, std::string_view device_id = "") override;
+
+    application::ClientResult<void> revoke_session(std::string_view session_id,
+                                                   std::string_view reason = "user_logout") override;
+
+    application::ClientResult<application::interfaces::ConversationCreateResult>
+    create_direct_conversation(const domain::UserId& peer_user_id) override;
+
   private:
     enum class TargetAdapter { Simulated, Live };
 

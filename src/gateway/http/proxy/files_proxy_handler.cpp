@@ -261,6 +261,19 @@ void FilesProxyHandler::handle_upload_init(const httplib::Request& req, httplib:
     }
     grpc_req.set_owner_device_id(owner_dev);
 
+    if (body.contains("conversation_id") && body["conversation_id"].is_string() &&
+        !body["conversation_id"].get<std::string>().empty()) {
+        grpc_req.set_conversation_id(body["conversation_id"].get<std::string>());
+    }
+
+    if (body.contains("client_crypto_metadata")) {
+        if (body["client_crypto_metadata"].is_string() && !body["client_crypto_metadata"].get<std::string>().empty()) {
+            grpc_req.set_client_crypto_metadata(body["client_crypto_metadata"].get<std::string>());
+        } else if (body["client_crypto_metadata"].is_object()) {
+            grpc_req.set_client_crypto_metadata(body["client_crypto_metadata"].dump());
+        }
+    }
+
     if (body.contains("encrypted_size_bytes") && body["encrypted_size_bytes"].is_number_unsigned()) {
         grpc_req.set_encrypted_size_bytes(body["encrypted_size_bytes"].get<uint64_t>());
     } else {

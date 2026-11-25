@@ -146,6 +146,161 @@ void ensure_qt_openssl_tls_backend() {
                                 reinterpret_cast<const uint8_t*>(decoded.constData()) + decoded.size());
 }
 
+[[nodiscard]] bool is_printable_ascii_wire(std::string_view raw) noexcept {
+    for (const char ch : raw) {
+        const unsigned char u = static_cast<unsigned char>(ch);
+        if ((u < 0x20U || u > 0x7EU) && ch != '\n' && ch != '\r' && ch != '\t') {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] bool is_valid_standard_base64(std::string_view encoded) noexcept {
+    if (encoded.empty() || (encoded.size() % 4U) != 0U) {
+        return false;
+    }
+    std::size_t pad = 0U;
+    for (std::size_t i = 0; i < encoded.size(); ++i) {
+        const char ch = encoded[i];
+        if (ch == '=') {
+            ++pad;
+            if (pad > 2U || i + 1U < encoded.size() - 1U) {
+                if (i < encoded.size() - 2U) {
+                    return false;
+                }
+            }
+            continue;
+        }
+        if (pad > 0U) {
+            return false;
+        }
+        const bool ok =
+            (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '+' || ch == '/';
+        if (!ok) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] std::string encode_ciphertext_for_json(std::string_view raw) {
+    if (raw.empty() || is_printable_ascii_wire(raw)) {
+        return std::string(raw);
+    }
+    const std::span<const uint8_t> bytes(reinterpret_cast<const uint8_t*>(raw.data()), raw.size());
+    return bytes_to_base64(bytes);
+}
+
+[[nodiscard]] std::string decode_ciphertext_from_json(std::string_view value) {
+    if (is_valid_standard_base64(value)) {
+        const QByteArray raw_b64(value.data(), static_cast<qsizetype>(value.size()));
+        const QByteArray decoded = QByteArray::fromBase64(raw_b64);
+        if (!decoded.isEmpty()) {
+            std::size_t printable = 0U;
+            const std::size_t sample_len = std::min<std::size_t>(static_cast<std::size_t>(decoded.size()), 256U);
+            for (std::size_t i = 0; i < sample_len; ++i) {
+                const unsigned char ch = static_cast<unsigned char>(decoded.at(static_cast<qsizetype>(i)));
+                if ((ch >= 0x20U && ch <= 0x7EU) || ch == '\n' || ch == '\r' || ch == '\t') {
+                    ++printable;
+                }
+            }
+            if (static_cast<double>(printable) / static_cast<double>(sample_len) < 0.90) {
+                return std::string(decoded.constData(), static_cast<std::size_t>(decoded.size()));
+            }
+        }
+    }
+    return std::string(value);
+}
+
+[[nodiscard]] std::string parse_authentication_level(const nlohmann::json& j) {
+    if (!j.contains("authentication_level")) {
+        return {};
+    }
+    const auto& lvl = j["authentication_level"];
+    if (lvl.is_string()) {
+        return lvl.get<std::string>();
+    }
+    if (lvl.is_number_integer()) {
+        const int code = lvl.get<int>();
+        if (code == 0) {
+            return "AUTH_LEVEL_UNSPECIFIED";
+        }
+        if (code == 1) {
+            return "AUTH_LEVEL_PASSWORD";
+        }
+        if (code == 2) {
+            return "AUTH_LEVEL_MFA";
+        }
+        return std::to_string(code);
+    }
+    return {};
+}
+
+[[nodiscard]] std::optional<domain::RemoteConversationSummary> parse_conversation_summary(const nlohmann::json& cj) {
+    if (!cj.is_object()) {
+        return std::nullopt;
+    }
+    const std::string cid = cj.value("conversation_id", std::string{});
+    if (cid.empty()) {
+        return std::nullopt;
+    }
+    domain::RemoteConversationSummary sum;
+    sum.conversation_id = domain::ConversationId(cid);
+    const std::string t = cj.value("type", std::string{"direct"});
+    sum.type = (t == "group") ? domain::ConversationType::Group : domain::ConversationType::Direct;
+    sum.title = cj.value("title", std::string{});
+    if (const std::string cr = cj.value("creator_user_id", std::string{}); !cr.empty()) {
+        sum.creator_user_id = domain::UserId(cr);
+    }
+    sum.created_at_ms = cj.value("created_at_unix_ms", int64_t{0});
+    if (cj.contains("participant_user_ids") && cj["participant_user_ids"].is_array()) {
+        for (const auto& p : cj["participant_user_ids"]) {
+            if (p.is_string() && !p.get<std::string>().empty()) {
+                sum.participant_user_ids.emplace_back(p.get<std::string>());
+            }
+        }
+    }
+    return sum;
+}
+
+[[nodiscard]] ClientResult<AuthSessionResult> parse_auth_session_result(std::string_view body,
+                                                                        std::string_view fallback_user_id = "",
+                                                                        std::string_view error_context = "auth") {
+    try {
+        const auto j = nlohmann::json::parse(body);
+        if (!j.is_object()) {
+            return ClientResult<AuthSessionResult>::error(
+                ClientError::network("Malformed Gateway " + std::string(error_context) + " JSON response"));
+        }
+        AuthSessionResult out;
+        out.session_id = j.value("session_id", std::string{});
+        out.device_id = j.value("device_id", std::string{});
+        const std::string uid = j.value("user_id", std::string{fallback_user_id});
+        if (!uid.empty()) {
+            out.user_id = domain::UserId(uid);
+        }
+        if (const std::string access = j.value("access_token", std::string{}); !access.empty()) {
+            out.access_token = SecretString(access);
+        }
+        if (const std::string refresh = j.value("refresh_token", std::string{}); !refresh.empty()) {
+            out.refresh_token = SecretString(refresh);
+        }
+        out.authentication_level = parse_authentication_level(j);
+        out.expires_at_epoch_ms = j.value("expires_at_epoch_ms", int64_t{0});
+        out.mfa_required = j.value("mfa_required", false);
+        out.mfa_challenge_id = j.value("mfa_challenge_id", std::string{});
+        if (!out.mfa_required && out.access_token.empty()) {
+            return ClientResult<AuthSessionResult>::error(ClientError::authentication(
+                "Gateway " + std::string(error_context) + " response missing access_token"));
+        }
+        return ClientResult<AuthSessionResult>::ok(std::move(out));
+    } catch (...) {
+        return ClientResult<AuthSessionResult>::error(
+            ClientError::network("Malformed Gateway " + std::string(error_context) + " JSON response"));
+    }
+}
+
 [[nodiscard]] std::optional<std::string> compute_spki_sha256_hex(const QSslCertificate& cert) {
     if (cert.isNull()) {
         return std::nullopt;
@@ -424,9 +579,25 @@ struct QtHttpGatewayClient::Impl {
             return cfg.auth_token;
         }
         if (token_provider_) {
-            return token_provider_();
+            if (auto provided = token_provider_(); provided.has_value() && !provided->empty()) {
+                return provided;
+            }
         }
-        return std::nullopt;
+        std::lock_guard<std::mutex> lock(runtime_token_mutex_);
+        return runtime_auth_token_;
+    }
+
+    void set_runtime_auth_token(const SecretString& token) {
+        if (token.empty()) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(runtime_token_mutex_);
+        runtime_auth_token_ = token;
+    }
+
+    void clear_runtime_auth_token() {
+        std::lock_guard<std::mutex> lock(runtime_token_mutex_);
+        runtime_auth_token_.reset();
     }
 
     void ensure_worker_started() {
@@ -580,6 +751,7 @@ struct QtHttpGatewayClient::Impl {
                     }
 
                     QNetworkRequest req(url);
+                    req.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
                     if (is_https) {
                         req.setSslConfiguration(ssl_cfg);
                     }
@@ -1076,6 +1248,8 @@ struct QtHttpGatewayClient::Impl {
     mutable std::mutex config_mutex_;
     ClientConfig config_;
     BearerTokenProvider token_provider_;
+    mutable std::mutex runtime_token_mutex_;
+    std::optional<SecretString> runtime_auth_token_;
     std::atomic<uint64_t> config_generation_{1U};
     std::atomic<uint64_t> request_seq_{1U};
     std::atomic<bool> shutting_down_{false};
@@ -1193,7 +1367,7 @@ ClientResult<std::string> QtHttpGatewayClient::submit_encrypted_message(const Fa
     nlohmann::json targets = nlohmann::json::array();
     for (const auto& target : request.device_payloads) {
         nlohmann::json ep;
-        ep["ciphertext_blob"] = target.ciphertext_blob;
+        ep["ciphertext_blob"] = encode_ciphertext_for_json(target.ciphertext_blob);
         ep["ephemeral_public_key"] = bytes_to_base64(target.ephemeral_public_key);
         ep["initialization_vector"] = bytes_to_base64(target.iv);
         ep["auth_tag"] = bytes_to_base64(target.auth_tag);
@@ -1436,7 +1610,7 @@ QtHttpGatewayClient::fetch_conversation_messages(const domain::ConversationId& c
                         } else {
                             dp.recipient_device_id = recipient_device_id;
                         }
-                        dp.ciphertext_blob = ep.value("ciphertext_blob", std::string{});
+                        dp.ciphertext_blob = decode_ciphertext_from_json(ep.value("ciphertext_blob", std::string{}));
                         dp.ephemeral_public_key = decode_wire_bytes(ep.value("ephemeral_public_key", std::string{}));
                         dp.iv = decode_wire_bytes(ep.value("initialization_vector", std::string{}));
                         dp.auth_tag = decode_wire_bytes(ep.value("auth_tag", std::string{}));
@@ -1539,30 +1713,9 @@ QtHttpGatewayClient::list_remote_conversations(const domain::UserId& user_id, st
         std::vector<domain::RemoteConversationSummary> out;
         if (j.contains("conversations") && j["conversations"].is_array()) {
             for (const auto& cj : j["conversations"]) {
-                if (!cj.is_object()) {
-                    continue;
+                if (auto sum = parse_conversation_summary(cj); sum.has_value()) {
+                    out.push_back(std::move(*sum));
                 }
-                const std::string cid = cj.value("conversation_id", std::string{});
-                if (cid.empty()) {
-                    continue;
-                }
-                domain::RemoteConversationSummary sum;
-                sum.conversation_id = domain::ConversationId(cid);
-                const std::string t = cj.value("type", std::string{"direct"});
-                sum.type = (t == "group") ? domain::ConversationType::Group : domain::ConversationType::Direct;
-                sum.title = cj.value("title", std::string{});
-                if (const std::string cr = cj.value("creator_user_id", std::string{}); !cr.empty()) {
-                    sum.creator_user_id = domain::UserId(cr);
-                }
-                sum.created_at_ms = cj.value("created_at_unix_ms", int64_t{0});
-                if (cj.contains("participant_user_ids") && cj["participant_user_ids"].is_array()) {
-                    for (const auto& p : cj["participant_user_ids"]) {
-                        if (p.is_string() && !p.get<std::string>().empty()) {
-                            sum.participant_user_ids.emplace_back(p.get<std::string>());
-                        }
-                    }
-                }
-                out.push_back(std::move(sum));
             }
         }
         return ClientResult<std::vector<domain::RemoteConversationSummary>>::ok(std::move(out));
@@ -2297,6 +2450,113 @@ QtHttpGatewayClient::update_user_profile(const domain::UserProfile& public_profi
 
 ClientResult<TlsCertificateInfo> QtHttpGatewayClient::inspect_tls_certificate(std::string_view host, uint16_t port) {
     return impl_->inspect_tls(host, port);
+}
+
+ClientResult<AuthSessionResult> QtHttpGatewayClient::authenticate_user(std::string_view identifier,
+                                                                       std::string_view credential,
+                                                                       std::string_view device_id) {
+    if (identifier.empty() || credential.empty()) {
+        return ClientResult<AuthSessionResult>::error(
+            ClientError::validation("Identifier and credential cannot be empty"));
+    }
+
+    nlohmann::json payload;
+    payload["identifier"] = std::string(identifier);
+    payload["credential"] = std::string(credential);
+    if (!device_id.empty()) {
+        payload["device_id"] = std::string(device_id);
+    }
+
+    const auto res = impl_->perform_http("POST", "/api/v1/auth/login", payload.dump(), "application/json", {}, {},
+                                         /*include_auth=*/false);
+    if (res.is_error()) {
+        return ClientResult<AuthSessionResult>::error(res.error());
+    }
+
+    auto parsed = parse_auth_session_result(res.value().body, identifier, "login");
+    if (parsed.is_ok() && !parsed.value().access_token.empty()) {
+        impl_->set_runtime_auth_token(parsed.value().access_token);
+    }
+    return parsed;
+}
+
+ClientResult<AuthSessionResult> QtHttpGatewayClient::refresh_session(std::string_view refresh_token,
+                                                                     std::string_view device_id) {
+    if (refresh_token.empty()) {
+        return ClientResult<AuthSessionResult>::error(ClientError::validation("Refresh token cannot be empty"));
+    }
+
+    nlohmann::json payload;
+    payload["refresh_token"] = std::string(refresh_token);
+    if (!device_id.empty()) {
+        payload["device_id"] = std::string(device_id);
+    }
+
+    const auto res = impl_->perform_http("POST", "/api/v1/auth/refresh", payload.dump(), "application/json", {}, {},
+                                         /*include_auth=*/false);
+    if (res.is_error()) {
+        return ClientResult<AuthSessionResult>::error(res.error());
+    }
+
+    auto parsed = parse_auth_session_result(res.value().body, "", "refresh");
+    if (parsed.is_ok() && !parsed.value().access_token.empty()) {
+        impl_->set_runtime_auth_token(parsed.value().access_token);
+    }
+    return parsed;
+}
+
+ClientResult<void> QtHttpGatewayClient::revoke_session(std::string_view session_id, std::string_view reason) {
+    if (session_id.empty()) {
+        return ClientResult<void>::error(ClientError::validation("Session ID cannot be empty"));
+    }
+
+    nlohmann::json payload;
+    payload["session_id"] = std::string(session_id);
+    payload["reason"] = reason.empty() ? "user_logout" : std::string(reason);
+
+    const auto res = impl_->perform_http("POST", "/api/v1/auth/revoke", payload.dump());
+    if (res.is_error()) {
+        return ClientResult<void>::error(res.error());
+    }
+    impl_->clear_runtime_auth_token();
+    return ClientResult<void>::ok();
+}
+
+ClientResult<ConversationCreateResult>
+QtHttpGatewayClient::create_direct_conversation(const domain::UserId& peer_user_id) {
+    if (peer_user_id.empty()) {
+        return ClientResult<ConversationCreateResult>::error(ClientError::validation("Peer user ID cannot be empty"));
+    }
+
+    nlohmann::json payload;
+    payload["type"] = "direct";
+    payload["participant_user_ids"] = nlohmann::json::array({peer_user_id.value()});
+
+    const auto res = impl_->perform_http("POST", "/api/v1/conversations", payload.dump());
+    if (res.is_error()) {
+        return ClientResult<ConversationCreateResult>::error(res.error());
+    }
+
+    try {
+        const auto j = nlohmann::json::parse(res.value().body);
+        const auto& conv_json = (j.contains("conversation") && j["conversation"].is_object()) ? j["conversation"] : j;
+        const auto parsed = parse_conversation_summary(conv_json);
+        if (!parsed.has_value()) {
+            return ClientResult<ConversationCreateResult>::error(
+                ClientError::network("Gateway create_direct_conversation response missing conversation_id"));
+        }
+        ConversationCreateResult out;
+        out.conversation_id = parsed->conversation_id;
+        out.type = parsed->type;
+        out.title = parsed->title;
+        out.creator_user_id = parsed->creator_user_id;
+        out.created_at_ms = parsed->created_at_ms;
+        out.participant_user_ids = parsed->participant_user_ids;
+        return ClientResult<ConversationCreateResult>::ok(std::move(out));
+    } catch (...) {
+        return ClientResult<ConversationCreateResult>::error(
+            ClientError::network("Malformed Gateway create_direct_conversation JSON response"));
+    }
 }
 
 } // namespace securecloud::client::infrastructure::adapters

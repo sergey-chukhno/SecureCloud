@@ -1245,6 +1245,92 @@ DefaultGatewayClient::inspect_tls_certificate(std::string_view host, uint16_t po
     return application::ClientResult<application::interfaces::TlsCertificateInfo>::ok(std::move(info));
 }
 
+application::ClientResult<application::interfaces::AuthSessionResult>
+DefaultGatewayClient::authenticate_user(std::string_view identifier, std::string_view credential,
+                                        std::string_view /*device_id*/) {
+    if (simulate_failure_) {
+        return application::ClientResult<application::interfaces::AuthSessionResult>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (identifier.empty() || credential.empty()) {
+        return application::ClientResult<application::interfaces::AuthSessionResult>::error(
+            application::ClientError::validation("Identifier and credential cannot be empty"));
+    }
+    connected_ = true;
+    application::interfaces::AuthSessionResult res;
+    res.user_id = domain::UserId(std::string(identifier));
+    res.session_id = "sim-session-" + std::string(identifier);
+    res.access_token = common::configuration::SecretString("session-token-for-" + std::string(identifier));
+    res.refresh_token = common::configuration::SecretString("refresh-token-for-" + std::string(identifier));
+    res.authentication_level = "AUTH_LEVEL_PASSWORD";
+    res.expires_at_epoch_ms = current_unix_ms() + 3600000LL;
+    return application::ClientResult<application::interfaces::AuthSessionResult>::ok(std::move(res));
+}
+
+application::ClientResult<application::interfaces::AuthSessionResult>
+DefaultGatewayClient::refresh_session(std::string_view refresh_token, std::string_view /*device_id*/) {
+    if (simulate_failure_) {
+        return application::ClientResult<application::interfaces::AuthSessionResult>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (refresh_token.empty()) {
+        return application::ClientResult<application::interfaces::AuthSessionResult>::error(
+            application::ClientError::validation("Refresh token cannot be empty"));
+    }
+    application::interfaces::AuthSessionResult res;
+    res.session_id = "sim-session-refreshed";
+    res.access_token = common::configuration::SecretString("refreshed-session-token");
+    res.refresh_token = common::configuration::SecretString("rotated-refresh-token");
+    res.expires_at_epoch_ms = current_unix_ms() + 3600000LL;
+    return application::ClientResult<application::interfaces::AuthSessionResult>::ok(std::move(res));
+}
+
+application::ClientResult<void> DefaultGatewayClient::revoke_session(std::string_view session_id,
+                                                                     std::string_view /*reason*/) {
+    if (simulate_failure_) {
+        return application::ClientResult<void>::error(application::ClientError::network(failure_message_));
+    }
+    if (session_id.empty()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Session ID cannot be empty"));
+    }
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<application::interfaces::ConversationCreateResult>
+DefaultGatewayClient::create_direct_conversation(const domain::UserId& peer_user_id) {
+    if (simulate_failure_) {
+        return application::ClientResult<application::interfaces::ConversationCreateResult>::error(
+            application::ClientError::network(failure_message_));
+    }
+    if (peer_user_id.empty()) {
+        return application::ClientResult<application::interfaces::ConversationCreateResult>::error(
+            application::ClientError::validation("Peer user ID cannot be empty"));
+    }
+
+    const int64_t now_ms = current_unix_ms();
+    const domain::ConversationId cid("conv-sim-" + peer_user_id.value());
+
+    domain::RemoteConversationSummary sum;
+    sum.conversation_id = cid;
+    sum.type = domain::ConversationType::Direct;
+    sum.created_at_ms = now_ms;
+    sum.participant_user_ids.push_back(peer_user_id);
+
+    const bool exists = std::any_of(simulated_remote_conversations_.begin(), simulated_remote_conversations_.end(),
+                                    [&cid](const auto& item) { return item.conversation_id == cid; });
+    if (!exists) {
+        simulated_remote_conversations_.push_back(sum);
+    }
+
+    application::interfaces::ConversationCreateResult res;
+    res.conversation_id = std::move(sum.conversation_id);
+    res.type = sum.type;
+    res.created_at_ms = sum.created_at_ms;
+    res.participant_user_ids = std::move(sum.participant_user_ids);
+    return application::ClientResult<application::interfaces::ConversationCreateResult>::ok(std::move(res));
+}
+
 void DefaultGatewayClient::set_simulated_user_profile(domain::UserProfile profile) {
     std::lock_guard<std::mutex> lock(profile_tls_mutex_);
     const domain::UserId uid = profile.user_id;

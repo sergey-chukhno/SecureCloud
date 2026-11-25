@@ -315,6 +315,15 @@ void AppViewModel::requestLogin(const QString& username, const QString& password
         return;
     }
 
+    if (app_.bootstrap().is_live_gateway_transport_active() && !login.mfa_required) {
+        const auto dev_res = app_.bootstrap().device_manager().initialize_or_load_device(
+            app_.bootstrap().auth_manager().current_user(), "Desktop Workstation");
+        if (dev_res.is_ok()) {
+            app_.bootstrap().initialize_ratchet_session_manager(app_.bootstrap().auth_manager().current_user(),
+                                                                dev_res.value().device_id());
+        }
+    }
+
     connectionStatus_ = QStringLiteral("Connected");
     nav_controller_.setAuthenticated(true);
     nav_controller_.reset(NavigationController::NavigationState::MainWorkspace);

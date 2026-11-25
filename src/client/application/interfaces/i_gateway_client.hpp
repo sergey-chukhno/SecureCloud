@@ -14,6 +14,7 @@
 #include "domain/realtime_events.hpp"
 #include "domain/user_id.hpp"
 #include "domain/user_profile.hpp"
+#include "securecloud/configuration/secret_string.hpp"
 
 #include <chrono>
 #include <cstdint>
@@ -156,6 +157,27 @@ struct TlsCertificateInfo {
     bool operator==(const TlsCertificateInfo& other) const noexcept = default;
 };
 
+struct AuthSessionResult {
+    domain::UserId user_id{};
+    std::string device_id{};
+    std::string session_id{};
+    common::configuration::SecretString access_token{};
+    common::configuration::SecretString refresh_token{};
+    std::string authentication_level{};
+    int64_t expires_at_epoch_ms{0};
+    bool mfa_required{false};
+    std::string mfa_challenge_id{};
+};
+
+struct ConversationCreateResult {
+    domain::ConversationId conversation_id{};
+    domain::ConversationType type{domain::ConversationType::Direct};
+    std::string title{};
+    domain::UserId creator_user_id{};
+    int64_t created_at_ms{0};
+    std::vector<domain::UserId> participant_user_ids{};
+};
+
 class IGatewayClient {
   public:
     using RealtimeEventHandler = std::function<void(const domain::RealtimeEvent&)>;
@@ -239,6 +261,53 @@ class IGatewayClient {
     virtual ClientResult<UserProfileSyncResult> update_user_profile(const domain::UserProfile& public_profile) = 0;
 
     virtual ClientResult<TlsCertificateInfo> inspect_tls_certificate(std::string_view host, uint16_t port) = 0;
+
+    virtual ClientResult<AuthSessionResult> authenticate_user(std::string_view identifier,
+                                                              std::string_view /*credential*/,
+                                                              std::string_view /*device_id*/ = "") {
+        const auto probe = probe_gateway("/health");
+        if (probe.is_error()) {
+            return ClientResult<AuthSessionResult>::error(probe.error());
+        }
+        AuthSessionResult synthetic;
+        synthetic.user_id = domain::UserId(std::string(identifier));
+        synthetic.session_id = "sim-session-" + std::string(identifier);
+        synthetic.access_token = common::configuration::SecretString("session-token-for-" + std::string(identifier));
+        synthetic.refresh_token = common::configuration::SecretString("refresh-token-for-" + std::string(identifier));
+        return ClientResult<AuthSessionResult>::ok(std::move(synthetic));
+    }
+
+    virtual ClientResult<AuthSessionResult> refresh_session(std::string_view refresh_token,
+                                                            std::string_view /*device_id*/ = "") {
+        if (refresh_token.empty()) {
+            return ClientResult<AuthSessionResult>::error(ClientError::validation("Refresh token cannot be empty"));
+        }
+        AuthSessionResult synthetic;
+        synthetic.session_id = "sim-session-refreshed";
+        synthetic.access_token = common::configuration::SecretString("refreshed-session-token");
+        synthetic.refresh_token = common::configuration::SecretString("rotated-refresh-token");
+        return ClientResult<AuthSessionResult>::ok(std::move(synthetic));
+    }
+
+    virtual ClientResult<void> revoke_session(std::string_view /*session_id*/,
+                                              std::string_view /*reason*/ = "user_logout") {
+        return ClientResult<void>::ok();
+    }
+
+    virtual ClientResult<ConversationCreateResult> create_direct_conversation(const domain::UserId& peer_user_id) {
+        if (peer_user_id.empty()) {
+            return ClientResult<ConversationCreateResult>::error(
+                ClientError::validation("Peer user ID cannot be empty"));
+        }
+        ConversationCreateResult synthetic;
+        synthetic.conversation_id = domain::ConversationId("conv-direct-" + peer_user_id.value());
+        synthetic.type = domain::ConversationType::Direct;
+        synthetic.participant_user_ids.push_back(peer_user_id);
+        synthetic.created_at_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch())
+                .count();
+        return ClientResult<ConversationCreateResult>::ok(std::move(synthetic));
+    }
 };
 
 } // namespace securecloud::client::application::interfaces

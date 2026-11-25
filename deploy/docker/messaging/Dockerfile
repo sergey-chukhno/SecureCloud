@@ -1,5 +1,5 @@
 # Stage 1: Build Environment
-FROM ubuntu:24.04 AS builder
+FROM debian:trixie AS builder
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -9,28 +9,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     cmake \
     ninja-build \
     pkg-config \
+    git \
+    ca-certificates \
+    libssl-dev \
     libprotobuf-dev \
     protobuf-compiler \
     libgrpc++-dev \
     protobuf-compiler-grpc \
+    libpqxx-dev \
+    nlohmann-json3-dev \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
 
 COPY . .
 
-RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF
+RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DSECURECLOUD_BUILD_CLIENT=OFF
 
-RUN cmake --build build --target securecloud-messaging
+RUN cmake --build build --target securecloud-messaging -j2
 
 # Stage 2: Minimal Runtime Environment
-FROM ubuntu:24.04 AS runtime
+FROM debian:trixie-slim AS runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libprotobuf-dev \
-    libgrpc++-dev \
+    libssl3t64 \
+    libgrpc++1.51t64 \
+    libprotobuf32t64 \
     ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 

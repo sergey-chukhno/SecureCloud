@@ -108,7 +108,10 @@ int run_service() {
     securecloud::files::health::FilesHealthEvaluator health_evaluator(health_manager, db_pool, s3_client);
     securecloud::common::health::HealthServiceImpl health_service(config.common.service_name, health_manager);
 
+    constexpr int k_max_grpc_message_bytes = 16 * 1024 * 1024;
     grpc::ServerBuilder builder;
+    builder.SetMaxReceiveMessageSize(k_max_grpc_message_bytes);
+    builder.SetMaxSendMessageSize(k_max_grpc_message_bytes);
     builder.AddListeningPort(server_address, server_creds);
     builder.RegisterService(&files_service);
     builder.RegisterService(&health_service);

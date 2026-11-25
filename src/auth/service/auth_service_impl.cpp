@@ -1,7 +1,10 @@
 #include "auth/service/auth_service_impl.hpp"
 
+#include "auth/crypto/token_crypto.hpp"
+#include "auth/domain/token_claims.hpp"
 #include "securecloud/security/mtls_config.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <string_view>
@@ -204,8 +207,22 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
         return status;
     }
 
-    auto dev_id_res = domain::Uuid::from_string(request->device_id());
-    if (!dev_id_res.has_value()) {
+    std::optional<domain::Uuid> dev_id_res;
+    if (!request->device_id().empty()) {
+        dev_id_res = domain::Uuid::from_string(request->device_id());
+        if (!dev_id_res.has_value()) {
+            if (audit_publisher_) {
+                publish_audit_event(context,
+                                    domain::AuditEvent::login_failed(id_res->value(), "Invalid device UUID format",
+                                                                     std::nullopt, std::nullopt, client_ip));
+            }
+            auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid device UUID format");
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            log_rpc_execution("Authenticate", context, status, duration);
+            return status;
+        }
+    } else if (!device_manager_) {
         if (audit_publisher_) {
             publish_audit_event(context, domain::AuditEvent::login_failed(id_res->value(), "Invalid device UUID format",
                                                                           std::nullopt, std::nullopt, client_ip));
@@ -221,7 +238,7 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
     if (auth_result.status == domain::AuthenticationStatus::InvalidCredentials) {
         if (audit_publisher_) {
             publish_audit_event(context, domain::AuditEvent::login_failed(id_res->value(), "Invalid credentials",
-                                                                          std::nullopt, *dev_id_res, client_ip));
+                                                                          std::nullopt, dev_id_res, client_ip));
         }
         auto status = ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED, "Invalid credentials");
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -234,7 +251,7 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
             auth_result.user.has_value() ? std::make_optional(auth_result.user->user_id) : std::nullopt;
         if (audit_publisher_) {
             publish_audit_event(context, domain::AuditEvent::account_disabled_attempt(
-                                             uid, id_res->value(), "Account is disabled", *dev_id_res, client_ip));
+                                             uid, id_res->value(), "Account is disabled", dev_id_res, client_ip));
         }
         auto status = ::grpc::Status(::grpc::StatusCode::PERMISSION_DENIED, "Account is disabled");
         auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
@@ -249,8 +266,18 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
         return status;
     }
 
-    // 3. Session Establishment
+    // 3. Session Establishment (provision keyless Active bootstrap device on initial login if omitted)
     const auto& user = auth_result.user.value();
+    if (!dev_id_res.has_value()) {
+        dev_id_res = device_manager_->provision_bootstrap_device(user.user_id, client_ip);
+        if (!dev_id_res.has_value()) {
+            auto status = ::grpc::Status(::grpc::StatusCode::INTERNAL, "Failed to provision bootstrap device");
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            log_rpc_execution("Authenticate", context, status, duration);
+            return status;
+        }
+    }
     auto session_result = session_manager_->establish_session(user, *dev_id_res);
     if (session_result.status == SessionEstablishmentStatus::DeviceNotFound) {
         if (audit_publisher_) {
@@ -297,6 +324,7 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
 
         response->set_session_id(session.session_id.to_string());
         response->set_user_id(user.user_id.to_string());
+        response->set_device_id(session.device_id.to_string());
         response->set_authentication_level(securecloud::auth::v1::AUTHENTICATION_LEVEL_PRIMARY);
         response->set_mfa_required(true);
         response->set_mfa_challenge_id(challenge.mfa_challenge_id.to_string());
@@ -315,6 +343,7 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
     // MFA is NOT enabled: Issue primary-only tokens
     response->set_session_id(session.session_id.to_string());
     response->set_user_id(user.user_id.to_string());
+    response->set_device_id(session.device_id.to_string());
     response->set_authentication_level(securecloud::auth::v1::AUTHENTICATION_LEVEL_PRIMARY);
     auto expires_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(session.expires_at.time_since_epoch()).count();
@@ -355,26 +384,95 @@ void AuthServiceImpl::log_rpc_execution(std::string_view rpc_name, const ::grpc:
         return status;
     }
 
-    auto session_id_res = domain::Uuid::from_string(request->session_id());
-    if (!session_id_res.has_value()) {
-        auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid session_id UUID format");
-        auto duration = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
-        log_rpc_execution("ValidateSession", context, status, duration);
-        return status;
+    std::optional<domain::Uuid> session_id_res;
+    std::optional<domain::Uuid> expected_device_id;
+    std::optional<domain::AccessTokenClaims> verified_claims;
+
+    if (!request->access_token().empty() && token_manager_ && token_manager_->signer()) {
+        auto verifier = crypto::Ed25519TokenVerifier::from_signer(*token_manager_->signer());
+        domain::TokenParseOptions parse_opts;
+        parse_opts.current_time = std::chrono::system_clock::now();
+        auto parse_res =
+            domain::TokenEnvelopeParser::parse_and_validate(request->access_token(), *verifier, parse_opts);
+        if (!parse_res.is_valid()) {
+            if (parse_res.status == domain::TokenValidationStatus::Expired) {
+                response->set_is_valid(false);
+                auto status = ::grpc::Status::OK;
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+                log_rpc_execution("ValidateSession", context, status, duration);
+                return status;
+            }
+            auto status =
+                ::grpc::Status(::grpc::StatusCode::UNAUTHENTICATED,
+                               parse_res.error_message.empty() ? "Invalid access token" : parse_res.error_message);
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            log_rpc_execution("ValidateSession", context, status, duration);
+            return status;
+        }
+
+        const auto& claims = *parse_res.claims;
+        if (!request->session_id().empty()) {
+            auto explicit_sid = domain::Uuid::from_string(request->session_id());
+            if (!explicit_sid.has_value()) {
+                auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid session_id UUID format");
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+                log_rpc_execution("ValidateSession", context, status, duration);
+                return status;
+            }
+            if (*explicit_sid != claims.session_id) {
+                response->set_is_valid(false);
+                auto status = ::grpc::Status::OK;
+                auto duration =
+                    std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+                log_rpc_execution("ValidateSession", context, status, duration);
+                return status;
+            }
+        }
+
+        session_id_res = claims.session_id;
+        expected_device_id = claims.device_id;
+        verified_claims = claims;
+    } else {
+        session_id_res = domain::Uuid::from_string(request->session_id());
+        if (!session_id_res.has_value()) {
+            auto status = ::grpc::Status(::grpc::StatusCode::INVALID_ARGUMENT, "Invalid session_id UUID format");
+            auto duration =
+                std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start);
+            log_rpc_execution("ValidateSession", context, status, duration);
+            return status;
+        }
     }
 
-    auto result = session_manager_->validate_session(*session_id_res);
+    auto result = session_manager_->validate_session(*session_id_res, expected_device_id);
     if (result.is_valid() && result.session.has_value()) {
         const auto& session = *result.session;
+        const bool effective_mfa = (session.authentication_level == domain::AuthenticationLevel::MfaVerified) &&
+                                   (!verified_claims.has_value() ||
+                                    verified_claims->authentication_level == domain::AuthenticationLevel::MfaVerified);
+        int64_t expires_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(session.expires_at.time_since_epoch()).count();
+        if (verified_claims.has_value()) {
+            const int64_t token_exp_ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(verified_claims->expires_at.time_since_epoch())
+                    .count();
+            expires_ms = std::min(expires_ms, token_exp_ms);
+        }
+
         response->set_is_valid(true);
         response->set_user_id(session.user_id.to_string());
         response->set_device_id(session.device_id.to_string());
-        response->set_authentication_level(session.authentication_level == domain::AuthenticationLevel::MfaVerified
-                                               ? securecloud::auth::v1::AUTHENTICATION_LEVEL_MFA_VERIFIED
-                                               : securecloud::auth::v1::AUTHENTICATION_LEVEL_PRIMARY);
-        auto expires_ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(session.expires_at.time_since_epoch()).count();
+        response->set_session_id(session.session_id.to_string());
+        response->set_authentication_level(effective_mfa ? securecloud::auth::v1::AUTHENTICATION_LEVEL_MFA_VERIFIED
+                                                         : securecloud::auth::v1::AUTHENTICATION_LEVEL_PRIMARY);
         response->set_expires_at_epoch_ms(expires_ms);
+        if (verified_claims.has_value()) {
+            for (const auto& scope : verified_claims->scopes) {
+                response->add_scopes(scope);
+            }
+        }
     } else {
         response->set_is_valid(false);
     }
@@ -1158,9 +1256,16 @@ AuthServiceImpl::GetPrekeyInventoryStatus(::grpc::ServerContext* context,
 
     domain::AuthenticationLevel caller_auth_level = extract_caller_auth_level(context);
     std::string client_ip = context ? context->peer() : "unknown";
+    const auto caller_device_id = extract_caller_device_id(context);
 
-    auto enroll_res =
-        device_manager_->enroll_device(*user_id_res, id_key, spk, sig, otks, caller_auth_level, client_ip);
+    DeviceEnrollmentResult enroll_res;
+    if (caller_device_id.has_value() &&
+        device_manager_->is_bootstrap_device_awaiting_keys(*user_id_res, *caller_device_id)) {
+        enroll_res = device_manager_->enroll_device_keys_for_existing(*user_id_res, *caller_device_id, id_key, spk, sig,
+                                                                      otks, client_ip);
+    } else {
+        enroll_res = device_manager_->enroll_device(*user_id_res, id_key, spk, sig, otks, caller_auth_level, client_ip);
+    }
 
     if (!enroll_res.success) {
         auto status =

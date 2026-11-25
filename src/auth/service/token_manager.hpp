@@ -26,7 +26,9 @@ struct TokenManagerConfig {
     std::chrono::seconds refresh_token_ttl{std::chrono::hours(24 * 7)};
     std::string issuer{"https://auth.securecloud.io"};
     std::string audience{"https://gateway.securecloud.io"};
-    std::vector<std::string> default_scopes{"access", "files:read", "files:write"};
+    std::vector<std::string> default_scopes{"access",        "user:profile",   "messages:read",
+                                            "messages:send", "messages:write", "files:read",
+                                            "files:write",   "files:upload",   "files:delete"};
     std::chrono::seconds concurrency_grace_window{std::chrono::seconds(5)};
 };
 

@@ -306,6 +306,11 @@ FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ctx, const v1::
 
     std::string target_file_id = request->file_id().empty() ? generate_uuid_v7() : request->file_id();
 
+    const std::string resolved_algorithm =
+        (request->encryption_version().empty() || request->encryption_version() == "v1")
+            ? std::string(k_approved_encryption_algorithm)
+            : request->encryption_version();
+
     CreateFileRequestDto dto{
         .file_id = target_file_id,
         .owner_user_id = request->owner_user_id(),
@@ -314,8 +319,7 @@ FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ctx, const v1::
             request->conversation_id().empty() ? std::nullopt : std::make_optional(request->conversation_id()),
         .encrypted_size_bytes = request->encrypted_size_bytes(),
         .expected_chunk_count = request->expected_chunk_count(),
-        .encryption_algorithm = request->encryption_version().empty() ? std::string(k_approved_encryption_algorithm)
-                                                                      : request->encryption_version(),
+        .encryption_algorithm = resolved_algorithm,
         .encrypted_filename = {},
         .encrypted_mime_type = std::nullopt,
         .metadata_nonce = {},
