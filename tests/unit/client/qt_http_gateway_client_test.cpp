@@ -590,6 +590,8 @@ TEST_F(QtHttpGatewayClientTest, Tls13HealthProbeAndAuthenticatedRestContracts) {
         .conversation_id = ConversationId("conv-live-01"),
         .encrypted_size_bytes = 22U,
         .expected_chunk_count = 1U,
+        .encryption_version = "v1",
+        .client_crypto_metadata = "",
     });
     ASSERT_TRUE(init_res.is_ok()) << init_res.error().to_string();
     EXPECT_EQ(init_res.value().upload_id, "up-live-1");

@@ -214,6 +214,7 @@ TEST(X3dhEngineTest, TamperedSignedPrekeySignatureRejected) {
         .signed_prekey_signature = std::move(corrupted_sig),
         .one_time_prekey = std::nullopt,
         .one_time_prekey_id = "",
+        .identity_key_fingerprint = "",
     };
 
     auto init_res = X3dhEngine::initiate_handshake(crypto, alice_bundle, corrupted_entry);
@@ -237,6 +238,7 @@ TEST(X3dhEngineTest, ConsumedOtpkReplayRejected) {
         .signed_prekey_signature = bob_bundle.signed_prekey_signature(),
         .one_time_prekey = bob_otpk_res.value().front().record.public_key(),
         .one_time_prekey_id = "1",
+        .identity_key_fingerprint = "",
     };
 
     auto init_res = X3dhEngine::initiate_handshake(crypto, alice_bundle, bob_entry);
@@ -268,6 +270,7 @@ TEST(X3dhEngineTest, StubCryptoProviderParity) {
         .signed_prekey_signature = bob_bundle.signed_prekey_signature(),
         .one_time_prekey = bob_otpk_res.value().front().record.public_key(),
         .one_time_prekey_id = "1",
+        .identity_key_fingerprint = "",
     };
 
     auto init_res = X3dhEngine::initiate_handshake(stub, alice_bundle, bob_entry);

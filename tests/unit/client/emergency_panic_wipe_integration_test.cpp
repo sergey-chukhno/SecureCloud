@@ -71,6 +71,7 @@ DeviceCryptoDirectoryEntry seed_device_bundle(ISecureStorage& storage, OpenSslCr
         .signed_prekey_signature = spk.signature,
         .one_time_prekey = otk.public_key,
         .one_time_prekey_id = did.value() + "-otk-1",
+        .identity_key_fingerprint = "",
     };
 }
 

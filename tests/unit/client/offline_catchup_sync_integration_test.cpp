@@ -69,6 +69,7 @@ void init_e2e_peer(E2ePeerIdentity& peer, OpenSslCryptoProvider& crypto, const s
         .signed_prekey_signature = spk.signature,
         .one_time_prekey = otk.public_key,
         .one_time_prekey_id = did + "-otk-1",
+        .identity_key_fingerprint = "",
     };
 }
 
@@ -332,8 +333,12 @@ TEST_F(OfflineCatchUpSyncIntegrationTest, Scenario2_MultiPageCatchUpSync125Event
             ev.actor_device_id = bob_dev;
             ev.server_sequence_number = seq;
             ev.direct_payload = crypto::PerDeviceDeliveryPayload{
+                .recipient_user_id = {},
                 .recipient_device_id = alice_dev,
                 .ciphertext_blob = crypto.encrypt_message(bob_dev, "Delta #" + std::to_string(seq)).value(),
+                .ephemeral_public_key = {},
+                .iv = {},
+                .auth_tag = {},
             };
             events.push_back(std::move(ev));
         }
@@ -397,8 +402,12 @@ TEST_F(OfflineCatchUpSyncIntegrationTest, Scenario3_IdempotentDeduplicationAndMo
     msg_ev.actor_device_id = bob_dev;
     msg_ev.server_sequence_number = 10ULL;
     msg_ev.direct_payload = crypto::PerDeviceDeliveryPayload{
+        .recipient_user_id = {},
         .recipient_device_id = alice_dev,
         .ciphertext_blob = crypto.encrypt_message(bob_dev, "Single copy only").value(),
+        .ephemeral_public_key = {},
+        .iv = {},
+        .auth_tag = {},
     };
 
     // Deliver once via real-time path, then replay in catch-up page alongside Read -> stale Delivered
@@ -472,6 +481,7 @@ TEST_F(OfflineCatchUpSyncIntegrationTest, Scenario4_RemoteGroupKeyChangeAndInter
                                     .owner_device_id = alice_dev,
                                     .peer_user_id = bob,
                                     .local_file_path = upload_path.string(),
+                                    .sender_display_name = "",
                                     .dispatch_key_envelope = false,
                                 })
                     .is_error());
@@ -563,8 +573,12 @@ TEST_F(OfflineCatchUpSyncIntegrationTest, Scenario5_FullWorkspaceAndAppViewModel
     ev.actor_device_id = DeviceId("peer-dev-1");
     ev.server_sequence_number = 77ULL;
     ev.direct_payload = crypto::PerDeviceDeliveryPayload{
+        .recipient_user_id = {},
         .recipient_device_id = DeviceId("dev-local-01"),
         .ciphertext_blob = crypto_ptr->encrypt_message(DeviceId("peer-dev-1"), "Incoming E2E catch-up").value(),
+        .ephemeral_public_key = {},
+        .iv = {},
+        .auth_tag = {},
     };
     gateway_ptr->set_simulated_conversation_messages(ev.conversation_id, {ev});
 

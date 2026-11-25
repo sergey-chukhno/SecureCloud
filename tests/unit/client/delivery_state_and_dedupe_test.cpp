@@ -86,8 +86,12 @@ TEST(DeliveryStateAndDedupeTest, InboundRealtimeEventDeduplicatesAtLeastOnceDeli
     ev.actor_device_id = bob_dev;
     ev.server_sequence_number = 77;
     ev.direct_payload = crypto::PerDeviceDeliveryPayload{
+        .recipient_user_id = {},
         .recipient_device_id = DeviceId("alice-dev-1"),
         .ciphertext_blob = enc,
+        .ephemeral_public_key = {},
+        .iv = {},
+        .auth_tag = {},
     };
 
     auto first = mm.process_inbound_realtime_event(ev);

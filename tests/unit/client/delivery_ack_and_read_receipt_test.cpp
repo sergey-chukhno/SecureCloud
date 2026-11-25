@@ -36,8 +36,12 @@ TEST(DeliveryAckAndReadReceiptTest, InboundPersistenceDispatchesTransportDeliver
     ev.actor_device_id = bob_dev;
     ev.server_sequence_number = 10;
     ev.direct_payload = crypto::PerDeviceDeliveryPayload{
+        .recipient_user_id = {},
         .recipient_device_id = DeviceId("alice-dev-1"),
         .ciphertext_blob = crypto.encrypt_message(bob_dev, "Ping").value(),
+        .ephemeral_public_key = {},
+        .iv = {},
+        .auth_tag = {},
     };
 
     ASSERT_TRUE(mm.process_inbound_realtime_event(ev).is_ok());
@@ -81,8 +85,12 @@ TEST(DeliveryAckAndReadReceiptTest, ReadReceiptPolicyGatedAndPersistedInSecureSt
         ev.actor_device_id = bob_dev;
         ev.server_sequence_number = 1;
         ev.direct_payload = crypto::PerDeviceDeliveryPayload{
+            .recipient_user_id = {},
             .recipient_device_id = alice_dev,
             .ciphertext_blob = crypto.encrypt_message(bob_dev, "First").value(),
+            .ephemeral_public_key = {},
+            .iv = {},
+            .auth_tag = {},
         };
         ASSERT_TRUE(mm.process_inbound_realtime_event(ev).is_ok());
 
@@ -112,8 +120,12 @@ TEST(DeliveryAckAndReadReceiptTest, ReadReceiptPolicyGatedAndPersistedInSecureSt
     ev2.actor_device_id = bob_dev;
     ev2.server_sequence_number = 2;
     ev2.direct_payload = crypto::PerDeviceDeliveryPayload{
+        .recipient_user_id = {},
         .recipient_device_id = alice_dev,
         .ciphertext_blob = crypto.encrypt_message(bob_dev, "Second").value(),
+        .ephemeral_public_key = {},
+        .iv = {},
+        .auth_tag = {},
     };
     ASSERT_TRUE(restarted_mm.process_inbound_realtime_event(ev2).is_ok());
     // Transport ACK still sent even when read receipts are disabled

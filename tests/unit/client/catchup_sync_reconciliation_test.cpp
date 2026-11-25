@@ -145,8 +145,12 @@ TEST_F(CatchUpSyncReconciliationTest, MultiPageCatchUpSyncPersistsCursorsAcrossR
             ev.actor_device_id = bob_dev;
             ev.server_sequence_number = seq;
             ev.direct_payload = crypto::PerDeviceDeliveryPayload{
+                .recipient_user_id = {},
                 .recipient_device_id = alice_dev,
                 .ciphertext_blob = crypto.encrypt_message(bob_dev, "Payload #" + std::to_string(seq)).value(),
+                .ephemeral_public_key = {},
+                .iv = {},
+                .auth_tag = {},
             };
             remote_events.push_back(std::move(ev));
         }
@@ -295,6 +299,7 @@ TEST_F(CatchUpSyncReconciliationTest, FullFourPhaseCatchUpFlushesOutboxResumesFi
                                                   .signed_prekey_signature = bob_spk.signature,
                                                   .one_time_prekey = bob_otk.public_key,
                                                   .one_time_prekey_id = "bob-otk-1",
+                                                  .identity_key_fingerprint = "",
                                               }});
     auto alice_ik = crypto.generate_identity_keypair().value();
     auto alice_spk = crypto.generate_signed_prekey(alice_ik.private_key).value();
@@ -332,6 +337,7 @@ TEST_F(CatchUpSyncReconciliationTest, FullFourPhaseCatchUpFlushesOutboxResumesFi
                                     .owner_device_id = alice_dev,
                                     .peer_user_id = bob,
                                     .local_file_path = upload_file.string(),
+                                    .sender_display_name = "",
                                     .dispatch_key_envelope = false,
                                 })
                     .is_error());
@@ -366,8 +372,12 @@ TEST_F(CatchUpSyncReconciliationTest, FullFourPhaseCatchUpFlushesOutboxResumesFi
     file_ev.actor_device_id = bob_dev;
     file_ev.server_sequence_number = 5ULL;
     file_ev.direct_payload = crypto::PerDeviceDeliveryPayload{
+        .recipient_user_id = {},
         .recipient_device_id = alice_dev,
         .ciphertext_blob = crypto.encrypt_message(bob_dev, inbound_env.serialize()).value(),
+        .ephemeral_public_key = {},
+        .iv = {},
+        .auth_tag = {},
     };
     gateway.set_simulated_conversation_messages(cid, {file_ev});
 
