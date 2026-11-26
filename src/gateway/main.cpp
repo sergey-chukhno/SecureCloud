@@ -282,16 +282,16 @@ int run_service() {
     auto auth_proxy = std::make_shared<securecloud::gateway::http::AuthProxyHandler>(
         auth_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("auth"));
 
-    auto files_channel = channel_manager.get_files_channel();
-    auto files_client = std::make_shared<securecloud::gateway::grpc::FilesServiceClient>(files_channel);
-    auto files_proxy = std::make_shared<securecloud::gateway::http::FilesProxyHandler>(
-        files_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("files"),
-        config.streaming);
-
     auto messaging_channel = channel_manager.get_messaging_channel();
     auto messaging_client = std::make_shared<securecloud::gateway::grpc::MessagingServiceClient>(messaging_channel);
     auto messaging_proxy = std::make_shared<securecloud::gateway::http::MessagingProxyHandler>(
         messaging_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("messaging"));
+
+    auto files_channel = channel_manager.get_files_channel();
+    auto files_client = std::make_shared<securecloud::gateway::grpc::FilesServiceClient>(files_channel);
+    auto files_proxy = std::make_shared<securecloud::gateway::http::FilesProxyHandler>(
+        files_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("files"),
+        config.streaming, messaging_client);
 
     securecloud::gateway::http::GatewayRouteRegistrar route_registrar(auth_proxy, health_manager, bulkhead_manager,
                                                                       files_proxy, messaging_proxy);

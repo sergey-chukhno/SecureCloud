@@ -44,10 +44,12 @@ FilesProxyHandler::FilesProxyHandler(std::shared_ptr<grpc::IFilesClient> files_c
                                      std::shared_ptr<RetryPolicy> retry_policy,
                                      std::shared_ptr<BulkheadManager> bulkhead_manager,
                                      std::shared_ptr<CircuitBreaker> circuit_breaker,
-                                     GatewayStreamingConfig streaming_config)
-    : files_client_(std::move(files_client)), deadline_manager_(std::move(deadline_manager)),
-      retry_policy_(std::move(retry_policy)), bulkhead_manager_(std::move(bulkhead_manager)),
-      circuit_breaker_(std::move(circuit_breaker)), streaming_config_(streaming_config) {}
+                                     GatewayStreamingConfig streaming_config,
+                                     std::shared_ptr<grpc::IMessagingClient> messaging_client)
+    : files_client_(std::move(files_client)), messaging_client_(std::move(messaging_client)),
+      deadline_manager_(std::move(deadline_manager)), retry_policy_(std::move(retry_policy)),
+      bulkhead_manager_(std::move(bulkhead_manager)), circuit_breaker_(std::move(circuit_breaker)),
+      streaming_config_(streaming_config) {}
 
 std::string FilesProxyHandler::extract_request_id(const httplib::Request& req) {
     if (const auto* rc = RequestContext::current()) {
@@ -297,6 +299,30 @@ void FilesProxyHandler::handle_upload_init(const httplib::Request& req, httplib:
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
     populate_call_metadata(call_ctx, ctx, request_id);
+
+    if (messaging_client_ && !grpc_req.conversation_id().empty()) {
+        securecloud::messaging::v1::GetConversationRequest conv_req;
+        conv_req.set_conversation_id(grpc_req.conversation_id());
+        grpc::ClientCallContext conv_ctx(timeout);
+        conv_ctx.add_metadata("x-user-id", ctx.user_id());
+        conv_ctx.add_metadata("x-correlation-id", request_id);
+        auto conv_res = messaging_client_->get_conversation(conv_req, conv_ctx);
+        if (conv_res.has_value()) {
+            std::string grantees_csv;
+            for (const auto& pid : conv_res.value().conversation().participant_user_ids()) {
+                if (!pid.empty() && pid != owner_user) {
+                    if (!grantees_csv.empty()) {
+                        grantees_csv.push_back(',');
+                    }
+                    grantees_csv += pid;
+                }
+            }
+            if (!grantees_csv.empty()) {
+                call_ctx.add_metadata("x-file-grantee-user-ids", grantees_csv);
+            }
+        }
+    }
+
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->create_file_upload(grpc_req, call_ctx);
@@ -412,6 +438,7 @@ void FilesProxyHandler::handle_upload_chunk(const httplib::Request& req, httplib
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
     populate_call_metadata(call_ctx, ctx, request_id);
+
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->upload_chunk(grpc_req, call_ctx);
@@ -488,6 +515,7 @@ void FilesProxyHandler::handle_upload_finalize(const httplib::Request& req, http
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
     populate_call_metadata(call_ctx, ctx, request_id);
+
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->finalize_file_upload(grpc_req, call_ctx);
@@ -556,6 +584,7 @@ void FilesProxyHandler::handle_upload_cancel(const httplib::Request& req, httpli
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
     populate_call_metadata(call_ctx, ctx, request_id);
+
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->cancel_file_upload(grpc_req, call_ctx);
@@ -612,6 +641,7 @@ void FilesProxyHandler::handle_get_metadata(const httplib::Request& req, httplib
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
     populate_call_metadata(call_ctx, ctx, request_id);
+
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->get_file_metadata(grpc_req, call_ctx);
@@ -878,6 +908,7 @@ void FilesProxyHandler::handle_delete_file(const httplib::Request& req, httplib:
     const auto timeout = compute_timeout(req);
     grpc::ClientCallContext call_ctx(timeout);
     populate_call_metadata(call_ctx, ctx, request_id);
+
     ActiveCallGuard call_guard(*this, request_id, call_ctx);
 
     auto result = files_client_->delete_file(grpc_req, call_ctx);

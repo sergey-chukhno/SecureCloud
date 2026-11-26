@@ -4,6 +4,7 @@
 #include "grpc/client_call_context.hpp"
 #include "grpc/dependency_error.hpp"
 #include "grpc/files_client_interface.hpp"
+#include "grpc/messaging_client_interface.hpp"
 #include "http/auth/authenticated_context.hpp"
 #include "http/resilience/bulkhead_manager.hpp"
 #include "http/resilience/circuit_breaker.hpp"
@@ -40,7 +41,8 @@ class FilesProxyHandler {
                                std::shared_ptr<RetryPolicy> retry_policy = nullptr,
                                std::shared_ptr<BulkheadManager> bulkhead_manager = nullptr,
                                std::shared_ptr<CircuitBreaker> circuit_breaker = nullptr,
-                               GatewayStreamingConfig streaming_config = {});
+                               GatewayStreamingConfig streaming_config = {},
+                               std::shared_ptr<grpc::IMessagingClient> messaging_client = nullptr);
     ~FilesProxyHandler() = default;
 
     FilesProxyHandler(const FilesProxyHandler&) = delete;
@@ -99,6 +101,7 @@ class FilesProxyHandler {
                           const std::string& request_id) const;
 
     std::shared_ptr<grpc::IFilesClient> files_client_;
+    std::shared_ptr<grpc::IMessagingClient> messaging_client_;
     std::shared_ptr<DeadlineManager> deadline_manager_;
     std::shared_ptr<RetryPolicy> retry_policy_;
     std::shared_ptr<BulkheadManager> bulkhead_manager_;

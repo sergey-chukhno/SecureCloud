@@ -283,6 +283,8 @@ ClientResult<domain::CatchUpSyncReport> SyncManager::execute_catch_up_sync(const
     auto fail_offline = [this](const ClientError& err) -> ClientResult<domain::CatchUpSyncReport> {
         if (err.category() == ClientErrorCategory::Network) {
             (void)transition_connectivity_state(domain::ConnectivityState::Offline);
+        } else {
+            (void)transition_connectivity_state(domain::ConnectivityState::Online);
         }
         return ClientResult<domain::CatchUpSyncReport>::error(err);
     };

@@ -355,6 +355,45 @@ FilesServiceImpl::CreateFileUpload(const grpc::AuthContext* auth_ctx, const v1::
         return status;
     }
 
+    auto grantees_range = client_metadata.equal_range("x-file-grantee-user-ids");
+    for (auto it = grantees_range.first; it != grantees_range.second; ++it) {
+        std::string_view raw(it->second.data(), it->second.length());
+        size_t start = 0;
+        while (start < raw.size()) {
+            const size_t comma = raw.find(',', start);
+            std::string_view token =
+                (comma == std::string_view::npos) ? raw.substr(start) : raw.substr(start, comma - start);
+            while (!token.empty() && token.front() == ' ') {
+                token.remove_prefix(1);
+            }
+            while (!token.empty() && token.back() == ' ') {
+                token.remove_suffix(1);
+            }
+            if (!token.empty() && token != request->owner_user_id() && is_valid_uuid(std::string(token))) {
+                try {
+                    FileAccessEntity grant{
+                        .access_id = generate_uuid_v7(),
+                        .file_id = target_file_id,
+                        .grantee_user_id = std::string(token),
+                        .grantee_device_id = std::nullopt,
+                        .permission = FilePermission::Read,
+                        .granted_by = request->owner_user_id(),
+                        .granted_at = now,
+                        .revoked_at = std::nullopt,
+                    };
+                    deps_.lifecycle_service->grant_file_access(grant, "conversation_upload");
+                } catch (const std::exception& ex) {
+                    std::cerr << "[SecureCloud] [files] Warning: Failed to grant file read access: " << ex.what()
+                              << "\n";
+                }
+            }
+            if (comma == std::string_view::npos) {
+                break;
+            }
+            start = comma + 1;
+        }
+    }
+
     std::string upload_id = generate_uuid_v7();
     auto expiry_tp = now + std::chrono::hours(24);
     int64_t expires_ms = std::chrono::duration_cast<std::chrono::milliseconds>(expiry_tp.time_since_epoch()).count();
