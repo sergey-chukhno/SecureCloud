@@ -8,6 +8,13 @@ services:
     environment:
       SECURECLOUD_GRPC_HOST: "0.0.0.0"
       SECURECLOUD_GATEWAY_GRPC_PORT: "50051"
+      SECURECLOUD_GATEWAY_HTTP_HOST: "0.0.0.0"
+      SECURECLOUD_GATEWAY_HTTP_PORT: "8080"
+      SECURECLOUD_GATEWAY_HTTPS_PORT: "8443"
+      SECURECLOUD_GATEWAY_TLS_ENABLED: ${SECURECLOUD_GATEWAY_TLS_ENABLED:-true}
+      SECURECLOUD_GATEWAY_TLS_CERT_PATH: /etc/securecloud/certs/service.crt
+      SECURECLOUD_GATEWAY_TLS_KEY_PATH: /etc/securecloud/certs/service.key
+      SECURECLOUD_GATEWAY_TLS_CA_PATH: /etc/securecloud/certs/ca.crt
       SECURECLOUD_CA_CERT_PATH: /etc/securecloud/certs/ca.crt
       SECURECLOUD_SERVICE_CERT_PATH: /etc/securecloud/certs/service.crt
       SECURECLOUD_SERVICE_KEY_PATH: /etc/securecloud/certs/service.key
@@ -15,6 +22,10 @@ services:
       SECURECLOUD_GATEWAY_MESSAGING_ENDPOINT: messaging:50053
       SECURECLOUD_GATEWAY_FILES_ENDPOINT: files:50054
       SECURECLOUD_GATEWAY_AUDIT_ENDPOINT: audit:50055
+      SECURECLOUD_GATEWAY_AUDIT_MODE: ${SECURECLOUD_GATEWAY_AUDIT_MODE:-spool}
+      SECURECLOUD_GATEWAY_AUDIT_SPOOL_DIR: /var/spool/securecloud/gateway/audit
+      SECURECLOUD_GATEWAY_AUDIT_MAX_SPOOL_BYTES: ${SECURECLOUD_GATEWAY_AUDIT_MAX_SPOOL_BYTES:-1073741824}
+      SECURECLOUD_GATEWAY_AUDIT_MAX_SPOOL_RECORDS: ${SECURECLOUD_GATEWAY_AUDIT_MAX_SPOOL_RECORDS:-100000}
       SECURECLOUD_GATEWAY_PEER_PROBE_TARGET: ${SECURECLOUD_GATEWAY_PEER_PROBE_TARGET:-auth:50052}
       SECURECLOUD_GATEWAY_PEER_PROBE_NAME: ${SECURECLOUD_GATEWAY_PEER_PROBE_NAME:-auth}
     volumes:
@@ -36,12 +47,19 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      - gateway-audit-spool:/var/spool/securecloud/gateway/audit
     networks:
       - securecloud-dev
     ports:
+      - "127.0.0.1:${GATEWAY_HTTPS_HOST_PORT:-8443}:8443"
+      - "127.0.0.1:${GATEWAY_HTTP_HOST_PORT:-8080}:8080"
       - "127.0.0.1:${GATEWAY_HOST_PORT:-50051}:50051"
     depends_on:
       auth:
+        condition: service_started
+      messaging:
+        condition: service_started
+      files:
         condition: service_started
 
   auth:
@@ -59,6 +77,10 @@ services:
       SECURECLOUD_AUTH_DB_NAME: ${AUTH_DB_NAME:-securecloud_auth}
       SECURECLOUD_AUTH_DB_USER: ${AUTH_DB_USER:-auth_user}
       SECURECLOUD_AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth_dev_db_secret}
+      SECURECLOUD_AUTH_AUDIT_ENDPOINT: audit:50055
+      SECURECLOUD_AUTH_AUDIT_PEER_SAN: audit
+      SECURECLOUD_AUTH_INSTANCE_ID: ${SECURECLOUD_AUTH_INSTANCE_ID:-auth-1}
+      SECURECLOUD_AUTH_OUTBOX_RELAY_ENABLED: ${SECURECLOUD_AUTH_OUTBOX_RELAY_ENABLED:-true}
     volumes:
       - type: bind
         source: ../../deploy/dev-pki/ca/ca.crt
@@ -85,6 +107,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      postgres-migrate:
+        condition: service_completed_successfully
 
   messaging:
     build:
@@ -99,6 +123,19 @@ services:
       SECURECLOUD_MESSAGING_SCYLLA_HOST: scylladb
       SECURECLOUD_MESSAGING_SCYLLA_PORT: "9042"
       SECURECLOUD_MESSAGING_SCYLLA_KEYSPACE: ${MESSAGING_SCYLLA_KEYSPACE:-securecloud_messaging}
+      SECURECLOUD_MESSAGING_AUTH_ENDPOINT: auth:50052
+      SECURECLOUD_MESSAGING_AUTH_PEER_SAN: auth
+      SECURECLOUD_MESSAGING_AUDIT_ENDPOINT: audit:50055
+      SECURECLOUD_MESSAGING_AUDIT_PEER_SAN: audit
+      SECURECLOUD_MESSAGING_AUDIT_INSTANCE_ID: ${SECURECLOUD_MESSAGING_AUDIT_INSTANCE_ID:-messaging-1}
+      SECURECLOUD_MESSAGING_AUDIT_RELAY_ENABLED: ${SECURECLOUD_MESSAGING_AUDIT_RELAY_ENABLED:-true}
+      SECURECLOUD_MESSAGING_AUDIT_WORKER_THREADS: ${SECURECLOUD_MESSAGING_AUDIT_WORKER_THREADS:-4}
+      SECURECLOUD_MESSAGING_AUDIT_BATCH_SIZE: ${SECURECLOUD_MESSAGING_AUDIT_BATCH_SIZE:-100}
+      SECURECLOUD_MESSAGING_AUDIT_MAX_RETRIES: ${SECURECLOUD_MESSAGING_AUDIT_MAX_RETRIES:-5}
+      SECURECLOUD_MESSAGING_AUDIT_ACTIVE_POLL_INTERVAL_MS: ${SECURECLOUD_MESSAGING_AUDIT_ACTIVE_POLL_INTERVAL_MS:-50}
+      SECURECLOUD_MESSAGING_AUDIT_IDLE_POLL_INTERVAL_MS: ${SECURECLOUD_MESSAGING_AUDIT_IDLE_POLL_INTERVAL_MS:-500}
+      SECURECLOUD_MESSAGING_AUDIT_LEASE_DURATION_SEC: ${SECURECLOUD_MESSAGING_AUDIT_LEASE_DURATION_SEC:-30}
+      SECURECLOUD_MESSAGING_AUDIT_RPC_TIMEOUT_MS: ${SECURECLOUD_MESSAGING_AUDIT_RPC_TIMEOUT_MS:-5000}
     volumes:
       - type: bind
         source: ../../deploy/dev-pki/ca/ca.crt
@@ -125,6 +162,8 @@ services:
     depends_on:
       scylladb:
         condition: service_healthy
+      scylla-init:
+        condition: service_completed_successfully
 
   files:
     build:
@@ -145,6 +184,10 @@ services:
       SECURECLOUD_FILES_S3_BUCKET: ${FILES_MINIO_BUCKET:-securecloud-files-encrypted}
       SECURECLOUD_FILES_S3_ACCESS_KEY: ${FILES_MINIO_USER:-files_minio_user}
       SECURECLOUD_FILES_S3_SECRET_KEY: ${FILES_MINIO_PASSWORD:-files_dev_minio_secret}
+      SECURECLOUD_FILES_AUDIT_ENDPOINT: audit:50055
+      SECURECLOUD_FILES_AUDIT_PEER_SAN: audit
+      SECURECLOUD_FILES_AUDIT_RELAY_ENABLED: ${SECURECLOUD_FILES_AUDIT_RELAY_ENABLED:-true}
+      SECURECLOUD_SERVICE_INSTANCE: ${SECURECLOUD_FILES_INSTANCE_ID:-files-1}
     volumes:
       - type: bind
         source: ../../deploy/dev-pki/ca/ca.crt
@@ -171,6 +214,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      postgres-migrate:
+        condition: service_completed_successfully
       minio:
         condition: service_healthy
       minio-init:
@@ -217,6 +262,8 @@ services:
     depends_on:
       clickhouse:
         condition: service_healthy
+      clickhouse-init:
+        condition: service_completed_successfully
 
   postgres:
     image: postgres:17.0-alpine
@@ -249,6 +296,53 @@ services:
       retries: 5
       start_period: 10s
 
+  postgres-migrate:
+    image: postgres:17.0-alpine
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      AUTH_DB_NAME: ${AUTH_DB_NAME:-securecloud_auth}
+      AUTH_DB_USER: ${AUTH_DB_USER:-auth_user}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD:-auth_dev_db_secret}
+      FILES_DB_NAME: ${FILES_DB_NAME:-securecloud_files}
+      FILES_DB_USER: ${FILES_DB_USER:-files_user}
+      FILES_DB_PASSWORD: ${FILES_DB_PASSWORD:-files_dev_db_secret}
+    volumes:
+      - type: bind
+        source: ../../src/auth/db/migrations
+        target: /migrations/auth
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../src/files/db/migrations
+        target: /migrations/files
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - securecloud-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        echo "[postgres-migrate] Applying Auth migrations (V001..V005)..."
+        for f in /migrations/auth/V001*.sql /migrations/auth/V002*.sql /migrations/auth/V003*.sql /migrations/auth/V004*.sql /migrations/auth/V005*.sql; do
+          echo "[postgres-migrate] -> $$f"
+          PGPASSWORD="$$AUTH_DB_PASSWORD" psql -v ON_ERROR_STOP=1 -h "$$PGHOST" -p "$$PGPORT" -U "$$AUTH_DB_USER" -d "$$AUTH_DB_NAME" -f "$$f"
+        done
+        echo "[postgres-migrate] Applying Files migrations (V001..V002)..."
+        for f in /migrations/files/V001*.sql /migrations/files/V002*.sql; do
+          echo "[postgres-migrate] -> $$f"
+          PGPASSWORD="$$FILES_DB_PASSWORD" psql -v ON_ERROR_STOP=1 -h "$$PGHOST" -p "$$PGPORT" -U "$$FILES_DB_USER" -d "$$FILES_DB_NAME" -f "$$f"
+        done
+        echo "[postgres-migrate] All PostgreSQL migrations applied cleanly."
+
   scylladb:
     image: scylladb/scylla:6.0.1
     command: --developer-mode=1 --smp 1 --memory 512M
@@ -266,6 +360,33 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
+
+  scylla-init:
+    image: scylladb/scylla:6.0.1
+    restart: "no"
+    environment:
+      SCYLLA_HOST: scylladb
+      SCYLLA_PORT: "9042"
+      MIGRATIONS_DIR: /migrations/messaging
+    volumes:
+      - type: bind
+        source: ../../src/messaging/db/migrations
+        target: /migrations/messaging
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ../../scripts/init-scylladb-schema.sh
+        target: /init-scylladb-schema.sh
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - securecloud-dev
+    depends_on:
+      scylladb:
+        condition: service_healthy
+    entrypoint: ["/usr/bin/env", "bash", "/init-scylladb-schema.sh"]
 
   clickhouse:
     image: clickhouse/clickhouse-server:24.8.3.59-alpine
@@ -295,6 +416,33 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+
+  clickhouse-init:
+    image: clickhouse/clickhouse-server:24.8.3.59-alpine
+    restart: "no"
+    environment:
+      CLICKHOUSE_ADMIN_USER: ${CLICKHOUSE_ADMIN_USER:-default}
+      CLICKHOUSE_ADMIN_PASSWORD: ${CLICKHOUSE_ADMIN_PASSWORD:-clickhouse_dev_admin_secret}
+    volumes:
+      - type: bind
+        source: ./clickhouse/init-clickhouse.sql
+        target: /init-clickhouse.sql
+        read_only: true
+        bind:
+          create_host_path: false
+    networks:
+      - securecloud-dev
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        echo "[clickhouse-init] Applying idempotent ClickHouse audit schema..."
+        clickhouse-client --host clickhouse --port 9000 --user "$$CLICKHOUSE_ADMIN_USER" --password "$$CLICKHOUSE_ADMIN_PASSWORD" --multiquery < /init-clickhouse.sql
+        echo "[clickhouse-init] ClickHouse audit schema ready."
 
   minio:
     image: quay.io/minio/minio:RELEASE.2024-08-03T04-33-23Z
@@ -344,6 +492,7 @@ networks:
     driver: bridge
 
 volumes:
+  gateway-audit-spool:
   postgres-data:
   scylla-data:
   clickhouse-data:

@@ -1,5 +1,6 @@
 #include "application/managers/device_manager.hpp"
 
+#include "application/managers/local_audit_logger.hpp"
 #include "application/managers/ratchet_session_manager.hpp"
 #include "domain/prekey_policy.hpp"
 #include "infrastructure/adapters/key_storage_helper.hpp"
@@ -20,7 +21,14 @@ DeviceManager::DeviceManager(interfaces::IGatewayClient& gateway, interfaces::IS
 ClientResult<domain::Device> DeviceManager::initialize_or_load_device(const domain::UserId& user_id,
                                                                       std::string_view display_name) {
     if (local_device_.has_value()) {
-        return ClientResult<domain::Device>::ok(*local_device_);
+        if (local_device_->user_id() == user_id) {
+            auto has_bundle_res =
+                infrastructure::adapters::KeyStorageHelper::has_bundle(secure_storage_, local_device_->device_id());
+            if (has_bundle_res.is_ok() && has_bundle_res.value()) {
+                return ClientResult<domain::Device>::ok(*local_device_);
+            }
+        }
+        local_device_.reset();
     }
 
     auto has_id_res = secure_storage_.has_secret(kLocalDeviceIdKey);
@@ -87,12 +95,8 @@ ClientResult<domain::Device> DeviceManager::register_device(const domain::UserId
 
     std::vector<domain::OneTimePrekeyRecord> pub_records;
     pub_records.reserve(otpk_pairs.size());
-    std::unordered_map<std::string, securecloud::common::configuration::SecretString> otpk_privates;
-    otpk_privates.reserve(otpk_pairs.size());
-
-    for (auto& p : otpk_pairs) {
+    for (const auto& p : otpk_pairs) {
         pub_records.push_back(p.record);
-        otpk_privates.emplace(p.record.id(), std::move(p.private_key));
     }
 
     // 4. Package into public PrekeyBundle
@@ -106,6 +110,15 @@ ClientResult<domain::Device> DeviceManager::register_device(const domain::UserId
     }
     const auto& reg_result = reg_res.value();
     const domain::DeviceId assigned_id = reg_result.device_id;
+
+    // Derive deterministic UUIDv5 key_id matching Auth persistence for each uploaded OTPK
+    std::unordered_map<std::string, securecloud::common::configuration::SecretString> otpk_privates;
+    otpk_privates.reserve(otpk_pairs.size());
+    for (auto& p : otpk_pairs) {
+        std::string derived_id =
+            infrastructure::adapters::KeyStorageHelper::derive_one_time_prekey_id(assigned_id, p.record.public_key());
+        otpk_privates.emplace(std::move(derived_id), std::move(p.private_key));
+    }
 
     // 6. Assemble DevicePrivateBundle and store in ISecureStorage
     domain::DevicePrivateBundle priv_bundle(assigned_id, id_pair.public_key, std::move(id_pair.private_key),
@@ -134,6 +147,12 @@ ClientResult<domain::Device> DeviceManager::register_device(const domain::UserId
     std::string dname = display_name.empty() ? "Primary Device" : std::string(display_name);
     local_device_ = domain::Device(assigned_id, user_id, std::move(dname), std::move(identity), reg_result.status,
                                    reg_result.registered_at);
+
+    if (local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::DeviceTrust, "device.registered",
+                                                domain::LocalAuditOutcome::Success, user_id.str(), assigned_id.value(),
+                                                "Local device identity registered");
+    }
 
     return ClientResult<domain::Device>::ok(*local_device_);
 }
@@ -184,6 +203,12 @@ ClientResult<void> DeviceManager::rotate_signed_prekey() {
                            std::move(updated_id), local_device_->status(), local_device_->last_seen_at());
     }
 
+    if (local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::KeyLifecycle, "prekey.signed_rotated",
+                                                domain::LocalAuditOutcome::Success, local_device_->user_id().str(),
+                                                local_device_->device_id().value(), "Signed prekey rotated");
+    }
+
     return ClientResult<void>::ok();
 }
 
@@ -221,6 +246,11 @@ ClientResult<void> DeviceManager::revoke_device(const domain::DeviceId& device_i
         if (ratchet_session_manager_ != nullptr) {
             ratchet_session_manager_->purge_device_sessions(device_id);
         }
+        if (local_audit_logger_ != nullptr) {
+            (void)local_audit_logger_->record_event(domain::LocalAuditCategory::DeviceTrust, "device.local_self_wiped",
+                                                    domain::LocalAuditOutcome::Success, "", device_id.value(),
+                                                    "Local device revoked and wiped");
+        }
         return ClientResult<void>::ok();
     }
 
@@ -236,6 +266,12 @@ ClientResult<void> DeviceManager::revoke_device(const domain::DeviceId& device_i
         if (!purge_res.is_ok()) {
             return purge_res;
         }
+    }
+
+    if (local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::DeviceTrust, "device.revoked",
+                                                domain::LocalAuditOutcome::Success, "", device_id.value(),
+                                                "Device revoked");
     }
 
     return ClientResult<void>::ok();

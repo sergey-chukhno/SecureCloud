@@ -49,7 +49,9 @@ ClientResult<std::size_t> PrekeyLifecycleCoordinator::replenish_one_time_prekeys
 
     for (auto& pair : otpk_pairs) {
         public_records.push_back(pair.record);
-        bundle.add_one_time_prekey(pair.record.id(), std::move(pair.private_key));
+        std::string derived_id =
+            infrastructure::adapters::KeyStorageHelper::derive_one_time_prekey_id(device_id, pair.record.public_key());
+        bundle.add_one_time_prekey(std::move(derived_id), std::move(pair.private_key));
     }
 
     auto save_res = infrastructure::adapters::KeyStorageHelper::save_bundle(secure_storage_, bundle);

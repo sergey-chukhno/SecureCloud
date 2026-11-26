@@ -61,6 +61,11 @@ Item {
         onActivated: navigationController.navigateTo(5) // StyleGuide
     }
     Shortcut {
+        sequence: "Ctrl+Shift+D"
+        enabled: navigationController.isAuthenticated
+        onActivated: navigationController.navigateTo(6) // Diagnostics
+    }
+    Shortcut {
         sequence: "Ctrl+Shift+E"
         enabled: navigationController.isAuthenticated
         onActivated: navShell.emergencyWipeRequested()
@@ -382,7 +387,8 @@ Item {
                     labelText: qsTr("Settings")
                     iconName: "settings"
                     shortcutHint: "Ctrl+4"
-                    isActive: navigationController.currentViewName === "Settings"
+                    isActive: navigationController.currentViewName === "Settings" ||
+                              navigationController.currentViewName === "Diagnostics"
                     onActivated: navigationController.navigateTo(3)
                 }
 
@@ -438,9 +444,12 @@ Item {
                         userId: (navShell.avm && navShell.avm.currentUser !== "")
                                 ? navShell.avm.currentUser
                                 : "operator"
-                        displayName: (navShell.avm && navShell.avm.currentUser !== "")
-                                     ? navShell.avm.currentUser
-                                     : "Operator"
+                        displayName: (navShell.wvm && navShell.wvm.profileDisplayName !== "")
+                                     ? navShell.wvm.profileDisplayName
+                                     : ((navShell.avm && navShell.avm.currentUser !== "")
+                                        ? navShell.avm.currentUser
+                                        : "Operator")
+                        imageUrl: navShell.wvm ? navShell.wvm.profileAvatarImageUrl : ""
                         size: 32
                         presence: "Online"
                         Layout.alignment: navShell.isSidebarCollapsed ? Qt.AlignHCenter : Qt.AlignVCenter
@@ -452,9 +461,11 @@ Item {
                         Layout.fillWidth: true
 
                         Label {
-                            text: (navShell.avm && navShell.avm.currentUser !== "")
-                                  ? navShell.avm.currentUser
-                                  : qsTr("Operator")
+                            text: (navShell.wvm && navShell.wvm.profileDisplayName !== "")
+                                  ? navShell.wvm.profileDisplayName
+                                  : ((navShell.avm && navShell.avm.currentUser !== "")
+                                     ? navShell.avm.currentUser
+                                     : qsTr("Operator"))
                             font.family: Theme.fontFamilyPrimary
                             font.pixelSize: Theme.fontBody
                             font.bold: true
@@ -519,6 +530,21 @@ Item {
                     }
 
                     Label {
+                        text: "›"
+                        font.pixelSize: Theme.fontCaption
+                        color: Theme.textMuted
+                    }
+
+                    Label {
+                        visible: navigationController.currentViewName === "Diagnostics"
+                        text: qsTr("Settings")
+                        font.pixelSize: Theme.fontCaption
+                        font.family: Theme.fontFamilyPrimary
+                        color: Theme.textMuted
+                    }
+
+                    Label {
+                        visible: navigationController.currentViewName === "Diagnostics"
                         text: "›"
                         font.pixelSize: Theme.fontCaption
                         color: Theme.textMuted
@@ -602,6 +628,8 @@ Item {
                             return "WorkspacePlaceholder.qml"
                         case "Settings":
                             return "SettingsPlaceholder.qml"
+                        case "Diagnostics":
+                            return "DiagnosticsView.qml"
                         case "Emergency":
                             return "EmergencyPlaceholder.qml"
                         case "StyleGuide":

@@ -2,6 +2,7 @@
 
 #include "application/client_config.hpp"
 #include "application/interfaces/i_gateway_client.hpp"
+#include "domain/diagnostics_models.hpp"
 #include "securecloud/configuration/secret_string.hpp"
 
 #include <cstddef>
@@ -46,6 +47,7 @@ class QtHttpGatewayClient final : public application::interfaces::IGatewayClient
     void reconfigure(const application::ClientConfig& config);
     [[nodiscard]] application::ClientConfig current_config_snapshot() const;
     [[nodiscard]] EffectiveProxySnapshot effective_proxy_snapshot() const;
+    [[nodiscard]] domain::GatewayTransportMetrics transport_metrics() const noexcept;
 
     application::ClientResult<bool> probe_gateway(std::string_view path = "/health") override;
     application::ClientResult<std::string> send_message(const domain::ConversationId& conversation_id,
@@ -137,6 +139,25 @@ class QtHttpGatewayClient final : public application::interfaces::IGatewayClient
 
     application::ClientResult<application::interfaces::TlsCertificateInfo>
     inspect_tls_certificate(std::string_view host, uint16_t port) override;
+
+    application::ClientResult<application::interfaces::AuthSessionResult>
+    authenticate_user(std::string_view identifier, std::string_view credential,
+                      std::string_view device_id = "") override;
+
+    application::ClientResult<application::interfaces::AuthSessionResult>
+    refresh_session(std::string_view refresh_token, std::string_view device_id = "") override;
+
+    application::ClientResult<void> revoke_session(std::string_view session_id,
+                                                   std::string_view reason = "user_logout") override;
+
+    application::ClientResult<application::interfaces::ConversationCreateResult>
+    create_direct_conversation(const domain::UserId& peer_user_id) override;
+
+    application::ClientResult<void> update_presence(std::string_view status,
+                                                    std::string_view custom_status_message = "") override;
+
+    application::ClientResult<std::vector<application::interfaces::IGatewayClient::PeerPresenceInfo>>
+    batch_get_presence(const std::vector<domain::UserId>& user_ids) override;
 
   private:
     struct Impl;

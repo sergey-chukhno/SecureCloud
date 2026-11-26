@@ -5,6 +5,7 @@
 #include "domain/conversation.hpp"
 #include "domain/conversation_id.hpp"
 #include "domain/file_transfer.hpp"
+#include "domain/local_audit_event.hpp"
 #include "domain/message.hpp"
 #include "domain/message_id.hpp"
 #include "domain/offline_sync_models.hpp"
@@ -40,6 +41,10 @@ class ILocalStore {
     virtual ClientResult<domain::Message> get_message(const domain::ConversationId& conversation_id,
                                                       const domain::MessageId& message_id) = 0;
     virtual ClientResult<void> update_message(const domain::Message& message) = 0;
+    virtual ClientResult<void> delete_message(const domain::ConversationId& /*conversation_id*/,
+                                              const domain::MessageId& /*message_id*/) {
+        return ClientResult<void>::ok();
+    }
 
     virtual ClientResult<void> save_contact(const domain::Contact& contact) = 0;
     virtual ClientResult<domain::Contact> get_contact(const domain::UserId& user_id) = 0;
@@ -71,6 +76,13 @@ class ILocalStore {
     virtual ClientResult<std::optional<domain::UserSettings>> get_user_settings(std::string_view profile_key) = 0;
 
     virtual ClientResult<std::size_t> delete_expired_messages(int64_t now_ms) = 0;
+
+    // Local tamper-evident audit trail (CLIENT-015-T01; append-only, strictly local)
+    [[nodiscard]] virtual ClientResult<void> append_audit_event(const domain::LocalAuditEvent& event) = 0;
+    [[nodiscard]] virtual ClientResult<std::vector<domain::LocalAuditEvent>>
+    list_audit_events(std::size_t limit = 100, std::size_t offset = 0) = 0;
+    [[nodiscard]] virtual ClientResult<std::optional<domain::LocalAuditEvent>> get_latest_audit_event() = 0;
+    [[nodiscard]] virtual ClientResult<std::size_t> count_audit_events() = 0;
 };
 
 } // namespace securecloud::client::application::interfaces

@@ -1,5 +1,8 @@
 #include "application/client_bootstrap.hpp"
 #include "application/client_config.hpp"
+#include "application/managers/auth_manager.hpp"
+#include "application/managers/emergency_manager.hpp"
+#include "application/managers/settings_manager.hpp"
 #include "domain/crypto/file_crypto_engine.hpp"
 #include "domain/user_settings.hpp"
 #include "infrastructure/adapters/default_gateway_client.hpp"
@@ -830,6 +833,237 @@ TEST_F(QtHttpGatewayClientTest, ConcurrentMultiThreadedCallsExecuteSafelyAcrossW
 
     EXPECT_EQ(ok_count.load(), kWorkers * 3U);
     EXPECT_EQ(hit_count.load(), static_cast<int>(kWorkers * 3U));
+}
+
+TEST_F(QtHttpGatewayClientTest, AuthLifecycleCreateDirectConversationAndBinaryCiphertextRoundTrip) {
+    const std::string binary_ct = std::string("\x00\xff\x81\x10\xfe\x7f\x01\x99\x02\xab\xcd\xef\x00\x05\xee\x11", 16);
+    std::string echoed_b64_ct;
+
+    ASSERT_TRUE(server_->start_tls(
+        leaf_a_.qs_cert, leaf_a_.qs_key, ca_.qs_cert,
+        [&echoed_b64_ct](const RecordedHttpRequest& req) -> LoopbackHttpResponse {
+            if (req.method == "POST" && req.target == "/api/v1/auth/login") {
+                EXPECT_TRUE(req.authorization_header.empty());
+                const auto j = nlohmann::json::parse(req.body);
+                EXPECT_EQ(j.value("identifier", std::string{}), "alice@securecloud.io");
+                EXPECT_EQ(j.value("credential", std::string{}), "SuperPass#2026");
+                EXPECT_EQ(j.value("device_id", std::string{}), "dev-alice-1");
+                return {
+                    .status = 200,
+                    .body =
+                        R"({"session_id":"sess-live-1","access_token":"jwt-live-1","refresh_token":"ref-live-1","authentication_level":1,"expires_at_epoch_ms":1799999999000,"user_id":"usr-alice-uuid","mfa_required":false})",
+                };
+            }
+            if (req.method == "POST" && req.target == "/api/v1/conversations") {
+                EXPECT_EQ(req.authorization_header, "Bearer jwt-live-1");
+                const auto j = nlohmann::json::parse(req.body);
+                EXPECT_EQ(j.value("type", std::string{}), "direct");
+                const bool has_participants = j.contains("participant_user_ids") &&
+                                              j["participant_user_ids"].is_array() &&
+                                              j["participant_user_ids"].size() == 1U;
+                EXPECT_TRUE(has_participants);
+                if (has_participants) {
+                    EXPECT_EQ(j["participant_user_ids"][0].get<std::string>(), "usr-bob-uuid");
+                }
+                return {
+                    .status = 201,
+                    .body =
+                        R"({"conversation":{"conversation_id":"conv-direct-99","type":"direct","title":"","creator_user_id":"usr-alice-uuid","created_at_unix_ms":1700000100000,"participant_user_ids":["usr-alice-uuid","usr-bob-uuid"]}})",
+                };
+            }
+            if (req.method == "POST" && req.target == "/api/v1/messages") {
+                EXPECT_EQ(req.authorization_header, "Bearer jwt-live-1");
+                const auto j = nlohmann::json::parse(req.body);
+                echoed_b64_ct = j["delivery_targets"][0]["encrypted_payload"]["ciphertext_blob"].get<std::string>();
+                return {.status = 201, .body = R"({"message_id":"msg-bin-1"})"};
+            }
+            if (req.method == "GET" && req.target.rfind("/api/v1/conversations/conv-direct-99/messages", 0) == 0) {
+                EXPECT_EQ(req.authorization_header, "Bearer jwt-live-1");
+                nlohmann::json msg;
+                msg["message_id"] = "msg-bin-1";
+                msg["conversation_id"] = "conv-direct-99";
+                msg["sender_user_id"] = "usr-alice-uuid";
+                msg["sender_device_id"] = "dev-alice-1";
+                msg["created_at_unix_ms"] = 1700000105000LL;
+                msg["sequence_number"] = 1;
+                msg["delivery_targets"] = nlohmann::json::array({{
+                    {"recipient_user_id", "usr-bob-uuid"},
+                    {"recipient_device_id", "dev-bob-1"},
+                    {"encrypted_payload",
+                     {{"ciphertext_blob", echoed_b64_ct},
+                      {"ephemeral_public_key", ""},
+                      {"initialization_vector", ""},
+                      {"auth_tag", ""},
+                      {"algorithm", "AES-256-GCM"}}},
+                }});
+                nlohmann::json resp;
+                resp["has_more"] = false;
+                resp["next_sequence"] = 2;
+                resp["latest_sequence"] = 1;
+                resp["messages"] = nlohmann::json::array({msg});
+                return {.status = 200, .body = resp.dump()};
+            }
+            if (req.method == "POST" && req.target == "/api/v1/auth/refresh") {
+                EXPECT_TRUE(req.authorization_header.empty());
+                const auto j = nlohmann::json::parse(req.body);
+                EXPECT_EQ(j.value("refresh_token", std::string{}), "ref-live-1");
+                return {
+                    .status = 200,
+                    .body =
+                        R"({"session_id":"sess-live-1","access_token":"jwt-live-2","refresh_token":"ref-live-2","expires_at_epoch_ms":1800000999000})",
+                };
+            }
+            if (req.method == "GET" && req.target == "/api/v1/users/me") {
+                if (req.authorization_header != "Bearer jwt-live-2") {
+                    return {.status = 401,
+                            .body = R"({"error":{"code":"UNAUTHORIZED","message":"Missing or bad JWT"}})"};
+                }
+                return {
+                    .status = 200,
+                    .body =
+                        R"({"user":{"user_id":"usr-alice-uuid","credential_identifier":"alice@securecloud.io","created_at_epoch_ms":1700000000000,"updated_at_epoch_ms":1700000200000}})",
+                };
+            }
+            if (req.method == "POST" && req.target == "/api/v1/auth/revoke") {
+                EXPECT_EQ(req.authorization_header, "Bearer jwt-live-2");
+                const auto j = nlohmann::json::parse(req.body);
+                EXPECT_EQ(j.value("session_id", std::string{}), "sess-live-1");
+                EXPECT_EQ(j.value("reason", std::string{}), "user_logout");
+                return {.status = 200, .body = R"({"revoked":true})"};
+            }
+            return {.status = 404, .body = R"({"error":{"code":"NOT_FOUND","message":"Not found"}})"};
+        }));
+
+    ClientConfig cfg = make_live_config(server_->port(), leaf_a_.spki_sha256_hex);
+    cfg.auth_token = SecretString("");
+    QtHttpGatewayClient client(cfg);
+
+    const auto login_res = client.authenticate_user("alice@securecloud.io", "SuperPass#2026", "dev-alice-1");
+    ASSERT_TRUE(login_res.is_ok()) << login_res.error().to_string();
+    EXPECT_EQ(login_res.value().user_id, UserId("usr-alice-uuid"));
+    EXPECT_EQ(login_res.value().session_id, "sess-live-1");
+    EXPECT_EQ(login_res.value().authentication_level, "AUTH_LEVEL_PASSWORD");
+    EXPECT_EQ(login_res.value().access_token.expose_unredacted_secret(), "jwt-live-1");
+    EXPECT_EQ(login_res.value().refresh_token.expose_unredacted_secret(), "ref-live-1");
+    EXPECT_FALSE(login_res.value().mfa_required);
+
+    const auto conv_res = client.create_direct_conversation(UserId("usr-bob-uuid"));
+    ASSERT_TRUE(conv_res.is_ok()) << conv_res.error().to_string();
+    EXPECT_EQ(conv_res.value().conversation_id, ConversationId("conv-direct-99"));
+    EXPECT_EQ(conv_res.value().type, ConversationType::Direct);
+    EXPECT_EQ(conv_res.value().creator_user_id, UserId("usr-alice-uuid"));
+    ASSERT_EQ(conv_res.value().participant_user_ids.size(), 2U);
+
+    FanOutSubmissionRequest send_req;
+    send_req.conversation_id = conv_res.value().conversation_id;
+    send_req.idempotency_key = "idemp-bin-1";
+    send_req.device_payloads.push_back(PerDeviceDeliveryPayload{
+        .recipient_user_id = UserId("usr-bob-uuid"),
+        .recipient_device_id = DeviceId("dev-bob-1"),
+        .ciphertext_blob = binary_ct,
+        .ephemeral_public_key = {1U, 2U, 3U},
+        .iv = {4U, 5U, 6U},
+        .auth_tag = {7U, 8U, 9U},
+    });
+    const auto msg_res = client.submit_encrypted_message(send_req);
+    ASSERT_TRUE(msg_res.is_ok()) << msg_res.error().to_string();
+    EXPECT_EQ(msg_res.value(), "msg-bin-1");
+    EXPECT_FALSE(echoed_b64_ct.empty());
+
+    const auto sync_res =
+        client.fetch_conversation_messages(conv_res.value().conversation_id, DeviceId("dev-bob-1"), 0);
+    ASSERT_TRUE(sync_res.is_ok()) << sync_res.error().to_string();
+    ASSERT_EQ(sync_res.value().events.size(), 1U);
+    ASSERT_TRUE(sync_res.value().events[0].direct_payload.has_value());
+    EXPECT_EQ(sync_res.value().events[0].direct_payload->ciphertext_blob, binary_ct);
+
+    const auto refresh_res = client.refresh_session("ref-live-1", "dev-alice-1");
+    ASSERT_TRUE(refresh_res.is_ok()) << refresh_res.error().to_string();
+    EXPECT_EQ(refresh_res.value().access_token.expose_unredacted_secret(), "jwt-live-2");
+    EXPECT_EQ(refresh_res.value().refresh_token.expose_unredacted_secret(), "ref-live-2");
+
+    const auto me_res = client.get_user_profile(UserId("usr-alice-uuid"));
+    ASSERT_TRUE(me_res.is_ok()) << me_res.error().to_string();
+
+    const auto revoke_res = client.revoke_session("sess-live-1", "user_logout");
+    ASSERT_TRUE(revoke_res.is_ok()) << revoke_res.error().to_string();
+
+    const auto unauth_res = client.get_user_profile(UserId("usr-alice-uuid"));
+    ASSERT_TRUE(unauth_res.is_error());
+    EXPECT_EQ(unauth_res.error().category(), ClientErrorCategory::Authentication);
+}
+
+TEST_F(QtHttpGatewayClientTest, AuthManagerLiveLoginRefreshLogoutAndZeroNetworkDuressPin) {
+    ASSERT_TRUE(server_->start_tls(
+        leaf_a_.qs_cert, leaf_a_.qs_key, ca_.qs_cert, [](const RecordedHttpRequest& req) -> LoopbackHttpResponse {
+            if (req.method == "POST" && req.target == "/api/v1/auth/login") {
+                return {
+                    .status = 200,
+                    .body =
+                        R"({"session_id":"sess-mgr-1","access_token":"jwt-mgr-1","refresh_token":"ref-mgr-1","authentication_level":1,"expires_at_epoch_ms":1799999999000,"user_id":"usr-mgr-alice","mfa_required":false})",
+                };
+            }
+            if (req.method == "POST" && req.target == "/api/v1/auth/refresh") {
+                return {
+                    .status = 200,
+                    .body =
+                        R"({"session_id":"sess-mgr-1","access_token":"jwt-mgr-2","refresh_token":"ref-mgr-2","expires_at_epoch_ms":1800000999000})",
+                };
+            }
+            if (req.method == "POST" && req.target == "/api/v1/auth/revoke") {
+                EXPECT_EQ(req.authorization_header, "Bearer jwt-mgr-2");
+                return {.status = 200, .body = R"({"revoked":true})"};
+            }
+            return {.status = 404, .body = "{}"};
+        }));
+
+    ClientConfig boot_cfg = ClientConfig::create_default();
+    boot_cfg.database_path = (temp_dir_ / "auth_live.db").string();
+    boot_cfg.tls_ca_cert_path = ca_pem_path_.string();
+    boot_cfg.use_live_gateway_transport = false;
+
+    ClientBootstrap bootstrap(boot_cfg);
+    UserSettings live_settings;
+    live_settings.use_live_gateway_transport = true;
+    live_settings.tls.custom_gateway_host = "127.0.0.1";
+    live_settings.tls.custom_gateway_port = server_->port();
+    live_settings.tls.pinned_spki_sha256_hex = leaf_a_.spki_sha256_hex;
+    ASSERT_TRUE(bootstrap.settings_manager().save_settings(live_settings).is_ok());
+
+    const auto login_res = bootstrap.auth_manager().authenticate_with_duress_check("alice", "real-pw");
+    ASSERT_TRUE(login_res.is_ok()) << login_res.error().to_string();
+    EXPECT_EQ(login_res.value().outcome, AuthOutcome::Authenticated);
+    EXPECT_EQ(login_res.value().session_id, "sess-mgr-1");
+    EXPECT_EQ(bootstrap.auth_manager().current_user(), UserId("usr-mgr-alice"));
+    EXPECT_EQ(bootstrap.auth_manager().current_session_id(), "sess-mgr-1");
+    EXPECT_EQ(bootstrap.secure_storage().get_secret("session_auth_token").value().expose_unredacted_secret(),
+              "jwt-mgr-1");
+    EXPECT_EQ(bootstrap.secure_storage().get_secret("session_refresh_token").value().expose_unredacted_secret(),
+              "ref-mgr-1");
+
+    ASSERT_TRUE(bootstrap.auth_manager().refresh_session().is_ok());
+    EXPECT_EQ(bootstrap.secure_storage().get_secret("session_auth_token").value().expose_unredacted_secret(),
+              "jwt-mgr-2");
+    EXPECT_EQ(bootstrap.secure_storage().get_secret("session_refresh_token").value().expose_unredacted_secret(),
+              "ref-mgr-2");
+
+    const std::string duress_pin = "Panic#9999";
+    ASSERT_TRUE(bootstrap.emergency_manager()
+                    .configure_duress_pin(SecretString(duress_pin), PostWipeMode::EmergencyLocked)
+                    .is_ok());
+
+    ASSERT_TRUE(bootstrap.auth_manager().logout().is_ok());
+    EXPECT_FALSE(bootstrap.auth_manager().is_authenticated());
+    EXPECT_TRUE(bootstrap.secure_storage().get_secret("session_auth_token").is_error());
+    EXPECT_TRUE(bootstrap.secure_storage().get_secret("session_refresh_token").is_error());
+    EXPECT_TRUE(bootstrap.secure_storage().get_secret("session_id").is_error());
+    EXPECT_EQ(server_->recorded_requests().size(), 3U);
+
+    server_->clear_recorded_requests();
+    const auto duress_res = bootstrap.auth_manager().authenticate_with_duress_check("alice", duress_pin);
+    ASSERT_TRUE(duress_res.is_ok());
+    EXPECT_EQ(duress_res.value().outcome, AuthOutcome::DuressWipeTriggered);
+    EXPECT_TRUE(server_->recorded_requests().empty());
 }
 
 } // namespace

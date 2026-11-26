@@ -16,7 +16,8 @@ namespace securecloud::messaging::audit {
  * std::nullopt if the event is malformed or unsafe.
  */
 [[nodiscard]] std::optional<securecloud::audit::v1::AuditEventProto>
-map_outbox_record_to_canonical_proto(const repository::AuditOutboxRecord& record);
+map_outbox_record_to_canonical_proto(const repository::AuditOutboxRecord& record,
+                                     std::string_view producer_instance = "messaging");
 
 /**
  * Validates `event` (RFC 9562 UUIDv7 + ZeroPlaintextGuard), serializes its canonical

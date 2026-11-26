@@ -186,6 +186,11 @@ grpc::Status AuditServiceImpl::SubmitAuditEvent(grpc::ServerContext* context,
         return status;
     }
 
+    if (result.outcome_status == ingestion::IngestionOutcomeStatus::DuplicateCommitted ||
+        result.outcome_status == ingestion::IngestionOutcomeStatus::DuplicateCoalesced) {
+        metrics.record_duplicate_event(producer_lbl);
+    }
+
     metrics.record_ingestion_request(telemetry::RpcType::SubmitAuditEvent, telemetry::RequestStatus::Success);
 
     response->set_success(true);
@@ -271,6 +276,15 @@ grpc::Status AuditServiceImpl::BatchSubmitAuditEvents(grpc::ServerContext* conte
     response->set_rejected_count(batch_res.rejected_count);
 
     for (const auto& [event_id, item_res] : batch_res.item_results) {
+        if (item_res.success && (item_res.outcome_status == ingestion::IngestionOutcomeStatus::DuplicateCommitted ||
+                                 item_res.outcome_status == ingestion::IngestionOutcomeStatus::DuplicateCoalesced)) {
+            for (const auto& devt : domain_events) {
+                if (devt.event_id == event_id) {
+                    metrics.record_duplicate_event(map_producer_label(devt.producer_service));
+                    break;
+                }
+            }
+        }
         if (!item_res.success) {
             response->add_rejected_event_ids(event_id.to_string());
             if (item_res.outcome_status == ingestion::IngestionOutcomeStatus::IdempotencyConflict ||

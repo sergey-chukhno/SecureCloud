@@ -75,7 +75,7 @@ void ScyllaMessageRepository::init_prepared_statements() {
         "SELECT conversation_id, message_bucket, message_sequence, message_id, sender_user_id, sender_device_id, "
         "message_priority, accepted_at, ciphertext_envelope, envelope_version, file_reference_ids "
         "FROM securecloud_messaging.messages_by_conversation "
-        "WHERE conversation_id = ? AND message_bucket = ? AND message_id = ?;");
+        "WHERE conversation_id = ? AND message_bucket = ?;");
 
     prep_list_range_ = session_->prepare(
         "msg_repo_list_range",
@@ -118,14 +118,15 @@ std::optional<domain::MessageEntity> ScyllaMessageRepository::find_by_id(const d
     db::ScyllaParams params;
     params.add_string(conversation_id.to_string());
     params.add_string(message_bucket.value());
-    params.add_string(message_id.to_string());
 
+    const std::string target_id = message_id.to_string();
     auto result = session_->execute_prepared(prep_find_by_id_, params);
-    if (result.empty()) {
-        return std::nullopt;
+    for (const auto& row : result) {
+        if (row.get_string("message_id") == target_id) {
+            return row_to_message_entity(row);
+        }
     }
-
-    return row_to_message_entity(result.front());
+    return std::nullopt;
 }
 
 std::vector<domain::MessageEntity>

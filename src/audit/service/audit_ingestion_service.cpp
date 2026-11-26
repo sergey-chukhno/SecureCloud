@@ -1,14 +1,21 @@
 #include "service/audit_ingestion_service.hpp"
 
 #include "domain/audit_event_validator.hpp"
+#include "ingestion/audit_ingestion_pipeline.hpp"
 
 namespace securecloud::audit::service {
 
 AuditIngestionService::AuditIngestionService(std::shared_ptr<repository::IAuditEventRepository> repository,
                                              std::shared_ptr<ingestion::IDeduplicationCache> dedup_cache,
-                                             std::chrono::milliseconds in_flight_timeout)
+                                             std::chrono::milliseconds in_flight_timeout,
+                                             std::shared_ptr<ingestion::AuditIngestionPipeline> pipeline)
     : repository_(std::move(repository)), dedup_cache_(std::move(dedup_cache)), ack_manager_(dedup_cache_),
-      in_flight_timeout_(in_flight_timeout) {}
+      in_flight_timeout_(in_flight_timeout), pipeline_(std::move(pipeline)) {
+    if (pipeline_ && pipeline_->dedup_cache()) {
+        dedup_cache_ = pipeline_->dedup_cache();
+        ack_manager_.set_deduplication_cache(dedup_cache_);
+    }
+}
 
 IngestionResult AuditIngestionService::ingest_single(const domain::AuditEvent& event) {
     auto val_result = domain::AuditEventValidator::validate(event);
@@ -23,6 +30,88 @@ IngestionResult AuditIngestionService::ingest_single(const domain::AuditEvent& e
 
     auto now_steady = std::chrono::steady_clock::now();
     auto received_at = event.received_at.value_or(std::chrono::system_clock::now());
+
+    if (pipeline_) {
+        auto wait_for_ack = [this](const std::shared_future<ingestion::PersistAckResult>& future) {
+            if (future.wait_for(in_flight_timeout_) != std::future_status::ready) {
+                return IngestionResult{.success = false,
+                                       .outcome_status = ingestion::IngestionOutcomeStatus::PersistenceAmbiguous,
+                                       .error_code = "DEADLINE_EXCEEDED",
+                                       .error_message = "In-flight persistence acknowledgment timed out",
+                                       .received_at = std::chrono::system_clock::now()};
+            }
+            const auto& ack = future.get();
+            const bool ok = ack.status == ingestion::IngestionOutcomeStatus::PersistedNew ||
+                            ack.status == ingestion::IngestionOutcomeStatus::DuplicateCommitted ||
+                            ack.status == ingestion::IngestionOutcomeStatus::DuplicateCoalesced;
+            return IngestionResult{.success = ok,
+                                   .outcome_status = ack.status,
+                                   .error_code = ack.error_code,
+                                   .error_message = ack.diagnostic_message,
+                                   .received_at = ack.received_at};
+        };
+
+        if (dedup_cache_) {
+            const auto fingerprint = domain::EventPayloadFingerprint::compute(event);
+            auto acquired = dedup_cache_->try_acquire(event.event_id, fingerprint, now_steady);
+            switch (acquired.decision) {
+            case ingestion::DedupAcquireResult::Decision::AlreadyCommitted:
+                return IngestionResult{.success = true,
+                                       .outcome_status = ingestion::IngestionOutcomeStatus::DuplicateCommitted,
+                                       .error_code = "",
+                                       .error_message = "",
+                                       .received_at = acquired.committed_received_at};
+            case ingestion::DedupAcquireResult::Decision::PayloadConflict:
+                return IngestionResult{.success = false,
+                                       .outcome_status = ingestion::IngestionOutcomeStatus::IdempotencyConflict,
+                                       .error_code = "ALREADY_EXISTS",
+                                       .error_message =
+                                           "Idempotency conflict: event_id already exists with different payload",
+                                       .received_at = received_at};
+            case ingestion::DedupAcquireResult::Decision::CoalescedInFlight:
+                return wait_for_ack(acquired.in_flight_future);
+            case ingestion::DedupAcquireResult::Decision::AcquiredNewInFlight:
+                break;
+            }
+        }
+
+        auto completion = std::make_shared<std::promise<IngestionResult>>();
+        auto completion_future = completion->get_future();
+        ingestion::IngestionEnvelope envelope;
+        envelope.event = event;
+        envelope.completion_promise = completion;
+
+        if (!pipeline_->submit(std::move(envelope))) {
+            const bool overloaded = pipeline_->is_accepting();
+            const auto outcome = overloaded ? ingestion::IngestionOutcomeStatus::QueueOverloaded
+                                            : ingestion::IngestionOutcomeStatus::PersistenceFailed;
+            const std::string error_code = overloaded ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE";
+            const std::string error_message = overloaded ? "Audit ingestion queue saturated; backpressure applied"
+                                                         : "Audit ingestion pipeline is not accepting events";
+            if (dedup_cache_) {
+                dedup_cache_->rollback_in_flight(event.event_id,
+                                                 ingestion::PersistAckResult{.status = outcome,
+                                                                             .event_id = event.event_id,
+                                                                             .received_at = received_at,
+                                                                             .error_code = error_code,
+                                                                             .diagnostic_message = error_message});
+            }
+            return IngestionResult{.success = false,
+                                   .outcome_status = outcome,
+                                   .error_code = error_code,
+                                   .error_message = error_message,
+                                   .received_at = received_at};
+        }
+
+        if (completion_future.wait_for(in_flight_timeout_) != std::future_status::ready) {
+            return IngestionResult{.success = false,
+                                   .outcome_status = ingestion::IngestionOutcomeStatus::PersistenceAmbiguous,
+                                   .error_code = "DEADLINE_EXCEEDED",
+                                   .error_message = "In-flight persistence acknowledgment timed out",
+                                   .received_at = received_at};
+        }
+        return completion_future.get();
+    }
 
     if (dedup_cache_) {
         auto fp = domain::EventPayloadFingerprint::compute(event);
@@ -149,6 +238,20 @@ BatchIngestionResult AuditIngestionService::ingest_batch(const std::vector<domai
                                               .error_code = "INVALID_ARGUMENT",
                                               .error_message = "Batch size exceeds maximum limit of 100 events",
                                               .received_at = std::chrono::system_clock::now()});
+        }
+        return result;
+    }
+
+    if (pipeline_) {
+        for (const auto& event : events) {
+            auto item_result = ingest_single(event);
+            if (item_result.success) {
+                ++result.accepted_count;
+            } else {
+                ++result.rejected_count;
+                result.rejected_event_ids.push_back(event.event_id);
+            }
+            result.item_results.emplace_back(event.event_id, std::move(item_result));
         }
         return result;
     }

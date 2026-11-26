@@ -90,6 +90,12 @@ class FileCryptoEngine {
                   std::string_view file_id, uint32_t chunk_index, bool is_final,
                   std::span<const uint8_t> plaintext) const;
 
+    [[nodiscard]] application::ClientResult<std::string>
+    encrypt_chunk_into(application::interfaces::ICryptoProvider& crypto,
+                       const common::configuration::SecretString& file_key, std::string_view file_id,
+                       uint32_t chunk_index, bool is_final, std::span<const uint8_t> plaintext,
+                       std::vector<uint8_t>& out_framed_bytes) const;
+
     [[nodiscard]] application::ClientResult<std::vector<uint8_t>>
     decrypt_chunk(application::interfaces::ICryptoProvider& crypto, const common::configuration::SecretString& file_key,
                   std::string_view file_id, uint32_t chunk_index, bool is_final, std::span<const uint8_t> framed_bytes,

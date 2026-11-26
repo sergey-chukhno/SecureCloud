@@ -24,6 +24,46 @@ TEST_F(AuditQueryAuthorizerTest, AuditInternalIdentityPermittedGlobalQueries) {
     EXPECT_TRUE(status.ok());
 }
 
+TEST_F(AuditQueryAuthorizerTest, DevPkiShortDnsSanAuthorizesAuditGlobalScope) {
+    domain::PeerIdentity peer;
+    peer.is_authenticated = true;
+    peer.common_name = "audit.dev.securecloud.local";
+    peer.san_dns_names = {"audit"};
+
+    const auto status = AuditQueryAuthorizer::authorize_query(peer, AuditQueryFilter{});
+
+    EXPECT_TRUE(status.ok());
+}
+
+TEST_F(AuditQueryAuthorizerTest, DevPkiShortDnsSanKeepsProducerSelfScope) {
+    domain::PeerIdentity peer;
+    peer.is_authenticated = true;
+    peer.common_name = "auth.dev.securecloud.local";
+    peer.san_dns_names = {"auth"};
+
+    AuditQueryFilter self_filter;
+    self_filter.producer_services = {domain::ProducerService::Auth};
+    EXPECT_TRUE(AuditQueryAuthorizer::authorize_query(peer, self_filter).ok());
+
+    AuditQueryFilter cross_service_filter;
+    cross_service_filter.producer_services = {domain::ProducerService::Files};
+    EXPECT_EQ(AuditQueryAuthorizer::authorize_query(peer, cross_service_filter).error_code(),
+              grpc::StatusCode::PERMISSION_DENIED);
+}
+
+TEST_F(AuditQueryAuthorizerTest, GatewayShortDnsSanRemainsSelfScoped) {
+    domain::PeerIdentity peer;
+    peer.is_authenticated = true;
+    peer.common_name = "gateway.dev.securecloud.local";
+    peer.san_dns_names = {"gateway"};
+
+    AuditQueryFilter self_filter;
+    self_filter.producer_services = {domain::ProducerService::Gateway};
+    EXPECT_TRUE(AuditQueryAuthorizer::authorize_query(peer, self_filter).ok());
+    EXPECT_EQ(AuditQueryAuthorizer::authorize_query(peer, AuditQueryFilter{}).error_code(),
+              grpc::StatusCode::PERMISSION_DENIED);
+}
+
 TEST_F(AuditQueryAuthorizerTest, RuntimeProducerPermittedSelfScopeOnly) {
     auto peer = build_peer("auth.securecloud.internal");
 

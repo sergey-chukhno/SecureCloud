@@ -1,3 +1,4 @@
+#include "audit/auth_audit_mapper.hpp"
 #include "domain/audit_event.hpp"
 #include "domain/auth_outbox_entity.hpp"
 #include "domain/uuid.hpp"
@@ -310,16 +311,23 @@ TEST(AuditEventPublisherTest, OutboxPublisher_Publish_StagesEntityWithMetadataAn
     EXPECT_EQ(captured_entity.event_id, event.event_id);
     EXPECT_EQ(captured_entity.event_type, "auth.login.succeeded");
     EXPECT_EQ(captured_entity.status, domain::OutboxStatus::Pending);
-    EXPECT_FALSE(captured_entity.aggregate_type.empty());
-    EXPECT_FALSE(captured_entity.aggregate_id.has_value());
+    EXPECT_EQ(captured_entity.aggregate_type, "USER");
+    ASSERT_TRUE(captured_entity.aggregate_id.has_value());
+    EXPECT_EQ(*captured_entity.aggregate_id, user_id);
 
     auto payload = nlohmann::json::parse(captured_entity.payload_json);
     EXPECT_EQ(payload["event_id"], event.event_id.to_string());
     EXPECT_EQ(payload["event_type"], "auth.login.succeeded");
     EXPECT_EQ(payload["producer_instance"], "auth-eu-west-2");
-    EXPECT_EQ(payload["user_id"], user_id.to_string());
-    EXPECT_EQ(payload["device_id"], device_id.to_string());
-    EXPECT_EQ(payload["session_id"], session_id.to_string());
+    EXPECT_EQ(payload["actor_type"], "USER");
+    EXPECT_EQ(payload["actor_id"], user_id.to_string());
+    EXPECT_EQ(payload["target_type"], "USER");
+    EXPECT_EQ(payload["target_id"], user_id.to_string());
+    EXPECT_TRUE(payload["occurred_at_ms"].is_number_integer());
+    EXPECT_EQ(payload["metadata"]["user_id"], user_id.to_string());
+    EXPECT_EQ(payload["metadata"]["device_id"], device_id.to_string());
+    EXPECT_EQ(payload["metadata"]["session_id"], session_id.to_string());
+    EXPECT_NO_THROW((void)audit::AuthAuditMapper::to_proto(captured_entity));
 }
 
 // Test 12: OutboxAuditEventPublisher stages compromise telemetry with full context and zero secret leakage
@@ -342,13 +350,19 @@ TEST(AuditEventPublisherTest, OutboxPublisher_Publish_CompromiseEvent_StagesPayl
     EXPECT_EQ(captured_entity.status, domain::OutboxStatus::Pending);
 
     auto payload = nlohmann::json::parse(captured_entity.payload_json);
-    EXPECT_EQ(payload["session_id"], session_id.to_string());
-    EXPECT_EQ(payload["device_id"], device_id.to_string());
-    EXPECT_EQ(payload["client_ip"], "203.0.113.42");
+    EXPECT_EQ(payload["actor_type"], "DEVICE");
+    EXPECT_EQ(payload["actor_id"], device_id.to_string());
+    EXPECT_EQ(payload["target_type"], "DEVICE");
+    EXPECT_EQ(payload["target_id"], device_id.to_string());
+    EXPECT_EQ(payload["correlation_id"], session_id.to_string());
+    EXPECT_EQ(payload["metadata"]["session_id"], session_id.to_string());
+    EXPECT_EQ(payload["metadata"]["device_id"], device_id.to_string());
+    EXPECT_EQ(payload["metadata"]["client_ip"], "203.0.113.42");
     EXPECT_EQ(payload["producer_instance"], "auth-1");
     EXPECT_FALSE(payload.contains("password"));
     EXPECT_FALSE(payload.contains("token"));
     EXPECT_FALSE(payload.contains("secret"));
+    EXPECT_NO_THROW((void)audit::AuthAuditMapper::to_proto(captured_entity));
 }
 
 // Test 13: OutboxAuditEventPublisher catches repository failure and emits to fallback sink without throwing

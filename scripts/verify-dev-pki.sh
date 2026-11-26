@@ -137,7 +137,13 @@ for service in "${SERVICES[@]}"; do
 
     # Check SAN identity
     SAN_LINE="$(echo "${CRT_TEXT}" | grep -A 1 "Subject Alternative Name" | tail -n 1 | sed 's/^[[:space:]]*//')"
-    if [[ "${SAN_LINE}" == "DNS:${service}" ]]; then
+    if [[ "${service}" == "gateway" ]]; then
+        if echo "${SAN_LINE}" | grep -q "DNS:gateway" && echo "${SAN_LINE}" | grep -q "DNS:localhost" && echo "${SAN_LINE}" | grep -q "IP Address:127.0.0.1"; then
+            log_pass "Service '${service}' SAN contains gateway, localhost, and 127.0.0.1: ${SAN_LINE}"
+        else
+            log_fail "Service '${service}' SAN '${SAN_LINE}' missing required gateway/localhost/127.0.0.1 entries"
+        fi
+    elif [[ "${SAN_LINE}" == "DNS:${service}" ]]; then
         log_pass "Service '${service}' SAN matches exact service DNS name: ${SAN_LINE}"
     else
         log_fail "Service '${service}' SAN '${SAN_LINE}' does not match expected 'DNS:${service}'"

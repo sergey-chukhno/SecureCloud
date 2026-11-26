@@ -142,6 +142,7 @@ class AuthServiceImpl final : public securecloud::auth::v1::AuthService::Service
     }
 
   private:
+    void publish_audit_event(const ::grpc::ServerContext* context, domain::AuditEvent event) const;
     [[nodiscard]] std::string extract_client_identity(const ::grpc::ServerContext* context) const;
     [[nodiscard]] bool is_caller_mfa_verified(const ::grpc::ServerContext* context) const;
     [[nodiscard]] domain::AuthenticationLevel extract_caller_auth_level(const ::grpc::ServerContext* context) const;

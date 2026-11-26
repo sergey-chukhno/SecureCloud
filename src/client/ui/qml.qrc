@@ -8,6 +8,7 @@
         <file>qml/SettingsPlaceholder.qml</file>
         <file>qml/EmergencyPlaceholder.qml</file>
         <file>qml/StyleGuideView.qml</file>
+        <file>qml/DiagnosticsView.qml</file>
         <file>qml/controls/SCButton.qml</file>
         <file>qml/controls/SCTextField.qml</file>
         <file>qml/controls/SCIcon.qml</file>

@@ -64,7 +64,10 @@ std::shared_ptr<::grpc::Channel> GrpcChannelManager::create_channel_for_service(
         return nullptr;
     }
 
+    constexpr int k_max_grpc_message_bytes = 16 * 1024 * 1024;
     ::grpc::ChannelArguments channel_args;
+    channel_args.SetMaxReceiveMessageSize(k_max_grpc_message_bytes);
+    channel_args.SetMaxSendMessageSize(k_max_grpc_message_bytes);
     channel_args.SetUserAgentPrefix(k_user_agent_prefix);
     channel_args.SetInt(GRPC_ARG_KEEPALIVE_TIME_MS, k_keepalive_time_ms);
     channel_args.SetInt(GRPC_ARG_KEEPALIVE_TIMEOUT_MS, k_keepalive_timeout_ms);

@@ -128,32 +128,45 @@ std::string ClientLogger::sanitize(std::string_view raw) {
         std::regex::ECMAScript);
     text = std::regex_replace(text, private_key_regex, "[REDACTED_PRIVATE_KEY]");
 
-    // 2. Redact Bearer tokens
+    // 2. Redact Bearer tokens (kept ahead of raw JWT detection so "Bearer <jwt>" keeps canonical form)
     static const std::regex bearer_regex("(Bearer\\s+)[A-Za-z0-9_\\-\\.]+", std::regex::ECMAScript);
     text = std::regex_replace(text, bearer_regex, "$1[REDACTED]");
 
-    // 3. Redact JSON password/duress/salt/hash values
-    static const std::regex json_password_regex(
-        "(\"(?:password|passphrase|secret|duress_pin|derived_hash_hex|salt_hex)\"\\s*:\\s*\")[^\"]*(\")",
-        std::regex::ECMAScript | std::regex::icase);
-    text = std::regex_replace(text, json_password_regex, "$1[REDACTED]$2");
+    // 3. Redact bare compact JWTs (eyJ...header.payload.signature)
+    static const std::regex jwt_regex("\\beyJ[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}",
+                                      std::regex::ECMAScript);
+    text = std::regex_replace(text, jwt_regex, "[REDACTED_JWT]");
 
-    // 4. Redact query/form password/duress/salt/hash parameters
-    static const std::regex query_password_regex(
-        "((?:password|passphrase|secret|duress_pin|derived_hash_hex|salt_hex)=)[^&\\s]+",
-        std::regex::ECMAScript | std::regex::icase);
-    text = std::regex_replace(text, query_password_regex, "$1[REDACTED]");
+    // 4. Redact BIP-39 salted verifier digests
+    static const std::regex recovery_verifier_regex("sc-bip39-v1:[^\\s\"'&,;}\\]]+", std::regex::ECMAScript);
+    text = std::regex_replace(text, recovery_verifier_regex, "[REDACTED_RECOVERY_VERIFIER]");
 
-    // 5. Redact JSON token values
-    static const std::regex json_token_regex(
-        "(\"(?:token|auth_token|refresh_token|session_token)\"\\s*:\\s*\")[^\"]*(\")",
+    // 5. Redact JSON secret, key-material, recovery, payload, and PII values
+    static const std::regex json_secret_regex(
+        "(\"(?:password|passphrase|secret|duress_pin|derived_hash_hex|salt_hex|token|auth_token|refresh_token|"
+        "session_token|private_key|identity_key|root_key|chain_key|message_key|file_key|master_key|aes_key|"
+        "mnemonic|recovery_phrase|recovery_seed|plaintext|body|content|email)\"\\s*:\\s*\")[^\"]*(\")",
         std::regex::ECMAScript | std::regex::icase);
-    text = std::regex_replace(text, json_token_regex, "$1[REDACTED]$2");
+    text = std::regex_replace(text, json_secret_regex, "$1[REDACTED]$2");
 
-    // 6. Redact query/form token parameters
-    static const std::regex query_token_regex("((?:token|auth_token|refresh_token|session_token)=)[^&\\s]+",
-                                              std::regex::ECMAScript | std::regex::icase);
-    text = std::regex_replace(text, query_token_regex, "$1[REDACTED]");
+    // 6. Redact quoted and unquoted key=value secrets, keys, mnemonics, plaintext, and PII
+    static const std::regex quoted_kv_secret_regex(
+        "((?:password|passphrase|secret|duress_pin|derived_hash_hex|salt_hex|token|auth_token|refresh_token|"
+        "session_token|private_key|identity_key|root_key|chain_key|message_key|file_key|master_key|aes_key|"
+        "mnemonic|recovery_phrase|recovery_seed|plaintext|body|content|email)=\\s*\")[^\"]*(\")",
+        std::regex::ECMAScript | std::regex::icase);
+    text = std::regex_replace(text, quoted_kv_secret_regex, "$1[REDACTED]$2");
+
+    static const std::regex query_secret_regex(
+        "((?:password|passphrase|secret|duress_pin|derived_hash_hex|salt_hex|token|auth_token|refresh_token|"
+        "session_token|private_key|identity_key|root_key|chain_key|message_key|file_key|master_key|aes_key|"
+        "mnemonic|recovery_phrase|recovery_seed|plaintext|body|content|email)=)[^&\\s,;\"][^&\\s,;]*",
+        std::regex::ECMAScript | std::regex::icase);
+    text = std::regex_replace(text, query_secret_regex, "$1[REDACTED]");
+
+    // 7. Redact raw email addresses (PII)
+    static const std::regex email_regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}", std::regex::ECMAScript);
+    text = std::regex_replace(text, email_regex, "[REDACTED_EMAIL]");
 
     return text;
 }

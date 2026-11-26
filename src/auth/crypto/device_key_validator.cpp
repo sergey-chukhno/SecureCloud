@@ -1,8 +1,10 @@
 #include "auth/crypto/device_key_validator.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <openssl/evp.h>
+#include <stdexcept>
 #include <string_view>
 
 namespace securecloud::auth::crypto {
@@ -206,6 +208,42 @@ bool DeviceKeyValidator::validate_registration_bundle(std::span<const uint8_t> i
     }
 
     return true;
+}
+
+domain::Uuid DeviceKeyValidator::derive_one_time_prekey_uuid(const domain::Uuid& device_id,
+                                                             std::span<const uint8_t> public_key) {
+    std::string device_id_lower = device_id.to_string();
+    std::transform(device_id_lower.begin(), device_id_lower.end(), device_id_lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    static constexpr std::string_view kPrefix = "securecloud:otpk:v1:";
+    std::array<uint8_t, EVP_MAX_MD_SIZE> digest{};
+    unsigned int digest_len = 0;
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (ctx == nullptr) {
+        throw std::runtime_error("OpenSSL EVP_MD_CTX_new failed in derive_one_time_prekey_uuid");
+    }
+
+    const bool ok = EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
+                    EVP_DigestUpdate(ctx, kPrefix.data(), kPrefix.size()) == 1 &&
+                    EVP_DigestUpdate(ctx, device_id_lower.data(), device_id_lower.size()) == 1 &&
+                    EVP_DigestUpdate(ctx, ":", 1) == 1 &&
+                    EVP_DigestUpdate(ctx, public_key.data(), public_key.size()) == 1 &&
+                    EVP_DigestFinal_ex(ctx, digest.data(), &digest_len) == 1;
+    EVP_MD_CTX_free(ctx);
+
+    if (!ok || digest_len < 16U) {
+        throw std::runtime_error("OpenSSL SHA-256 digest failed in derive_one_time_prekey_uuid");
+    }
+
+    domain::Uuid::bytes_type out_bytes{};
+    for (std::size_t i = 0; i < out_bytes.size(); ++i) {
+        out_bytes[i] = digest[i];
+    }
+    out_bytes[6] = static_cast<uint8_t>((out_bytes[6] & 0x0FU) | 0x50U);
+    out_bytes[8] = static_cast<uint8_t>((out_bytes[8] & 0x3FU) | 0x80U);
+    return domain::Uuid(out_bytes);
 }
 
 } // namespace securecloud::auth::crypto

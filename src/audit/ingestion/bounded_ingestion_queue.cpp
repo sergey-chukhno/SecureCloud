@@ -27,9 +27,12 @@ telemetry::ProducerLabel map_producer_label(domain::ProducerService producer) no
 
 } // namespace
 
-BoundedIngestionQueue::BoundedIngestionQueue(size_t capacity) : capacity_(capacity == 0 ? 1 : capacity) {
-    telemetry::AuditMetrics::instance().set_queue_capacity(static_cast<int64_t>(capacity_));
-    telemetry::AuditMetrics::instance().set_queue_depth(0);
+BoundedIngestionQueue::BoundedIngestionQueue(size_t capacity, bool publish_metrics)
+    : capacity_(capacity == 0 ? 1 : capacity), publish_metrics_(publish_metrics) {
+    if (publish_metrics_) {
+        telemetry::AuditMetrics::instance().set_queue_capacity(static_cast<int64_t>(capacity_));
+        telemetry::AuditMetrics::instance().set_queue_depth(0);
+    }
 }
 
 BoundedIngestionQueue::~BoundedIngestionQueue() {
@@ -38,6 +41,12 @@ BoundedIngestionQueue::~BoundedIngestionQueue() {
 
 void BoundedIngestionQueue::record_enqueue_metrics_locked(const IngestionEnvelope& item) {
     (void)item;
+    if (!publish_metrics_) {
+        return;
+    }
+    if (!publish_metrics_) {
+        return;
+    }
     const size_t current_size = queue_.size();
     telemetry::AuditMetrics::instance().set_queue_depth(static_cast<int64_t>(current_size));
 }
@@ -57,8 +66,10 @@ bool BoundedIngestionQueue::try_push(IngestionEnvelope item) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (shutdown_ || queue_.size() >= capacity_) {
         total_rejected_.fetch_add(1, std::memory_order_relaxed);
-        auto producer_lbl = map_producer_label(item.event.producer_service);
-        telemetry::AuditMetrics::instance().record_queue_saturated_drop(producer_lbl);
+        if (publish_metrics_) {
+            auto producer_lbl = map_producer_label(item.event.producer_service);
+            telemetry::AuditMetrics::instance().record_queue_saturated_drop(producer_lbl);
+        }
         return false;
     }
 
@@ -83,8 +94,10 @@ bool BoundedIngestionQueue::push_with_timeout(IngestionEnvelope item, std::chron
 
     if (shutdown_ || !capacity_available || queue_.size() >= capacity_) {
         total_rejected_.fetch_add(1, std::memory_order_relaxed);
-        auto producer_lbl = map_producer_label(item.event.producer_service);
-        telemetry::AuditMetrics::instance().record_queue_saturated_drop(producer_lbl);
+        if (publish_metrics_) {
+            auto producer_lbl = map_producer_label(item.event.producer_service);
+            telemetry::AuditMetrics::instance().record_queue_saturated_drop(producer_lbl);
+        }
         return false;
     }
 

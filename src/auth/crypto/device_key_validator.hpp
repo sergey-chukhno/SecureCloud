@@ -1,5 +1,7 @@
 #pragma once
 
+#include "auth/domain/uuid.hpp"
+
 #include <cstddef>
 #include <cstdint>
 #include <span>
@@ -63,6 +65,12 @@ class DeviceKeyValidator {
      * @brief Zero Private Key Invariant check: checks whether the buffer contains private key markers or structures.
      */
     [[nodiscard]] static bool contains_private_key_material(std::span<const uint8_t> buffer) noexcept;
+
+    /**
+     * @brief Derives a deterministic RFC 4122 UUIDv5 key_id for a one-time prekey bound to a device.
+     */
+    [[nodiscard]] static domain::Uuid derive_one_time_prekey_uuid(const domain::Uuid& device_id,
+                                                                  std::span<const uint8_t> public_key);
 };
 
 } // namespace securecloud::auth::crypto

@@ -42,6 +42,8 @@ class SqlCipherLocalStore final : public application::interfaces::ILocalStore {
     application::ClientResult<domain::Message> get_message(const domain::ConversationId& conversation_id,
                                                            const domain::MessageId& message_id) override;
     application::ClientResult<void> update_message(const domain::Message& message) override;
+    application::ClientResult<void> delete_message(const domain::ConversationId& conversation_id,
+                                                   const domain::MessageId& message_id) override;
 
     application::ClientResult<void> save_contact(const domain::Contact& contact) override;
     application::ClientResult<domain::Contact> get_contact(const domain::UserId& user_id) override;
@@ -77,6 +79,12 @@ class SqlCipherLocalStore final : public application::interfaces::ILocalStore {
     get_user_settings(std::string_view profile_key) override;
 
     application::ClientResult<std::size_t> delete_expired_messages(int64_t now_ms) override;
+
+    application::ClientResult<void> append_audit_event(const domain::LocalAuditEvent& event) override;
+    application::ClientResult<std::vector<domain::LocalAuditEvent>> list_audit_events(std::size_t limit = 100,
+                                                                                      std::size_t offset = 0) override;
+    application::ClientResult<std::optional<domain::LocalAuditEvent>> get_latest_audit_event() override;
+    application::ClientResult<std::size_t> count_audit_events() override;
 
     [[nodiscard]] bool is_open() const noexcept;
 

@@ -139,6 +139,24 @@ const std::unordered_map<std::string, std::string> k_legacy_event_type_map = {
     return true;
 }
 
+[[nodiscard]] bool is_canonical_uuid(std::string_view sv) noexcept {
+    if (sv.size() != 36) {
+        return false;
+    }
+    for (std::size_t i = 0; i < sv.size(); ++i) {
+        if (i == 8 || i == 13 || i == 18 || i == 23) {
+            if (sv[i] != '-') {
+                return false;
+            }
+            continue;
+        }
+        if (std::isxdigit(static_cast<unsigned char>(sv[i])) == 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 [[nodiscard]] bool is_forbidden_metadata_key(std::string_view key) {
     const std::string lower = to_lower(key);
 
@@ -393,12 +411,11 @@ securecloud::audit::v1::AuditEventProto FilesAuditMapper::to_proto(const FilesOu
                 }
             }
 
-            // Extract correlation_id (preferring correlation_id, then request_id)
+            // Extract correlation_id (preferring correlation_id, then request_id) when formatted as canonical UUID
             for (const char* corr_key : {"correlation_id", "request_id"}) {
                 if (payload.contains(corr_key) && payload[corr_key].is_string()) {
                     const auto& candidate = payload[corr_key].get_ref<const std::string&>();
-                    if (!candidate.empty() && candidate.size() <= k_max_id_length &&
-                        is_printable_ascii_no_space(candidate)) {
+                    if (is_canonical_uuid(candidate)) {
                         proto.set_correlation_id(candidate);
                         break;
                     }

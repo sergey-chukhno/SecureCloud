@@ -39,6 +39,7 @@ application::ClientResult<std::size_t> MemoryLocalStore::destroy_and_shred() {
     sync_cursors_.clear();
     user_profiles_.clear();
     user_settings_.clear();
+    audit_events_.clear();
     is_open_ = false;
     return application::ClientResult<std::size_t>::ok(0U);
 }
@@ -169,6 +170,22 @@ application::ClientResult<void> MemoryLocalStore::update_message(const domain::M
         }
     }
     return application::ClientResult<void>::error(application::ClientError::storage("Message not found"));
+}
+
+application::ClientResult<void> MemoryLocalStore::delete_message(const domain::ConversationId& conversation_id,
+                                                                 const domain::MessageId& message_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    auto it = messages_.find(conversation_id);
+    if (it != messages_.end()) {
+        auto& vec = it->second;
+        vec.erase(std::remove_if(vec.begin(), vec.end(),
+                                 [&message_id](const domain::Message& msg) { return msg.message_id() == message_id; }),
+                  vec.end());
+    }
+    return application::ClientResult<void>::ok();
 }
 
 application::ClientResult<void> MemoryLocalStore::save_contact(const domain::Contact& contact) {
@@ -463,6 +480,7 @@ void MemoryLocalStore::clear() {
     sync_cursors_.clear();
     user_profiles_.clear();
     user_settings_.clear();
+    audit_events_.clear();
 }
 
 application::ClientResult<void> MemoryLocalStore::save_user_profile(const domain::UserProfile& profile) {
@@ -545,6 +563,73 @@ application::ClientResult<std::size_t> MemoryLocalStore::delete_expired_messages
         removed += std::erase_if(msgs, [now_ms](const domain::Message& m) { return m.is_expired(now_ms); });
     }
     return application::ClientResult<std::size_t>::ok(removed);
+}
+
+application::ClientResult<void> MemoryLocalStore::append_audit_event(const domain::LocalAuditEvent& event) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    const auto errors = event.validate();
+    if (!errors.empty()) {
+        return application::ClientResult<void>::error(application::ClientError::validation(errors.front()));
+    }
+    if (!event.has_valid_hash()) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Audit event entry_hash_sha256 does not match canonical payload"));
+    }
+
+    const int64_t expected_seq = audit_events_.empty() ? 1 : (audit_events_.back().sequence_id + 1);
+    const std::string expected_prev =
+        audit_events_.empty() ? std::string(domain::kGenesisAuditHash) : audit_events_.back().entry_hash_sha256;
+    if (event.sequence_id != expected_seq) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Audit event sequence_id mismatch"));
+    }
+    if (event.prev_hash_sha256 != expected_prev) {
+        return application::ClientResult<void>::error(
+            application::ClientError::validation("Audit event prev_hash_sha256 mismatch"));
+    }
+
+    audit_events_.push_back(event);
+    return application::ClientResult<void>::ok();
+}
+
+application::ClientResult<std::vector<domain::LocalAuditEvent>>
+MemoryLocalStore::list_audit_events(std::size_t limit, std::size_t offset) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<std::vector<domain::LocalAuditEvent>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (limit == 0U || offset >= audit_events_.size()) {
+        return application::ClientResult<std::vector<domain::LocalAuditEvent>>::ok({});
+    }
+    const std::size_t count = std::min(limit, audit_events_.size() - offset);
+    const auto begin_it = audit_events_.begin() + static_cast<std::ptrdiff_t>(offset);
+    const auto end_it = begin_it + static_cast<std::ptrdiff_t>(count);
+    std::vector<domain::LocalAuditEvent> result(begin_it, end_it);
+    return application::ClientResult<std::vector<domain::LocalAuditEvent>>::ok(std::move(result));
+}
+
+application::ClientResult<std::optional<domain::LocalAuditEvent>> MemoryLocalStore::get_latest_audit_event() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<std::optional<domain::LocalAuditEvent>>::error(
+            application::ClientError::storage("Storage is closed"));
+    }
+    if (audit_events_.empty()) {
+        return application::ClientResult<std::optional<domain::LocalAuditEvent>>::ok(std::nullopt);
+    }
+    return application::ClientResult<std::optional<domain::LocalAuditEvent>>::ok(audit_events_.back());
+}
+
+application::ClientResult<std::size_t> MemoryLocalStore::count_audit_events() {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<std::size_t>::error(application::ClientError::storage("Storage is closed"));
+    }
+    return application::ClientResult<std::size_t>::ok(audit_events_.size());
 }
 
 } // namespace securecloud::client::infrastructure::adapters

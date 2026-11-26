@@ -122,6 +122,7 @@ message AuthenticateResponse {
     string user_id = 6;
     bool mfa_required = 7;
     string mfa_challenge_id = 8;
+    string device_id = 9;
 }
 
 // RefreshSession renews an expired or expiring access token using a valid refresh token.
@@ -149,6 +150,8 @@ message ValidateSessionResponse {
     string device_id = 3;
     AuthenticationLevel authentication_level = 4;
     int64 expires_at_epoch_ms = 5;
+    string session_id = 6;
+    repeated string scopes = 7;
 }
 
 // RevokeSession terminates an active session and invalidates its refresh token.

@@ -98,6 +98,29 @@ class IDeviceManager {
     /// Lists devices for a user, optionally including revoked devices.
     [[nodiscard]] virtual std::vector<domain::DeviceEntity> list_user_devices(const domain::Uuid& user_id,
                                                                               bool include_revoked = false) = 0;
+
+    /// Provisions a keyless Active bootstrap device for first-time login when no client device_id exists yet.
+    virtual std::optional<domain::Uuid> provision_bootstrap_device(const domain::Uuid& /*user_id*/,
+                                                                   std::string_view /*client_ip*/ = "unknown") {
+        return std::nullopt;
+    }
+
+    /// Returns true iff device_id is an Active device owned by user_id that has no identity key attached yet.
+    [[nodiscard]] virtual bool is_bootstrap_device_awaiting_keys(const domain::Uuid& /*user_id*/,
+                                                                 const domain::Uuid& /*device_id*/) {
+        return false;
+    }
+
+    /// Attaches an initial public key bundle to an existing keyless Active bootstrap device.
+    virtual DeviceEnrollmentResult enroll_device_keys_for_existing(
+        const domain::Uuid& /*user_id*/, const domain::Uuid& /*device_id*/, std::span<const uint8_t> /*identity_key*/,
+        std::span<const uint8_t> /*signed_prekey*/, std::span<const uint8_t> /*signature*/,
+        const std::vector<std::vector<uint8_t>>& /*one_time_prekeys*/, std::string_view /*client_ip*/ = "unknown") {
+        return DeviceEnrollmentResult{
+            .success = false,
+            .error_message = "In-place bootstrap device key enrollment is not supported",
+        };
+    }
 };
 
 class ISessionManager;
@@ -138,6 +161,19 @@ class DeviceManager : public IDeviceManager {
     [[nodiscard]] std::vector<domain::DeviceEntity> list_user_devices(const domain::Uuid& user_id,
                                                                       bool include_revoked = false) override;
 
+    std::optional<domain::Uuid> provision_bootstrap_device(const domain::Uuid& user_id,
+                                                           std::string_view client_ip = "unknown") override;
+
+    [[nodiscard]] bool is_bootstrap_device_awaiting_keys(const domain::Uuid& user_id,
+                                                         const domain::Uuid& device_id) override;
+
+    DeviceEnrollmentResult enroll_device_keys_for_existing(const domain::Uuid& user_id, const domain::Uuid& device_id,
+                                                           std::span<const uint8_t> identity_key,
+                                                           std::span<const uint8_t> signed_prekey,
+                                                           std::span<const uint8_t> signature,
+                                                           const std::vector<std::vector<uint8_t>>& one_time_prekeys,
+                                                           std::string_view client_ip = "unknown") override;
+
   private:
     std::shared_ptr<repository::IDeviceRepository> device_repo_;
     std::shared_ptr<repository::IDevicePublicKeyRepository> public_key_repo_;
@@ -149,6 +185,13 @@ class DeviceManager : public IDeviceManager {
     std::mutex challenge_mutex_;
     std::unordered_map<domain::Uuid, DevicePairingChallenge> pairing_challenges_;
 
+    [[nodiscard]] std::optional<DeviceEnrollmentResult>
+    validate_and_persist_device_keys(const domain::Uuid& user_id, const domain::Uuid& device_id,
+                                     const std::optional<domain::DeviceEntity>& new_device,
+                                     domain::DeviceStatus initial_status, std::span<const uint8_t> identity_key,
+                                     std::span<const uint8_t> signed_prekey, std::span<const uint8_t> signature,
+                                     const std::vector<std::vector<uint8_t>>& one_time_prekeys,
+                                     std::chrono::system_clock::time_point now, std::string_view client_ip);
     [[nodiscard]] std::string generate_pairing_code_internal();
     [[nodiscard]] static std::string normalize_code(std::string_view code);
 };

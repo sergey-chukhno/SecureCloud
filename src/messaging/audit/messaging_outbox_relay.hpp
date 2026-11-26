@@ -24,6 +24,7 @@ struct OutboxRelayConfig {
     int32_t max_retries{5}; // Quarantine threshold
     std::chrono::milliseconds base_backoff{100};
     std::chrono::milliseconds max_backoff{10000};
+    std::string producer_instance{"messaging-1"};
 };
 
 /**

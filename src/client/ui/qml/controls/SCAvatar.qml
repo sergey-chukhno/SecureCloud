@@ -54,12 +54,23 @@ Item {
         border.width: 1
 
         Text {
+            visible: !avatarImg.visible
             anchors.centerIn: parent
             text: avatar.getInitials(avatar.displayName, avatar.userId)
             font.family: Theme.fontFamilyPrimary
             font.pixelSize: Math.round(avatar.size * 0.40)
             font.bold: true
             color: "#FFFFFF"
+        }
+
+        Image {
+            id: avatarImg
+            anchors.fill: parent
+            anchors.margins: 1
+            source: avatar.imageUrl
+            fillMode: Image.PreserveAspectFit
+            smooth: true
+            visible: avatar.imageUrl !== "" && status === Image.Ready
         }
     }
 

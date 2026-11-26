@@ -4,6 +4,7 @@
 #include "audit/messaging_audit_metrics.hpp"
 #include "domain/audit_event.hpp"
 #include "domain/audit_event_id.hpp"
+#include "securecloud/grpc/caller_context.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -188,6 +189,12 @@ bool MessagingOutboxRelay::process_shard(const std::string& bucket, int32_t shar
             domain::is_valid_audit_uuid_v7(event.event_id()) && !event.event_type().empty() &&
             event.producer_service() == securecloud::audit::v1::PRODUCER_SERVICE_MESSAGING;
         if (parsed_ok) {
+            if (!config_.producer_instance.empty()) {
+                event.set_producer_instance(config_.producer_instance);
+            }
+            if (event.correlation_id().empty() && securecloud::common::rpc::is_valid_uuid(event.event_id())) {
+                event.set_correlation_id(event.event_id());
+            }
             batch.push_back(std::move(event));
             valid_records.push_back(&record);
         } else {

@@ -4,15 +4,175 @@
 #include "http/errors/error_mapper.hpp"
 #include "http/routing/router.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <chrono>
 #include <httplib.h>
+#include <initializer_list>
 #include <nlohmann/json.hpp>
+#include <string_view>
 #include <utility>
 
 namespace securecloud::gateway::http {
 namespace {
 
 constexpr const char* k_content_type_json = "application/json";
+
+[[nodiscard]] bool is_printable_ascii(std::string_view raw) noexcept {
+    for (char raw_ch : raw) {
+        const auto ch = static_cast<unsigned char>(raw_ch);
+        if (ch < 0x20U || ch > 0x7EU) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] int hex_nibble(char ch) noexcept {
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return 10 + (ch - 'a');
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return 10 + (ch - 'A');
+    }
+    return -1;
+}
+
+[[nodiscard]] bool try_decode_hex(std::string_view encoded, std::string& out) {
+    if (encoded.empty() || (encoded.size() % 2U) != 0U) {
+        return false;
+    }
+    std::string decoded;
+    decoded.reserve(encoded.size() / 2U);
+    for (std::size_t i = 0; i < encoded.size(); i += 2U) {
+        const int hi = hex_nibble(encoded[i]);
+        const int lo = hex_nibble(encoded[i + 1U]);
+        if (hi < 0 || lo < 0) {
+            return false;
+        }
+        decoded.push_back(static_cast<char>((hi << 4) | lo));
+    }
+    out = std::move(decoded);
+    return true;
+}
+
+[[nodiscard]] int base64_value(unsigned char ch) noexcept {
+    if (ch >= 'A' && ch <= 'Z') {
+        return ch - 'A';
+    }
+    if (ch >= 'a' && ch <= 'z') {
+        return 26 + (ch - 'a');
+    }
+    if (ch >= '0' && ch <= '9') {
+        return 52 + (ch - '0');
+    }
+    if (ch == '+') {
+        return 62;
+    }
+    if (ch == '/') {
+        return 63;
+    }
+    return -1;
+}
+
+[[nodiscard]] bool try_decode_base64(std::string_view encoded, std::string& out) {
+    if (encoded.empty() || (encoded.size() % 4U) != 0U) {
+        return false;
+    }
+    std::string decoded;
+    decoded.reserve((encoded.size() / 4U) * 3U);
+    for (std::size_t i = 0; i < encoded.size(); i += 4U) {
+        const unsigned char c0 = static_cast<unsigned char>(encoded[i]);
+        const unsigned char c1 = static_cast<unsigned char>(encoded[i + 1U]);
+        const unsigned char c2 = static_cast<unsigned char>(encoded[i + 2U]);
+        const unsigned char c3 = static_cast<unsigned char>(encoded[i + 3U]);
+        const int v0 = base64_value(c0);
+        const int v1 = base64_value(c1);
+        if (v0 < 0 || v1 < 0) {
+            return false;
+        }
+        const bool pad2 = (c2 == '=');
+        const bool pad3 = (c3 == '=');
+        if (pad2 && !pad3) {
+            return false;
+        }
+        if ((pad2 || pad3) && (i + 4U) != encoded.size()) {
+            return false;
+        }
+        const int v2 = pad2 ? 0 : base64_value(c2);
+        const int v3 = pad3 ? 0 : base64_value(c3);
+        if (v2 < 0 || v3 < 0) {
+            return false;
+        }
+        const uint32_t triple = (static_cast<uint32_t>(v0) << 18U) | (static_cast<uint32_t>(v1) << 12U) |
+                                (static_cast<uint32_t>(v2) << 6U) | static_cast<uint32_t>(v3);
+        decoded.push_back(static_cast<char>((triple >> 16U) & 0xFFU));
+        if (!pad2) {
+            decoded.push_back(static_cast<char>((triple >> 8U) & 0xFFU));
+        }
+        if (!pad3) {
+            decoded.push_back(static_cast<char>(triple & 0xFFU));
+        }
+    }
+    out = std::move(decoded);
+    return true;
+}
+
+[[nodiscard]] std::string encode_binary_for_json(std::string_view raw) {
+    if (raw.empty() || is_printable_ascii(raw)) {
+        return std::string(raw);
+    }
+    static constexpr char k_b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve(((raw.size() + 2U) / 3U) * 4U);
+    for (std::size_t i = 0; i < raw.size(); i += 3U) {
+        const uint32_t b0 = static_cast<unsigned char>(raw[i]);
+        const uint32_t b1 = (i + 1U < raw.size()) ? static_cast<unsigned char>(raw[i + 1U]) : 0U;
+        const uint32_t b2 = (i + 2U < raw.size()) ? static_cast<unsigned char>(raw[i + 2U]) : 0U;
+        const uint32_t triple = (b0 << 16U) | (b1 << 8U) | b2;
+        out.push_back(k_b64[(triple >> 18U) & 0x3FU]);
+        out.push_back(k_b64[(triple >> 12U) & 0x3FU]);
+        out.push_back((i + 1U < raw.size()) ? k_b64[(triple >> 6U) & 0x3FU] : '=');
+        out.push_back((i + 2U < raw.size()) ? k_b64[triple & 0x3FU] : '=');
+    }
+    return out;
+}
+
+[[nodiscard]] std::string decode_fixed_wire_bytes(std::string_view value,
+                                                  std::initializer_list<std::size_t> allowed_lens) {
+    auto matches_allowed = [&](std::size_t len) {
+        return std::find(allowed_lens.begin(), allowed_lens.end(), len) != allowed_lens.end();
+    };
+    std::string decoded;
+    if (try_decode_hex(value, decoded) && matches_allowed(decoded.size())) {
+        return decoded;
+    }
+    if (try_decode_base64(value, decoded) && matches_allowed(decoded.size())) {
+        return decoded;
+    }
+    return std::string(value);
+}
+
+[[nodiscard]] std::string decode_ciphertext_wire_bytes(std::string_view value) {
+    std::string decoded;
+    if (try_decode_base64(value, decoded) && !decoded.empty()) {
+        std::size_t printable = 0;
+        const std::size_t sample_len = std::min<std::size_t>(decoded.size(), 256U);
+        for (std::size_t i = 0; i < sample_len; ++i) {
+            const unsigned char ch = static_cast<unsigned char>(decoded[i]);
+            if ((ch >= 0x20U && ch <= 0x7EU) || ch == '\n' || ch == '\r' || ch == '\t') {
+                ++printable;
+            }
+        }
+        if (static_cast<double>(printable) / static_cast<double>(sample_len) < 0.90) {
+            return decoded;
+        }
+    }
+    return std::string(value);
+}
 
 nlohmann::json conversation_metadata_to_json(const securecloud::messaging::v1::ConversationMetadata& meta) {
     nlohmann::json j;
@@ -79,10 +239,10 @@ nlohmann::json message_envelope_to_json(const securecloud::messaging::v1::Messag
         if (target.has_encrypted_payload()) {
             const auto& ep = target.encrypted_payload();
             nlohmann::json ep_json;
-            ep_json["ciphertext_blob"] = ep.ciphertext_blob();
-            ep_json["ephemeral_public_key"] = ep.ephemeral_public_key();
-            ep_json["initialization_vector"] = ep.initialization_vector();
-            ep_json["auth_tag"] = ep.auth_tag();
+            ep_json["ciphertext_blob"] = encode_binary_for_json(ep.ciphertext_blob());
+            ep_json["ephemeral_public_key"] = encode_binary_for_json(ep.ephemeral_public_key());
+            ep_json["initialization_vector"] = encode_binary_for_json(ep.initialization_vector());
+            ep_json["auth_tag"] = encode_binary_for_json(ep.auth_tag());
             ep_json["algorithm"] = ep.algorithm();
             t_json["encrypted_payload"] = ep_json;
         }
@@ -948,11 +1108,21 @@ void MessagingProxyHandler::handle_send_message(const httplib::Request& req, htt
             if (dt_json.contains("encrypted_payload") && dt_json["encrypted_payload"].is_object()) {
                 const auto& ep_json = dt_json["encrypted_payload"];
                 auto* ep = target->mutable_encrypted_payload();
-                ep->set_ciphertext_blob(ep_json.value("ciphertext_blob", ""));
-                ep->set_ephemeral_public_key(ep_json.value("ephemeral_public_key", ""));
-                ep->set_initialization_vector(ep_json.value("initialization_vector", ""));
-                ep->set_auth_tag(ep_json.value("auth_tag", ""));
-                ep->set_algorithm(ep_json.value("algorithm", "XChaCha20-Poly1305"));
+                const std::string algorithm = ep_json.value("algorithm", "XChaCha20-Poly1305");
+                ep->set_ciphertext_blob(decode_ciphertext_wire_bytes(ep_json.value("ciphertext_blob", "")));
+                ep->set_ephemeral_public_key(decode_fixed_wire_bytes(ep_json.value("ephemeral_public_key", ""), {32}));
+                if (algorithm == "XChaCha20-Poly1305") {
+                    ep->set_initialization_vector(
+                        decode_fixed_wire_bytes(ep_json.value("initialization_vector", ""), {24}));
+                } else if (algorithm == "AES-256-GCM") {
+                    ep->set_initialization_vector(
+                        decode_fixed_wire_bytes(ep_json.value("initialization_vector", ""), {12}));
+                } else {
+                    ep->set_initialization_vector(
+                        decode_fixed_wire_bytes(ep_json.value("initialization_vector", ""), {12, 24}));
+                }
+                ep->set_auth_tag(decode_fixed_wire_bytes(ep_json.value("auth_tag", ""), {16}));
+                ep->set_algorithm(algorithm);
             }
         }
     }

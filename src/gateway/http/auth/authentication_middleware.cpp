@@ -27,11 +27,31 @@ struct ScopedContextBinding {
     ScopedContextBinding& operator=(ScopedContextBinding&&) = delete;
 };
 
+void emit_token_rejected_audit(const std::shared_ptr<audit::IGatewayAuditProducer>& audit_producer,
+                               const httplib::Request& req, std::string_view request_id, std::string_view reason) {
+    if (!audit_producer) {
+        return;
+    }
+    audit::GatewayAuditObservation obs;
+    obs.type = audit::GatewayAuditEventType::TokenRejected;
+    obs.target_id = "gateway";
+    obs.client_ip = req.remote_addr.empty() ? "127.0.0.1" : req.remote_addr;
+    obs.route_class = req.path.empty() ? "unknown" : req.path;
+    obs.http_method = req.method.empty() ? "GET" : req.method;
+    if (!request_id.empty()) {
+        obs.client_request_id = std::string(request_id);
+    }
+    obs.metadata["reason"] = std::string(reason);
+    (void)audit_producer->record_observation(obs);
+}
+
 } // namespace
 
 AuthenticationMiddleware::AuthenticationMiddleware(std::shared_ptr<GatewaySecurityPolicy> security_policy,
-                                                   std::shared_ptr<ITokenValidator> token_validator)
-    : security_policy_(std::move(security_policy)), token_validator_(std::move(token_validator)) {
+                                                   std::shared_ptr<ITokenValidator> token_validator,
+                                                   std::shared_ptr<audit::IGatewayAuditProducer> audit_producer)
+    : security_policy_(std::move(security_policy)), token_validator_(std::move(token_validator)),
+      audit_producer_(std::move(audit_producer)) {
     if (!security_policy_) {
         throw std::invalid_argument("AuthenticationMiddleware requires a non-null GatewaySecurityPolicy instance");
     }
@@ -76,6 +96,7 @@ void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Res
     // 3. Extract Bearer token
     auto token_opt = BearerTokenExtractor::extract(req);
     if (!token_opt.has_value()) {
+        emit_token_rejected_audit(audit_producer_, req, request_id, "missing_authorization_header");
         res.set_header(
             "WWW-Authenticate",
             "Bearer error=\"invalid_token\", error_description=\"Missing or malformed Authorization header\"");
@@ -90,12 +111,14 @@ void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Res
         const auto& err = val_res.error();
         switch (err.kind) {
         case TokenValidationErrorKind::TokenExpired:
+            emit_token_rejected_audit(audit_producer_, req, request_id, "expired");
             res.set_header("WWW-Authenticate",
                            "Bearer error=\"invalid_token\", error_description=\"The access token expired\"");
             ErrorMapper::write_error(res, 401, "TOKEN_EXPIRED",
                                      err.message.empty() ? "Access token has expired" : err.message, request_id);
             return;
         case TokenValidationErrorKind::SessionRevoked:
+            emit_token_rejected_audit(audit_producer_, req, request_id, "session_revoked");
             res.set_header("WWW-Authenticate",
                            "Bearer error=\"invalid_token\", error_description=\"The session was revoked\"");
             ErrorMapper::write_error(
@@ -110,6 +133,7 @@ void AuthenticationMiddleware::process(const httplib::Request& req, httplib::Res
             return;
         case TokenValidationErrorKind::InvalidSignature:
         case TokenValidationErrorKind::MalformedToken:
+            emit_token_rejected_audit(audit_producer_, req, request_id, "invalid_signature_or_format");
             res.set_header(
                 "WWW-Authenticate",
                 "Bearer error=\"invalid_token\", error_description=\"Invalid token signature or structure\"");

@@ -193,9 +193,8 @@ TEST_F(SettingsManagerPipelineTest, EncryptedAvatarUploadUsesFileManagerWithoutP
     EXPECT_TRUE(bootstrap->settings_manager().upload_encrypted_avatar(uid, did, bad_ext.string()).is_error());
 
     const std::filesystem::path empty_png = temp_dir_ / "empty.png";
-    {
-        std::ofstream ofs(empty_png, std::ios::binary);
-    }
+    std::ofstream empty_ofs(empty_png, std::ios::binary);
+    empty_ofs.close();
     EXPECT_TRUE(bootstrap->settings_manager().upload_encrypted_avatar(uid, did, empty_png.string()).is_error());
 
     // Valid PNG containing identifiable plaintext marker must arrive strictly encrypted on Gateway.
@@ -423,7 +422,7 @@ TEST_F(SettingsManagerPipelineTest, EmergencyPanicWipeClearsSettingsManagerVolat
                                                                             PostWipeMode::EmergencyLocked);
     ASSERT_TRUE(wipe_res.is_ok());
     EXPECT_TRUE(wipe_res.value().all_critical_steps_succeeded);
-    EXPECT_EQ(wipe_res.value().volatile_caches_cleared, 6U);
+    EXPECT_EQ(wipe_res.value().volatile_caches_cleared, 7U);
 
     EXPECT_FALSE(settings_mgr.cached_profile().has_value());
     EXPECT_FALSE(settings_mgr.current_settings().high_contrast_enabled);

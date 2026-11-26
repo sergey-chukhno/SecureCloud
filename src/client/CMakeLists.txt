@@ -28,6 +28,8 @@ if(Qt6_FOUND)
         domain/file_transfer.cpp
         domain/offline_sync_models.cpp
         domain/emergency_models.cpp
+        domain/local_audit_event.cpp
+        domain/diagnostics_models.cpp
         domain/crypto/x3dh_models.cpp
         domain/crypto/x3dh_engine.cpp
         domain/crypto/ratchet_models.cpp
@@ -38,13 +40,14 @@ if(Qt6_FOUND)
         domain/crypto/sender_key_engine.cpp
         domain/crypto/file_crypto_engine.cpp
         domain/crypto/recovery_phrase_engine.cpp
+        domain/crypto/crypto_self_test.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)
     target_include_directories(securecloud_client_domain PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
     )
     target_link_libraries(securecloud_client_domain PUBLIC
-        securecloud::common
+        securecloud::common_core
         securecloud::json
         securecloud::compiler_flags
         OpenSSL::Crypto
@@ -65,6 +68,7 @@ if(Qt6_FOUND)
         infrastructure/adapters/openssl_crypto_provider.cpp
         infrastructure/adapters/key_storage_helper.cpp
         infrastructure/adapters/simulated_hardware_authenticator.cpp
+        infrastructure/adapters/platform_telemetry_collector.cpp
     )
     add_library(securecloud::client_infra ALIAS securecloud_client_infra)
     target_include_directories(securecloud_client_infra PUBLIC
@@ -72,13 +76,16 @@ if(Qt6_FOUND)
     )
     target_link_libraries(securecloud_client_infra PUBLIC
         securecloud_client_domain
-        securecloud::common
+        securecloud::common_core
         securecloud::compiler_flags
         securecloud::sqlcipher
         OpenSSL::Crypto
         Qt6::Core
         Qt6::Network
     )
+    if(WIN32)
+        target_link_libraries(securecloud_client_infra PRIVATE psapi)
+    endif()
 
     # 3. Application Layer (Use Cases, Lifecycle, Context)
     add_library(securecloud_client_app STATIC
@@ -99,6 +106,9 @@ if(Qt6_FOUND)
         application/managers/file_manager.cpp
         application/managers/emergency_manager.cpp
         application/managers/settings_manager.cpp
+        application/managers/local_audit_logger.cpp
+        application/managers/diagnostic_sanitizer.cpp
+        application/managers/diagnostics_manager.cpp
         application/managers/sync_manager.cpp
     )
     add_library(securecloud::client_app ALIAS securecloud_client_app)
@@ -111,7 +121,7 @@ if(Qt6_FOUND)
     target_link_libraries(securecloud_client_app PUBLIC
         securecloud_client_domain
         securecloud_client_infra
-        securecloud::common
+        securecloud::common_core
         securecloud::compiler_flags
         Qt6::Core
     )
@@ -121,6 +131,7 @@ if(Qt6_FOUND)
         ui/ui_controller.cpp
         ui/navigation_controller.cpp
         ui/app_view_model.cpp
+        ui/diagnostics_view_model.cpp
         ui/workspace_view_model.cpp
         ui/ui_theme.cpp
         ui/window_state_manager.cpp
@@ -161,7 +172,7 @@ if(Qt6_FOUND)
         securecloud_client_app
         securecloud_client_infra
         securecloud_client_domain
-        securecloud::common
+        securecloud::common_core
         securecloud::compiler_flags
         Qt6::Core
         Qt6::Gui

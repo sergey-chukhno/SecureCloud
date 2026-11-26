@@ -35,6 +35,7 @@ void AcknowledgementManager::on_batch_failed(const std::vector<domain::AuditEven
 void AcknowledgementManager::complete_batch_success(const IngestionBatch& batch) {
     for (const auto& envelope : batch) {
         service::IngestionResult result{.success = true,
+                                        .outcome_status = IngestionOutcomeStatus::PersistedNew,
                                         .error_code = "",
                                         .error_message = "",
                                         .received_at =
@@ -50,9 +51,11 @@ void AcknowledgementManager::complete_batch_success(const IngestionBatch& batch)
 }
 
 void AcknowledgementManager::complete_batch_failure(const IngestionBatch& batch, const std::string& error_code,
-                                                    const std::string& error_message) {
+                                                    const std::string& error_message,
+                                                    IngestionOutcomeStatus outcome_status) {
     for (const auto& envelope : batch) {
         service::IngestionResult result{.success = false,
+                                        .outcome_status = outcome_status,
                                         .error_code = error_code,
                                         .error_message = error_message,
                                         .received_at =

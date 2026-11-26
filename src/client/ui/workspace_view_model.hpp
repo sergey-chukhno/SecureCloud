@@ -9,10 +9,12 @@
 #include <QObject>
 #include <QPointer>
 #include <QString>
+#include <QTimer>
 #include <QVariantList>
 #include <QVariantMap>
 #include <cstdint>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace securecloud::client::domain {
@@ -114,6 +116,9 @@ class WorkspaceViewModel : public QObject {
     Q_PROPERTY(QString profileBio READ profileBio NOTIFY profileSettingsChanged)
     Q_PROPERTY(QString profileAvatarFileId READ profileAvatarFileId NOTIFY profileSettingsChanged)
     Q_PROPERTY(QString profileAvatarSha256 READ profileAvatarSha256 NOTIFY profileSettingsChanged)
+    Q_PROPERTY(QString profileAvatarImageUrl READ profileAvatarImageUrl NOTIFY profileSettingsChanged)
+    Q_PROPERTY(bool profileShareAvatarWithContacts READ profileShareAvatarWithContacts WRITE
+                   setProfileShareAvatarWithContacts NOTIFY profileSettingsChanged)
     Q_PROPERTY(bool profileAllowDiscovery READ profileAllowDiscovery NOTIFY profileSettingsChanged)
     Q_PROPERTY(QString profileSyncStatusText READ profileSyncStatusText NOTIFY profileSettingsChanged)
 
@@ -236,6 +241,9 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] QString profileBio() const;
     [[nodiscard]] QString profileAvatarFileId() const;
     [[nodiscard]] QString profileAvatarSha256() const;
+    [[nodiscard]] QString profileAvatarImageUrl() const { return profile_avatar_image_url_; }
+    [[nodiscard]] bool profileShareAvatarWithContacts() const noexcept { return profile_share_avatar_with_contacts_; }
+    void setProfileShareAvatarWithContacts(bool enabled);
     [[nodiscard]] bool profileAllowDiscovery() const noexcept { return profile_.allow_handle_discovery; }
     [[nodiscard]] QString profileSyncStatusText() const { return profile_sync_status_text_; }
 
@@ -453,6 +461,8 @@ class WorkspaceViewModel : public QObject {
     void hydrateSettingsAndProfile();
     void syncUiThemeFromSettings();
     bool persistCurrentSettings();
+    void pollLiveSync();
+    void markSelectedConversationReadIfActive();
     [[nodiscard]] static QString stripUrlScheme(const QString& urlOrHost);
     void handleRealtimeEvent(const domain::RealtimeEvent& event);
     void applyFileTransferUpdate(const domain::FileTransferRecord& record);
@@ -492,6 +502,9 @@ class WorkspaceViewModel : public QObject {
     bool delivery_failure_simulated_{false};
     uint64_t realtime_sub_id_{0};
     uint64_t connectivity_sub_id_{0};
+    QTimer live_sync_timer_;
+    int64_t last_presence_heartbeat_ms_{0};
+    std::unordered_map<std::string, QString> peer_presence_cache_;
     QString totp_enrollment_secret_{QStringLiteral("JBSWY3DPEHPK3PXP · SHA-256 (6-digit / 30s)")};
 
     std::vector<ConversationEntry> conversations_;
@@ -502,6 +515,8 @@ class WorkspaceViewModel : public QObject {
     QPointer<UiTheme> ui_theme_;
     domain::UserSettings settings_{};
     domain::UserProfile profile_{};
+    QString profile_avatar_image_url_;
+    bool profile_share_avatar_with_contacts_{false};
     QString profile_sync_status_text_{QStringLiteral("Local Profile")};
     QVariantMap tls_last_inspected_info_{};
     bool tls_pin_matches_{true};

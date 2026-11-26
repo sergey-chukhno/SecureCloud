@@ -77,15 +77,26 @@ AuthenticatedResult AuthServiceTokenValidator::validate(const std::string& token
         return TokenValidationError{TokenValidationErrorKind::TokenExpired, "Access token has expired"};
     }
 
-    std::vector<std::string> scopes{
-        "access", "messages:read", "messages:write", "files:read", "files:write", "auth:profile",
-    };
-    if (resp.authentication_level() == securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED) {
-        scopes.push_back("auth:device:register");
-        scopes.push_back("auth:keys:rotate");
+    std::vector<std::string> scopes;
+    if (resp.scopes_size() > 0) {
+        scopes.reserve(static_cast<std::size_t>(resp.scopes_size()));
+        for (const auto& s : resp.scopes()) {
+            scopes.push_back(s);
+        }
+    } else {
+        scopes = {
+            "access",     "user:profile", "messages:read", "messages:send", "messages:write",
+            "files:read", "files:write",  "files:upload",  "files:delete",  "auth:profile",
+        };
+        if (resp.authentication_level() ==
+            securecloud::auth::v1::AuthenticationLevel::AUTHENTICATION_LEVEL_MFA_VERIFIED) {
+            scopes.push_back("auth:device:register");
+            scopes.push_back("auth:keys:rotate");
+        }
     }
 
-    AuthenticatedContext context(resp.user_id(), resp.device_id(), session_id, resp.authentication_level(),
+    const std::string effective_session_id = !resp.session_id().empty() ? resp.session_id() : session_id;
+    AuthenticatedContext context(resp.user_id(), resp.device_id(), effective_session_id, resp.authentication_level(),
                                  std::move(scopes), resp.expires_at_epoch_ms());
 
     // Update in-memory cache if caching is active
