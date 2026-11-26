@@ -2578,10 +2578,13 @@ Rectangle {
                     }
 
                     RowLayout {
-                        Layout.alignment: Qt.AlignHCenter
+                        Layout.fillWidth: true
                         spacing: 6
 
                         Label {
+                            Layout.fillWidth: true
+                            horizontalAlignment: Text.AlignHCenter
+                            elide: Text.ElideMiddle
                             text: workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerHandle : ""
                             font.family: Theme.fontFamilyPrimary
                             font.pixelSize: Theme.fontSubtitle
@@ -2845,9 +2848,16 @@ Rectangle {
 
                     SCButton {
                         Layout.fillWidth: true
-                        text: (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked)
-                              ? qsTr("Unblock Peer")
-                              : qsTr("Block %1").arg(workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : "")
+                        text: {
+                            if (workspaceRoot.wvm && workspaceRoot.wvm.selectedPeerBlocked) {
+                                return qsTr("Unblock Peer")
+                            }
+                            var name = workspaceRoot.wvm ? workspaceRoot.wvm.selectedPeerName : ""
+                            if (name.length > 16) {
+                                name = name.slice(0, 8) + "..." + name.slice(name.length - 4)
+                            }
+                            return qsTr("Block %1").arg(name)
+                        }
                         iconName: "shield-alert"
                         variant: "Danger"
                         buttonHeight: 32

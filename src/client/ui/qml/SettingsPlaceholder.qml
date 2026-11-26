@@ -706,6 +706,8 @@ Rectangle {
                             spacing: 2
 
                             Label {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
                                 text: qsTr("Require TOTP / MFA Challenge on Session Login")
                                 font.family: Theme.fontFamilyPrimary
                                 font.pixelSize: Theme.fontBody
@@ -748,6 +750,8 @@ Rectangle {
                             spacing: 2
 
                             Label {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
                                 text: qsTr("FIDO2 / Hardware Security Key Attestation")
                                 font.family: Theme.fontFamilyPrimary
                                 font.pixelSize: Theme.fontBody
@@ -756,6 +760,8 @@ Rectangle {
                             }
 
                             Label {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
                                 text: qsTr("Binds X3DH identity key signatures to hardware enclave presence.")
                                 font.family: Theme.fontFamilyPrimary
                                 font.pixelSize: Theme.fontCaption
@@ -763,8 +769,13 @@ Rectangle {
                             }
                         }
 
+                        Item {
+                            Layout.fillWidth: true
+                        }
+
                         SCButton {
                             objectName: "hardwareKeyButton"
+                            Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
                             text: (settingsRoot.wvm && settingsRoot.wvm.hardwareKeyEnforced)
                                   ? qsTr("Hardware Key Bound")
                                   : qsTr("Software Enclave")
@@ -788,6 +799,8 @@ Rectangle {
                             spacing: 2
 
                             Label {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
                                 text: qsTr("Active TOTP Authenticator Seed:")
                                 font.family: Theme.fontFamilyPrimary
                                 font.pixelSize: Theme.fontCaption
@@ -795,6 +808,8 @@ Rectangle {
                             }
 
                             Label {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
                                 text: settingsRoot.wvm ? settingsRoot.wvm.totpEnrollmentSecret : "JBSWY3DPEHPK3PXP · SHA-256 (6-digit / 30s)"
                                 font.family: Theme.fontFamilyMonospace
                                 font.pixelSize: Theme.fontCaption
@@ -802,7 +817,12 @@ Rectangle {
                             }
                         }
 
+                        Item {
+                            Layout.fillWidth: true
+                        }
+
                         SCButton {
+                            Layout.alignment: Qt.AlignVCenter | Qt.AlignRight
                             text: qsTr("Rotate TOTP Seed")
                             variant: "Secondary"
                             buttonHeight: 32
@@ -871,6 +891,8 @@ Rectangle {
                             spacing: 2
 
                             Label {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
                                 text: qsTr("Default Disappearing Message Timer")
                                 font.bold: true
                                 font.family: Theme.fontFamilyPrimary
@@ -936,6 +958,9 @@ Rectangle {
                             spacing: 2
 
                             Label {
+                                Layout.fillWidth: true
+                                wrapMode: Text.WordWrap
+                                elide: Text.ElideMiddle
                                 text: qsTr("Active Conversation Timer (%1)").arg(settingsRoot.wvm ? settingsRoot.wvm.selectedPeerName : "")
                                 font.bold: true
                                 font.family: Theme.fontFamilyPrimary
