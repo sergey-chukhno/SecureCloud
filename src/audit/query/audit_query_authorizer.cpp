@@ -1,5 +1,7 @@
 #include "query/audit_query_authorizer.hpp"
 
+#include <algorithm>
+
 namespace securecloud::audit::query {
 
 namespace {} // namespace

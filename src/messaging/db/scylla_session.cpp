@@ -502,11 +502,11 @@ std::intptr_t connect_tcp_socket(const std::string& host, uint16_t port, uint32_
                                  uint32_t request_timeout_ms, std::string& out_error) {
     ensure_winsock_initialized();
 
-    struct addrinfo hints{};
+    addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    struct addrinfo* result = nullptr;
+    addrinfo* result = nullptr;
     const std::string port_str = std::to_string(port);
     const int gai_rc = ::getaddrinfo(host.c_str(), port_str.c_str(), &hints, &result);
     if (gai_rc != 0 || result == nullptr) {
@@ -583,7 +583,7 @@ void close_native_socket(std::intptr_t fd) noexcept {
 }
 
 void set_socket_timeouts(std::intptr_t fd, uint32_t timeout_ms) {
-    struct timeval tv{};
+    timeval tv{};
     tv.tv_sec = static_cast<decltype(tv.tv_sec)>(timeout_ms / 1000U);
     tv.tv_usec = static_cast<decltype(tv.tv_usec)>((timeout_ms % 1000U) * 1000U);
     (void)::setsockopt(static_cast<int>(fd), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
@@ -592,11 +592,11 @@ void set_socket_timeouts(std::intptr_t fd, uint32_t timeout_ms) {
 
 std::intptr_t connect_tcp_socket(const std::string& host, uint16_t port, uint32_t connect_timeout_ms,
                                  uint32_t request_timeout_ms, std::string& out_error) {
-    struct addrinfo hints{};
+    addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
 
-    struct addrinfo* result = nullptr;
+    addrinfo* result = nullptr;
     const std::string port_str = std::to_string(port);
     const int gai_rc = ::getaddrinfo(host.c_str(), port_str.c_str(), &hints, &result);
     if (gai_rc != 0 || result == nullptr) {
@@ -628,7 +628,7 @@ std::intptr_t connect_tcp_socket(const std::string& host, uint16_t port, uint32_
 
         int rc = ::connect(fd, rp->ai_addr, rp->ai_addrlen);
         if (rc < 0 && errno == EINPROGRESS) {
-            struct pollfd pfd{};
+            pollfd pfd{};
             pfd.fd = fd;
             pfd.events = POLLOUT;
             const int poll_rc = ::poll(&pfd, 1, static_cast<int>(connect_timeout_ms));
