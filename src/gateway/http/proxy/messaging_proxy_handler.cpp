@@ -1108,12 +1108,21 @@ void MessagingProxyHandler::handle_send_message(const httplib::Request& req, htt
             if (dt_json.contains("encrypted_payload") && dt_json["encrypted_payload"].is_object()) {
                 const auto& ep_json = dt_json["encrypted_payload"];
                 auto* ep = target->mutable_encrypted_payload();
+                const std::string algorithm = ep_json.value("algorithm", "XChaCha20-Poly1305");
                 ep->set_ciphertext_blob(decode_ciphertext_wire_bytes(ep_json.value("ciphertext_blob", "")));
                 ep->set_ephemeral_public_key(decode_fixed_wire_bytes(ep_json.value("ephemeral_public_key", ""), {32}));
-                ep->set_initialization_vector(
-                    decode_fixed_wire_bytes(ep_json.value("initialization_vector", ""), {12, 24}));
+                if (algorithm == "XChaCha20-Poly1305") {
+                    ep->set_initialization_vector(
+                        decode_fixed_wire_bytes(ep_json.value("initialization_vector", ""), {24}));
+                } else if (algorithm == "AES-256-GCM") {
+                    ep->set_initialization_vector(
+                        decode_fixed_wire_bytes(ep_json.value("initialization_vector", ""), {12}));
+                } else {
+                    ep->set_initialization_vector(
+                        decode_fixed_wire_bytes(ep_json.value("initialization_vector", ""), {12, 24}));
+                }
                 ep->set_auth_tag(decode_fixed_wire_bytes(ep_json.value("auth_tag", ""), {16}));
-                ep->set_algorithm(ep_json.value("algorithm", "XChaCha20-Poly1305"));
+                ep->set_algorithm(algorithm);
             }
         }
     }
