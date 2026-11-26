@@ -317,6 +317,11 @@ void WorkspaceViewModel::pollLiveSync() {
         should_reload = true;
     }
 
+    const auto purge_res = app_.bootstrap().messaging_manager().purge_expired_messages();
+    if (purge_res.is_ok() && purge_res.value() > 0) {
+        should_reload = true;
+    }
+
     const bool is_viewing_active_thread = !selected_conversation_id_.isEmpty() &&
                                           activeSection() == QStringLiteral("Messages") &&
                                           (qGuiApp == nullptr || qGuiApp->applicationState() == Qt::ApplicationActive);
