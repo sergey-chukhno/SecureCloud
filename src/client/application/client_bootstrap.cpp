@@ -156,6 +156,10 @@ void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& u
     }
     if (contact_manager_) {
         contact_manager_->set_ratchet_session_manager(ratchet_session_manager_.get());
+        ratchet_session_manager_->set_peer_identity_observed_callback(
+            [cm = contact_manager_.get()](const domain::UserId& peer_uid, std::span<const uint8_t> peer_key) {
+                (void)cm->evaluate_contact_key_change(peer_uid, peer_key);
+            });
         if (device_manager_) {
             const auto dev_res = device_manager_->get_local_device();
             if (dev_res.is_ok() && !dev_res.value().crypto_identity().identity_key_bytes().empty()) {

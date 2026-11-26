@@ -10,6 +10,7 @@
 #include "domain/user_id.hpp"
 #include "securecloud/configuration/secret_string.hpp"
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -82,6 +83,12 @@ class RatchetSessionManager {
         local_audit_logger_ = local_audit_logger;
     }
 
+    using PeerIdentityObservedCallback =
+        std::function<void(const domain::UserId& peer_user_id, std::span<const uint8_t> peer_identity_key)>;
+    void set_peer_identity_observed_callback(PeerIdentityObservedCallback callback) {
+        peer_identity_observed_callback_ = std::move(callback);
+    }
+
   private:
     ClientResult<securecloud::common::configuration::SecretString>
     decrypt_from_device_impl(const domain::UserId& sender_user_id, const domain::DeviceId& sender_device_id,
@@ -99,6 +106,7 @@ class RatchetSessionManager {
     std::unordered_map<domain::crypto::PeerDeviceKey, domain::crypto::RatchetSession, domain::crypto::PeerDeviceKeyHash>
         sessions_;
     LocalAuditLogger* local_audit_logger_{nullptr};
+    PeerIdentityObservedCallback peer_identity_observed_callback_;
 };
 
 } // namespace securecloud::client::application::managers

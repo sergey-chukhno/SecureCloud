@@ -229,6 +229,7 @@ RatchetSessionManager::decrypt_from_device_impl(const domain::UserId& sender_use
                                                 const domain::crypto::EncryptedMessageEnvelope& envelope) {
     domain::crypto::PeerDeviceKey key{.user_id = sender_user_id, .device_id = sender_device_id};
 
+    bool established_via_x3dh = false;
     auto it = sessions_.find(key);
     if (it == sessions_.end()) {
         auto load_res = load_session(sender_user_id, sender_device_id);
@@ -287,6 +288,7 @@ RatchetSessionManager::decrypt_from_device_impl(const domain::UserId& sender_use
         };
 
         it = sessions_.emplace(key, std::move(new_session)).first;
+        established_via_x3dh = true;
     }
 
     auto& session = it->second;
@@ -300,6 +302,10 @@ RatchetSessionManager::decrypt_from_device_impl(const domain::UserId& sender_use
     auto save_res = save_session(sender_user_id, sender_device_id);
     if (!save_res.is_ok()) {
         return ClientResult<securecloud::common::configuration::SecretString>::error(save_res.error());
+    }
+
+    if (established_via_x3dh && peer_identity_observed_callback_ && !session.peer_identity_key.empty()) {
+        peer_identity_observed_callback_(sender_user_id, session.peer_identity_key);
     }
 
     return dec_res;
