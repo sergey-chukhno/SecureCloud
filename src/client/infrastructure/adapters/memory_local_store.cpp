@@ -172,6 +172,22 @@ application::ClientResult<void> MemoryLocalStore::update_message(const domain::M
     return application::ClientResult<void>::error(application::ClientError::storage("Message not found"));
 }
 
+application::ClientResult<void> MemoryLocalStore::delete_message(const domain::ConversationId& conversation_id,
+                                                                 const domain::MessageId& message_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (!is_open_) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    auto it = messages_.find(conversation_id);
+    if (it != messages_.end()) {
+        auto& vec = it->second;
+        vec.erase(std::remove_if(vec.begin(), vec.end(),
+                                 [&message_id](const domain::Message& msg) { return msg.message_id() == message_id; }),
+                  vec.end());
+    }
+    return application::ClientResult<void>::ok();
+}
+
 application::ClientResult<void> MemoryLocalStore::save_contact(const domain::Contact& contact) {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!is_open_) {

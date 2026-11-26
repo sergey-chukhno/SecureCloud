@@ -1120,8 +1120,29 @@ std::size_t MessagingManager::flush_offline_outbox(std::chrono::system_clock::ti
                 (void)local_store_.delete_outbox_record(rec.outbox_id);
                 if (is_msg_record) {
                     (void)retry_engine_.remove(rec.message_id);
-                    (void)update_message_delivery_state(rec.conversation_id, rec.message_id,
-                                                        domain::DeliveryState::Accepted);
+                    const std::string& server_id = submit_res.value();
+                    const bool is_server_uuid = server_id.size() == 36U && server_id[8] == '-' &&
+                                                server_id[13] == '-' && server_id[18] == '-' && server_id[23] == '-';
+                    if (is_server_uuid && server_id != rec.message_id.value() && msg_res.is_ok()) {
+                        const auto& old_msg = msg_res.value();
+                        domain::Message updated_msg(
+                            domain::MessageId(submit_res.value()), old_msg.conversation_id(), old_msg.sender_user_id(),
+                            old_msg.sender_device_id(), domain::DeliveryState::Accepted, old_msg.sent_at(),
+                            old_msg.encrypted_envelope_ref(), old_msg.priority(), old_msg.sender_display_name(),
+                            old_msg.idempotency_key(), old_msg.emergency_acknowledged(), old_msg.attachment_name(),
+                            old_msg.attachment_size(), old_msg.attachment_hash());
+                        if (old_msg.sender_key_epoch().has_value()) {
+                            updated_msg.set_sender_key_epoch(*old_msg.sender_key_epoch());
+                        }
+                        if (old_msg.expires_at_ms() > 0) {
+                            updated_msg.set_expires_at_ms(old_msg.expires_at_ms());
+                        }
+                        (void)local_store_.save_message(updated_msg);
+                        (void)local_store_.delete_message(rec.conversation_id, rec.message_id);
+                    } else {
+                        (void)update_message_delivery_state(rec.conversation_id, rec.message_id,
+                                                            domain::DeliveryState::Accepted);
+                    }
                 }
                 ++flushed_count;
                 continue;

@@ -30,6 +30,8 @@ class MemoryLocalStore final : public application::interfaces::ILocalStore {
     application::ClientResult<domain::Message> get_message(const domain::ConversationId& conversation_id,
                                                            const domain::MessageId& message_id) override;
     application::ClientResult<void> update_message(const domain::Message& message) override;
+    application::ClientResult<void> delete_message(const domain::ConversationId& conversation_id,
+                                                   const domain::MessageId& message_id) override;
 
     application::ClientResult<void> save_contact(const domain::Contact& contact) override;
     application::ClientResult<domain::Contact> get_contact(const domain::UserId& user_id) override;

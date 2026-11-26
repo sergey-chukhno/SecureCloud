@@ -1239,6 +1239,27 @@ application::ClientResult<void> SqlCipherLocalStore::delete_outbox_record(std::s
     return application::ClientResult<void>::ok();
 }
 
+application::ClientResult<void> SqlCipherLocalStore::delete_message(const domain::ConversationId& conversation_id,
+                                                                    const domain::MessageId& message_id) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (db_ == nullptr) {
+        return application::ClientResult<void>::error(application::ClientError::storage("Storage is closed"));
+    }
+    static constexpr const char* kSql = "DELETE FROM messages WHERE conversation_id = ?1 AND message_id = ?2;";
+    StmtGuard stmt;
+    if (sqlite3_prepare_v2(db_, kSql, -1, stmt.out(), nullptr) != SQLITE_OK) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+    sqlite3_bind_text(stmt.get(), 1, conversation_id.value().c_str(), static_cast<int>(conversation_id.value().size()),
+                      SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt.get(), 2, message_id.value().c_str(), static_cast<int>(message_id.value().size()),
+                      SQLITE_TRANSIENT);
+    if (sqlite3_step(stmt.get()) != SQLITE_DONE) {
+        return application::ClientResult<void>::error(application::ClientError::storage(sqlite3_errmsg(db_)));
+    }
+    return application::ClientResult<void>::ok();
+}
+
 application::ClientResult<domain::SyncCursorRecord>
 SqlCipherLocalStore::save_sync_cursor(const domain::SyncCursorRecord& cursor) {
     std::lock_guard<std::mutex> lock(mutex_);

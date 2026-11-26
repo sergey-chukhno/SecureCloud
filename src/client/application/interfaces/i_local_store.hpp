@@ -41,6 +41,10 @@ class ILocalStore {
     virtual ClientResult<domain::Message> get_message(const domain::ConversationId& conversation_id,
                                                       const domain::MessageId& message_id) = 0;
     virtual ClientResult<void> update_message(const domain::Message& message) = 0;
+    virtual ClientResult<void> delete_message(const domain::ConversationId& /*conversation_id*/,
+                                              const domain::MessageId& /*message_id*/) {
+        return ClientResult<void>::ok();
+    }
 
     virtual ClientResult<void> save_contact(const domain::Contact& contact) = 0;
     virtual ClientResult<domain::Contact> get_contact(const domain::UserId& user_id) = 0;

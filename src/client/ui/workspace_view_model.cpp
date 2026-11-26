@@ -271,10 +271,19 @@ void WorkspaceViewModel::markSelectedConversationReadIfActive() {
 
 void WorkspaceViewModel::pollLiveSync() {
     if (!app_.bootstrap().is_live_gateway_transport_active() || !app_.bootstrap().auth_manager().is_authenticated() ||
-        isOffline() || isSyncing()) {
+        isSyncing()) {
         return;
     }
     app_.bootstrap().sync_manager().set_local_identity(localUserId(), localDeviceId());
+    if (isOffline()) {
+        if (!app_.bootstrap().sync_manager().is_simulated_offline()) {
+            const auto conn_res = app_.bootstrap().sync_manager().check_connectivity();
+            if (conn_res.is_ok() && conn_res.value() == domain::ConnectivityState::Online) {
+                reloadFromLocalStore();
+            }
+        }
+        return;
+    }
 
     const int64_t now_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())

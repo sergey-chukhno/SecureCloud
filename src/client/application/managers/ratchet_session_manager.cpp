@@ -181,6 +181,18 @@ RatchetSessionManager::encrypt_fanout_for_participants(const std::vector<domain:
     for (const auto& uid : participants) {
         auto dir_res = gateway_.get_device_crypto_directory(uid, {});
         if (!dir_res.is_ok()) {
+            if (dir_res.error().category() == ClientErrorCategory::Network) {
+                bool added_cached = false;
+                for (const auto& [key, _] : sessions_) {
+                    if (key.user_id == uid && !(key.user_id == local_user_id_ && key.device_id == local_device_id_)) {
+                        targets.emplace_back(key.user_id, key.device_id);
+                        added_cached = true;
+                    }
+                }
+                if (added_cached) {
+                    continue;
+                }
+            }
             return ClientResult<std::vector<domain::crypto::PerDeviceDeliveryPayload>>::error(dir_res.error());
         }
 
