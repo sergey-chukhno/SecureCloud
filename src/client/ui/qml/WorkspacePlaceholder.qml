@@ -1204,14 +1204,18 @@ Rectangle {
 
                                             // ADR-007 Emergency Acknowledgement Card
                                             Rectangle {
+                                                id: emergencyAckCard
+                                                readonly property bool isEmergencyResolved: modelData.emergencyAcknowledged || (modelData.isSelf && modelData.deliveryState === "Read")
                                                 visible: msgDelegate.isEmergency
                                                 Layout.fillWidth: true
                                                 implicitHeight: emergencyAckCol.implicitHeight + 14
                                                 radius: 8
-                                                color: modelData.emergencyAcknowledged
+                                                color: emergencyAckCard.isEmergencyResolved
                                                        ? (Theme.isDark ? "rgba(16, 185, 129, 0.15)" : "#D1FAE5")
-                                                       : (Theme.isDark ? "rgba(239, 68, 68, 0.25)" : "#FEE2E2")
-                                                border.color: modelData.emergencyAcknowledged ? Theme.statusSuccess : Theme.statusDanger
+                                                       : (modelData.isSelf
+                                                          ? (Theme.isDark ? "rgba(245, 158, 11, 0.18)" : "#FEF3C7")
+                                                          : (Theme.isDark ? "rgba(239, 68, 68, 0.25)" : "#FEE2E2"))
+                                                border.color: emergencyAckCard.isEmergencyResolved ? Theme.statusSuccess : (modelData.isSelf ? Theme.statusWarning : Theme.statusDanger)
                                                 border.width: 1
 
                                                 ColumnLayout {
@@ -1225,26 +1229,28 @@ Rectangle {
                                                         spacing: 6
 
                                                         SCIcon {
-                                                            name: modelData.emergencyAcknowledged ? "shield-check" : "shield-alert"
+                                                            name: emergencyAckCard.isEmergencyResolved ? "shield-check" : "shield-alert"
                                                             size: 13
-                                                            color: modelData.emergencyAcknowledged ? Theme.statusSuccess : Theme.statusDanger
+                                                            color: emergencyAckCard.isEmergencyResolved ? Theme.statusSuccess : (modelData.isSelf ? Theme.statusWarning : Theme.statusDanger)
                                                         }
 
                                                         Label {
-                                                            text: modelData.emergencyAcknowledged
+                                                            text: emergencyAckCard.isEmergencyResolved
                                                                   ? qsTr("✓ Emergency Acknowledged")
-                                                                  : qsTr("ACTION REQUIRED: Unacknowledged Emergency Alert")
+                                                                  : (modelData.isSelf
+                                                                     ? qsTr("EMERGENCY SENT: Awaiting recipient acknowledgement")
+                                                                     : qsTr("ACTION REQUIRED: Unacknowledged Emergency Alert"))
                                                             font.family: Theme.fontFamilyPrimary
                                                             font.pixelSize: 10
                                                             font.bold: true
-                                                            color: modelData.emergencyAcknowledged ? Theme.statusSuccess : Theme.statusDanger
+                                                            color: emergencyAckCard.isEmergencyResolved ? Theme.statusSuccess : (modelData.isSelf ? Theme.statusWarning : Theme.statusDanger)
                                                             Layout.fillWidth: true
                                                             wrapMode: Text.WordWrap
                                                         }
                                                     }
 
                                                     SCButton {
-                                                        visible: !modelData.emergencyAcknowledged
+                                                        visible: !modelData.isSelf && !modelData.emergencyAcknowledged
                                                         text: qsTr("Acknowledge Receipt")
                                                         iconName: "shield-check"
                                                         variant: "Danger"
@@ -1604,7 +1610,7 @@ Rectangle {
                         Rectangle {
                             id: composerPriorityBtn
                             height: 30
-                            width: priorityBtnRow.implicitWidth + 14
+                            Layout.preferredWidth: priorityBtnRow.implicitWidth + 16
                             radius: 15
                             color: {
                                 if (workspaceRoot.currentPriority === 3) {

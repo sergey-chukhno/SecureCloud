@@ -1362,7 +1362,7 @@ ClientResult<std::string> QtHttpGatewayClient::submit_encrypted_message(const Fa
     payload["conversation_id"] = request.conversation_id.value();
     payload["client_idempotency_token"] = request.idempotency_key;
     payload["idempotency_token"] = request.idempotency_key;
-    payload["priority"] = (request.priority >= 2) ? "emergency" : (request.priority == 1 ? "urgent" : "normal");
+    payload["priority"] = (request.priority >= 3) ? "emergency" : (request.priority == 2 ? "urgent" : "normal");
 
     nlohmann::json targets = nlohmann::json::array();
     for (const auto& target : request.device_payloads) {
@@ -1566,6 +1566,14 @@ QtHttpGatewayClient::fetch_conversation_messages(const domain::ConversationId& c
                 ev.type = domain::RealtimeEventType::InboundDirectMessage;
                 ev.server_sequence_number = mj.value("sequence_number", fallback_seq++);
                 ev.timestamp_ms = mj.value("created_at_unix_ms", int64_t{0});
+                const std::string prio_str = mj.value("priority", std::string{"normal"});
+                if (prio_str == "emergency") {
+                    ev.priority = 3;
+                } else if (prio_str == "urgent") {
+                    ev.priority = 2;
+                } else {
+                    ev.priority = 1;
+                }
                 const std::string ev_cid = mj.value("conversation_id", conversation_id.value());
                 if (!ev_cid.empty()) {
                     ev.conversation_id = domain::ConversationId(ev_cid);
