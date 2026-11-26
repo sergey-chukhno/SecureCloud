@@ -1345,7 +1345,7 @@ endif()
 gtest_discover_tests(securecloud_messaging_audit_outbox_integration_test ${SECURECLOUD_TEST_PROPERTIES})
 
 # Client <-> Gateway <-> Full Backend Stack Live Docker Compose E2E Suite (CLIENT-015-T06)
-if(SECURECLOUD_BUILD_CLIENT)
+if(SECURECLOUD_BUILD_CLIENT AND TARGET Qt6::Core AND TARGET Qt6::Network AND TARGET securecloud_client_app)
     add_executable(securecloud_client_gateway_backend_integration_test
         client_gateway_backend_integration_test.cpp
     )
