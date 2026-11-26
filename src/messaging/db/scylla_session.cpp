@@ -2,17 +2,30 @@
 
 #include "messaging/db/scylla_error_mapper.hpp"
 
-#include <arpa/inet.h>
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
+#include <sstream>
+
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#else
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <netdb.h>
 #include <netinet/tcp.h>
 #include <poll.h>
-#include <sstream>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
+#endif
 
 namespace securecloud::messaging::db {
 
@@ -463,16 +476,122 @@ ScyllaValue decode_cell_value(const uint8_t* ptr, std::size_t len, uint16_t type
     }
 }
 
-void set_socket_timeouts(int fd, uint32_t timeout_ms) {
+#ifdef _WIN32
+void ensure_winsock_initialized() {
+    static const bool initialized = []() {
+        WSADATA wsa_data{};
+        return ::WSAStartup(MAKEWORD(2, 2), &wsa_data) == 0;
+    }();
+    (void)initialized;
+}
+
+void close_native_socket(std::intptr_t fd) noexcept {
+    if (fd >= 0) {
+        ::closesocket(static_cast<SOCKET>(fd));
+    }
+}
+
+void set_socket_timeouts(std::intptr_t fd, uint32_t timeout_ms) {
+    const auto sock = static_cast<SOCKET>(fd);
+    const DWORD tv_ms = static_cast<DWORD>(timeout_ms);
+    (void)::setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&tv_ms), sizeof(tv_ms));
+    (void)::setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&tv_ms), sizeof(tv_ms));
+}
+
+std::intptr_t connect_tcp_socket(const std::string& host, uint16_t port, uint32_t connect_timeout_ms,
+                                 uint32_t request_timeout_ms, std::string& out_error) {
+    ensure_winsock_initialized();
+
+    struct addrinfo hints{};
+    hints.ai_family = AF_UNSPEC;
+    hints.ai_socktype = SOCK_STREAM;
+
+    struct addrinfo* result = nullptr;
+    const std::string port_str = std::to_string(port);
+    const int gai_rc = ::getaddrinfo(host.c_str(), port_str.c_str(), &hints, &result);
+    if (gai_rc != 0 || result == nullptr) {
+        out_error = "DNS resolution failed for " + host + ": error " + std::to_string(gai_rc);
+        return -1;
+    }
+
+    std::intptr_t connected_fd = -1;
+    int last_err = 0;
+
+    for (struct addrinfo* rp = result; rp != nullptr; rp = rp->ai_next) {
+        const SOCKET sock = ::socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
+        if (sock == INVALID_SOCKET) {
+            last_err = ::WSAGetLastError();
+            continue;
+        }
+
+        const int tcp_nodelay = 1;
+        (void)::setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&tcp_nodelay),
+                           sizeof(tcp_nodelay));
+
+        u_long non_blocking = 1;
+        (void)::ioctlsocket(sock, FIONBIO, &non_blocking);
+
+        int rc = ::connect(sock, rp->ai_addr, static_cast<int>(rp->ai_addrlen));
+        if (rc == SOCKET_ERROR) {
+            const int wsa_err = ::WSAGetLastError();
+            if (wsa_err == WSAEWOULDBLOCK || wsa_err == WSAEINPROGRESS) {
+                WSAPOLLFD pfd{};
+                pfd.fd = sock;
+                pfd.events = POLLOUT;
+                const int poll_rc = ::WSAPoll(&pfd, 1, static_cast<INT>(connect_timeout_ms));
+                if (poll_rc > 0) {
+                    int so_err = 0;
+                    int so_len = sizeof(so_err);
+                    if (::getsockopt(sock, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so_err), &so_len) == 0 &&
+                        so_err == 0) {
+                        rc = 0;
+                    } else {
+                        last_err = (so_err != 0) ? so_err : ::WSAGetLastError();
+                    }
+                } else {
+                    last_err = (poll_rc == 0) ? WSAETIMEDOUT : ::WSAGetLastError();
+                }
+            } else {
+                last_err = wsa_err;
+            }
+        }
+
+        if (rc == 0) {
+            u_long blocking = 0;
+            (void)::ioctlsocket(sock, FIONBIO, &blocking);
+            const auto fd_val = static_cast<std::intptr_t>(sock);
+            set_socket_timeouts(fd_val, request_timeout_ms > 0 ? request_timeout_ms : 2000U);
+            connected_fd = fd_val;
+            break;
+        }
+
+        ::closesocket(sock);
+    }
+
+    ::freeaddrinfo(result);
+    if (connected_fd < 0) {
+        out_error = "Failed to connect to ScyllaDB at " + host + ":" + port_str + " (WSA error " +
+                    std::to_string(last_err != 0 ? last_err : WSAECONNREFUSED) + ")";
+    }
+    return connected_fd;
+}
+#else
+void close_native_socket(std::intptr_t fd) noexcept {
+    if (fd >= 0) {
+        ::close(static_cast<int>(fd));
+    }
+}
+
+void set_socket_timeouts(std::intptr_t fd, uint32_t timeout_ms) {
     struct timeval tv{};
     tv.tv_sec = static_cast<decltype(tv.tv_sec)>(timeout_ms / 1000U);
     tv.tv_usec = static_cast<decltype(tv.tv_usec)>((timeout_ms % 1000U) * 1000U);
-    (void)::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    (void)::setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    (void)::setsockopt(static_cast<int>(fd), SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    (void)::setsockopt(static_cast<int>(fd), SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 }
 
-int connect_tcp_socket(const std::string& host, uint16_t port, uint32_t connect_timeout_ms, uint32_t request_timeout_ms,
-                       std::string& out_error) {
+std::intptr_t connect_tcp_socket(const std::string& host, uint16_t port, uint32_t connect_timeout_ms,
+                                 uint32_t request_timeout_ms, std::string& out_error) {
     struct addrinfo hints{};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -485,7 +604,7 @@ int connect_tcp_socket(const std::string& host, uint16_t port, uint32_t connect_
         return -1;
     }
 
-    int connected_fd = -1;
+    std::intptr_t connected_fd = -1;
     int last_errno = 0;
 
     for (struct addrinfo* rp = result; rp != nullptr; rp = rp->ai_next) {
@@ -547,6 +666,7 @@ int connect_tcp_socket(const std::string& host, uint16_t port, uint32_t connect_
     }
     return connected_fd;
 }
+#endif
 
 [[noreturn]] void throw_cql_error_frame(const std::vector<uint8_t>& body, int32_t& out_error_code) {
     FrameCursor cursor(body);
@@ -565,7 +685,7 @@ ScyllaSession::~ScyllaSession() {
 
 void ScyllaSession::disconnect_socket_locked() noexcept {
     if (socket_fd_ >= 0) {
-        ::close(socket_fd_);
+        close_native_socket(socket_fd_);
         socket_fd_ = -1;
     }
     for (auto& [_, entry] : prepared_cache_) {
@@ -577,10 +697,24 @@ void ScyllaSession::disconnect_socket_locked() noexcept {
 void ScyllaSession::send_all_locked(const uint8_t* data, std::size_t len) {
     std::size_t sent = 0;
     while (sent < len) {
-#ifdef MSG_NOSIGNAL
-        const ssize_t n = ::send(socket_fd_, data + sent, len - sent, MSG_NOSIGNAL);
+#ifdef _WIN32
+        const int chunk = static_cast<int>(std::min<std::size_t>(len - sent, 65536U));
+        const int n = ::send(static_cast<SOCKET>(socket_fd_), reinterpret_cast<const char*>(data + sent), chunk, 0);
+        if (n == SOCKET_ERROR) {
+            const int err = ::WSAGetLastError();
+            if (err == WSAEINTR) {
+                continue;
+            }
+            disconnect_socket_locked();
+            throw ScyllaException((err == WSAETIMEDOUT || err == WSAEWOULDBLOCK) ? ScyllaErrorCode::Timeout
+                                                                                 : ScyllaErrorCode::ConnectionError,
+                                  "ScyllaDB socket send failed (WSA error " + std::to_string(err) + ")");
+        }
 #else
-        const ssize_t n = ::send(socket_fd_, data + sent, len - sent, 0);
+#ifdef MSG_NOSIGNAL
+        const ssize_t n = ::send(static_cast<int>(socket_fd_), data + sent, len - sent, MSG_NOSIGNAL);
+#else
+        const ssize_t n = ::send(static_cast<int>(socket_fd_), data + sent, len - sent, 0);
 #endif
         if (n < 0) {
             if (errno == EINTR) {
@@ -592,6 +726,7 @@ void ScyllaSession::send_all_locked(const uint8_t* data, std::size_t len) {
                                                                         : ScyllaErrorCode::ConnectionError,
                                   std::string("ScyllaDB socket send failed: ") + std::strerror(err));
         }
+#endif
         if (n == 0) {
             disconnect_socket_locked();
             throw ScyllaException(ScyllaErrorCode::ConnectionError, "ScyllaDB closed connection during send");
@@ -603,7 +738,21 @@ void ScyllaSession::send_all_locked(const uint8_t* data, std::size_t len) {
 void ScyllaSession::recv_all_locked(uint8_t* data, std::size_t len) {
     std::size_t recvd = 0;
     while (recvd < len) {
-        const ssize_t n = ::recv(socket_fd_, data + recvd, len - recvd, 0);
+#ifdef _WIN32
+        const int chunk = static_cast<int>(std::min<std::size_t>(len - recvd, 65536U));
+        const int n = ::recv(static_cast<SOCKET>(socket_fd_), reinterpret_cast<char*>(data + recvd), chunk, 0);
+        if (n == SOCKET_ERROR) {
+            const int err = ::WSAGetLastError();
+            if (err == WSAEINTR) {
+                continue;
+            }
+            disconnect_socket_locked();
+            throw ScyllaException((err == WSAETIMEDOUT || err == WSAEWOULDBLOCK) ? ScyllaErrorCode::Timeout
+                                                                                 : ScyllaErrorCode::ConnectionError,
+                                  "ScyllaDB socket recv failed (WSA error " + std::to_string(err) + ")");
+        }
+#else
+        const ssize_t n = ::recv(static_cast<int>(socket_fd_), data + recvd, len - recvd, 0);
         if (n < 0) {
             if (errno == EINTR) {
                 continue;
@@ -614,6 +763,7 @@ void ScyllaSession::recv_all_locked(uint8_t* data, std::size_t len) {
                                                                         : ScyllaErrorCode::ConnectionError,
                                   std::string("ScyllaDB socket recv failed: ") + std::strerror(err));
         }
+#endif
         if (n == 0) {
             disconnect_socket_locked();
             throw ScyllaException(ScyllaErrorCode::ConnectionError, "ScyllaDB closed connection unexpectedly");

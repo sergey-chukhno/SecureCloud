@@ -76,7 +76,7 @@ class ScyllaSession : public IScyllaSession {
     ScyllaConfig config_;
     std::atomic<bool> closed_{false};
     mutable std::mutex mutex_;
-    int socket_fd_{-1};
+    std::intptr_t socket_fd_{-1};
     int16_t next_stream_id_{1};
     std::unordered_map<std::string, PreparedStatementEntry> prepared_cache_;
 };

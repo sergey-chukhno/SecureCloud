@@ -78,6 +78,10 @@ target_link_libraries(securecloud_messaging_config PUBLIC
     securecloud::compiler_flags
 )
 
+if(WIN32)
+    target_link_libraries(securecloud_messaging_config PUBLIC ws2_32)
+endif()
+
 add_dependencies(securecloud_messaging_config securecloud_proto)
 
 add_executable(securecloud-messaging
