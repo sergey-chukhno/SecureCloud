@@ -2377,11 +2377,10 @@ void WorkspaceViewModel::togglePeerVerified(const QString& peerUserId) {
             (peerUserId.isEmpty() && conv.conversationId == selected_conversation_id_)) {
             conv.isVerified = !conv.isVerified;
             conv.verificationStatus = conv.isVerified ? QStringLiteral("Verified") : QStringLiteral("Unverified");
-            (void)app_.bootstrap().contact_manager().verify_contact_key(domain::UserId(conv.peerUserId.toStdString()),
-                                                                        conv.isVerified);
-            std::vector<uint8_t> dummy_key(32, 0x01);
-            (void)app_.bootstrap().safety_number_engine().set_verification_state(
-                domain::UserId(conv.peerUserId.toStdString()), dummy_key, conv.isVerified);
+            const domain::UserId uid(conv.peerUserId.toStdString());
+            if (app_.bootstrap().contact_manager().set_contact_verified(uid, conv.isVerified).is_error()) {
+                (void)app_.bootstrap().contact_manager().verify_contact_key(uid, conv.isVerified);
+            }
             emit selectedConversationChanged();
             emit conversationsChanged();
             emit contactsChanged();
