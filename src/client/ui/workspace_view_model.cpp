@@ -414,9 +414,13 @@ void WorkspaceViewModel::hydrateFromLocalStore() {
             QString ver_status = QStringLiteral("Unverified");
 
             if (!is_group && !direct_peer_uid.isEmpty()) {
+                const domain::UserId peer_uid(direct_peer_uid.toStdString());
                 const auto cache_it = peer_presence_cache_.find(direct_peer_uid.toStdString());
-                const auto c_res =
-                    app_.bootstrap().contact_manager().get_contact(domain::UserId(direct_peer_uid.toStdString()));
+                auto c_res = app_.bootstrap().contact_manager().get_contact(peer_uid);
+                if (c_res.is_error() && app_.bootstrap().is_live_gateway_transport_active() &&
+                    app_.bootstrap().contact_manager().has_local_identity()) {
+                    c_res = app_.bootstrap().contact_manager().create_contact(peer_uid, peer_uid.value(), "", "", 1);
+                }
                 if (c_res.is_ok()) {
                     const auto& contact = c_res.value();
                     if (display_name.isEmpty()) {
@@ -430,6 +434,13 @@ void WorkspaceViewModel::hydrateFromLocalStore() {
                     verified = contact.is_verified();
                     blocked = contact.is_blocked();
                     safety_number = QString::fromStdString(contact.safety_number());
+                    if (safety_number.isEmpty() && app_.bootstrap().is_live_gateway_transport_active() &&
+                        app_.bootstrap().contact_manager().has_local_identity()) {
+                        const auto sn_res = app_.bootstrap().contact_manager().get_or_compute_safety_number(peer_uid);
+                        if (sn_res.is_ok()) {
+                            safety_number = QString::fromStdString(sn_res.value());
+                        }
+                    }
                     role_note = QString::fromStdString(contact.role_note());
                     ver_status = QString::fromUtf8(domain::to_string(contact.verification_status()).data());
                 } else {

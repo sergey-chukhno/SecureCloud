@@ -156,6 +156,12 @@ void ClientBootstrap::initialize_ratchet_session_manager(const domain::UserId& u
     }
     if (contact_manager_) {
         contact_manager_->set_ratchet_session_manager(ratchet_session_manager_.get());
+        if (device_manager_) {
+            const auto dev_res = device_manager_->get_local_device();
+            if (dev_res.is_ok() && !dev_res.value().crypto_identity().identity_key_bytes().empty()) {
+                contact_manager_->set_local_identity(user_id, dev_res.value().crypto_identity().identity_key_bytes());
+            }
+        }
     }
     if (file_manager_) {
         file_manager_->set_local_identity(user_id, device_id);

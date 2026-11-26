@@ -278,6 +278,13 @@ ClientResult<std::size_t> ContactManager::sync_contacts() {
                     }
                 }
                 key_changed_detected = true;
+            } else if (contact.safety_number().empty() && !local_user_id_.empty() &&
+                       !local_identity_public_key_.empty()) {
+                const auto sn_res = safety_number_engine_->compute_safety_number(
+                    local_user_id_, local_identity_public_key_, contact.user_id(), active_peer_key);
+                if (sn_res.is_ok()) {
+                    contact.set_safety_number(sn_res.value());
+                }
             }
         }
 
