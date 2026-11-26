@@ -34,6 +34,8 @@ class DeviceManager {
 
     [[nodiscard]] ClientResult<domain::Device> get_local_device() const;
 
+    void clear_local_device() noexcept { local_device_.reset(); }
+
     ClientResult<domain::PrekeyInventoryStatus> check_prekey_inventory();
 
     ClientResult<std::size_t> replenish_prekeys(std::size_t batch_size = domain::PrekeyPolicy::kReplenishmentBatchSize);

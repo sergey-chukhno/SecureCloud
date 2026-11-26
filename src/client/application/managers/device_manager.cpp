@@ -21,7 +21,14 @@ DeviceManager::DeviceManager(interfaces::IGatewayClient& gateway, interfaces::IS
 ClientResult<domain::Device> DeviceManager::initialize_or_load_device(const domain::UserId& user_id,
                                                                       std::string_view display_name) {
     if (local_device_.has_value()) {
-        return ClientResult<domain::Device>::ok(*local_device_);
+        if (local_device_->user_id() == user_id) {
+            auto has_bundle_res =
+                infrastructure::adapters::KeyStorageHelper::has_bundle(secure_storage_, local_device_->device_id());
+            if (has_bundle_res.is_ok() && has_bundle_res.value()) {
+                return ClientResult<domain::Device>::ok(*local_device_);
+            }
+        }
+        local_device_.reset();
     }
 
     auto has_id_res = secure_storage_.has_secret(kLocalDeviceIdKey);
