@@ -444,9 +444,12 @@ Item {
                         userId: (navShell.avm && navShell.avm.currentUser !== "")
                                 ? navShell.avm.currentUser
                                 : "operator"
-                        displayName: (navShell.avm && navShell.avm.currentUser !== "")
-                                     ? navShell.avm.currentUser
-                                     : "Operator"
+                        displayName: (navShell.wvm && navShell.wvm.profileDisplayName !== "")
+                                     ? navShell.wvm.profileDisplayName
+                                     : ((navShell.avm && navShell.avm.currentUser !== "")
+                                        ? navShell.avm.currentUser
+                                        : "Operator")
+                        imageUrl: navShell.wvm ? navShell.wvm.profileAvatarImageUrl : ""
                         size: 32
                         presence: "Online"
                         Layout.alignment: navShell.isSidebarCollapsed ? Qt.AlignHCenter : Qt.AlignVCenter
@@ -458,9 +461,11 @@ Item {
                         Layout.fillWidth: true
 
                         Label {
-                            text: (navShell.avm && navShell.avm.currentUser !== "")
-                                  ? navShell.avm.currentUser
-                                  : qsTr("Operator")
+                            text: (navShell.wvm && navShell.wvm.profileDisplayName !== "")
+                                  ? navShell.wvm.profileDisplayName
+                                  : ((navShell.avm && navShell.avm.currentUser !== "")
+                                     ? navShell.avm.currentUser
+                                     : qsTr("Operator"))
                             font.family: Theme.fontFamilyPrimary
                             font.pixelSize: Theme.fontBody
                             font.bold: true

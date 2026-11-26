@@ -10,19 +10,30 @@ Rectangle {
     readonly property var wvm: typeof workspaceViewModel !== "undefined" ? workspaceViewModel : null
     readonly property var avm: typeof appViewModel !== "undefined" ? appViewModel : null
     readonly property var localIdentity: wvm ? wvm.localDeviceIdentity : ({})
+    property bool profileDirty: false
+    property string lastWorkspaceError: ""
 
-    function syncProfileFieldsFromVm() {
+    function syncProfileFieldsFromVm(force) {
         if (!wvm) {
+            return
+        }
+        if (!force && (profileDirty || profileDisplayNameField.activeFocus || profileHandleField.activeFocus ||
+                       profileBioField.activeFocus)) {
             return
         }
         profileDisplayNameField.text = wvm.profileDisplayName
         profileHandleField.text = wvm.profileHandle
         profileBioField.text = wvm.profileBio
         profileAllowDiscoverySwitch.checked = wvm.profileAllowDiscovery
+        profileDirty = false
     }
 
     function syncNetworkFieldsFromVm() {
         if (!wvm) {
+            return
+        }
+        if (gatewayHostField.activeFocus || gatewayPortField.activeFocus || proxyHostField.activeFocus ||
+            proxyPortField.activeFocus || proxyUsernameField.activeFocus || tlsPinnedSpkiField.activeFocus) {
             return
         }
         liveTransportSwitch.checked = wvm.useLiveGatewayTransport
@@ -49,21 +60,62 @@ Rectangle {
         return qsTr("Off")
     }
 
+    function openAvatarFilePicker(autoUpload) {
+        try {
+            var dlg = Qt.createQmlObject(
+                'import QtQuick; import QtQuick.Dialogs; FileDialog { title: qsTr("Select Avatar Image"); fileMode: FileDialog.OpenFile; nameFilters: ["Images (*.png *.jpg *.jpeg *.webp)"] }',
+                settingsRoot,
+                "avatarFileDialog"
+            )
+            if (!dlg) {
+                return
+            }
+            dlg.accepted.connect(function() {
+                if (dlg.selectedFile) {
+                    profileAvatarPathField.text = dlg.selectedFile.toString()
+                    if (autoUpload && settingsRoot.wvm) {
+                        settingsRoot.lastWorkspaceError = ""
+                        var ok = settingsRoot.wvm.uploadAvatarImage(profileAvatarPathField.text)
+                        profileCard.profileFeedbackIsError = !ok
+                        profileCard.profileFeedbackText = ok
+                            ? qsTr("Avatar encrypted with client-side E2EE key and uploaded.")
+                            : (settingsRoot.lastWorkspaceError !== ""
+                               ? settingsRoot.lastWorkspaceError
+                               : qsTr("Avatar upload failed — verify local image path and format."))
+                        if (ok) {
+                            profileAvatarPathField.text = ""
+                        }
+                    }
+                }
+                dlg.destroy()
+            })
+            dlg.rejected.connect(function() {
+                dlg.destroy()
+            })
+            dlg.open()
+        } catch (err) {
+        }
+    }
+
     Connections {
         target: settingsRoot.wvm
         enabled: settingsRoot.wvm !== null
 
         function onProfileSettingsChanged() {
-            settingsRoot.syncProfileFieldsFromVm()
+            settingsRoot.syncProfileFieldsFromVm(false)
         }
 
         function onNetworkSettingsChanged() {
             settingsRoot.syncNetworkFieldsFromVm()
         }
+
+        function onWorkspaceError(message) {
+            settingsRoot.lastWorkspaceError = message
+        }
     }
 
     Component.onCompleted: {
-        syncProfileFieldsFromVm()
+        syncProfileFieldsFromVm(true)
         syncNetworkFieldsFromVm()
     }
 
@@ -173,6 +225,7 @@ Rectangle {
                                     ? settingsRoot.wvm.profileHandle
                                     : "operator@securecloud.org"
                             displayName: settingsRoot.wvm ? settingsRoot.wvm.profileDisplayName : qsTr("Operator")
+                            imageUrl: settingsRoot.wvm ? settingsRoot.wvm.profileAvatarImageUrl : ""
                             size: 48
                             presence: "Online"
                         }
@@ -221,7 +274,10 @@ Rectangle {
                             label: qsTr("Display Name")
                             placeholderText: qsTr("e.g. Alice Vance (SecOps)")
                             Layout.fillWidth: true
-                            onTextEdited: profileCard.profileFeedbackText = ""
+                            onTextEdited: {
+                                settingsRoot.profileDirty = true
+                                profileCard.profileFeedbackText = ""
+                            }
                         }
 
                         SCTextField {
@@ -230,7 +286,10 @@ Rectangle {
                             label: qsTr("Public Handle (Optional)")
                             placeholderText: qsTr("alice.secops (lowercase a-z, 0-9, _, ., -)")
                             Layout.fillWidth: true
-                            onTextEdited: profileCard.profileFeedbackText = ""
+                            onTextEdited: {
+                                settingsRoot.profileDirty = true
+                                profileCard.profileFeedbackText = ""
+                            }
                         }
                     }
 
@@ -240,7 +299,10 @@ Rectangle {
                         label: qsTr("Status / Bio")
                         placeholderText: qsTr("Role note or endpoint operational status...")
                         Layout.fillWidth: true
-                        onTextEdited: profileCard.profileFeedbackText = ""
+                        onTextEdited: {
+                            settingsRoot.profileDirty = true
+                            profileCard.profileFeedbackText = ""
+                        }
                     }
 
                     RowLayout {
@@ -273,6 +335,7 @@ Rectangle {
                             id: profileAllowDiscoverySwitch
                             objectName: "profileAllowDiscoverySwitch"
                             checked: settingsRoot.wvm ? settingsRoot.wvm.profileAllowDiscovery : true
+                            onToggled: settingsRoot.profileDirty = true
                         }
 
                         SCButton {
@@ -291,6 +354,9 @@ Rectangle {
                                     profileBioField.text,
                                     profileAllowDiscoverySwitch.checked,
                                     true)
+                                if (ok) {
+                                    settingsRoot.profileDirty = false
+                                }
                                 profileCard.profileFeedbackIsError = !ok
                                 profileCard.profileFeedbackText = ok
                                     ? qsTr("Encrypted profile updated.")
@@ -318,6 +384,16 @@ Rectangle {
                         }
 
                         SCButton {
+                            objectName: "browseAvatarButton"
+                            text: qsTr("Browse...")
+                            iconName: "paperclip"
+                            variant: "Secondary"
+                            buttonHeight: 36
+                            Layout.alignment: Qt.AlignBottom
+                            onClicked: settingsRoot.openAvatarFilePicker(false)
+                        }
+
+                        SCButton {
                             objectName: "uploadAvatarButton"
                             text: qsTr("Encrypt & Upload Avatar")
                             iconName: "upload-cloud"
@@ -328,11 +404,18 @@ Rectangle {
                                 if (!settingsRoot.wvm) {
                                     return
                                 }
+                                if (profileAvatarPathField.text.trim() === "") {
+                                    settingsRoot.openAvatarFilePicker(true)
+                                    return
+                                }
+                                settingsRoot.lastWorkspaceError = ""
                                 var ok = settingsRoot.wvm.uploadAvatarImage(profileAvatarPathField.text)
                                 profileCard.profileFeedbackIsError = !ok
                                 profileCard.profileFeedbackText = ok
                                     ? qsTr("Avatar encrypted with client-side E2EE key and uploaded.")
-                                    : qsTr("Avatar upload failed — verify local image path and format.")
+                                    : (settingsRoot.lastWorkspaceError !== ""
+                                       ? settingsRoot.lastWorkspaceError
+                                       : qsTr("Avatar upload failed — verify local image path and format."))
                                 if (ok) {
                                     profileAvatarPathField.text = ""
                                 }
@@ -352,6 +435,40 @@ Rectangle {
                         color: Theme.textSecondary
                         elide: Text.ElideRight
                         Layout.fillWidth: true
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: Theme.space12
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 2
+
+                            Label {
+                                text: qsTr("Show My Avatar to Contacts")
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontBody
+                                font.bold: true
+                                color: Theme.textPrimary
+                            }
+
+                            Label {
+                                text: qsTr("Opt-in preference to share your encrypted avatar with verified contacts (peer distribution is post-MVP; currently stored encrypted in your private vault).")
+                                font.family: Theme.fontFamilyPrimary
+                                font.pixelSize: Theme.fontCaption
+                                color: Theme.textMuted
+                                wrapMode: Text.WordWrap
+                                Layout.fillWidth: true
+                            }
+                        }
+
+                        Switch {
+                            id: profileShareAvatarSwitch
+                            objectName: "profileShareAvatarSwitch"
+                            checked: settingsRoot.wvm ? settingsRoot.wvm.profileShareAvatarWithContacts : false
+                            onToggled: if (settingsRoot.wvm) settingsRoot.wvm.profileShareAvatarWithContacts = checked
+                        }
                     }
 
                     Label {

@@ -116,6 +116,9 @@ class WorkspaceViewModel : public QObject {
     Q_PROPERTY(QString profileBio READ profileBio NOTIFY profileSettingsChanged)
     Q_PROPERTY(QString profileAvatarFileId READ profileAvatarFileId NOTIFY profileSettingsChanged)
     Q_PROPERTY(QString profileAvatarSha256 READ profileAvatarSha256 NOTIFY profileSettingsChanged)
+    Q_PROPERTY(QString profileAvatarImageUrl READ profileAvatarImageUrl NOTIFY profileSettingsChanged)
+    Q_PROPERTY(bool profileShareAvatarWithContacts READ profileShareAvatarWithContacts WRITE
+                   setProfileShareAvatarWithContacts NOTIFY profileSettingsChanged)
     Q_PROPERTY(bool profileAllowDiscovery READ profileAllowDiscovery NOTIFY profileSettingsChanged)
     Q_PROPERTY(QString profileSyncStatusText READ profileSyncStatusText NOTIFY profileSettingsChanged)
 
@@ -238,6 +241,9 @@ class WorkspaceViewModel : public QObject {
     [[nodiscard]] QString profileBio() const;
     [[nodiscard]] QString profileAvatarFileId() const;
     [[nodiscard]] QString profileAvatarSha256() const;
+    [[nodiscard]] QString profileAvatarImageUrl() const { return profile_avatar_image_url_; }
+    [[nodiscard]] bool profileShareAvatarWithContacts() const noexcept { return profile_share_avatar_with_contacts_; }
+    void setProfileShareAvatarWithContacts(bool enabled);
     [[nodiscard]] bool profileAllowDiscovery() const noexcept { return profile_.allow_handle_discovery; }
     [[nodiscard]] QString profileSyncStatusText() const { return profile_sync_status_text_; }
 
@@ -509,6 +515,8 @@ class WorkspaceViewModel : public QObject {
     QPointer<UiTheme> ui_theme_;
     domain::UserSettings settings_{};
     domain::UserProfile profile_{};
+    QString profile_avatar_image_url_;
+    bool profile_share_avatar_with_contacts_{false};
     QString profile_sync_status_text_{QStringLiteral("Local Profile")};
     QVariantMap tls_last_inspected_info_{};
     bool tls_pin_matches_{true};

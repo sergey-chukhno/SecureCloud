@@ -15,8 +15,12 @@
 #include "infrastructure/adapters/default_gateway_client.hpp"
 #include "ui/ui_theme.hpp"
 
+#include <QBuffer>
 #include <QGuiApplication>
+#include <QImage>
 #include <QMetaObject>
+#include <QPainter>
+#include <QPainterPath>
 #include <QPointer>
 #include <QUrl>
 #include <QUuid>
@@ -423,7 +427,8 @@ void WorkspaceViewModel::hydrateFromLocalStore() {
                 }
                 if (c_res.is_ok()) {
                     const auto& contact = c_res.value();
-                    if (display_name.isEmpty()) {
+                    if (!contact.alias().empty() &&
+                        (display_name.isEmpty() || contact.alias() != direct_peer_uid.toStdString())) {
                         display_name = QString::fromStdString(contact.alias());
                     }
                     handle =
@@ -2596,6 +2601,8 @@ void WorkspaceViewModel::resetForEmergencyWipe() {
     hardware_key_enforced_ = true;
     settings_ = domain::UserSettings{};
     profile_ = domain::UserProfile{};
+    profile_avatar_image_url_.clear();
+    profile_share_avatar_with_contacts_ = false;
     profile_sync_status_text_ = QStringLiteral("Cleared");
     tls_last_inspected_info_.clear();
     tls_pin_matches_ = true;
@@ -2663,9 +2670,12 @@ bool WorkspaceViewModel::addContact(const QString& handle, const QString& displa
     }
 
     const domain::UserId uid(peerUid.toStdString());
-    const std::string sNum = safetyNumber.isEmpty()
-                                 ? "10928 38471 66251 89201 44712 09182 55910 28471 90284 71209 38471 09284"
-                                 : safetyNumber.toStdString();
+    const std::string sNum =
+        safetyNumber.isEmpty()
+            ? (app_.bootstrap().is_live_gateway_transport_active()
+                   ? std::string{}
+                   : std::string{"10928 38471 66251 89201 44712 09182 55910 28471 90284 71209 38471 09284"})
+            : safetyNumber.toStdString();
     const auto createRes = app_.bootstrap().contact_manager().create_contact(uid, cleanedName.toStdString(), sNum,
                                                                              roleNote.toStdString(), 1);
 
@@ -2674,7 +2684,12 @@ bool WorkspaceViewModel::addContact(const QString& handle, const QString& displa
         return false;
     }
 
-    if (!app_.bootstrap().is_live_gateway_transport_active()) {
+    if (app_.bootstrap().is_live_gateway_transport_active()) {
+        if (sNum.empty() && app_.bootstrap().contact_manager().has_local_identity()) {
+            (void)app_.bootstrap().contact_manager().get_or_compute_safety_number(uid);
+        }
+        reloadFromLocalStore();
+    } else {
         const QString convId = QStringLiteral("conv-%1").arg(peerUid.toLower().remove('@').remove('.'));
         const QString peerHandleStr = isUuidInput ? peerUid : QStringLiteral("@%1").arg(peerUid.section('@', 0, 0));
         const domain::UserId selfUid = localUserId();
@@ -3566,9 +3581,41 @@ bool WorkspaceViewModel::uploadAvatarImage(const QString& filePathOrUrl) {
     }
 
     profile_ = res.value();
+    QImage srcImg(localPath);
+    if (!srcImg.isNull()) {
+        constexpr int kAvatarSize = 128;
+        const QImage scaled =
+            srcImg.scaled(kAvatarSize, kAvatarSize, Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+        const QImage cropped = scaled.copy((scaled.width() - kAvatarSize) / 2, (scaled.height() - kAvatarSize) / 2,
+                                           kAvatarSize, kAvatarSize);
+        QImage circular(kAvatarSize, kAvatarSize, QImage::Format_ARGB32_Premultiplied);
+        circular.fill(Qt::transparent);
+        QPainter painter(&circular);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        QPainterPath clipPath;
+        clipPath.addEllipse(0, 0, kAvatarSize, kAvatarSize);
+        painter.setClipPath(clipPath);
+        painter.drawImage(0, 0, cropped);
+        painter.end();
+
+        QByteArray pngBytes;
+        QBuffer buf(&pngBytes);
+        if (buf.open(QIODevice::WriteOnly) && circular.save(&buf, "PNG")) {
+            profile_avatar_image_url_ =
+                QStringLiteral("data:image/png;base64,%1").arg(QString::fromLatin1(pngBytes.toBase64()));
+        }
+    }
     profile_sync_status_text_ = QStringLiteral("Encrypted Avatar Uploaded Locally");
     emit profileSettingsChanged();
     return true;
+}
+
+void WorkspaceViewModel::setProfileShareAvatarWithContacts(bool enabled) {
+    if (profile_share_avatar_with_contacts_ == enabled) {
+        return;
+    }
+    profile_share_avatar_with_contacts_ = enabled;
+    emit profileSettingsChanged();
 }
 
 bool WorkspaceViewModel::refreshUserProfile() {

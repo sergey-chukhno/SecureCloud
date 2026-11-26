@@ -2155,7 +2155,9 @@ ClientResult<FileUploadInitResult> QtHttpGatewayClient::init_file_upload(const F
     payload["file_id"] = request.file_id;
     payload["owner_user_id"] = request.owner_user_id.value();
     payload["owner_device_id"] = request.owner_device_id.value();
-    payload["conversation_id"] = request.conversation_id.value();
+    if (!request.conversation_id.empty() && request.conversation_id.value().rfind("profile-avatar:", 0) != 0) {
+        payload["conversation_id"] = request.conversation_id.value();
+    }
     payload["encrypted_size_bytes"] = request.encrypted_size_bytes;
     payload["expected_chunk_count"] = request.expected_chunk_count;
     payload["encryption_version"] = request.encryption_version;
