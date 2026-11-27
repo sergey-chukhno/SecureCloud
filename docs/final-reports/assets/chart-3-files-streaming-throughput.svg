@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="540" viewBox="0 0 1100 540">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#111C34"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="540" rx="18" fill="url(#bgGrad)"/>
+  <rect x="1" y="1" width="1098" height="538" rx="17" fill="none" stroke="#1E293B" stroke-width="2"/>
+  <text x="48" y="54" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#F8FAFC">Encrypted File Transfer Throughput (Gateway -&gt; Files -&gt; PG + MinIO)</text>
+  <text x="48" y="82" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#94A3B8">Canonical 4 MiB chunking protocol with SHA-256 verification on every chunk and full round-trip (18 / 18 verified, 0 errors)</text>
+
+  <rect x="760" y="102" width="14" height="14" rx="3" fill="#38BDF8"/>
+  <text x="782" y="114" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#F8FAFC">Upload (MiB/s)</text>
+  <rect x="910" y="102" width="14" height="14" rx="3" fill="#34D399"/>
+  <text x="932" y="114" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#F8FAFC">Download (MiB/s)</text>
+  <line x1="95" y1="430.0" x2="1040" y2="430.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="434.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">0</text>
+  <line x1="95" y1="370.0" x2="1040" y2="370.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="374.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">20</text>
+  <line x1="95" y1="310.0" x2="1040" y2="310.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="314.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">40</text>
+  <line x1="95" y1="250.0" x2="1040" y2="250.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="254.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">60</text>
+  <line x1="95" y1="190.0" x2="1040" y2="190.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="194.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">80</text>
+  <line x1="95" y1="130.0" x2="1040" y2="130.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="134.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">100</text>
+  <text x="36" y="280.0" transform="rotate(-90 36 280.0)" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#94A3B8">Effective Throughput (MiB/s)</text>
+  <rect x="184" y="418.5" width="66" height="11.5" rx="8" fill="#38BDF8"/>
+  <text x="217" y="408.5" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#38BDF8">3.82</text>
+  <rect x="270" y="401.7" width="66" height="28.3" rx="8" fill="#34D399"/>
+  <text x="303" y="391.7" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#34D399">9.42</text>
+  <text x="260" y="456" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">64 KiB</text>
+  <text x="260" y="475" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">1 chunk (n=10)</text>
+  <text x="260" y="494" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#CBD5E1">UP 16.4 ms | DN 6.6 ms</text>
+  <rect x="489" y="343.2" width="66" height="86.8" rx="8" fill="#38BDF8"/>
+  <text x="522" y="333.2" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#38BDF8">28.93</text>
+  <rect x="575" y="279.1" width="66" height="150.9" rx="8" fill="#34D399"/>
+  <text x="608" y="269.1" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#34D399">50.29</text>
+  <text x="565" y="456" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">1 MiB</text>
+  <text x="565" y="475" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">1 chunk (n=5)</text>
+  <text x="565" y="494" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#CBD5E1">UP 34.6 ms | DN 19.9 ms</text>
+  <rect x="794" y="304.2" width="66" height="125.8" rx="8" fill="#38BDF8"/>
+  <text x="827" y="294.2" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#38BDF8">41.94</text>
+  <rect x="880" y="161.9" width="66" height="268.1" rx="8" fill="#34D399"/>
+  <text x="913" y="151.9" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#34D399">89.35</text>
+  <text x="870" y="456" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">5 MiB</text>
+  <text x="870" y="475" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">2 chunks: 4+1 MiB (n=3)</text>
+  <text x="870" y="494" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#CBD5E1">UP 119.2 ms | DN 56.0 ms</text>
+  <line x1="95" y1="430" x2="1040" y2="430" stroke="#334155" stroke-width="1.5"/>
+  <text x="48" y="518" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">Includes full init -&gt; chunk(s) -&gt; finalize -&gt; download lifecycle + SHA-256 verification. Files service peak RAM: 41.2 MiB.</text>
+  <text x="1052" y="518" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#475569">SecureCloud MVP Benchmarks (2026-11-26)</text>
+</svg>
