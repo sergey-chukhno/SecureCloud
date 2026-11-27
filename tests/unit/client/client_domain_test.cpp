@@ -248,7 +248,10 @@ class MockGatewayClient final : public IGatewayClient {
                                                                        const DeviceId& /*recipient_device_id*/,
                                                                        uint64_t since_sequence,
                                                                        std::size_t /*max_results*/) override {
-        return ClientResult<ConversationMessagesPage>::ok(ConversationMessagesPage{.latest_sequence = since_sequence});
+        return ClientResult<ConversationMessagesPage>::ok(ConversationMessagesPage{
+            .events = {},
+            .latest_sequence = since_sequence,
+        });
     }
     ClientResult<SyncCursorRecord> get_sync_cursor(const DeviceId& device_id,
                                                    const ConversationId& conversation_id) override {
@@ -275,6 +278,7 @@ class MockGatewayClient final : public IGatewayClient {
             .device_id = DeviceId("dev-mock-001"),
             .status = DeviceAuthorizationStatus::Authorized,
             .registered_at = std::chrono::system_clock::now(),
+            .pairing_code = "",
         };
         return ClientResult<DeviceRegistrationResult>::ok(std::move(res));
     }
@@ -359,17 +363,17 @@ class MockGatewayClient final : public IGatewayClient {
     }
 
     ClientResult<RemoteFileMetadata> get_file_metadata(std::string_view file_id) override {
-        return ClientResult<RemoteFileMetadata>::ok(RemoteFileMetadata{
-            .file_id = std::string(file_id),
-            .lifecycle_state = "FILE_LIFECYCLE_STATE_AVAILABLE",
-        });
+        RemoteFileMetadata meta;
+        meta.file_id = std::string(file_id);
+        meta.lifecycle_state = "FILE_LIFECYCLE_STATE_AVAILABLE";
+        return ClientResult<RemoteFileMetadata>::ok(std::move(meta));
     }
 
     ClientResult<FileChunkDownloadResult> download_file_chunk(std::string_view file_id, uint32_t chunk_index) override {
-        return ClientResult<FileChunkDownloadResult>::ok(FileChunkDownloadResult{
-            .file_id = std::string(file_id),
-            .chunk_index = chunk_index,
-        });
+        FileChunkDownloadResult chunk;
+        chunk.file_id = std::string(file_id);
+        chunk.chunk_index = chunk_index;
+        return ClientResult<FileChunkDownloadResult>::ok(std::move(chunk));
     }
 
     ClientResult<void> delete_file(std::string_view /*file_id*/) override { return ClientResult<void>::ok(); }

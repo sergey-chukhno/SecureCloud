@@ -130,8 +130,12 @@ TEST_F(WorkspaceViewModelRealtimeTest, SyncManagerPollRealtimeUpdatesPullsMessag
     ev.actor_device_id = bob_dev;
     ev.server_sequence_number = 55;
     ev.direct_payload = crypto::PerDeviceDeliveryPayload{
+        .recipient_user_id = {},
         .recipient_device_id = DeviceId("operator-dev-1"),
         .ciphertext_blob = app_->bootstrap().crypto_provider().encrypt_message(bob_dev, "Polled secret").value(),
+        .ephemeral_public_key = {},
+        .iv = {},
+        .auth_tag = {},
     };
     gateway_ptr_->set_simulated_conversation_messages(conv.conversation_id(), {ev});
 

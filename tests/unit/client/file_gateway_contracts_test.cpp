@@ -333,6 +333,8 @@ TEST(FileGatewayContractsTest, RejectsChunkAndFinalizedSha256MismatchesAndMissin
         .conversation_id = ConversationId("conv-1"),
         .encrypted_size_bytes = 64ULL,
         .expected_chunk_count = 2U,
+        .encryption_version = "v1",
+        .client_crypto_metadata = "",
     });
     ASSERT_TRUE(init_res.is_ok());
 
@@ -393,6 +395,8 @@ TEST(FileGatewayContractsTest, CancelUploadPurgesSessionAndBlocksFurtherChunks) 
         .conversation_id = ConversationId("conv-1"),
         .encrypted_size_bytes = 32ULL,
         .expected_chunk_count = 2U,
+        .encryption_version = "v1",
+        .client_crypto_metadata = "",
     });
     ASSERT_TRUE(init_res.is_ok());
 
@@ -401,6 +405,7 @@ TEST(FileGatewayContractsTest, CancelUploadPurgesSessionAndBlocksFurtherChunks) 
                         .upload_id = init_res.value().upload_id,
                         .chunk_index = 0U,
                         .encrypted_data = std::vector<uint8_t>(16U, 0x55U),
+                        .ciphertext_sha256 = "",
                     })
                     .is_ok());
 
@@ -411,12 +416,14 @@ TEST(FileGatewayContractsTest, CancelUploadPurgesSessionAndBlocksFurtherChunks) 
                         .upload_id = init_res.value().upload_id,
                         .chunk_index = 1U,
                         .encrypted_data = std::vector<uint8_t>(16U, 0x66U),
+                        .ciphertext_sha256 = "",
                     })
                     .is_error());
     EXPECT_TRUE(gateway
                     .finalize_file_upload(FileUploadFinalizeRequest{
                         .upload_id = init_res.value().upload_id,
                         .file_id = "file-cancel-01",
+                        .expected_ciphertext_sha256 = "",
                     })
                     .is_error());
     EXPECT_FALSE(gateway.has_stored_file("file-cancel-01"));
@@ -432,6 +439,8 @@ TEST(FileGatewayContractsTest, SimulatedFailureHooksAndTamperMutationSupport) {
         .conversation_id = ConversationId("conv-1"),
         .encrypted_size_bytes = 64ULL,
         .expected_chunk_count = 2U,
+        .encryption_version = "v1",
+        .client_crypto_metadata = "",
     });
     ASSERT_TRUE(init_res.is_ok());
 
@@ -444,12 +453,14 @@ TEST(FileGatewayContractsTest, SimulatedFailureHooksAndTamperMutationSupport) {
                         .upload_id = init_res.value().upload_id,
                         .chunk_index = 0U,
                         .encrypted_data = chunk0,
+                        .ciphertext_sha256 = "",
                     })
                     .is_ok());
     const auto fail_up1 = gateway.upload_file_chunk(FileChunkUploadRequest{
         .upload_id = init_res.value().upload_id,
         .chunk_index = 1U,
         .encrypted_data = chunk1,
+        .ciphertext_sha256 = "",
     });
     ASSERT_TRUE(fail_up1.is_error());
     EXPECT_EQ(fail_up1.error().category(), ClientErrorCategory::Network);
@@ -460,12 +471,14 @@ TEST(FileGatewayContractsTest, SimulatedFailureHooksAndTamperMutationSupport) {
                         .upload_id = init_res.value().upload_id,
                         .chunk_index = 1U,
                         .encrypted_data = chunk1,
+                        .ciphertext_sha256 = "",
                     })
                     .is_ok());
     ASSERT_TRUE(gateway
                     .finalize_file_upload(FileUploadFinalizeRequest{
                         .upload_id = init_res.value().upload_id,
                         .file_id = "file-hooks-01",
+                        .expected_ciphertext_sha256 = "",
                     })
                     .is_ok());
 

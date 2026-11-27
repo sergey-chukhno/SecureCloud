@@ -129,8 +129,12 @@ TEST_F(WorkspaceViewModelOfflineSyncTest, ReconnectTriggersCatchUpSyncDrainsOutb
     inbound.actor_device_id = bob_dev;
     inbound.server_sequence_number = 42ULL;
     inbound.direct_payload = crypto::PerDeviceDeliveryPayload{
+        .recipient_user_id = {},
         .recipient_device_id = DeviceId("dev-local-01"),
         .ciphertext_blob = crypto_ptr_->encrypt_message(bob_dev, "Missed remote update").value(),
+        .ephemeral_public_key = {},
+        .iv = {},
+        .auth_tag = {},
     };
     gateway_ptr_->set_simulated_conversation_messages(cid, {inbound});
 

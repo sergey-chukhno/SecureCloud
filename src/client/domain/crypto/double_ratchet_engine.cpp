@@ -155,6 +155,7 @@ DoubleRatchetEngine::initialize_alice(application::interfaces::ICryptoProvider& 
         .ns = 0,
         .nr = 0,
         .pn = 0,
+        .skipped_keys = {},
     };
 
     return application::ClientResult<RatchetState>::ok(std::move(state));
@@ -183,6 +184,7 @@ DoubleRatchetEngine::initialize_bob(application::interfaces::ICryptoProvider& /*
         .ns = 0,
         .nr = 0,
         .pn = 0,
+        .skipped_keys = {},
     };
 
     return application::ClientResult<RatchetState>::ok(std::move(state));

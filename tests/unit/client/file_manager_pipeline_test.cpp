@@ -247,6 +247,7 @@ struct FileWorkstation {
             .one_time_prekey = otk_pub,
             .one_time_prekey_id = otk_id,
             .status = DeviceAuthorizationStatus::Authorized,
+            .identity_key_fingerprint = "",
         };
     }
 
@@ -401,6 +402,7 @@ TEST_F(FileManagerPipelineTest, PauseAndFullRestartResumeUploadUploadsRemainingC
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = src_file.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(paused_res.is_ok()) << paused_res.error().user_message();
     EXPECT_EQ(paused_res.value().record.status, FileTransferStatus::Paused);
@@ -457,6 +459,7 @@ TEST_F(FileManagerPipelineTest, PauseAndFullRestartResumeDownloadResumesFromPart
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = src_file.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(up_res.is_ok());
     ASSERT_TRUE(up_res.value().key_envelope.has_value());
@@ -508,6 +511,7 @@ TEST_F(FileManagerPipelineTest, TamperedRemoteChunkFailsClosedAndDeletesPartFile
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = src_file.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(up_res.is_ok());
     ASSERT_TRUE(up_res.value().key_envelope.has_value());
@@ -577,6 +581,7 @@ TEST_F(FileManagerPipelineTest, CancelTransferAbortsRemoteUploadPurgesKeyAndDele
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = src_file.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(up_paused.is_ok());
     const std::string up_tx = up_paused.value().record.transfer_id;
@@ -587,7 +592,12 @@ TEST_F(FileManagerPipelineTest, CancelTransferAbortsRemoteUploadPurgesKeyAndDele
     ASSERT_TRUE(alice.files().cancel_transfer(up_tx).is_ok());
     EXPECT_FALSE(alice.secure_storage->has_secret(FileManager::file_key_storage_id(up_fid)).value());
     EXPECT_EQ(alice.files().get_transfer(up_tx).value().status, FileTransferStatus::Cancelled);
-    EXPECT_TRUE(gateway_->finalize_file_upload(FileUploadFinalizeRequest{.upload_id = upload_id, .file_id = up_fid})
+    EXPECT_TRUE(gateway_
+                    ->finalize_file_upload(FileUploadFinalizeRequest{
+                        .upload_id = upload_id,
+                        .file_id = up_fid,
+                        .expected_ciphertext_sha256 = "",
+                    })
                     .is_error());
 
     // Now test active download cancel during progress callback cleans up .part + key
@@ -598,6 +608,7 @@ TEST_F(FileManagerPipelineTest, CancelTransferAbortsRemoteUploadPurgesKeyAndDele
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = src_file.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(complete_up.is_ok());
     ASSERT_TRUE(complete_up.value().key_envelope.has_value());
@@ -640,6 +651,7 @@ TEST_F(FileManagerPipelineTest, Adr008KeyChangedAndBlockedPeerHaltsUploadBeforeA
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = src_file.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(guard1.is_error());
     EXPECT_TRUE(alice.files().list_transfers(cid).value().empty());
@@ -653,6 +665,7 @@ TEST_F(FileManagerPipelineTest, Adr008KeyChangedAndBlockedPeerHaltsUploadBeforeA
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = src_file.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(guard2.is_error());
 
@@ -674,6 +687,7 @@ TEST_F(FileManagerPipelineTest, Adr008KeyChangedAndBlockedPeerHaltsUploadBeforeA
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = src_file.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(mid_guard.is_error());
     EXPECT_TRUE(gateway_->submitted_fanouts().empty());
@@ -690,7 +704,9 @@ TEST_F(FileManagerPipelineTest, ValidationRejectsInvalidFilesAndTransientNetwork
                         .conversation_id = cid,
                         .owner_user_id = alice.uid,
                         .owner_device_id = alice.did,
+                        .peer_user_id = {},
                         .local_file_path = (temp_dir_ / "missing.bin").string(),
+                        .sender_display_name = "",
                     })
                     .is_error());
 
@@ -701,7 +717,9 @@ TEST_F(FileManagerPipelineTest, ValidationRejectsInvalidFilesAndTransientNetwork
                         .conversation_id = cid,
                         .owner_user_id = alice.uid,
                         .owner_device_id = alice.did,
+                        .peer_user_id = {},
                         .local_file_path = empty_file.string(),
+                        .sender_display_name = "",
                     })
                     .is_error());
 
@@ -715,6 +733,7 @@ TEST_F(FileManagerPipelineTest, ValidationRejectsInvalidFilesAndTransientNetwork
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = src_file.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(dropped_res.is_error());
     EXPECT_EQ(dropped_res.error().category(), ClientErrorCategory::Network);
