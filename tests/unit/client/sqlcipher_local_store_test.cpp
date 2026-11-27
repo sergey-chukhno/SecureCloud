@@ -203,7 +203,7 @@ TEST_F(SqlCipherLocalStoreTest, FailsClosedOnWrongKeyMissingKeyOrTamperedDatabas
         char byte = 0;
         fs.seekg(100);
         fs.get(byte);
-        byte ^= 0xFF;
+        byte = static_cast<char>(static_cast<unsigned char>(byte) ^ 0xFFu);
         fs.seekp(100);
         fs.put(byte);
         fs.close();

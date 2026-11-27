@@ -1,87 +1,133 @@
 if(Qt6_FOUND)
+    # Mark Qt6 imported targets and their transitive Qt dependencies as SYSTEM
+    # so strict compiler warning flags (-Wconversion -Werror) apply strictly to
+    # project sources without failing on third-party Qt headers.
+    function(_securecloud_mark_qt_targets_system)
+        set(_visited "")
+        set(_queue ${ARGN})
+        while(_queue)
+            list(POP_FRONT _queue _tgt)
+            string(REGEX REPLACE "^\\$<LINK_ONLY:(.+)>$" "\\1" _tgt "${_tgt}")
+            if(_tgt IN_LIST _visited OR NOT TARGET "${_tgt}")
+                continue()
+            endif()
+            list(APPEND _visited "${_tgt}")
+
+            get_target_property(_aliased "${_tgt}" ALIASED_TARGET)
+            if(_aliased)
+                set(_tgt "${_aliased}")
+            endif()
+
+            if(_tgt MATCHES "^Qt6::")
+                get_target_property(_inc "${_tgt}" INTERFACE_INCLUDE_DIRECTORIES)
+                if(_inc)
+                    set_property(TARGET "${_tgt}" APPEND PROPERTY
+                            INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_inc}"
+                    )
+                endif()
+            endif()
+
+            get_target_property(_deps "${_tgt}" INTERFACE_LINK_LIBRARIES)
+            if(_deps)
+                list(APPEND _queue ${_deps})
+            endif()
+        endwhile()
+    endfunction()
+
+    _securecloud_mark_qt_targets_system(
+            Qt6::Core
+            Qt6::Network
+            Qt6::Gui
+            Qt6::Qml
+            Qt6::Quick
+            Qt6::QuickControls2
+            Qt6::OpenGL
+            Qt6::Test
+    )
+
     # 1. Domain Layer (Pure C++20, zero Qt GUI/Network dependencies)
     add_library(securecloud_client_domain STATIC
-        domain/session_state.cpp
-        domain/user_id.cpp
-        domain/device_id.cpp
-        domain/conversation_id.cpp
-        domain/message_id.cpp
-        domain/delivery_state.cpp
-        domain/crypto_identity.cpp
-        domain/prekey_bundle.cpp
-        domain/one_time_prekey_record.cpp
-        domain/prekey_inventory_status.cpp
-        domain/device_private_bundle.cpp
-        domain/device_trust_level.cpp
-        domain/device_platform_info.cpp
-        domain/hardware_attestation_record.cpp
-        domain/short_authentication_string.cpp
-        domain/pairing_challenge_payload.cpp
-        domain/device.cpp
-        domain/user.cpp
-        domain/user_profile.cpp
-        domain/user_settings.cpp
-        domain/contact.cpp
-        domain/directory_user_entry.cpp
-        domain/conversation.cpp
-        domain/message.cpp
-        domain/file_transfer.cpp
-        domain/offline_sync_models.cpp
-        domain/emergency_models.cpp
-        domain/local_audit_event.cpp
-        domain/diagnostics_models.cpp
-        domain/crypto/x3dh_models.cpp
-        domain/crypto/x3dh_engine.cpp
-        domain/crypto/ratchet_models.cpp
-        domain/crypto/skipped_keys_store.cpp
-        domain/crypto/double_ratchet_engine.cpp
-        domain/crypto/ratchet_session_state.cpp
-        domain/crypto/sender_key_models.cpp
-        domain/crypto/sender_key_engine.cpp
-        domain/crypto/file_crypto_engine.cpp
-        domain/crypto/recovery_phrase_engine.cpp
-        domain/crypto/crypto_self_test.cpp
+            domain/session_state.cpp
+            domain/user_id.cpp
+            domain/device_id.cpp
+            domain/conversation_id.cpp
+            domain/message_id.cpp
+            domain/delivery_state.cpp
+            domain/crypto_identity.cpp
+            domain/prekey_bundle.cpp
+            domain/one_time_prekey_record.cpp
+            domain/prekey_inventory_status.cpp
+            domain/device_private_bundle.cpp
+            domain/device_trust_level.cpp
+            domain/device_platform_info.cpp
+            domain/hardware_attestation_record.cpp
+            domain/short_authentication_string.cpp
+            domain/pairing_challenge_payload.cpp
+            domain/device.cpp
+            domain/user.cpp
+            domain/user_profile.cpp
+            domain/user_settings.cpp
+            domain/contact.cpp
+            domain/directory_user_entry.cpp
+            domain/conversation.cpp
+            domain/message.cpp
+            domain/file_transfer.cpp
+            domain/offline_sync_models.cpp
+            domain/emergency_models.cpp
+            domain/local_audit_event.cpp
+            domain/diagnostics_models.cpp
+            domain/crypto/x3dh_models.cpp
+            domain/crypto/x3dh_engine.cpp
+            domain/crypto/ratchet_models.cpp
+            domain/crypto/skipped_keys_store.cpp
+            domain/crypto/double_ratchet_engine.cpp
+            domain/crypto/ratchet_session_state.cpp
+            domain/crypto/sender_key_models.cpp
+            domain/crypto/sender_key_engine.cpp
+            domain/crypto/file_crypto_engine.cpp
+            domain/crypto/recovery_phrase_engine.cpp
+            domain/crypto/crypto_self_test.cpp
     )
     add_library(securecloud::client_domain ALIAS securecloud_client_domain)
     target_include_directories(securecloud_client_domain PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}
     )
     target_link_libraries(securecloud_client_domain PUBLIC
-        securecloud::common_core
-        securecloud::json
-        securecloud::compiler_flags
-        OpenSSL::Crypto
+            securecloud::common_core
+            securecloud::json
+            securecloud::compiler_flags
+            OpenSSL::Crypto
     )
 
     # 2. Infrastructure Layer (Adapters, Networking via Gateway, Persistence)
     add_library(securecloud_client_infra STATIC
-        infrastructure/gateway_adapter_stub.cpp
-        infrastructure/client_logger.cpp
-        infrastructure/adapters/default_gateway_client.cpp
-        infrastructure/adapters/qt_http_gateway_client.cpp
-        infrastructure/adapters/switchable_gateway_client.cpp
-        infrastructure/adapters/memory_local_store.cpp
-        infrastructure/adapters/sqlcipher_local_store.cpp
-        infrastructure/adapters/file_shredder.cpp
-        infrastructure/adapters/memory_secure_storage.cpp
-        infrastructure/adapters/stub_crypto_provider.cpp
-        infrastructure/adapters/openssl_crypto_provider.cpp
-        infrastructure/adapters/key_storage_helper.cpp
-        infrastructure/adapters/simulated_hardware_authenticator.cpp
-        infrastructure/adapters/platform_telemetry_collector.cpp
+            infrastructure/gateway_adapter_stub.cpp
+            infrastructure/client_logger.cpp
+            infrastructure/adapters/default_gateway_client.cpp
+            infrastructure/adapters/qt_http_gateway_client.cpp
+            infrastructure/adapters/switchable_gateway_client.cpp
+            infrastructure/adapters/memory_local_store.cpp
+            infrastructure/adapters/sqlcipher_local_store.cpp
+            infrastructure/adapters/file_shredder.cpp
+            infrastructure/adapters/memory_secure_storage.cpp
+            infrastructure/adapters/stub_crypto_provider.cpp
+            infrastructure/adapters/openssl_crypto_provider.cpp
+            infrastructure/adapters/key_storage_helper.cpp
+            infrastructure/adapters/simulated_hardware_authenticator.cpp
+            infrastructure/adapters/platform_telemetry_collector.cpp
     )
     add_library(securecloud::client_infra ALIAS securecloud_client_infra)
     target_include_directories(securecloud_client_infra PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}
     )
     target_link_libraries(securecloud_client_infra PUBLIC
-        securecloud_client_domain
-        securecloud::common_core
-        securecloud::compiler_flags
-        securecloud::sqlcipher
-        OpenSSL::Crypto
-        Qt6::Core
-        Qt6::Network
+            securecloud_client_domain
+            securecloud::common_core
+            securecloud::compiler_flags
+            securecloud::sqlcipher
+            OpenSSL::Crypto
+            Qt6::Core
+            Qt6::Network
     )
     if(WIN32)
         target_link_libraries(securecloud_client_infra PRIVATE psapi)
@@ -89,96 +135,96 @@ if(Qt6_FOUND)
 
     # 3. Application Layer (Use Cases, Lifecycle, Context)
     add_library(securecloud_client_app STATIC
-        application/client_app_service.cpp
-        application/client_config.cpp
-        application/client_error.cpp
-        application/client_bootstrap.cpp
-        application/client_application.cpp
-        application/managers/auth_manager.cpp
-        application/managers/messaging_manager.cpp
-        application/managers/delivery_retry_engine.cpp
-        application/managers/contact_manager.cpp
-        application/managers/device_manager.cpp
-        application/managers/device_pairing_coordinator.cpp
-        application/managers/safety_number_engine.cpp
-        application/managers/prekey_lifecycle_coordinator.cpp
-        application/managers/ratchet_session_manager.cpp
-        application/managers/file_manager.cpp
-        application/managers/emergency_manager.cpp
-        application/managers/settings_manager.cpp
-        application/managers/local_audit_logger.cpp
-        application/managers/diagnostic_sanitizer.cpp
-        application/managers/diagnostics_manager.cpp
-        application/managers/sync_manager.cpp
+            application/client_app_service.cpp
+            application/client_config.cpp
+            application/client_error.cpp
+            application/client_bootstrap.cpp
+            application/client_application.cpp
+            application/managers/auth_manager.cpp
+            application/managers/messaging_manager.cpp
+            application/managers/delivery_retry_engine.cpp
+            application/managers/contact_manager.cpp
+            application/managers/device_manager.cpp
+            application/managers/device_pairing_coordinator.cpp
+            application/managers/safety_number_engine.cpp
+            application/managers/prekey_lifecycle_coordinator.cpp
+            application/managers/ratchet_session_manager.cpp
+            application/managers/file_manager.cpp
+            application/managers/emergency_manager.cpp
+            application/managers/settings_manager.cpp
+            application/managers/local_audit_logger.cpp
+            application/managers/diagnostic_sanitizer.cpp
+            application/managers/diagnostics_manager.cpp
+            application/managers/sync_manager.cpp
     )
     add_library(securecloud::client_app ALIAS securecloud_client_app)
     set_target_properties(securecloud_client_app PROPERTIES
-        AUTOMOC ON
+            AUTOMOC ON
     )
     target_include_directories(securecloud_client_app PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}
     )
     target_link_libraries(securecloud_client_app PUBLIC
-        securecloud_client_domain
-        securecloud_client_infra
-        securecloud::common_core
-        securecloud::compiler_flags
-        Qt6::Core
+            securecloud_client_domain
+            securecloud_client_infra
+            securecloud::common_core
+            securecloud::compiler_flags
+            Qt6::Core
     )
 
     # 4. UI Layer (ViewModels, Presentation, QML Bindings)
     add_library(securecloud_client_ui STATIC
-        ui/ui_controller.cpp
-        ui/navigation_controller.cpp
-        ui/app_view_model.cpp
-        ui/diagnostics_view_model.cpp
-        ui/workspace_view_model.cpp
-        ui/ui_theme.cpp
-        ui/window_state_manager.cpp
-        ui/qml.qrc
+            ui/ui_controller.cpp
+            ui/navigation_controller.cpp
+            ui/app_view_model.cpp
+            ui/diagnostics_view_model.cpp
+            ui/workspace_view_model.cpp
+            ui/ui_theme.cpp
+            ui/window_state_manager.cpp
+            ui/qml.qrc
     )
     add_library(securecloud::client_ui ALIAS securecloud_client_ui)
     set_target_properties(securecloud_client_ui PROPERTIES
-        AUTOMOC ON
-        AUTORCC ON
+            AUTOMOC ON
+            AUTORCC ON
     )
     target_include_directories(securecloud_client_ui PUBLIC
-        ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}
     )
     target_link_libraries(securecloud_client_ui PUBLIC
-        securecloud_client_app
-        securecloud::compiler_flags
-        Qt6::Core
-        Qt6::Gui
-        Qt6::Qml
-        Qt6::Quick
-        Qt6::QuickControls2
+            securecloud_client_app
+            securecloud::compiler_flags
+            Qt6::Core
+            Qt6::Gui
+            Qt6::Qml
+            Qt6::Quick
+            Qt6::QuickControls2
     )
 
     # 5. Desktop Client Executable Target
     add_executable(securecloud-client
-        main.cpp
-        ui/qml.qrc
+            main.cpp
+            ui/qml.qrc
     )
     set_target_properties(securecloud-client PROPERTIES
-        AUTOMOC ON
-        AUTORCC ON
+            AUTOMOC ON
+            AUTORCC ON
     )
     target_include_directories(securecloud-client PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}
+            ${CMAKE_CURRENT_SOURCE_DIR}
     )
     target_link_libraries(securecloud-client PRIVATE
-        securecloud_client_ui
-        securecloud_client_app
-        securecloud_client_infra
-        securecloud_client_domain
-        securecloud::common_core
-        securecloud::compiler_flags
-        Qt6::Core
-        Qt6::Gui
-        Qt6::Qml
-        Qt6::Quick
-        Qt6::QuickControls2
+            securecloud_client_ui
+            securecloud_client_app
+            securecloud_client_infra
+            securecloud_client_domain
+            securecloud::common_core
+            securecloud::compiler_flags
+            Qt6::Core
+            Qt6::Gui
+            Qt6::Qml
+            Qt6::Quick
+            Qt6::QuickControls2
     )
 else()
     message(WARNING "[SecureCloud Client] Qt 6 is not available; desktop client targets are omitted.")

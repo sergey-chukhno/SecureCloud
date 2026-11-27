@@ -89,7 +89,8 @@ using securecloud::common::configuration::SecretString;
 }
 
 [[nodiscard]] std::string compute_cert_spki_sha256_hex(const std::filesystem::path& cert_path) {
-    FILE* fp = std::fopen(cert_path.c_str(), "rb");
+    const std::string cert_path_str = cert_path.string();
+    FILE* fp = std::fopen(cert_path_str.c_str(), "rb");
     if (fp == nullptr) {
         return {};
     }
