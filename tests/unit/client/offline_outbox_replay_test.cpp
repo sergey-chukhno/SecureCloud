@@ -56,6 +56,7 @@ void init_peer_fixture(PeerCryptoFixture& peer, OpenSslCryptoProvider& crypto, c
         .signed_prekey_signature = spk.signature,
         .one_time_prekey = otk.public_key,
         .one_time_prekey_id = did + "-otk-1",
+        .identity_key_fingerprint = "",
     };
 }
 
@@ -285,8 +286,12 @@ TEST_F(OfflineOutboxReplayTest, OfflineDeliveryAcksAndPrivacyGatedReadReceiptsFl
         ev1.actor_device_id = bob_dev;
         ev1.server_sequence_number = 10ULL;
         ev1.direct_payload = crypto::PerDeviceDeliveryPayload{
+            .recipient_user_id = {},
             .recipient_device_id = alice_dev,
             .ciphertext_blob = crypto.encrypt_message(bob_dev, "Hello offline").value(),
+            .ephemeral_public_key = {},
+            .iv = {},
+            .auth_tag = {},
         };
         ASSERT_TRUE(mm.process_inbound_realtime_event(ev1).is_ok());
         EXPECT_TRUE(gateway.sent_delivery_acks().empty());
@@ -326,8 +331,12 @@ TEST_F(OfflineOutboxReplayTest, OfflineDeliveryAcksAndPrivacyGatedReadReceiptsFl
         ev2.actor_device_id = bob_dev;
         ev2.server_sequence_number = 11ULL;
         ev2.direct_payload = crypto::PerDeviceDeliveryPayload{
+            .recipient_user_id = {},
             .recipient_device_id = alice_dev,
             .ciphertext_blob = crypto.encrypt_message(bob_dev, "Second offline").value(),
+            .ephemeral_public_key = {},
+            .iv = {},
+            .auth_tag = {},
         };
         ASSERT_TRUE(mm.process_inbound_realtime_event(ev2).is_ok());
         ASSERT_TRUE(mm.mark_conversation_read(cid, alice, alice_dev).is_ok());
@@ -470,6 +479,7 @@ TEST_F(OfflineOutboxReplayTest, FileManagerResumesNetworkInterruptedTransfersWhi
         .owner_device_id = alice_dev,
         .peer_user_id = bob,
         .local_file_path = file_net.string(),
+        .sender_display_name = "",
         .dispatch_key_envelope = false,
     });
     ASSERT_TRUE(net_res.is_error());
@@ -494,6 +504,7 @@ TEST_F(OfflineOutboxReplayTest, FileManagerResumesNetworkInterruptedTransfersWhi
         .owner_device_id = alice_dev,
         .peer_user_id = bob,
         .local_file_path = file_user_pause.string(),
+        .sender_display_name = "",
         .dispatch_key_envelope = false,
     });
     ASSERT_TRUE(paused_res.is_ok());

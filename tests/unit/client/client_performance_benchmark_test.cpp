@@ -738,7 +738,13 @@ TEST_F(ClientPerformanceBenchmarkTest, BenchmarkD_ActiveConversationScrollAndFra
                   << " single_core_cpu_percent=" << single_core_cpu_pct << " mean_frame_work_ms=" << work_stats.mean_ms
                   << " p95_frame_work_ms=" << work_stats.p95_ms << " rss_mb=" << end_sample.rss_megabytes << "\n";
 
-        EXPECT_LT(end_sample.cpu_percent, 5.0);
+#if defined(NDEBUG)
+        constexpr double kMaxActiveCpuPercent = 5.0;
+#else
+        constexpr double kMaxActiveCpuPercent = 8.0; // Debug (-O0) + offscreen software rendering
+#endif
+
+        EXPECT_LT(end_sample.cpu_percent, kMaxActiveCpuPercent);
         EXPECT_LT(work_stats.p95_ms, 16.67);
 
         delete root_obj;

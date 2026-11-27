@@ -298,6 +298,9 @@ TEST_F(SettingsManagerPipelineTest, DisappearingMessageTimersStampOutboundAndInb
         .recipient_user_id = alice,
         .recipient_device_id = alice_dev,
         .ciphertext_blob = enc_in.value(),
+        .ephemeral_public_key = {},
+        .iv = {},
+        .auth_tag = {},
         .algorithm = "Stub",
     };
     const auto in_24h = msg_mgr.process_inbound_message(group_res.value().conversation_id(), bob, bob_dev, in_payload);

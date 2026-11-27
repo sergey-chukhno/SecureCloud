@@ -268,6 +268,7 @@ struct E2eFileWorkstation {
             .one_time_prekey = otk_pub,
             .one_time_prekey_id = otk_id,
             .status = DeviceAuthorizationStatus::Authorized,
+            .identity_key_fingerprint = "",
         };
     }
 
@@ -444,6 +445,7 @@ TEST_F(EncryptedFileTransferIntegrationTest,
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = src_file.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(up_paused.is_ok());
     EXPECT_EQ(up_paused.value().record.status, FileTransferStatus::Paused);
@@ -511,6 +513,7 @@ TEST_F(EncryptedFileTransferIntegrationTest, Scenario3AdversarialFailClosedTampe
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = src_file.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(up_res.is_ok());
     ASSERT_TRUE(up_res.value().key_envelope.has_value());
@@ -612,6 +615,7 @@ TEST_F(EncryptedFileTransferIntegrationTest,
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = large_src.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(up_res.is_ok()) << up_res.error().user_message();
     EXPECT_EQ(up_res.value().record.chunk_size_bytes, kDefaultFileWireChunkSize);
@@ -651,6 +655,7 @@ TEST_F(EncryptedFileTransferIntegrationTest,
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = small_src.string(),
+        .sender_display_name = "",
     });
     ASSERT_TRUE(paused_cancel.is_ok());
     alice.files().set_progress_callback({});
@@ -671,6 +676,7 @@ TEST_F(EncryptedFileTransferIntegrationTest,
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = small_src.string(),
+        .sender_display_name = "",
     });
     EXPECT_TRUE(blocked_up.is_error());
 
@@ -681,6 +687,7 @@ TEST_F(EncryptedFileTransferIntegrationTest,
         .owner_device_id = alice.did,
         .peer_user_id = bob.uid,
         .local_file_path = small_src.string(),
+        .sender_display_name = "",
     });
     EXPECT_TRUE(allowed_up.is_ok()) << allowed_up.error().user_message();
 }

@@ -158,6 +158,7 @@ TEST_F(MultiDeviceTrustIntegrationTest, CompanionDevicePairingAndMutualSasMatchi
 
     // Simulated Gateway pairing result for companion
     interfaces::PairingInitiationResult pairing_init{
+        .device_id = {},
         .pairing_code = "739281",
         .expires_at = std::chrono::system_clock::now() + std::chrono::minutes(5),
     };
@@ -215,6 +216,7 @@ TEST_F(MultiDeviceTrustIntegrationTest, HardwareMfaEnforcementOnPairingApproval)
                         domain::DeviceTrustLevel::HardwareAttested, domain::DeviceAuthorizationStatus::Authorized);
 
     interfaces::PairingInitiationResult pairing_init{
+        .device_id = {},
         .pairing_code = "998877",
         .expires_at = std::chrono::system_clock::now() + std::chrono::minutes(5),
     };

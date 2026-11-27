@@ -27,6 +27,7 @@
 #include <chrono>
 #include <cstdint>
 #include <future>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <nlohmann/json.hpp>
@@ -311,7 +312,7 @@ void ensure_qt_openssl_tls_backend() {
     }
 
     const unsigned char* der_ptr = reinterpret_cast<const unsigned char*>(cert_der.constData());
-    X509* raw_x509 = d2i_X509(nullptr, &der_ptr, cert_der.size());
+    X509* raw_x509 = d2i_X509(nullptr, &der_ptr, static_cast<long>(cert_der.size()));
     if (raw_x509 == nullptr) {
         return std::nullopt;
     }

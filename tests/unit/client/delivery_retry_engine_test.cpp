@@ -65,6 +65,7 @@ TEST(DeliveryRetryEngineTest, TransientNetworkFailureRetriesWithSameIdempotencyK
                                                   .signed_prekey_signature = bob_spk.signature,
                                                   .one_time_prekey = bob_otk.public_key,
                                                   .one_time_prekey_id = "bob-otk-1",
+                                                  .identity_key_fingerprint = "",
                                               }});
 
     auto alice_ik = crypto.generate_identity_keypair().value();
@@ -136,6 +137,7 @@ TEST(DeliveryRetryEngineTest, ExceedingMaxAttemptsOrTtlTransitionsToFailed) {
                                                   .signed_prekey_signature = bob_spk.signature,
                                                   .one_time_prekey = bob_otk.public_key,
                                                   .one_time_prekey_id = "bob-otk-1",
+                                                  .identity_key_fingerprint = "",
                                               }});
 
     auto alice_ik = crypto.generate_identity_keypair().value();

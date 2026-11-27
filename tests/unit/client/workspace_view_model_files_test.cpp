@@ -264,6 +264,7 @@ struct UiFileWorkstation {
             .one_time_prekey = otk_pub,
             .one_time_prekey_id = otk_id,
             .status = DeviceAuthorizationStatus::Authorized,
+            .identity_key_fingerprint = "",
         };
     }
 
