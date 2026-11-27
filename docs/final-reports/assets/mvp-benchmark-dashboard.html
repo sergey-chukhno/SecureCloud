@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SecureCloud MVP — Verification &amp; Performance Benchmark Dashboard</title>
+<style>
+  :root {
+    --bg: #0b1120;
+    --panel: #131c31;
+    --border: #24324d;
+    --text: #f8fafc;
+    --muted: #94a3b8;
+    --cyan: #38bdf8;
+    --emerald: #34d399;
+    --indigo: #818cf8;
+    --amber: #fbbf24;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.5;
+  }
+  header {
+    padding: 28px 36px 18px;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(135deg, #0f172a, #172554 140%);
+  }
+  header h1 { margin: 0 0 6px; font-size: 26px; font-weight: 700; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; }
+  .tabs {
+    display: flex;
+    gap: 8px;
+    padding: 14px 36px;
+    background: #0f172a;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .tab {
+    padding: 9px 18px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 13.5px;
+    font-weight: 600;
+    transition: all 0.15s ease;
+  }
+  .tab:hover { color: var(--text); border-color: var(--cyan); }
+  .tab.active { background: var(--cyan); color: #0b1120; border-color: var(--cyan); }
+  main { max-width: 1220px; margin: 0 auto; padding: 26px 28px 60px; }
+  .section { display: none; }
+  .section.active { display: block; }
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+    gap: 16px;
+    margin-bottom: 26px;
+  }
+  .kpi {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .kpi .label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+  .kpi .val { font-size: 26px; font-weight: 800; margin: 6px 0 4px; color: var(--emerald); }
+  .kpi .val.cyan { color: var(--cyan); }
+  .kpi .val.indigo { color: var(--indigo); }
+  .kpi .sub { font-size: 12.5px; color: var(--muted); }
+  .chart-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 18px;
+    margin-bottom: 24px;
+    overflow-x: auto;
+  }
+  .chart-card svg { width: 100%; height: auto; display: block; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    background: var(--panel);
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    margin-bottom: 24px;
+    font-size: 13.5px;
+  }
+  th, td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { background: #172236; color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
+  .badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 700;
+    background: rgba(52, 211, 153, 0.15);
+    color: var(--emerald);
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>SecureCloud MVP — Interactive Verification &amp; Performance Dashboard</h1>
+  <p>Unified empirical results across Desktop Client (CLIENT-015-T05), 5-Service Docker Compose Backend, and Full-Stack Live E2E (2026-11-26)</p>
+</header>
+
+<div class="tabs">
+  <button class="tab active" onclick="showTab('overview', this)">Executive Overview</button>
+  <button class="tab" onclick="showTab('backend', this)">Backend Services (6 Groups)</button>
+  <button class="tab" onclick="showTab('client', this)">Desktop Client (7 Budgets)</button>
+  <button class="tab" onclick="showTab('e2e', this)">Live Compose E2E (5 Scenarios)</button>
+  <button class="tab" onclick="showTab('resources', this)">Resource Footprint</button>
+</div>
+
+<main>
+  <div id="overview" class="section active">
+    <div class="kpi-grid">
+      <div class="kpi"><div class="label">Client Foundation Suite</div><div class="val">436 / 436</div><div class="sub">100% PASS (Real SQLCipher + OpenSSL)</div></div>
+      <div class="kpi"><div class="label">Live Compose E2E</div><div class="val">5 / 5 PASS</div><div class="sub">3.23 s total • Zero plaintext verified</div></div>
+      <div class="kpi"><div class="label">Messaging Durable Peak</div><div class="val cyan">950 msg/s</div><div class="sub">2.53 ms p50 • 1 node ScyllaDB • 0 errs</div></div>
+      <div class="kpi"><div class="label">Files Streaming Peak</div><div class="val cyan">89.4 MiB/s</div><div class="sub">41.9 MiB/s UP • 18/18 SHA-256 verified</div></div>
+      <div class="kpi"><div class="label">5 C++ Services Combined</div><div class="val indigo">31.8 MiB</div><div class="sub">Idle RAM (107.4 MiB peak load)</div></div>
+      <div class="kpi"><div class="label">Client E2EE Ratchet</div><div class="val">82,945/s</div><div class="sub">166x above 500 msg/s budget</div></div>
+    </div>
+    <div class="chart-card"><svg xmlns="http://www.w3.org/2000/svg" width="1100" height="640" viewBox="0 0 1100 640">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#111C34"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="640" rx="18" fill="url(#bgGrad)"/>
+  <rect x="1" y="1" width="1098" height="638" rx="17" fill="none" stroke="#1E293B" stroke-width="2"/>
+  <text x="48" y="54" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#F8FAFC">Backend Services Peak Throughput (Single-Node Docker Compose)</text>
+  <text x="48" y="82" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#94A3B8">Real TLS 1.3 + mTLS gRPC + PostgreSQL / ScyllaDB / ClickHouse — 0 errors across 4,500+ requests</text>
+
+  <line x1="365.0" y1="107" x2="365.0" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="365.0" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">0</text>
+  <line x1="464.1" y1="107" x2="464.1" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="464.1" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">500</text>
+  <line x1="563.2" y1="107" x2="563.2" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="563.2" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">1,000</text>
+  <line x1="662.3" y1="107" x2="662.3" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="662.3" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">1,500</text>
+  <line x1="761.4" y1="107" x2="761.4" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="761.4" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">2,000</text>
+  <line x1="860.5" y1="107" x2="860.5" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="860.5" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">2,500</text>
+  <text x="351" y="136" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Auth: GET /api/v1/devices (JWT + PG, c=10)</text>
+  <rect x="365" y="120" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="120" width="520.1" height="24" rx="6" fill="#34D399"/>
+  <text x="895.1" y="136" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">2,623.8 req/s</text>
+  <text x="1052" y="136" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">JWT fast-path</text>
+  <text x="351" y="178" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Gateway: GET /health/live (TLS 1.3, c=10)</text>
+  <rect x="365" y="162" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="162" width="479.6" height="24" rx="6" fill="#38BDF8"/>
+  <text x="854.6" y="178" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">2,419.6 req/s</text>
+  <text x="1052" y="178" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">0.39 ms p50</text>
+  <text x="351" y="220" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Auth: GET crypto-directory (X3DH, c=10)</text>
+  <rect x="365" y="204" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="204" width="213.9" height="24" rx="6" fill="#34D399"/>
+  <text x="588.9" y="220" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">1,079.3 req/s</text>
+  <text x="1052" y="220" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">1.65 ms p50</text>
+  <text x="351" y="262" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Gateway: GET /health/ready (c=10)</text>
+  <rect x="365" y="246" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="246" width="211.9" height="24" rx="6" fill="#38BDF8"/>
+  <text x="586.9" y="262" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">1,069.2 req/s</text>
+  <text x="1052" y="262" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">0.81 ms p50</text>
+  <text x="351" y="304" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Messaging: POST /messages (256B, ScyllaDB)</text>
+  <rect x="365" y="288" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="288" width="188.2" height="24" rx="6" fill="#818CF8"/>
+  <text x="563.2" y="304" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">949.6 msg/s</text>
+  <text x="1052" y="304" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">ADR-007 durable</text>
+  <text x="351" y="346" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Messaging: POST /messages (4KiB, ScyllaDB)</text>
+  <rect x="365" y="330" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="330" width="150.7" height="24" rx="6" fill="#818CF8"/>
+  <text x="525.7" y="346" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">760.5 msg/s</text>
+  <text x="1052" y="346" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">16x payload</text>
+  <text x="351" y="388" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Audit: ClickHouse correlation_id lookup</text>
+  <rect x="365" y="372" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="372" width="148.5" height="24" rx="6" fill="#A78BFA"/>
+  <text x="523.5" y="388" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">749.3 q/s</text>
+  <text x="1052" y="388" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">1.05 ms p50</text>
+  <text x="351" y="430" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Messaging: POST /messages/{id}/ack (c=10)</text>
+  <rect x="365" y="414" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="414" width="88.4" height="24" rx="6" fill="#818CF8"/>
+  <text x="463.4" y="430" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">446.2 ack/s</text>
+  <text x="1052" y="430" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">3.48 ms p50</text>
+  <text x="351" y="472" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Auth: POST /auth/refresh (rotating, c=1)</text>
+  <rect x="365" y="456" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="456" width="66.9" height="24" rx="6" fill="#34D399"/>
+  <text x="441.9" y="472" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">337.3 req/s</text>
+  <text x="1052" y="472" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">1.32 ms p50</text>
+  <text x="351" y="514" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Messaging: GET sync (limit=50, c=10)</text>
+  <rect x="365" y="498" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="498" width="27.1" height="24" rx="6" fill="#818CF8"/>
+  <text x="402.1" y="514" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">136.5 req/s</text>
+  <text x="1052" y="514" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">50 msgs/page</text>
+  <text x="351" y="556" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Auth: POST /auth/login (Argon2id 64 MiB)</text>
+  <rect x="365" y="540" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="540" width="6.0" height="24" rx="6" fill="#FBBF24"/>
+  <text x="381.0" y="556" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">26.3 req/s</text>
+  <text x="1052" y="556" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">CPU-hardened</text>
+  <text x="48" y="618" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">Apple M4 (10 vCPU / 7.75 GiB Docker VM). Single-node Messaging (950 msg/s) scales linearly to &gt;10,000 msg/s horizontally.</text>
+  <text x="1052" y="618" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#475569">SecureCloud MVP Benchmarks (2026-11-26)</text>
+</svg>
+</div>
+    <div class="chart-card"><svg xmlns="http://www.w3.org/2000/svg" width="1100" height="580" viewBox="0 0 1100 580">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#111C34"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="580" rx="18" fill="url(#bgGrad)"/>
+  <rect x="1" y="1" width="1098" height="578" rx="17" fill="none" stroke="#1E293B" stroke-width="2"/>
+  <text x="48" y="54" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#F8FAFC">Desktop Client Performance vs. ADR-010 Budgets (dev-release, 7 / 7 PASSED)</text>
+  <text x="48" y="82" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#94A3B8">Real Qt 6.11 QML UI + Real SQLCipher 4.20 + Real OpenSSL 3.6.4 X3DH/Double Ratchet — zero mocks</text>
+
+  <line x1="805" y1="108" x2="805" y2="454" stroke="#FB7185" stroke-width="2" stroke-dasharray="6,4"/>
+  <text x="805" y="102" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FB7185">100% Budget Limit</text>
+  <text x="291" y="140" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Idle Baseline RSS</text>
+  <rect x="305" y="124" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="124" width="457.4" height="24" rx="6" fill="#38BDF8"/>
+  <text x="821" y="140" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">73.2 MB / 80 MB</text>
+  <text x="1052" y="140" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">8.5% headroom</text>
+  <text x="291" y="188" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Loaded Workspace RSS (5k msgs)</text>
+  <rect x="305" y="172" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="172" width="329.3" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="188" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">98.8 MB / 150 MB</text>
+  <text x="1052" y="188" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">34.1% headroom</text>
+  <text x="291" y="236" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">60 fps Scroll Frame Pacing (p95)</text>
+  <rect x="305" y="220" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="220" width="151.2" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="236" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">5.04 ms / 16.67 ms</text>
+  <text x="1052" y="236" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">3.3x faster</text>
+  <text x="291" y="284" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">16 MiB Stream RAM Overhead</text>
+  <rect x="305" y="268" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="268" width="128.0" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="284" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">+8.19 MB / 32 MB</text>
+  <text x="1052" y="284" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">3.9x under cap</text>
+  <text x="291" y="332" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Cold Startup Latency (p50)</text>
+  <rect x="305" y="316" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="316" width="57.2" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="332" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">171.6 ms / 1,500 ms</text>
+  <text x="1052" y="332" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">8.7x faster</text>
+  <text x="291" y="380" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Double Ratchet Latency (p95)</text>
+  <rect x="305" y="364" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="364" width="24.5" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="380" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">0.098 ms / 2.0 ms</text>
+  <text x="1052" y="380" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">20x faster</text>
+  <text x="291" y="428" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Idle CPU Utilization</text>
+  <rect x="305" y="412" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="412" width="6.0" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="428" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">0.01% / 1.0%</text>
+  <text x="1052" y="428" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">100x under cap</text>
+  <rect x="48" y="472" width="490" height="58" rx="10" fill="#1E293B" stroke="#34D399" stroke-width="1.5"/>
+  <text x="68" y="497" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#94A3B8">Double Ratchet + AES-256-GCM Throughput (Target &gt; 500 msg/s)</text>
+  <text x="68" y="519" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#34D399">46,581 – 82,945 msg/s  (93x – 166x above target)</text>
+  <rect x="562" y="472" width="490" height="58" rx="10" fill="#1E293B" stroke="#38BDF8" stroke-width="1.5"/>
+  <text x="582" y="497" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#94A3B8">Memory Leak Stability (1,000 Crypto + SQLCipher Cycles)</text>
+  <text x="582" y="519" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#38BDF8">+0.00 MB Drift  (119.55 -> 119.55 MB)</text>
+  <text x="48" y="558" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">Official dev-release (-O3) benchmark run (CLIENT-015-T05) on Apple M4 / macOS 15.6 / Qt 6.11.0 / OpenSSL 3.6.4.</text>
+  <text x="1052" y="558" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#475569">SecureCloud MVP Benchmarks (2026-11-26)</text>
+</svg>
+</div>
+  </div>
+
+  <div id="backend" class="section">
+    <div class="chart-card"><svg xmlns="http://www.w3.org/2000/svg" width="1100" height="640" viewBox="0 0 1100 640">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#111C34"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="640" rx="18" fill="url(#bgGrad)"/>
+  <rect x="1" y="1" width="1098" height="638" rx="17" fill="none" stroke="#1E293B" stroke-width="2"/>
+  <text x="48" y="54" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#F8FAFC">Backend Services Peak Throughput (Single-Node Docker Compose)</text>
+  <text x="48" y="82" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#94A3B8">Real TLS 1.3 + mTLS gRPC + PostgreSQL / ScyllaDB / ClickHouse — 0 errors across 4,500+ requests</text>
+
+  <line x1="365.0" y1="107" x2="365.0" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="365.0" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">0</text>
+  <line x1="464.1" y1="107" x2="464.1" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="464.1" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">500</text>
+  <line x1="563.2" y1="107" x2="563.2" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="563.2" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">1,000</text>
+  <line x1="662.3" y1="107" x2="662.3" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="662.3" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">1,500</text>
+  <line x1="761.4" y1="107" x2="761.4" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="761.4" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">2,000</text>
+  <line x1="860.5" y1="107" x2="860.5" y2="577" stroke="#334155" stroke-width="1" stroke-dasharray="4,4"/>
+  <text x="860.5" y="597" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">2,500</text>
+  <text x="351" y="136" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Auth: GET /api/v1/devices (JWT + PG, c=10)</text>
+  <rect x="365" y="120" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="120" width="520.1" height="24" rx="6" fill="#34D399"/>
+  <text x="895.1" y="136" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">2,623.8 req/s</text>
+  <text x="1052" y="136" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">JWT fast-path</text>
+  <text x="351" y="178" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Gateway: GET /health/live (TLS 1.3, c=10)</text>
+  <rect x="365" y="162" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="162" width="479.6" height="24" rx="6" fill="#38BDF8"/>
+  <text x="854.6" y="178" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">2,419.6 req/s</text>
+  <text x="1052" y="178" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">0.39 ms p50</text>
+  <text x="351" y="220" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Auth: GET crypto-directory (X3DH, c=10)</text>
+  <rect x="365" y="204" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="204" width="213.9" height="24" rx="6" fill="#34D399"/>
+  <text x="588.9" y="220" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">1,079.3 req/s</text>
+  <text x="1052" y="220" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">1.65 ms p50</text>
+  <text x="351" y="262" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Gateway: GET /health/ready (c=10)</text>
+  <rect x="365" y="246" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="246" width="211.9" height="24" rx="6" fill="#38BDF8"/>
+  <text x="586.9" y="262" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">1,069.2 req/s</text>
+  <text x="1052" y="262" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">0.81 ms p50</text>
+  <text x="351" y="304" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Messaging: POST /messages (256B, ScyllaDB)</text>
+  <rect x="365" y="288" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="288" width="188.2" height="24" rx="6" fill="#818CF8"/>
+  <text x="563.2" y="304" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">949.6 msg/s</text>
+  <text x="1052" y="304" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">ADR-007 durable</text>
+  <text x="351" y="346" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Messaging: POST /messages (4KiB, ScyllaDB)</text>
+  <rect x="365" y="330" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="330" width="150.7" height="24" rx="6" fill="#818CF8"/>
+  <text x="525.7" y="346" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">760.5 msg/s</text>
+  <text x="1052" y="346" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">16x payload</text>
+  <text x="351" y="388" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Audit: ClickHouse correlation_id lookup</text>
+  <rect x="365" y="372" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="372" width="148.5" height="24" rx="6" fill="#A78BFA"/>
+  <text x="523.5" y="388" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">749.3 q/s</text>
+  <text x="1052" y="388" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">1.05 ms p50</text>
+  <text x="351" y="430" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Messaging: POST /messages/{id}/ack (c=10)</text>
+  <rect x="365" y="414" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="414" width="88.4" height="24" rx="6" fill="#818CF8"/>
+  <text x="463.4" y="430" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">446.2 ack/s</text>
+  <text x="1052" y="430" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">3.48 ms p50</text>
+  <text x="351" y="472" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Auth: POST /auth/refresh (rotating, c=1)</text>
+  <rect x="365" y="456" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="456" width="66.9" height="24" rx="6" fill="#34D399"/>
+  <text x="441.9" y="472" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">337.3 req/s</text>
+  <text x="1052" y="472" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">1.32 ms p50</text>
+  <text x="351" y="514" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Messaging: GET sync (limit=50, c=10)</text>
+  <rect x="365" y="498" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="498" width="27.1" height="24" rx="6" fill="#818CF8"/>
+  <text x="402.1" y="514" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">136.5 req/s</text>
+  <text x="1052" y="514" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">50 msgs/page</text>
+  <text x="351" y="556" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Auth: POST /auth/login (Argon2id 64 MiB)</text>
+  <rect x="365" y="540" width="555" height="24" rx="6" fill="#172236"/>
+  <rect x="365" y="540" width="6.0" height="24" rx="6" fill="#FBBF24"/>
+  <text x="381.0" y="556" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">26.3 req/s</text>
+  <text x="1052" y="556" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#94A3B8">CPU-hardened</text>
+  <text x="48" y="618" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">Apple M4 (10 vCPU / 7.75 GiB Docker VM). Single-node Messaging (950 msg/s) scales linearly to &gt;10,000 msg/s horizontally.</text>
+  <text x="1052" y="618" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#475569">SecureCloud MVP Benchmarks (2026-11-26)</text>
+</svg>
+</div>
+    <div class="chart-card"><svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#111C34"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="560" rx="18" fill="url(#bgGrad)"/>
+  <rect x="1" y="1" width="1098" height="558" rx="17" fill="none" stroke="#1E293B" stroke-width="2"/>
+  <text x="48" y="54" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#F8FAFC">Backend Latency Profile (p50 vs. p95) &amp; TLS 1.3 Keep-Alive Impact</text>
+  <text x="48" y="82" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#94A3B8">Fast-path operations complete in 0.4–2.8 ms p50; persistent keep-alive delivers a 200x win over fresh TLS 1.3 handshakes</text>
+
+  <rect x="44" y="106" width="610" height="400" rx="14" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="68" y="138" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Core Fast-Path Latencies (ms, lower is better)</text>
+  <rect x="470" y="124" width="12" height="12" rx="3" fill="#38BDF8"/>
+  <text x="488" y="135" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">p50 median</text>
+  <rect x="568" y="124" width="12" height="12" rx="3" fill="#818CF8"/>
+  <text x="586" y="135" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">p95 tail</text>
+  <line x1="268.0" y1="158" x2="268.0" y2="478" stroke="#334155" stroke-dasharray="3,3"/>
+  <text x="268.0" y="496" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" fill="#94A3B8">0 ms</text>
+  <line x1="330.0" y1="158" x2="330.0" y2="478" stroke="#334155" stroke-dasharray="3,3"/>
+  <text x="330.0" y="496" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" fill="#94A3B8">2 ms</text>
+  <line x1="392.0" y1="158" x2="392.0" y2="478" stroke="#334155" stroke-dasharray="3,3"/>
+  <text x="392.0" y="496" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" fill="#94A3B8">4 ms</text>
+  <line x1="454.0" y1="158" x2="454.0" y2="478" stroke="#334155" stroke-dasharray="3,3"/>
+  <text x="454.0" y="496" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" fill="#94A3B8">6 ms</text>
+  <line x1="516.0" y1="158" x2="516.0" y2="478" stroke="#334155" stroke-dasharray="3,3"/>
+  <text x="516.0" y="496" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" fill="#94A3B8">8 ms</text>
+  <line x1="578.0" y1="158" x2="578.0" y2="478" stroke="#334155" stroke-dasharray="3,3"/>
+  <text x="578.0" y="496" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" fill="#94A3B8">10 ms</text>
+  <text x="256" y="181" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" fill="#F8FAFC">Gateway /health/live (c=10)</text>
+  <rect x="268" y="164" width="12.1" height="12" rx="3" fill="#38BDF8"/>
+  <text x="286.1" y="174" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#38BDF8">0.39</text>
+  <rect x="268" y="180" width="42.5" height="12" rx="3" fill="#818CF8"/>
+  <text x="316.5" y="190" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#818CF8">1.37</text>
+  <text x="256" y="227" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" fill="#F8FAFC">Audit correlation_id lookup</text>
+  <rect x="268" y="210" width="32.6" height="12" rx="3" fill="#38BDF8"/>
+  <text x="306.6" y="220" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#38BDF8">1.05</text>
+  <rect x="268" y="226" width="65.4" height="12" rx="3" fill="#818CF8"/>
+  <text x="339.4" y="236" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#818CF8">2.11</text>
+  <text x="256" y="273" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" fill="#F8FAFC">Auth JWT /devices (c=10)</text>
+  <rect x="268" y="256" width="34.7" height="12" rx="3" fill="#38BDF8"/>
+  <text x="308.7" y="266" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#38BDF8">1.12</text>
+  <rect x="268" y="272" width="71.9" height="12" rx="3" fill="#818CF8"/>
+  <text x="345.9" y="282" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#818CF8">2.32</text>
+  <text x="256" y="319" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" fill="#F8FAFC">Auth crypto-directory (c=10)</text>
+  <rect x="268" y="302" width="51.1" height="12" rx="3" fill="#38BDF8"/>
+  <text x="325.1" y="312" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#38BDF8">1.65</text>
+  <rect x="268" y="318" width="87.4" height="12" rx="3" fill="#818CF8"/>
+  <text x="361.4" y="328" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#818CF8">2.82</text>
+  <text x="256" y="365" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" fill="#F8FAFC">Messaging 256B submit (c=10)</text>
+  <rect x="268" y="348" width="78.4" height="12" rx="3" fill="#38BDF8"/>
+  <text x="352.4" y="358" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#38BDF8">2.53</text>
+  <rect x="268" y="364" width="119.7" height="12" rx="3" fill="#818CF8"/>
+  <text x="393.7" y="374" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#818CF8">3.86</text>
+  <text x="256" y="411" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" fill="#F8FAFC">Auth rotating refresh (c=1)</text>
+  <rect x="268" y="394" width="40.9" height="12" rx="3" fill="#38BDF8"/>
+  <text x="314.9" y="404" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#38BDF8">1.32</text>
+  <rect x="268" y="410" width="163.4" height="12" rx="3" fill="#818CF8"/>
+  <text x="437.4" y="420" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#818CF8">5.27</text>
+  <text x="256" y="457" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12.5" fill="#F8FAFC">Messaging 4KiB submit (c=10)</text>
+  <rect x="268" y="440" width="88.0" height="12" rx="3" fill="#38BDF8"/>
+  <text x="362.0" y="450" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#38BDF8">2.84</text>
+  <rect x="268" y="456" width="262.6" height="12" rx="3" fill="#818CF8"/>
+  <text x="536.6" y="466" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" font-weight="600" fill="#818CF8">8.47</text>
+  <rect x="676" y="106" width="380" height="400" rx="14" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="700" y="138" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Crypto &amp; Handshake Cost (p50 ms)</text>
+  <text x="700" y="158" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">Why keep-alive &amp; Argon2id design matters</text>
+  <rect x="708" y="434.0" width="64" height="6.0" rx="8" fill="#34D399"/>
+  <text x="740" y="424.0" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">0.23 ms</text>
+  <text x="740" y="462" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#F8FAFC">TLS 1.3 Keep-Alive</text>
+  <text x="740" y="480" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" fill="#94A3B8">Reused session</text>
+  <rect x="824" y="308.3" width="64" height="131.7" rx="8" fill="#FB7185"/>
+  <text x="856" y="298.3" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">46.64 ms</text>
+  <text x="856" y="462" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#F8FAFC">Fresh TLS 1.3</text>
+  <text x="856" y="480" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" fill="#94A3B8">200x slower</text>
+  <rect x="940" y="232.2" width="64" height="207.8" rx="8" fill="#FBBF24"/>
+  <text x="972" y="222.2" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#F8FAFC">73.58 ms</text>
+  <text x="972" y="462" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#F8FAFC">Argon2id Login</text>
+  <text x="972" y="480" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11" fill="#94A3B8">Anti-brute-force</text>
+  <line x1="696" y1="440" x2="1036" y2="440" stroke="#334155" stroke-width="1.5"/>
+  <text x="48" y="538" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">Every request traversed TLS 1.3 + mTLS gRPC + real durable storage. 0% error rate across all benchmarks.</text>
+  <text x="1052" y="538" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#475569">SecureCloud MVP Benchmarks (2026-11-26)</text>
+</svg>
+</div>
+    <div class="chart-card"><svg xmlns="http://www.w3.org/2000/svg" width="1100" height="540" viewBox="0 0 1100 540">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#111C34"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="540" rx="18" fill="url(#bgGrad)"/>
+  <rect x="1" y="1" width="1098" height="538" rx="17" fill="none" stroke="#1E293B" stroke-width="2"/>
+  <text x="48" y="54" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#F8FAFC">Encrypted File Transfer Throughput (Gateway -&gt; Files -&gt; PG + MinIO)</text>
+  <text x="48" y="82" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#94A3B8">Canonical 4 MiB chunking protocol with SHA-256 verification on every chunk and full round-trip (18 / 18 verified, 0 errors)</text>
+
+  <rect x="760" y="102" width="14" height="14" rx="3" fill="#38BDF8"/>
+  <text x="782" y="114" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#F8FAFC">Upload (MiB/s)</text>
+  <rect x="910" y="102" width="14" height="14" rx="3" fill="#34D399"/>
+  <text x="932" y="114" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#F8FAFC">Download (MiB/s)</text>
+  <line x1="95" y1="430.0" x2="1040" y2="430.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="434.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">0</text>
+  <line x1="95" y1="370.0" x2="1040" y2="370.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="374.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">20</text>
+  <line x1="95" y1="310.0" x2="1040" y2="310.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="314.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">40</text>
+  <line x1="95" y1="250.0" x2="1040" y2="250.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="254.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">60</text>
+  <line x1="95" y1="190.0" x2="1040" y2="190.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="194.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">80</text>
+  <line x1="95" y1="130.0" x2="1040" y2="130.0" stroke="#334155" stroke-dasharray="4,4"/>
+  <text x="82" y="134.0" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">100</text>
+  <text x="36" y="280.0" transform="rotate(-90 36 280.0)" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#94A3B8">Effective Throughput (MiB/s)</text>
+  <rect x="184" y="418.5" width="66" height="11.5" rx="8" fill="#38BDF8"/>
+  <text x="217" y="408.5" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#38BDF8">3.82</text>
+  <rect x="270" y="401.7" width="66" height="28.3" rx="8" fill="#34D399"/>
+  <text x="303" y="391.7" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#34D399">9.42</text>
+  <text x="260" y="456" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">64 KiB</text>
+  <text x="260" y="475" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">1 chunk (n=10)</text>
+  <text x="260" y="494" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#CBD5E1">UP 16.4 ms | DN 6.6 ms</text>
+  <rect x="489" y="343.2" width="66" height="86.8" rx="8" fill="#38BDF8"/>
+  <text x="522" y="333.2" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#38BDF8">28.93</text>
+  <rect x="575" y="279.1" width="66" height="150.9" rx="8" fill="#34D399"/>
+  <text x="608" y="269.1" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#34D399">50.29</text>
+  <text x="565" y="456" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">1 MiB</text>
+  <text x="565" y="475" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">1 chunk (n=5)</text>
+  <text x="565" y="494" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#CBD5E1">UP 34.6 ms | DN 19.9 ms</text>
+  <rect x="794" y="304.2" width="66" height="125.8" rx="8" fill="#38BDF8"/>
+  <text x="827" y="294.2" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#38BDF8">41.94</text>
+  <rect x="880" y="161.9" width="66" height="268.1" rx="8" fill="#34D399"/>
+  <text x="913" y="151.9" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#34D399">89.35</text>
+  <text x="870" y="456" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">5 MiB</text>
+  <text x="870" y="475" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">2 chunks: 4+1 MiB (n=3)</text>
+  <text x="870" y="494" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#CBD5E1">UP 119.2 ms | DN 56.0 ms</text>
+  <line x1="95" y1="430" x2="1040" y2="430" stroke="#334155" stroke-width="1.5"/>
+  <text x="48" y="518" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">Includes full init -&gt; chunk(s) -&gt; finalize -&gt; download lifecycle + SHA-256 verification. Files service peak RAM: 41.2 MiB.</text>
+  <text x="1052" y="518" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#475569">SecureCloud MVP Benchmarks (2026-11-26)</text>
+</svg>
+</div>
+  </div>
+
+  <div id="client" class="section">
+    <div class="chart-card"><svg xmlns="http://www.w3.org/2000/svg" width="1100" height="580" viewBox="0 0 1100 580">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#111C34"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="580" rx="18" fill="url(#bgGrad)"/>
+  <rect x="1" y="1" width="1098" height="578" rx="17" fill="none" stroke="#1E293B" stroke-width="2"/>
+  <text x="48" y="54" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#F8FAFC">Desktop Client Performance vs. ADR-010 Budgets (dev-release, 7 / 7 PASSED)</text>
+  <text x="48" y="82" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#94A3B8">Real Qt 6.11 QML UI + Real SQLCipher 4.20 + Real OpenSSL 3.6.4 X3DH/Double Ratchet — zero mocks</text>
+
+  <line x1="805" y1="108" x2="805" y2="454" stroke="#FB7185" stroke-width="2" stroke-dasharray="6,4"/>
+  <text x="805" y="102" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="700" fill="#FB7185">100% Budget Limit</text>
+  <text x="291" y="140" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Idle Baseline RSS</text>
+  <rect x="305" y="124" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="124" width="457.4" height="24" rx="6" fill="#38BDF8"/>
+  <text x="821" y="140" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">73.2 MB / 80 MB</text>
+  <text x="1052" y="140" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">8.5% headroom</text>
+  <text x="291" y="188" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Loaded Workspace RSS (5k msgs)</text>
+  <rect x="305" y="172" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="172" width="329.3" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="188" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">98.8 MB / 150 MB</text>
+  <text x="1052" y="188" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">34.1% headroom</text>
+  <text x="291" y="236" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">60 fps Scroll Frame Pacing (p95)</text>
+  <rect x="305" y="220" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="220" width="151.2" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="236" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">5.04 ms / 16.67 ms</text>
+  <text x="1052" y="236" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">3.3x faster</text>
+  <text x="291" y="284" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">16 MiB Stream RAM Overhead</text>
+  <rect x="305" y="268" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="268" width="128.0" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="284" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">+8.19 MB / 32 MB</text>
+  <text x="1052" y="284" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">3.9x under cap</text>
+  <text x="291" y="332" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Cold Startup Latency (p50)</text>
+  <rect x="305" y="316" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="316" width="57.2" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="332" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">171.6 ms / 1,500 ms</text>
+  <text x="1052" y="332" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">8.7x faster</text>
+  <text x="291" y="380" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Double Ratchet Latency (p95)</text>
+  <rect x="305" y="364" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="364" width="24.5" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="380" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">0.098 ms / 2.0 ms</text>
+  <text x="1052" y="380" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">20x faster</text>
+  <text x="291" y="428" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" fill="#F8FAFC">Idle CPU Utilization</text>
+  <rect x="305" y="412" width="500" height="24" rx="6" fill="#172236"/>
+  <rect x="305" y="412" width="6.0" height="24" rx="6" fill="#34D399"/>
+  <text x="821" y="428" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">0.01% / 1.0%</text>
+  <text x="1052" y="428" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#34D399">100x under cap</text>
+  <rect x="48" y="472" width="490" height="58" rx="10" fill="#1E293B" stroke="#34D399" stroke-width="1.5"/>
+  <text x="68" y="497" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#94A3B8">Double Ratchet + AES-256-GCM Throughput (Target &gt; 500 msg/s)</text>
+  <text x="68" y="519" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#34D399">46,581 – 82,945 msg/s  (93x – 166x above target)</text>
+  <rect x="562" y="472" width="490" height="58" rx="10" fill="#1E293B" stroke="#38BDF8" stroke-width="1.5"/>
+  <text x="582" y="497" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" fill="#94A3B8">Memory Leak Stability (1,000 Crypto + SQLCipher Cycles)</text>
+  <text x="582" y="519" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="18" font-weight="700" fill="#38BDF8">+0.00 MB Drift  (119.55 -> 119.55 MB)</text>
+  <text x="48" y="558" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">Official dev-release (-O3) benchmark run (CLIENT-015-T05) on Apple M4 / macOS 15.6 / Qt 6.11.0 / OpenSSL 3.6.4.</text>
+  <text x="1052" y="558" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#475569">SecureCloud MVP Benchmarks (2026-11-26)</text>
+</svg>
+</div>
+    <table>
+      <thead><tr><th>ID</th><th>Client Benchmark (dev-release)</th><th>Target Budget</th><th>Measured</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td>A</td><td>Idle Baseline RSS &amp; CPU (5 s)</td><td>&lt; 80 MB / &lt; 1.0%</td><td>73.19 MB / 0.01%</td><td><span class="badge">PASS</span></td></tr>
+        <tr><td>B</td><td>Loaded Workspace RSS (50 convs / 5,000 msgs)</td><td>&lt; 150 MB</td><td>98.78 MB</td><td><span class="badge">PASS</span></td></tr>
+        <tr><td>C</td><td>16 MiB Chunked Stream Overhead (10/10 runs)</td><td>&lt; 32 MB delta</td><td>+8.19 MB</td><td><span class="badge">PASS</span></td></tr>
+        <tr><td>D</td><td>Active Scroll 60 fps Frame Pacing</td><td>&lt; 5% CPU / &lt; 16.67 ms p95</td><td>1.78% CPU / 5.04 ms p95</td><td><span class="badge">PASS</span></td></tr>
+        <tr><td>E</td><td>Cold Startup Latency (p50 / p95)</td><td>&lt; 1,500 ms</td><td>171.6 ms / 214.4 ms</td><td><span class="badge">PASS</span></td></tr>
+        <tr><td>F</td><td>Double Ratchet + AES-256-GCM</td><td>&lt; 2.0 ms / &gt; 500 msg/s</td><td>0.098 ms p95 / 46,581–82,945 msg/s</td><td><span class="badge">PASS</span></td></tr>
+        <tr><td>G</td><td>Memory Leak Stability (1,000 cycles)</td><td>&lt; 16 MB drift</td><td>+0.00 MB (zero drift)</td><td><span class="badge">PASS</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="e2e" class="section">
+    <table>
+      <thead><tr><th>Scenario</th><th>What Was Proven End-to-End (TLS 1.3 + SPKI Pinning)</th><th>Duration</th><th>Status</th></tr></thead>
+      <tbody>
+        <tr><td><strong>1. Auth &amp; Prekeys</strong></td><td>Dual workstation login, X3DH device enrollment, JWT refresh rotation, +10 OTPK upload, crypto directory lookup</td><td>513 ms</td><td><span class="badge">PASS</span></td></tr>
+        <tr><td><strong>2. Live E2EE &amp; ScyllaDB</strong></td><td>Alice -&gt; Bob Double Ratchet decryption + ACK/read receipt + direct ScyllaDB scan confirming <strong>0 plaintext</strong></td><td>311 ms</td><td><span class="badge">PASS</span></td></tr>
+        <tr><td><strong>3. 5 MiB Encrypted File</strong></td><td>2-chunk AES-256-GCM upload/download + SHA-256 byte-for-byte match + Postgres &amp; MinIO <strong>0 plaintext</strong></td><td>969 ms</td><td><span class="badge">PASS</span></td></tr>
+        <tr><td><strong>4. Offline Sync &amp; MFA Revoke</strong></td><td>Offline outbox queue/flush + RFC 6238 TOTP MFA step-up + device revocation (0 post-revoke ScyllaDB rows, 403 login)</td><td>527 ms</td><td><span class="badge">PASS</span></td></tr>
+        <tr><td><strong>5. Panic Wipe &amp; Audit</strong></td><td>Emergency wipe shreds SQLCipher DB + mTLS ClickHouse Audit verified across all 4 producers + 1.72 ms p50 probes</td><td>903 ms</td><td><span class="badge">PASS</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div id="resources" class="section">
+    <div class="chart-card"><svg xmlns="http://www.w3.org/2000/svg" width="1100" height="560" viewBox="0 0 1100 560">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F172A"/>
+      <stop offset="100%" stop-color="#111C34"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="560" rx="18" fill="url(#bgGrad)"/>
+  <rect x="1" y="1" width="1098" height="558" rx="17" fill="none" stroke="#1E293B" stroke-width="2"/>
+  <text x="48" y="54" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#F8FAFC">Container Memory Footprint: Native C++20 Microservices vs. Datastores</text>
+  <text x="48" y="82" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" fill="#94A3B8">All 5 C++20 microservices combined use only 31.8 MiB idle / 107.4 MiB peak — ~10x less RAM than the 4 datastores</text>
+
+  <rect x="44" y="106" width="490" height="400" rx="14" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="68" y="138" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">5 C++20 Microservices (MiB RAM)</text>
+  <rect x="355" y="124" width="12" height="12" rx="3" fill="#2DD4BF"/>
+  <text x="373" y="135" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">Idle</text>
+  <rect x="420" y="124" width="12" height="12" rx="3" fill="#38BDF8"/>
+  <text x="438" y="135" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">Peak Load</text>
+  <text x="146" y="193" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F8FAFC">gateway</text>
+  <rect x="160" y="174" width="42.0" height="14" rx="4" fill="#2DD4BF"/>
+  <text x="210.0" y="185" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#2DD4BF">7.0 MiB</text>
+  <rect x="160" y="192" width="194.4" height="14" rx="4" fill="#38BDF8"/>
+  <text x="362.4" y="203" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="700" fill="#38BDF8">32.4 MiB</text>
+  <text x="146" y="247" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F8FAFC">auth</text>
+  <rect x="160" y="228" width="35.4" height="14" rx="4" fill="#2DD4BF"/>
+  <text x="203.4" y="239" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#2DD4BF">5.9 MiB</text>
+  <rect x="160" y="246" width="43.2" height="14" rx="4" fill="#38BDF8"/>
+  <text x="211.2" y="257" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="700" fill="#38BDF8">7.2 MiB</text>
+  <text x="146" y="301" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F8FAFC">messaging</text>
+  <rect x="160" y="282" width="40.2" height="14" rx="4" fill="#2DD4BF"/>
+  <text x="208.2" y="293" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#2DD4BF">6.7 MiB</text>
+  <rect x="160" y="300" width="109.8" height="14" rx="4" fill="#38BDF8"/>
+  <text x="277.8" y="311" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="700" fill="#38BDF8">18.3 MiB</text>
+  <text x="146" y="355" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F8FAFC">files</text>
+  <rect x="160" y="336" width="34.8" height="14" rx="4" fill="#2DD4BF"/>
+  <text x="202.8" y="347" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#2DD4BF">5.8 MiB</text>
+  <rect x="160" y="354" width="247.2" height="14" rx="4" fill="#38BDF8"/>
+  <text x="415.2" y="365" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="700" fill="#38BDF8">41.2 MiB</text>
+  <text x="146" y="409" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="600" fill="#F8FAFC">audit</text>
+  <rect x="160" y="390" width="38.4" height="14" rx="4" fill="#2DD4BF"/>
+  <text x="206.4" y="401" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" fill="#2DD4BF">6.4 MiB</text>
+  <rect x="160" y="408" width="49.8" height="14" rx="4" fill="#38BDF8"/>
+  <text x="217.8" y="419" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="11.5" font-weight="700" fill="#38BDF8">8.3 MiB</text>
+  <rect x="68" y="448" width="442" height="40" rx="8" fill="#0F172A" stroke="#34D399" stroke-width="1"/>
+  <text x="289" y="473" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="14" font-weight="700" fill="#34D399">Combined Total: 31.8 MiB Idle  |  107.4 MiB Peak</text>
+  <rect x="558" y="106" width="498" height="400" rx="14" fill="#1E293B" stroke="#334155" stroke-width="1"/>
+  <text x="582" y="138" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="16" font-weight="700" fill="#F8FAFC">Full Stack Peak RAM Comparison (MiB)</text>
+  <text x="728" y="194" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" font-weight="500" fill="#F8FAFC">PostgreSQL 17</text>
+  <rect x="740" y="178" width="16.7" height="24" rx="6" fill="#64748B"/>
+  <text x="764.7" y="194" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">48.6 MiB</text>
+  <text x="728" y="248" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" font-weight="700" fill="#34D399">ALL 5 C++ Services</text>
+  <rect x="740" y="232" width="36.8" height="24" rx="6" fill="#34D399"/>
+  <text x="784.8" y="248" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#34D399">107.4 MiB</text>
+  <text x="728" y="302" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" font-weight="500" fill="#F8FAFC">ScyllaDB (dev 512M)</text>
+  <rect x="740" y="286" width="39.7" height="24" rx="6" fill="#64748B"/>
+  <text x="787.7" y="302" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">115.7 MiB</text>
+  <text x="728" y="356" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" font-weight="500" fill="#F8FAFC">MinIO (S3)</text>
+  <rect x="740" y="340" width="85.3" height="24" rx="6" fill="#64748B"/>
+  <text x="833.3" y="356" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">248.9 MiB</text>
+  <text x="728" y="410" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" font-weight="500" fill="#F8FAFC">ClickHouse</text>
+  <rect x="740" y="394" width="221.1" height="24" rx="6" fill="#A78BFA"/>
+  <text x="969.1" y="410" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#F8FAFC">644.9 MiB</text>
+  <rect x="582" y="448" width="450" height="40" rx="8" fill="#0F172A" stroke="#334155" stroke-width="1"/>
+  <text x="807" y="473" text-anchor="middle" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="13.5" font-weight="600" fill="#F8FAFC">91% of stack RAM is third-party datastores (1,058 MiB)</text>
+  <text x="48" y="538" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" fill="#94A3B8">Captured via docker stats --no-stream across Idle, Peak (c=25 Messaging + 5 MiB Files), and Post-Load phases.</text>
+  <text x="1052" y="538" text-anchor="end" font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif" font-size="12" font-weight="600" fill="#475569">SecureCloud MVP Benchmarks (2026-11-26)</text>
+</svg>
+</div>
+  </div>
+</main>
+
+<script>
+function showTab(id, btn) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  btn.classList.add('active');
+}
+</script>
+</body>
+</html>
