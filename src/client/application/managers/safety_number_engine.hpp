@@ -13,6 +13,8 @@
 
 namespace securecloud::client::application::managers {
 
+class LocalAuditLogger;
+
 class SafetyNumberEngine {
   public:
     static constexpr std::string_view kVerifiedKeyPrefix = "identity.verified.";
@@ -62,9 +64,14 @@ class SafetyNumberEngine {
     /// Parses verification URI and returns (user1, user2, formatted_safety_number)
     static ClientResult<ParsedVerificationUri> parse_verification_uri(std::string_view uri_str);
 
+    void set_local_audit_logger(LocalAuditLogger* local_audit_logger) noexcept {
+        local_audit_logger_ = local_audit_logger;
+    }
+
   private:
     interfaces::ICryptoProvider& crypto_provider_;
     interfaces::ISecureStorage& secure_storage_;
+    LocalAuditLogger* local_audit_logger_{nullptr};
 };
 
 } // namespace securecloud::client::application::managers

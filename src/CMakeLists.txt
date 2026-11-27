@@ -1,5 +1,7 @@
 add_subdirectory(common)
-add_subdirectory(client)
+if(SECURECLOUD_BUILD_CLIENT)
+    add_subdirectory(client)
+endif()
 add_subdirectory(gateway)
 add_subdirectory(auth)
 add_subdirectory(messaging)

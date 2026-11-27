@@ -175,7 +175,7 @@ void ScyllaDeliveryStateRepository::init_prepared_statements() {
         "message_priority, delivery_state, attempt_count, next_retry_at, "
         "ciphertext_blob, ephemeral_public_key, iv, auth_tag, algorithm, protocol_version, one_time_prekey_id "
         "FROM securecloud_messaging.pending_deliveries_by_device "
-        "WHERE device_id = ? AND message_id = ?;");
+        "WHERE device_id = ?;");
 }
 
 void ScyllaDeliveryStateRepository::save_pending_deliveries(const std::vector<domain::DeviceDeliveryRecord>& records) {
@@ -470,13 +470,15 @@ ScyllaDeliveryStateRepository::get_delivery_record_for_device(const domain::Devi
 
     db::ScyllaParams params;
     params.add_string(device_id.str());
-    params.add_string(message_id.to_string());
 
+    const std::string target_id = message_id.to_string();
     auto result = session_->execute_prepared(prep_get_device_record_, params);
-    if (result.empty()) {
-        return std::nullopt;
+    for (const auto& row : result) {
+        if (row.get_string("message_id") == target_id) {
+            return row_to_delivery_record(row);
+        }
     }
-    return row_to_delivery_record(result.front());
+    return std::nullopt;
 }
 
 } // namespace securecloud::messaging::repository

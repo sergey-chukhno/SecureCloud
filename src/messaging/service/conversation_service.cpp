@@ -15,7 +15,7 @@ namespace {
 void stage_conversation_audit(repository::IMessagingAuditOutboxRepository* audit_repo,
                               domain::MessagingAuditEventType type, std::chrono::system_clock::time_point now,
                               domain::UserId actor_user_id, const domain::ConversationId& conv_id,
-                              const nlohmann::json& metadata) {
+                              const nlohmann::json& metadata, std::string_view correlation_id = {}) {
     if (audit_repo == nullptr) {
         return;
     }
@@ -29,7 +29,7 @@ void stage_conversation_audit(repository::IMessagingAuditOutboxRepository* audit
         .actor_device_id = {},
         .target_resource = conv_str,
         .payload_json = metadata.dump(),
-        .correlation_id = {},
+        .correlation_id = std::string(correlation_id),
     };
     audit::stage_canonical_audit_event(audit_repo, event, conv_str);
 }
@@ -44,7 +44,8 @@ ConversationService::ConversationService(repository::IConversationRepository& co
       audit_repo_(std::move(audit_repo)) {}
 
 ServiceResult<domain::ConversationEntity>
-ConversationService::create_direct_conversation(const domain::UserId& caller, const domain::UserId& recipient) {
+ConversationService::create_direct_conversation(const domain::UserId& caller, const domain::UserId& recipient,
+                                                std::string_view correlation_id) {
     if (caller == recipient) {
         return ServiceResult<domain::ConversationEntity>::fail(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
                                                                "Cannot create a direct conversation with yourself");
@@ -105,14 +106,15 @@ ConversationService::create_direct_conversation(const domain::UserId& caller, co
                         "{\"type\":\"direct\",\"creator\":\"" + caller.str() + "\"}");
 
     stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationCreated, now, caller,
-                             conv_id, {{"conversation_type", "DIRECT"}, {"initial_member_count", 2}});
+                             conv_id, {{"conversation_type", "DIRECT"}, {"initial_member_count", 2}}, correlation_id);
 
     return ServiceResult<domain::ConversationEntity>::ok(conv);
 }
 
 ServiceResult<domain::ConversationEntity>
 ConversationService::create_group_conversation(const domain::UserId& caller, std::string_view title,
-                                               const std::vector<domain::UserId>& initial_participant_user_ids) {
+                                               const std::vector<domain::UserId>& initial_participant_user_ids,
+                                               std::string_view correlation_id) {
     if (title.empty() || title.size() > 256) {
         return ServiceResult<domain::ConversationEntity>::fail(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
                                                                "Group title must be between 1 and 256 characters");
@@ -179,14 +181,16 @@ ConversationService::create_group_conversation(const domain::UserId& caller, std
                             "\"}");
 
     stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationCreated, now, caller,
-                             conv_id, {{"conversation_type", "GROUP"}, {"initial_member_count", added.size()}});
+                             conv_id, {{"conversation_type", "GROUP"}, {"initial_member_count", added.size()}},
+                             correlation_id);
 
     return ServiceResult<domain::ConversationEntity>::ok(conv);
 }
 
 ServiceResult<void> ConversationService::add_participant(const domain::UserId& caller,
                                                          const domain::ConversationId& conv_id,
-                                                         const domain::UserId& target_user) {
+                                                         const domain::UserId& target_user,
+                                                         std::string_view correlation_id) {
     auto auth_res = auth_service_.can_add_participant(caller, conv_id);
     if (!auth_res) {
         return ServiceResult<void>::fail(auth_res.error_code, auth_res.reason);
@@ -224,16 +228,17 @@ ServiceResult<void> ConversationService::add_participant(const domain::UserId& c
     record_outbox_event(conv_id, domain::ConversationOutboxEventType::ParticipantJoined,
                         "{\"user_id\":\"" + target_user.str() + "\"}");
 
-    stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationMembershipChanged, now,
-                             caller, conv_id,
-                             {{"action", "MEMBER_ADDED"}, {"affected_user_id", target_user.str()}, {"role", "MEMBER"}});
+    stage_conversation_audit(
+        audit_repo_.get(), domain::MessagingAuditEventType::ConversationMembershipChanged, now, caller, conv_id,
+        {{"action", "MEMBER_ADDED"}, {"affected_user_id", target_user.str()}, {"role", "MEMBER"}}, correlation_id);
 
     return ServiceResult<void>::ok();
 }
 
 ServiceResult<void> ConversationService::remove_participant(const domain::UserId& caller,
                                                             const domain::ConversationId& conv_id,
-                                                            const domain::UserId& target_user) {
+                                                            const domain::UserId& target_user,
+                                                            std::string_view correlation_id) {
     auto auth_res = auth_service_.can_remove_participant(caller, conv_id, target_user);
     if (!auth_res) {
         return ServiceResult<void>::fail(auth_res.error_code, auth_res.reason);
@@ -259,13 +264,15 @@ ServiceResult<void> ConversationService::remove_participant(const domain::UserId
                         "{\"user_id\":\"" + target_user.str() + "\",\"removed_by\":\"" + caller.str() + "\"}");
 
     stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationMembershipChanged, now,
-                             caller, conv_id, {{"action", "MEMBER_REMOVED"}, {"affected_user_id", target_user.str()}});
+                             caller, conv_id, {{"action", "MEMBER_REMOVED"}, {"affected_user_id", target_user.str()}},
+                             correlation_id);
 
     return ServiceResult<void>::ok();
 }
 
 ServiceResult<void> ConversationService::leave_conversation(const domain::UserId& caller,
-                                                            const domain::ConversationId& conv_id) {
+                                                            const domain::ConversationId& conv_id,
+                                                            std::string_view correlation_id) {
     auto auth_res = auth_service_.can_leave_conversation(caller, conv_id);
     if (!auth_res) {
         return ServiceResult<void>::fail(auth_res.error_code, auth_res.reason);
@@ -290,7 +297,8 @@ ServiceResult<void> ConversationService::leave_conversation(const domain::UserId
                         "{\"user_id\":\"" + caller.str() + "\"}");
 
     stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationMembershipChanged, now,
-                             caller, conv_id, {{"action", "MEMBER_LEFT"}, {"affected_user_id", caller.str()}});
+                             caller, conv_id, {{"action", "MEMBER_LEFT"}, {"affected_user_id", caller.str()}},
+                             correlation_id);
 
     auto active = membership_repo_.list_active_participants(conv_id);
     if (active.empty()) {
@@ -307,7 +315,7 @@ ServiceResult<void> ConversationService::leave_conversation(const domain::UserId
 
             // Empty actor routes cleanly to ACTOR_TYPE_SYSTEM in canonical mapper
             stage_conversation_audit(audit_repo_.get(), domain::MessagingAuditEventType::ConversationClosed, now, {},
-                                     conv_id, {{"reason", "all_participants_left"}});
+                                     conv_id, {{"reason", "all_participants_left"}}, correlation_id);
         }
     }
 
@@ -316,7 +324,8 @@ ServiceResult<void> ConversationService::leave_conversation(const domain::UserId
 
 ServiceResult<domain::GroupMetadataEntity>
 ConversationService::update_group_metadata(const domain::UserId& caller, const domain::ConversationId& conv_id,
-                                           std::string_view new_title) {
+                                           std::string_view new_title, std::string_view correlation_id) {
+    (void)correlation_id;
     if (new_title.empty() || new_title.size() > 256) {
         return ServiceResult<domain::GroupMetadataEntity>::fail(v1::MESSAGING_ERROR_CODE_UNSPECIFIED,
                                                                 "Group title must be between 1 and 256 characters");

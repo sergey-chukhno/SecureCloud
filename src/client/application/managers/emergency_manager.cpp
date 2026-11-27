@@ -2,6 +2,7 @@
 
 #include "application/managers/auth_manager.hpp"
 #include "application/managers/file_manager.hpp"
+#include "application/managers/local_audit_logger.hpp"
 #include "application/managers/messaging_manager.hpp"
 #include "application/managers/ratchet_session_manager.hpp"
 #include "application/managers/settings_manager.hpp"
@@ -133,6 +134,10 @@ void EmergencyManager::set_settings_manager(SettingsManager* settings_manager) n
     settings_manager_ = settings_manager;
 }
 
+void EmergencyManager::set_local_audit_logger(LocalAuditLogger* local_audit_logger) noexcept {
+    local_audit_logger_ = local_audit_logger;
+}
+
 void EmergencyManager::register_shred_artifact_path(const std::filesystem::path& path) {
     if (path.empty()) {
         return;
@@ -246,14 +251,26 @@ ClientResult<void> EmergencyManager::configure_duress_pin(const common::configur
     OPENSSL_cleanse(digest.data(), digest.size());
 
     const common::configuration::SecretString serialized(cfg.to_json());
-    return secure_storage_.store_secret(std::string(domain::DuressPinConfig::kStorageKey), serialized);
+    const auto store_res = secure_storage_.store_secret(std::string(domain::DuressPinConfig::kStorageKey), serialized);
+    if (store_res.is_ok() && local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::EmergencyDefense,
+                                                "emergency.duress_pin_configured", domain::LocalAuditOutcome::Success,
+                                                "", "", "Duress PIN verifier configured");
+    }
+    return store_res;
 }
 
 ClientResult<void> EmergencyManager::clear_duress_pin() {
     if (!secure_storage_.has_secret(std::string(domain::DuressPinConfig::kStorageKey))) {
         return ClientResult<void>::ok();
     }
-    return secure_storage_.delete_secret(std::string(domain::DuressPinConfig::kStorageKey));
+    const auto del_res = secure_storage_.delete_secret(std::string(domain::DuressPinConfig::kStorageKey));
+    if (del_res.is_ok() && local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::EmergencyDefense,
+                                                "emergency.duress_pin_cleared", domain::LocalAuditOutcome::Success, "",
+                                                "", "Duress PIN verifier cleared");
+    }
+    return del_res;
 }
 
 bool EmergencyManager::has_duress_pin() const {
@@ -404,6 +421,12 @@ EmergencyManager::run_destruction_phases(domain::PanicTriggerSource source, doma
     const auto wipe_start = std::chrono::steady_clock::now();
     is_wiped_.store(true, std::memory_order_release);
 
+    if (local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::EmergencyDefense,
+                                                "emergency.panic_wipe_started", domain::LocalAuditOutcome::Triggered,
+                                                "", "", "Emergency panic wipe initiated");
+    }
+
     std::vector<std::filesystem::path> registered_files;
     std::vector<DirectoryShredTarget> registered_dirs;
     {
@@ -454,6 +477,10 @@ EmergencyManager::run_destruction_phases(domain::PanicTriggerSource source, doma
     }
     if (settings_manager_ != nullptr) {
         settings_manager_->wipe_volatile_state();
+        ++managers_cleared;
+    }
+    if (local_audit_logger_ != nullptr) {
+        local_audit_logger_->wipe_volatile_state();
         ++managers_cleared;
     }
 

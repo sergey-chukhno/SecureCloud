@@ -2,9 +2,11 @@
 
 #include "application/client_bootstrap.hpp"
 #include "application/client_error.hpp"
+#include "domain/crypto/crypto_self_test.hpp"
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string_view>
 
 namespace securecloud::client::application {
@@ -33,6 +35,9 @@ class ClientApplication {
 
     [[nodiscard]] ClientBootstrap& bootstrap() noexcept { return *bootstrap_; }
     [[nodiscard]] const ClientBootstrap& bootstrap() const noexcept { return *bootstrap_; }
+    [[nodiscard]] const std::optional<domain::crypto::CryptoSelfTestReport>& last_self_test_report() const noexcept {
+        return bootstrap_->last_self_test_report();
+    }
 
   private:
     std::unique_ptr<ClientBootstrap> bootstrap_;

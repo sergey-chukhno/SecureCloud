@@ -1,6 +1,8 @@
+#include "ingestion/audit_ingestion_pipeline.hpp"
 #include "ingestion/deduplication_cache.hpp"
 #include "ingestion/deduplication_metrics.hpp"
 #include "service/audit_ingestion_service.hpp"
+#include "telemetry/audit_metrics.hpp"
 
 #include <atomic>
 #include <chrono>
@@ -140,7 +142,10 @@ class PipelineMockRepository : public repository::IAuditEventRepository {
 
 class AuditDeduplicationPipelineTest : public ::testing::Test {
   protected:
-    void SetUp() override { ingestion::DeduplicationMetrics::instance().reset(); }
+    void SetUp() override {
+        ingestion::DeduplicationMetrics::instance().reset();
+        telemetry::AuditMetrics::instance().reset();
+    }
 
     domain::AuditEvent build_sample_event(const std::string& uuid_str, const std::string& actor = "user_1") {
         domain::AuditEvent event;
@@ -173,6 +178,72 @@ TEST_F(AuditDeduplicationPipelineTest, IntraBatchDuplicateSamePayloadPersistedOn
     EXPECT_EQ(res.rejected_count, 0u);
     EXPECT_EQ(repo->get_total_inserted_records(), 1u);
     EXPECT_EQ(repo->get_insert_count(), 1u);
+}
+
+TEST_F(AuditDeduplicationPipelineTest, LivePipelineQueuesPersistsAndDeduplicatesBeforeAcknowledging) {
+    auto repo = std::make_shared<PipelineMockRepository>();
+    auto cache = std::make_shared<ingestion::BoundedDeduplicationCache>(100, std::chrono::minutes(10), 4);
+    IngestionConfig config;
+    config.workers = 1;
+    config.batch_size = 1;
+    config.batch_flush_interval_ms = 10;
+
+    auto pipeline = std::make_shared<ingestion::AuditIngestionPipeline>(config, repo, cache);
+    pipeline->start();
+    service::AuditIngestionService ingestion_service(repo, cache, std::chrono::seconds(2), pipeline);
+
+    auto event = build_sample_event("018f6e4a-7b3c-7000-8000-000000000320");
+    const auto first = ingestion_service.ingest_single(event);
+    const auto duplicate = ingestion_service.ingest_single(event);
+    auto conflict_event = build_sample_event("018f6e4a-7b3c-7000-8000-000000000320", "different_user");
+    const auto conflict = ingestion_service.ingest_single(conflict_event);
+
+    pipeline->shutdown(std::chrono::seconds(2));
+
+    EXPECT_TRUE(first.success);
+    EXPECT_EQ(first.outcome_status, ingestion::IngestionOutcomeStatus::PersistedNew);
+    EXPECT_TRUE(duplicate.success);
+    EXPECT_EQ(duplicate.outcome_status, ingestion::IngestionOutcomeStatus::DuplicateCommitted);
+    EXPECT_FALSE(conflict.success);
+    EXPECT_EQ(conflict.error_code, "ALREADY_EXISTS");
+    EXPECT_EQ(repo->get_total_inserted_records(), 1u);
+    EXPECT_EQ(repo->get_insert_count(), 1u);
+    EXPECT_EQ(cache->committed_count(), 1u);
+    const auto metrics = telemetry::AuditMetrics::instance().to_prometheus_text();
+    EXPECT_NE(metrics.find("audit_events_persisted_new_total 1"), std::string::npos);
+    EXPECT_NE(metrics.find("audit_dedup_hits_committed_total 1"), std::string::npos);
+    EXPECT_NE(metrics.find("audit_queue_depth 0"), std::string::npos);
+}
+
+TEST_F(AuditDeduplicationPipelineTest, LivePipelineRollsBackDedupReservationAfterAmbiguousInsert) {
+    auto repo = std::make_shared<PipelineMockRepository>();
+    auto cache = std::make_shared<ingestion::BoundedDeduplicationCache>(100, std::chrono::minutes(10), 4);
+    IngestionConfig config;
+    config.workers = 1;
+    config.batch_size = 1;
+    config.batch_flush_interval_ms = 10;
+
+    auto pipeline = std::make_shared<ingestion::AuditIngestionPipeline>(config, repo, cache);
+    pipeline->start();
+    service::AuditIngestionService ingestion_service(repo, cache, std::chrono::seconds(2), pipeline);
+    auto event = build_sample_event("018f6e4a-7b3c-7000-8000-000000000321");
+
+    repo->set_fail_mode(PipelineMockRepository::FailMode::AmbiguousOutcome);
+    const auto failed = ingestion_service.ingest_single(event);
+    EXPECT_FALSE(failed.success);
+    EXPECT_EQ(failed.outcome_status, ingestion::IngestionOutcomeStatus::PersistenceAmbiguous);
+    EXPECT_EQ(cache->size(), 0u);
+
+    repo->set_fail_mode(PipelineMockRepository::FailMode::None);
+    const auto retried = ingestion_service.ingest_single(event);
+    pipeline->shutdown(std::chrono::seconds(2));
+
+    EXPECT_TRUE(retried.success);
+    EXPECT_EQ(retried.outcome_status, ingestion::IngestionOutcomeStatus::PersistedNew);
+    EXPECT_EQ(repo->get_total_inserted_records(), 1u);
+    EXPECT_EQ(cache->committed_count(), 1u);
+    const auto metrics = telemetry::AuditMetrics::instance().to_prometheus_text();
+    EXPECT_NE(metrics.find("audit_persistence_ambiguous_outcomes_total 1"), std::string::npos);
 }
 
 TEST_F(AuditDeduplicationPipelineTest, IntraBatchConflictingPayloadRejected) {

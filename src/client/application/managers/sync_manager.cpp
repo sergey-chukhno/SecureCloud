@@ -18,6 +18,20 @@ int64_t current_unix_ms() {
         .count();
 }
 
+uint64_t resolve_page_delivered_sequence(const domain::ConversationMessagesPage& page) noexcept {
+    uint64_t max_event_seq = 0ULL;
+    for (const auto& ev : page.events) {
+        max_event_seq = std::max(max_event_seq, ev.server_sequence_number);
+    }
+    if (max_event_seq > 0ULL) {
+        return max_event_seq;
+    }
+    if (page.latest_sequence > 0ULL) {
+        return page.latest_sequence;
+    }
+    return page.events.empty() ? 0ULL : page.next_sequence;
+}
+
 class ScopedAtomicBool {
   public:
     explicit ScopedAtomicBool(std::atomic<bool>& flag) noexcept : flag_(flag), previous_(flag.exchange(true)) {}
@@ -269,6 +283,8 @@ ClientResult<domain::CatchUpSyncReport> SyncManager::execute_catch_up_sync(const
     auto fail_offline = [this](const ClientError& err) -> ClientResult<domain::CatchUpSyncReport> {
         if (err.category() == ClientErrorCategory::Network) {
             (void)transition_connectivity_state(domain::ConnectivityState::Offline);
+        } else {
+            (void)transition_connectivity_state(domain::ConnectivityState::Online);
         }
         return ClientResult<domain::CatchUpSyncReport>::error(err);
     };
@@ -421,7 +437,7 @@ ClientResult<domain::CatchUpSyncReport> SyncManager::execute_catch_up_sync(const
                 }
             }
 
-            const uint64_t page_cursor = page.next_sequence > 0ULL ? page.next_sequence : page.latest_sequence;
+            const uint64_t page_cursor = resolve_page_delivered_sequence(page);
             const uint64_t next_seq = std::max(since_seq, page_cursor);
             if (next_seq > since_seq) {
                 since_seq = next_seq;
@@ -490,7 +506,7 @@ ClientResult<std::size_t> SyncManager::poll_realtime_updates(const domain::Devic
                     ++processed;
                 }
             }
-            const uint64_t page_seq = page.next_sequence > 0ULL ? page.next_sequence : page.latest_sequence;
+            const uint64_t page_seq = resolve_page_delivered_sequence(page);
             if (page_seq > since_seq) {
                 persist_local_cursor(local_device_id, cid, page_seq);
             }

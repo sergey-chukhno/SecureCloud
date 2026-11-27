@@ -315,6 +315,26 @@ void AppViewModel::requestLogin(const QString& username, const QString& password
         return;
     }
 
+    if (app_.bootstrap().emergency_manager().is_wiped()) {
+        app_.bootstrap().emergency_manager().reset_wiped_state();
+        app_.bootstrap().device_manager().clear_local_device();
+        const std::string db_path = app_.bootstrap().config().database_path;
+        const auto open_res = app_.bootstrap().local_store().open(db_path.empty() ? ":memory:" : db_path);
+        if (open_res.is_error()) {
+            setError(QStringLiteral("Storage"), QString::fromStdString(open_res.error().user_message()));
+        }
+        emit emergencyWipedChanged();
+    }
+
+    if (app_.bootstrap().is_live_gateway_transport_active() && !login.mfa_required) {
+        const auto dev_res = app_.bootstrap().device_manager().initialize_or_load_device(
+            app_.bootstrap().auth_manager().current_user(), "Desktop Workstation");
+        if (dev_res.is_ok()) {
+            app_.bootstrap().initialize_ratchet_session_manager(app_.bootstrap().auth_manager().current_user(),
+                                                                dev_res.value().device_id());
+        }
+    }
+
     connectionStatus_ = QStringLiteral("Connected");
     nav_controller_.setAuthenticated(true);
     nav_controller_.reset(NavigationController::NavigationState::MainWorkspace);
@@ -371,6 +391,10 @@ void AppViewModel::requestLogout() {
     pending_username_.clear();
     pending_password_.clear();
     (void)app_.bootstrap().auth_manager().logout();
+    if (app_.bootstrap().emergency_manager().is_wiped()) {
+        resetClientAfterWipe();
+        return;
+    }
     nav_controller_.setAuthenticated(false);
     nav_controller_.reset(NavigationController::NavigationState::Unauthenticated);
     emit currentUserChanged();
@@ -500,6 +524,13 @@ void AppViewModel::resetClientAfterWipe() {
 
     app_.bootstrap().auth_manager().force_clear_session();
     app_.bootstrap().emergency_manager().reset_wiped_state();
+    app_.bootstrap().device_manager().clear_local_device();
+
+    const std::string db_path = app_.bootstrap().config().database_path;
+    const auto open_res = app_.bootstrap().local_store().open(db_path.empty() ? ":memory:" : db_path);
+    if (open_res.is_error()) {
+        setError(QStringLiteral("Storage"), QString::fromStdString(open_res.error().user_message()));
+    }
 
     if (workspace_vm_ != nullptr) {
         workspace_vm_->resetForEmergencyWipe();

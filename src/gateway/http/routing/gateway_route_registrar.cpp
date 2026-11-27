@@ -172,9 +172,9 @@ void GatewayRouteRegistrar::register_stub_routes(Router& router) {
     auto audit_stub = make_stub_handler(WorkloadCategory::Messaging);
 
     // Messaging microservice stubs (M3 / MSG-005)
-    router.post_authenticated("/api/v1/messages/send", messaging_stub);
-    router.get_authenticated("/api/v1/messages/inbox", messaging_stub);
     if (!messaging_proxy_) {
+        router.post_authenticated("/api/v1/messages/send", messaging_stub);
+        router.get_authenticated("/api/v1/messages/inbox", messaging_stub);
         router.get_authenticated("/api/v1/messages/conversations", messaging_stub);
     }
 

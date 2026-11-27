@@ -1,5 +1,6 @@
 #pragma once
 
+#include "audit/gateway_audit_producer.hpp"
 #include "http/auth/authenticated_context.hpp"
 #include "http/auth/gateway_security_policy.hpp"
 #include "http/auth/token_validator_interface.hpp"
@@ -29,7 +30,8 @@ namespace securecloud::gateway::http {
 class AuthenticationMiddleware : public Middleware {
   public:
     AuthenticationMiddleware(std::shared_ptr<GatewaySecurityPolicy> security_policy,
-                             std::shared_ptr<ITokenValidator> token_validator);
+                             std::shared_ptr<ITokenValidator> token_validator,
+                             std::shared_ptr<audit::IGatewayAuditProducer> audit_producer = nullptr);
 
     ~AuthenticationMiddleware() override = default;
 
@@ -41,6 +43,7 @@ class AuthenticationMiddleware : public Middleware {
   private:
     std::shared_ptr<GatewaySecurityPolicy> security_policy_;
     std::shared_ptr<ITokenValidator> token_validator_;
+    std::shared_ptr<audit::IGatewayAuditProducer> audit_producer_;
 };
 
 } // namespace securecloud::gateway::http

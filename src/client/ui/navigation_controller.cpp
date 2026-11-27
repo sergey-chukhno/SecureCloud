@@ -26,6 +26,8 @@ QString NavigationController::to_view_name(NavigationState state) {
         return QStringLiteral("Emergency");
     case NavigationState::StyleGuide:
         return QStringLiteral("StyleGuide");
+    case NavigationState::Diagnostics:
+        return QStringLiteral("Diagnostics");
     }
     return QStringLiteral("Unknown");
 }
@@ -43,7 +45,8 @@ QString NavigationController::to_section_name(WorkspaceSection section) {
 }
 
 bool NavigationController::is_restricted_state(NavigationState state) const noexcept {
-    return state == NavigationState::MainWorkspace || state == NavigationState::Settings;
+    return state == NavigationState::MainWorkspace || state == NavigationState::Settings ||
+           state == NavigationState::Diagnostics;
 }
 
 bool NavigationController::navigateTo(NavigationState state) {

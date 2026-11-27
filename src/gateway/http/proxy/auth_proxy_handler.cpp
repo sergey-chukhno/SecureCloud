@@ -5,15 +5,146 @@
 #include "http/errors/error_mapper.hpp"
 #include "http/routing/router.hpp"
 
+#include <cctype>
 #include <httplib.h>
 #include <nlohmann/json.hpp>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace securecloud::gateway::http {
 namespace {
 
 constexpr const char* k_content_type_json = "application/json";
+
+[[nodiscard]] bool is_printable_ascii(std::string_view raw) noexcept {
+    for (char raw_ch : raw) {
+        const auto ch = static_cast<unsigned char>(raw_ch);
+        if (ch < 0x20U || ch > 0x7EU) {
+            return false;
+        }
+    }
+    return true;
+}
+
+[[nodiscard]] int hex_nibble(char ch) noexcept {
+    if (ch >= '0' && ch <= '9') {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f') {
+        return 10 + (ch - 'a');
+    }
+    if (ch >= 'A' && ch <= 'F') {
+        return 10 + (ch - 'A');
+    }
+    return -1;
+}
+
+[[nodiscard]] bool try_decode_hex(std::string_view encoded, std::string& out) {
+    if (encoded.empty() || (encoded.size() % 2U) != 0U) {
+        return false;
+    }
+    std::string decoded;
+    decoded.reserve(encoded.size() / 2U);
+    for (std::size_t i = 0; i < encoded.size(); i += 2U) {
+        const int hi = hex_nibble(encoded[i]);
+        const int lo = hex_nibble(encoded[i + 1U]);
+        if (hi < 0 || lo < 0) {
+            return false;
+        }
+        decoded.push_back(static_cast<char>((hi << 4) | lo));
+    }
+    out = std::move(decoded);
+    return true;
+}
+
+[[nodiscard]] int base64_value(unsigned char ch) noexcept {
+    if (ch >= 'A' && ch <= 'Z') {
+        return ch - 'A';
+    }
+    if (ch >= 'a' && ch <= 'z') {
+        return 26 + (ch - 'a');
+    }
+    if (ch >= '0' && ch <= '9') {
+        return 52 + (ch - '0');
+    }
+    if (ch == '+') {
+        return 62;
+    }
+    if (ch == '/') {
+        return 63;
+    }
+    return -1;
+}
+
+[[nodiscard]] bool try_decode_base64(std::string_view encoded, std::string& out) {
+    if (encoded.empty() || (encoded.size() % 4U) != 0U) {
+        return false;
+    }
+    std::string decoded;
+    decoded.reserve((encoded.size() / 4U) * 3U);
+    for (std::size_t i = 0; i < encoded.size(); i += 4U) {
+        const unsigned char c0 = static_cast<unsigned char>(encoded[i]);
+        const unsigned char c1 = static_cast<unsigned char>(encoded[i + 1U]);
+        const unsigned char c2 = static_cast<unsigned char>(encoded[i + 2U]);
+        const unsigned char c3 = static_cast<unsigned char>(encoded[i + 3U]);
+        const int v0 = base64_value(c0);
+        const int v1 = base64_value(c1);
+        if (v0 < 0 || v1 < 0) {
+            return false;
+        }
+        const bool pad2 = (c2 == '=');
+        const bool pad3 = (c3 == '=');
+        if (pad2 && !pad3) {
+            return false;
+        }
+        if ((pad2 || pad3) && (i + 4U) != encoded.size()) {
+            return false;
+        }
+        const int v2 = pad2 ? 0 : base64_value(c2);
+        const int v3 = pad3 ? 0 : base64_value(c3);
+        if (v2 < 0 || v3 < 0) {
+            return false;
+        }
+        const uint32_t triple = (static_cast<uint32_t>(v0) << 18U) | (static_cast<uint32_t>(v1) << 12U) |
+                                (static_cast<uint32_t>(v2) << 6U) | static_cast<uint32_t>(v3);
+        decoded.push_back(static_cast<char>((triple >> 16U) & 0xFFU));
+        if (!pad2) {
+            decoded.push_back(static_cast<char>((triple >> 8U) & 0xFFU));
+        }
+        if (!pad3) {
+            decoded.push_back(static_cast<char>(triple & 0xFFU));
+        }
+    }
+    out = std::move(decoded);
+    return true;
+}
+
+[[nodiscard]] std::string decode_key_bytes(std::string_view value, std::size_t expected_len) {
+    std::string decoded;
+    if (value.size() == expected_len * 2U && try_decode_hex(value, decoded) && decoded.size() == expected_len) {
+        return decoded;
+    }
+    if (try_decode_base64(value, decoded) && decoded.size() == expected_len) {
+        return decoded;
+    }
+    return std::string(value);
+}
+
+[[nodiscard]] std::string encode_key_bytes_for_json(std::string_view raw) {
+    if (raw.empty() || is_printable_ascii(raw)) {
+        return std::string(raw);
+    }
+    static constexpr char k_hex[] = "0123456789abcdef";
+    std::string out;
+    out.reserve(raw.size() * 2U);
+    for (char raw_ch : raw) {
+        const auto byte = static_cast<unsigned char>(raw_ch);
+        out.push_back(k_hex[(byte >> 4U) & 0x0FU]);
+        out.push_back(k_hex[byte & 0x0FU]);
+    }
+    return out;
+}
 
 class ActiveCallGuard {
   public:
@@ -253,6 +384,7 @@ void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Respon
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &auth_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->authenticate(auth_req, call_ctx);
                                           });
@@ -281,6 +413,9 @@ void AuthProxyHandler::handle_login(const httplib::Request& req, httplib::Respon
                                {"user_id", val.user_id()},
                                {"mfa_required", val.mfa_required()}};
 
+    if (!val.device_id().empty()) {
+        res_json["device_id"] = val.device_id();
+    }
     if (!val.mfa_challenge_id().empty()) {
         res_json["mfa_challenge_id"] = val.mfa_challenge_id();
     }
@@ -337,6 +472,7 @@ void AuthProxyHandler::handle_refresh(const httplib::Request& req, httplib::Resp
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &refresh_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->refresh_session(refresh_req, call_ctx);
                                           });
@@ -428,6 +564,7 @@ void AuthProxyHandler::handle_revoke(const httplib::Request& req, httplib::Respo
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &revoke_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->revoke_session(revoke_req, call_ctx);
                                           });
@@ -489,6 +626,7 @@ void AuthProxyHandler::handle_get_me(const httplib::Request& req, httplib::Respo
                                           OperationIdempotency::SAFE_READONLY,
                                           [this, &user_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->get_user(user_req, call_ctx);
                                           });
@@ -566,29 +704,35 @@ void AuthProxyHandler::handle_register_device(const httplib::Request& req, httpl
     dev_req.set_user_id(ctx.user_id());
 
     if (body.contains("identity_key") && body["identity_key"].is_string()) {
-        dev_req.set_identity_key(body["identity_key"].get<std::string>());
+        dev_req.set_identity_key(decode_key_bytes(body["identity_key"].get<std::string>(), 32));
     }
     if (body.contains("signed_prekey") && body["signed_prekey"].is_string()) {
-        dev_req.set_signed_prekey(body["signed_prekey"].get<std::string>());
+        dev_req.set_signed_prekey(decode_key_bytes(body["signed_prekey"].get<std::string>(), 32));
     }
     if (body.contains("signed_prekey_signature") && body["signed_prekey_signature"].is_string()) {
-        dev_req.set_signed_prekey_signature(body["signed_prekey_signature"].get<std::string>());
+        dev_req.set_signed_prekey_signature(decode_key_bytes(body["signed_prekey_signature"].get<std::string>(), 64));
     }
     if (body.contains("one_time_prekeys") && body["one_time_prekeys"].is_array()) {
         for (const auto& item : body["one_time_prekeys"]) {
             if (item.is_string()) {
-                dev_req.add_one_time_prekeys(item.get<std::string>());
+                dev_req.add_one_time_prekeys(decode_key_bytes(item.get<std::string>(), 32));
             }
         }
     }
 
-    auto rpc_res = retry_policy_->execute(*deadline_manager_, start_tp, effective_deadline, service_timeout,
-                                          OperationIdempotency::NON_IDEMPOTENT,
-                                          [this, &dev_req, &request_id](std::chrono::milliseconds budget) {
-                                              grpc::ClientCallContext call_ctx(request_id, budget);
-                                              ActiveCallGuard guard(*this, request_id, call_ctx);
-                                              return auth_client_->register_device(dev_req, call_ctx);
-                                          });
+    auto rpc_res = retry_policy_->execute(
+        *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
+        [this, &dev_req, &request_id, &ctx](std::chrono::milliseconds budget) {
+            grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
+            ActiveCallGuard guard(*this, request_id, call_ctx);
+            call_ctx.add_metadata("x-user-id", ctx.user_id());
+            if (!ctx.device_id().empty()) {
+                call_ctx.add_metadata("x-device-id", ctx.device_id());
+            }
+            call_ctx.add_metadata("x-auth-level", ctx.is_mfa_verified() ? "mfa_verified" : "primary");
+            return auth_client_->register_device(dev_req, call_ctx);
+        });
 
     if (!rpc_res) {
         if (circuit_breaker_) {
@@ -609,6 +753,9 @@ void AuthProxyHandler::handle_register_device(const httplib::Request& req, httpl
     nlohmann::json res_json = {{"device_id", val.device_id()},
                                {"status", static_cast<int>(val.status())},
                                {"registered_at_epoch_ms", val.registered_at_epoch_ms()}};
+    if (!val.pairing_code().empty()) {
+        res_json["pairing_code"] = val.pairing_code();
+    }
 
     res.status = 201;
     res.set_content(res_json.dump(), k_content_type_json);
@@ -672,6 +819,7 @@ void AuthProxyHandler::handle_get_device_crypto_directory(const httplib::Request
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
         [this, &dir_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -701,10 +849,10 @@ void AuthProxyHandler::handle_get_device_crypto_directory(const httplib::Request
     for (const auto& dev : val.devices()) {
         nlohmann::json record = {
             {"device_id", dev.device_id()},
-            {"identity_key", dev.identity_key()},
-            {"signed_prekey", dev.signed_prekey()},
-            {"signed_prekey_signature", dev.signed_prekey_signature()},
-            {"one_time_prekey", dev.one_time_prekey()},
+            {"identity_key", encode_key_bytes_for_json(dev.identity_key())},
+            {"signed_prekey", encode_key_bytes_for_json(dev.signed_prekey())},
+            {"signed_prekey_signature", encode_key_bytes_for_json(dev.signed_prekey_signature())},
+            {"one_time_prekey", encode_key_bytes_for_json(dev.one_time_prekey())},
             {"one_time_prekey_id", dev.one_time_prekey_id()},
             {"status", static_cast<int>(dev.status())},
             {"identity_key_fingerprint", dev.identity_key_fingerprint()},
@@ -762,6 +910,7 @@ void AuthProxyHandler::handle_get_crypto_identity(const httplib::Request& req, h
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
         [this, &ident_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -790,9 +939,9 @@ void AuthProxyHandler::handle_get_crypto_identity(const httplib::Request& req, h
     nlohmann::json res_json = {
         {"device_id", val.device_id()},
         {"user_id", val.user_id()},
-        {"identity_key", val.identity_key()},
-        {"signed_prekey", val.signed_prekey()},
-        {"signed_prekey_signature", val.signed_prekey_signature()},
+        {"identity_key", encode_key_bytes_for_json(val.identity_key())},
+        {"signed_prekey", encode_key_bytes_for_json(val.signed_prekey())},
+        {"signed_prekey_signature", encode_key_bytes_for_json(val.signed_prekey_signature())},
         {"status", static_cast<int>(val.status())},
         {"identity_key_fingerprint", val.identity_key_fingerprint()},
         {"signed_prekey_created_at_epoch_ms", val.signed_prekey_created_at_epoch_ms()},
@@ -860,15 +1009,15 @@ void AuthProxyHandler::handle_update_crypto_prekeys(const httplib::Request& req,
     upd_req.set_device_id(device_id);
 
     if (body.contains("signed_prekey") && body["signed_prekey"].is_string()) {
-        upd_req.set_signed_prekey(body["signed_prekey"].get<std::string>());
+        upd_req.set_signed_prekey(decode_key_bytes(body["signed_prekey"].get<std::string>(), 32));
     }
     if (body.contains("signed_prekey_signature") && body["signed_prekey_signature"].is_string()) {
-        upd_req.set_signed_prekey_signature(body["signed_prekey_signature"].get<std::string>());
+        upd_req.set_signed_prekey_signature(decode_key_bytes(body["signed_prekey_signature"].get<std::string>(), 64));
     }
     if (body.contains("one_time_prekeys") && body["one_time_prekeys"].is_array()) {
         for (const auto& item : body["one_time_prekeys"]) {
             if (item.is_string()) {
-                upd_req.add_one_time_prekeys(item.get<std::string>());
+                upd_req.add_one_time_prekeys(decode_key_bytes(item.get<std::string>(), 32));
             }
         }
     }
@@ -877,6 +1026,7 @@ void AuthProxyHandler::handle_update_crypto_prekeys(const httplib::Request& req,
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
         [this, &upd_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -961,6 +1111,7 @@ void AuthProxyHandler::handle_get_prekey_inventory(const httplib::Request& req, 
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
         [this, &inv_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -1044,6 +1195,7 @@ void AuthProxyHandler::handle_claim_device_prekey(const httplib::Request& req, h
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
         [this, &claim_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -1086,16 +1238,16 @@ void AuthProxyHandler::handle_claim_device_prekey(const httplib::Request& req, h
 
     nlohmann::json bundle_json = {
         {"device_id", val.bundle().device_id()},
-        {"identity_key", val.bundle().identity_key()},
+        {"identity_key", encode_key_bytes_for_json(val.bundle().identity_key())},
         {"identity_key_fingerprint", val.bundle().identity_key_fingerprint()},
-        {"signed_prekey", val.bundle().signed_prekey()},
-        {"signed_prekey_signature", val.bundle().signed_prekey_signature()},
+        {"signed_prekey", encode_key_bytes_for_json(val.bundle().signed_prekey())},
+        {"signed_prekey_signature", encode_key_bytes_for_json(val.bundle().signed_prekey_signature())},
         {"signed_prekey_created_at_epoch_ms", val.bundle().signed_prekey_created_at_epoch_ms()},
         {"status", "Active"},
     };
 
     if (!val.bundle().one_time_prekey().empty()) {
-        bundle_json["one_time_prekey"] = val.bundle().one_time_prekey();
+        bundle_json["one_time_prekey"] = encode_key_bytes_for_json(val.bundle().one_time_prekey());
     }
     if (!val.bundle().one_time_prekey_id().empty()) {
         bundle_json["one_time_prekey_id"] = val.bundle().one_time_prekey_id();
@@ -1160,6 +1312,7 @@ void AuthProxyHandler::handle_initiate_mfa_enrollment(const httplib::Request& re
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->initiate_mfa_enrollment(rpc_req, call_ctx);
                                           });
@@ -1234,6 +1387,7 @@ void AuthProxyHandler::handle_confirm_mfa_enrollment(const httplib::Request& req
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->confirm_mfa_enrollment(rpc_req, call_ctx);
                                           });
@@ -1318,6 +1472,7 @@ void AuthProxyHandler::handle_verify_mfa_challenge(const httplib::Request& req, 
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->verify_mfa_challenge(rpc_req, call_ctx);
                                           });
@@ -1406,6 +1561,7 @@ void AuthProxyHandler::handle_disable_mfa(const httplib::Request& req, httplib::
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               return auth_client_->disable_mfa(rpc_req, call_ctx);
                                           });
@@ -1474,6 +1630,7 @@ void AuthProxyHandler::handle_list_devices(const httplib::Request& req, httplib:
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
         [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -1559,6 +1716,7 @@ void AuthProxyHandler::handle_get_device(const httplib::Request& req, httplib::R
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::SAFE_READONLY,
         [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -1657,6 +1815,7 @@ void AuthProxyHandler::handle_initiate_device_pairing(const httplib::Request& re
         *deadline_manager_, start_tp, effective_deadline, service_timeout, OperationIdempotency::NON_IDEMPOTENT,
         [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
             grpc::ClientCallContext call_ctx(request_id, budget);
+            call_ctx.add_metadata("x-correlation-id", request_id);
             ActiveCallGuard guard(*this, request_id, call_ctx);
             call_ctx.add_metadata("x-user-id", ctx.user_id());
             if (!ctx.device_id().empty()) {
@@ -1769,6 +1928,7 @@ void AuthProxyHandler::handle_authorize_device(const httplib::Request& req, http
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               call_ctx.add_metadata("x-user-id", ctx.user_id());
                                               if (!ctx.device_id().empty()) {
@@ -1871,6 +2031,7 @@ void AuthProxyHandler::handle_revoke_device(const httplib::Request& req, httplib
                                           OperationIdempotency::NON_IDEMPOTENT,
                                           [this, &rpc_req, &request_id, &ctx](std::chrono::milliseconds budget) {
                                               grpc::ClientCallContext call_ctx(request_id, budget);
+                                              call_ctx.add_metadata("x-correlation-id", request_id);
                                               ActiveCallGuard guard(*this, request_id, call_ctx);
                                               call_ctx.add_metadata("x-user-id", ctx.user_id());
                                               if (!ctx.device_id().empty()) {

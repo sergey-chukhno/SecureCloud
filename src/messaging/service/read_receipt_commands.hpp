@@ -20,6 +20,7 @@ struct ReadReceiptCommand {
     domain::UserId caller_user_id;
     domain::DeviceId reader_device_id;
     domain::DeviceId caller_device_id{};
+    std::string correlation_id;
     std::chrono::system_clock::time_point read_at;
 };
 

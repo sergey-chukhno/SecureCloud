@@ -1,5 +1,6 @@
 #pragma once
 
+#include "ingestion/acknowledgement_manager.hpp"
 #include "ingestion/batch_aggregator.hpp"
 #include "repository/audit_repository_exceptions.hpp"
 #include "repository/clickhouse_audit_event_repository.hpp"
@@ -16,7 +17,8 @@ namespace securecloud::audit::ingestion {
 class InsertWorkerPool {
   public:
     InsertWorkerPool(size_t num_workers, std::shared_ptr<BoundedBatchQueue> input_batch_queue,
-                     std::shared_ptr<repository::IAuditEventRepository> repository);
+                     std::shared_ptr<repository::IAuditEventRepository> repository,
+                     std::shared_ptr<IDeduplicationCache> dedup_cache = nullptr);
 
     ~InsertWorkerPool();
 
@@ -38,6 +40,7 @@ class InsertWorkerPool {
     const size_t num_workers_;
     std::shared_ptr<BoundedBatchQueue> input_batch_queue_;
     std::shared_ptr<repository::IAuditEventRepository> repository_;
+    AcknowledgementManager acknowledgement_manager_;
 
     std::atomic<bool> running_{false};
     std::vector<std::thread> workers_;

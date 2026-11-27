@@ -72,8 +72,9 @@ class AcknowledgementManager {
 
     static void complete_batch_success(const IngestionBatch& batch);
 
-    static void complete_batch_failure(const IngestionBatch& batch, const std::string& error_code,
-                                       const std::string& error_message);
+    static void
+    complete_batch_failure(const IngestionBatch& batch, const std::string& error_code, const std::string& error_message,
+                           IngestionOutcomeStatus outcome_status = IngestionOutcomeStatus::PersistenceFailed);
 
     void set_deduplication_cache(std::shared_ptr<IDeduplicationCache> cache) noexcept {
         dedup_cache_ = std::move(cache);

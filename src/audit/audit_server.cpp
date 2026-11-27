@@ -1,8 +1,8 @@
 #include "audit_server.hpp"
 
 #include "securecloud/common/version.hpp"
-#include "securecloud/health/transport_probe.hpp"
 #include "securecloud/security/mtls_config.hpp"
+#include "telemetry/audit_metrics.hpp"
 
 #include <chrono>
 #include <iostream>
@@ -49,11 +49,8 @@ bool AuditServer::start() {
 
     std::string server_address = config_.common.listen_address();
 
-    // 2. Initialize Health Manager and Service with ClickHouse probe
+    // 2. Initialize health manager. The evaluator is connected after the live ingestion queue exists.
     health_manager_ = std::make_shared<common::health::HealthStatusManager>(config_.common.service_name);
-    health_manager_->set_readiness_evaluator([this] {
-        return securecloud::common::health::probe_tcp_connectivity(config_.clickhouse.host, config_.clickhouse.port);
-    });
 
     health_service_ =
         std::make_unique<common::health::HealthServiceImpl>(config_.common.service_name, *health_manager_);
@@ -62,16 +59,41 @@ bool AuditServer::start() {
     clickhouse_client_ = std::make_shared<repository::ClickHouseClient>(config_.clickhouse);
     repository_ = std::make_shared<repository::ClickHouseAuditEventRepository>(clickhouse_client_);
 
-    pipeline_ = std::make_shared<ingestion::AuditIngestionPipeline>(config_.ingestion, repository_);
+    dedup_cache_ = std::make_shared<ingestion::BoundedDeduplicationCache>(
+        config_.ingestion.dedup_cache_capacity, std::chrono::milliseconds(config_.ingestion.dedup_cache_ttl_ms),
+        config_.ingestion.dedup_cache_shards);
+    pipeline_ = std::make_shared<ingestion::AuditIngestionPipeline>(config_.ingestion, repository_, dedup_cache_);
     pipeline_->start();
 
-    ingestion_service_ = std::make_shared<service::AuditIngestionService>(repository_);
+    ingestion_service_ = std::make_shared<service::AuditIngestionService>(
+        repository_, dedup_cache_, std::chrono::milliseconds(config_.ingestion.in_flight_ack_timeout_ms), pipeline_);
     security_recorder_ =
         std::make_shared<security::InternalSecurityEventRecorder>(ingestion_service_, config_.common.service_name);
     audit_service_ = std::make_unique<service::AuditServiceImpl>(ingestion_service_, security_recorder_);
 
     query_app_service_ = std::make_shared<query::AuditQueryApplicationService>(repository_, config_.query);
     query_service_ = std::make_unique<service::AuditQueryServiceImpl>(query_app_service_);
+
+    health::AuditHealthEvaluatorConfig health_config;
+    health_config.check_interval = std::chrono::milliseconds(config_.health.probe_interval_ms);
+    health_config.probe_timeout = std::chrono::milliseconds(config_.health.probe_timeout_ms);
+    health_config.consecutive_failures_threshold = config_.health.consecutive_failures_threshold;
+    health_config.queue_high_water_pct = config_.health.queue_high_water_pct;
+    health_config.auto_start = false;
+    health_evaluator_ = std::make_unique<health::AuditHealthEvaluator>(
+        *health_manager_, clickhouse_client_,
+        [pipeline = std::weak_ptr<ingestion::AuditIngestionPipeline>(pipeline_)](uint32_t& occupancy_pct) {
+            const auto live_pipeline = pipeline.lock();
+            if (!live_pipeline) {
+                occupancy_pct = 100;
+                return false;
+            }
+            const auto queue = live_pipeline->input_queue();
+            const auto capacity = queue->capacity();
+            occupancy_pct = capacity == 0 ? 100 : static_cast<uint32_t>((queue->size() * 100U) / capacity);
+            return true;
+        },
+        health_config);
 
     // 4. Build and start gRPC server
     grpc::ServerBuilder builder;
@@ -90,7 +112,10 @@ bool AuditServer::start() {
 
     // 5. Activate health probes and state
     health_manager_->set_live(true);
-    health_manager_->set_ready(true);
+    if (health_evaluator_) {
+        health_evaluator_->start();
+    }
+    telemetry::AuditMetrics::instance().set_service_draining(false);
     state_.store(ServiceState::Running, std::memory_order_release);
 
     security::SecurityEventContext start_ctx;
@@ -118,6 +143,10 @@ void AuditServer::stop() {
         health_manager_->set_shutting_down(true);
         health_manager_->set_ready(false);
     }
+    if (health_evaluator_) {
+        health_evaluator_->stop();
+    }
+    telemetry::AuditMetrics::instance().set_service_draining(true);
 
     // Phase 2: Reject New Ingress
     if (audit_service_) {

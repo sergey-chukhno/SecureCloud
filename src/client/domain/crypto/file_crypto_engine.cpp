@@ -286,53 +286,69 @@ application::ClientResult<EncryptedChunkFrame>
 FileCryptoEngine::encrypt_chunk(application::interfaces::ICryptoProvider& crypto,
                                 const common::configuration::SecretString& file_key, std::string_view file_id,
                                 uint32_t chunk_index, bool is_final, std::span<const uint8_t> plaintext) const {
+    EncryptedChunkFrame frame;
+    const auto sha_res =
+        encrypt_chunk_into(crypto, file_key, file_id, chunk_index, is_final, plaintext, frame.framed_bytes);
+    if (sha_res.is_error()) {
+        return application::ClientResult<EncryptedChunkFrame>::error(sha_res.error());
+    }
+    frame.ciphertext_sha256 = sha_res.value();
+    return application::ClientResult<EncryptedChunkFrame>::ok(std::move(frame));
+}
+
+application::ClientResult<std::string>
+FileCryptoEngine::encrypt_chunk_into(application::interfaces::ICryptoProvider& crypto,
+                                     const common::configuration::SecretString& file_key, std::string_view file_id,
+                                     uint32_t chunk_index, bool is_final, std::span<const uint8_t> plaintext,
+                                     std::vector<uint8_t>& out_framed_bytes) const {
     if (file_id.empty()) {
-        return application::ClientResult<EncryptedChunkFrame>::error(
+        return application::ClientResult<std::string>::error(
             application::ClientError::validation("File ID cannot be empty when encrypting chunk"));
     }
     if (file_key.size() != kKeyBytes) {
-        return application::ClientResult<EncryptedChunkFrame>::error(
+        return application::ClientResult<std::string>::error(
             application::ClientError::validation("File key must be 32 bytes when encrypting chunk"));
     }
     if (plaintext.empty() || plaintext.size() > static_cast<std::size_t>(max_plaintext_chunk_size())) {
-        return application::ClientResult<EncryptedChunkFrame>::error(
+        return application::ClientResult<std::string>::error(
             application::ClientError::validation("Plaintext chunk size exceeds configured chunk bounds"));
     }
     if (!is_final && plaintext.size() != static_cast<std::size_t>(max_plaintext_chunk_size())) {
-        return application::ClientResult<EncryptedChunkFrame>::error(
+        return application::ClientResult<std::string>::error(
             application::ClientError::validation("Non-terminal chunk must fill full wire chunk capacity"));
     }
 
     const auto iv_res = derive_chunk_iv(crypto, file_key, file_id, chunk_index);
     if (iv_res.is_error()) {
-        return application::ClientResult<EncryptedChunkFrame>::error(iv_res.error());
+        return application::ClientResult<std::string>::error(iv_res.error());
     }
+    const auto& iv = iv_res.value();
+    if (iv.size() != kIvBytes) {
+        return application::ClientResult<std::string>::error(
+            application::ClientError::crypto("Unexpected derived IV size during chunk encryption"));
+    }
+
+    const std::size_t framed_len =
+        static_cast<std::size_t>(kIvBytes) + plaintext.size() + static_cast<std::size_t>(kTagBytes);
+    out_framed_bytes.resize(framed_len);
+    std::copy(iv.begin(), iv.end(), out_framed_bytes.begin());
 
     const std::vector<uint8_t> aad = build_chunk_aad(file_id, chunk_index, is_final);
-    const auto aead_res = crypto.encrypt_aes_gcm(file_key, iv_res.value(), plaintext, aad);
-    if (aead_res.is_error()) {
-        return application::ClientResult<EncryptedChunkFrame>::error(aead_res.error());
+    std::span<uint8_t> out_ciphertext(out_framed_bytes.data() + kIvBytes, plaintext.size());
+    std::span<uint8_t> out_tag(out_framed_bytes.data() + kIvBytes + plaintext.size(), kTagBytes);
+
+    const auto enc_res = crypto.encrypt_aes_gcm_into(file_key, iv, plaintext, aad, out_ciphertext, out_tag);
+    if (enc_res.is_error()) {
+        out_framed_bytes.clear();
+        return application::ClientResult<std::string>::error(enc_res.error());
     }
 
-    const auto& aead = aead_res.value();
-    if (aead.iv.size() != kIvBytes || aead.auth_tag.size() != kTagBytes || aead.ciphertext.size() != plaintext.size()) {
-        return application::ClientResult<EncryptedChunkFrame>::error(
-            application::ClientError::crypto("Unexpected AEAD output framing sizes during chunk encryption"));
-    }
-
-    EncryptedChunkFrame frame;
-    frame.framed_bytes.reserve(aead.iv.size() + aead.ciphertext.size() + aead.auth_tag.size());
-    frame.framed_bytes.insert(frame.framed_bytes.end(), aead.iv.begin(), aead.iv.end());
-    frame.framed_bytes.insert(frame.framed_bytes.end(), aead.ciphertext.begin(), aead.ciphertext.end());
-    frame.framed_bytes.insert(frame.framed_bytes.end(), aead.auth_tag.begin(), aead.auth_tag.end());
-
-    const auto sha_res = StreamingSha256::digest_hex(frame.framed_bytes);
+    const auto sha_res = StreamingSha256::digest_hex(out_framed_bytes);
     if (sha_res.is_error()) {
-        return application::ClientResult<EncryptedChunkFrame>::error(sha_res.error());
+        out_framed_bytes.clear();
+        return application::ClientResult<std::string>::error(sha_res.error());
     }
-    frame.ciphertext_sha256 = sha_res.value();
-
-    return application::ClientResult<EncryptedChunkFrame>::ok(std::move(frame));
+    return application::ClientResult<std::string>::ok(sha_res.value());
 }
 
 application::ClientResult<std::vector<uint8_t>>

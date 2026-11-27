@@ -75,6 +75,7 @@ endif()
 
 # Standard CMake test build option
 option(BUILD_TESTING "Build test suite targets" ON)
+option(SECURECLOUD_BUILD_CLIENT "Build SecureCloud Qt6 desktop client" ON)
 
 if(BUILD_TESTING)
     enable_testing()

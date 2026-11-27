@@ -24,6 +24,13 @@ const application::interfaces::IGatewayClient& SwitchableGatewayClient::active_g
                             : static_cast<const application::interfaces::IGatewayClient&>(*simulated_);
 }
 
+domain::GatewayTransportMetrics SwitchableGatewayClient::transport_metrics() const noexcept {
+    if (live_ != nullptr) {
+        return live_->transport_metrics();
+    }
+    return {};
+}
+
 application::ClientResult<bool> SwitchableGatewayClient::probe_gateway(std::string_view path) {
     return active_gateway().probe_gateway(path);
 }
@@ -233,6 +240,37 @@ SwitchableGatewayClient::update_user_profile(const domain::UserProfile& public_p
 application::ClientResult<application::interfaces::TlsCertificateInfo>
 SwitchableGatewayClient::inspect_tls_certificate(std::string_view host, uint16_t port) {
     return active_gateway().inspect_tls_certificate(host, port);
+}
+
+application::ClientResult<application::interfaces::AuthSessionResult>
+SwitchableGatewayClient::authenticate_user(std::string_view identifier, std::string_view credential,
+                                           std::string_view device_id) {
+    return active_gateway().authenticate_user(identifier, credential, device_id);
+}
+
+application::ClientResult<application::interfaces::AuthSessionResult>
+SwitchableGatewayClient::refresh_session(std::string_view refresh_token, std::string_view device_id) {
+    return active_gateway().refresh_session(refresh_token, device_id);
+}
+
+application::ClientResult<void> SwitchableGatewayClient::revoke_session(std::string_view session_id,
+                                                                        std::string_view reason) {
+    return active_gateway().revoke_session(session_id, reason);
+}
+
+application::ClientResult<application::interfaces::ConversationCreateResult>
+SwitchableGatewayClient::create_direct_conversation(const domain::UserId& peer_user_id) {
+    return active_gateway().create_direct_conversation(peer_user_id);
+}
+
+application::ClientResult<void> SwitchableGatewayClient::update_presence(std::string_view status,
+                                                                         std::string_view custom_status_message) {
+    return active_gateway().update_presence(status, custom_status_message);
+}
+
+application::ClientResult<std::vector<application::interfaces::IGatewayClient::PeerPresenceInfo>>
+SwitchableGatewayClient::batch_get_presence(const std::vector<domain::UserId>& user_ids) {
+    return active_gateway().batch_get_presence(user_ids);
 }
 
 } // namespace securecloud::client::infrastructure::adapters

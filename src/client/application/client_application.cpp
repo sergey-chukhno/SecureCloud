@@ -1,7 +1,9 @@
 #include "application/client_application.hpp"
 
+#include "application/managers/local_audit_logger.hpp"
 #include "infrastructure/client_logger.hpp"
 
+#include <string>
 #include <utility>
 
 namespace securecloud::client::application {
@@ -55,6 +57,35 @@ ClientResult<void> ClientApplication::initialize() {
         state_ = ApplicationLifecycleState::Terminated;
         return open_res;
     }
+
+    const auto self_test_report =
+        domain::crypto::CryptoSelfTest::run_all(&bootstrap_->secure_storage(), bootstrap_->self_test_fault_injector());
+    bootstrap_->set_last_self_test_report(self_test_report);
+
+    if (!self_test_report.overall_passed) {
+        const std::string failed_summary = self_test_report.failed_checks_summary();
+        if (bootstrap_->local_audit_logger() != nullptr) {
+            (void)bootstrap_->local_audit_logger()->record_event(
+                domain::LocalAuditCategory::CryptoSelfTest, "crypto.selftest.failed",
+                domain::LocalAuditOutcome::Failure, "", "", "Boot cryptographic self-test failed: " + failed_summary);
+        }
+        infrastructure::ClientLogger::error("ClientApp",
+                                            "Boot cryptographic self-test failed (" + failed_summary + "); aborting");
+        state_ = ApplicationLifecycleState::Terminated;
+        return ClientResult<void>::error(ClientError::crypto("Boot cryptographic self-test failed: " + failed_summary));
+    }
+
+    if (bootstrap_->local_audit_logger() != nullptr) {
+        (void)bootstrap_->local_audit_logger()->record_event(
+            domain::LocalAuditCategory::CryptoSelfTest, "crypto.selftest.passed", domain::LocalAuditOutcome::Success,
+            "", "",
+            "Boot cryptographic self-test passed (" + std::to_string(self_test_report.checks.size()) + " checks, " +
+                std::to_string(self_test_report.total_duration_us) + " us, " + self_test_report.crypto_backend + ")");
+    }
+    infrastructure::ClientLogger::info("ClientApp", "Boot cryptographic self-test passed (" +
+                                                        std::to_string(self_test_report.checks.size()) + " checks in " +
+                                                        std::to_string(self_test_report.total_duration_us) +
+                                                        " us, backend: " + self_test_report.crypto_backend + ")");
 
     const auto probe_res = bootstrap_->gateway().probe_gateway("/health");
     if (probe_res.is_error()) {

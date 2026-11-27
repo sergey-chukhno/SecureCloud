@@ -6,6 +6,8 @@
 #include "domain/device_private_bundle.hpp"
 #include "securecloud/configuration/secret_string.hpp"
 
+#include <cstdint>
+#include <span>
 #include <string>
 #include <string_view>
 
@@ -36,6 +38,9 @@ class KeyStorageHelper {
 
     static application::ClientResult<void> wipe_device_keys(application::interfaces::ISecureStorage& storage,
                                                             const domain::DeviceId& device_id);
+
+    static std::string derive_one_time_prekey_id(const domain::DeviceId& device_id,
+                                                 std::span<const uint8_t> public_key);
 };
 
 } // namespace securecloud::client::infrastructure::adapters

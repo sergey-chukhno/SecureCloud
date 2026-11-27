@@ -273,6 +273,7 @@ bool MessagingServiceImpl::check_and_record_presence_rate_limit(const domain::Us
     }
 
     domain::MessageSubmissionCommand cmd;
+    cmd.correlation_id = caller_ctx.correlation_id();
     cmd.caller_user_id = *caller_id;
     cmd.sender_device_id = sender_dev_id;
     cmd.conversation_id = *conv_id;
@@ -692,6 +693,7 @@ MessagingServiceImpl::SendReadReceipt(::grpc::ServerContext* context,
     }
 
     ReadReceiptCommand cmd;
+    cmd.correlation_id = caller_ctx.correlation_id();
     cmd.message_id = *msg_id;
     cmd.conversation_id = *conv_id;
     cmd.reader_device_id = domain::DeviceId(effective_device_id);
@@ -877,7 +879,8 @@ MessagingServiceImpl::CreateConversation(::grpc::ServerContext* context,
             return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, "Invalid recipient user ID",
                                   caller_ctx.correlation_id(), context);
         }
-        result = conversation_service_->create_direct_conversation(*caller_id, *recipient_id);
+        result =
+            conversation_service_->create_direct_conversation(*caller_id, *recipient_id, caller_ctx.correlation_id());
     } else if (request->type() == v1::CONVERSATION_TYPE_GROUP) {
         std::vector<domain::UserId> initial_participants;
         for (const auto& uid_str : request->participant_user_ids()) {
@@ -886,7 +889,8 @@ MessagingServiceImpl::CreateConversation(::grpc::ServerContext* context,
                 initial_participants.push_back(*uid);
             }
         }
-        result = conversation_service_->create_group_conversation(*caller_id, request->title(), initial_participants);
+        result = conversation_service_->create_group_conversation(*caller_id, request->title(), initial_participants,
+                                                                  caller_ctx.correlation_id());
     } else {
         return to_grpc_status(v1::MESSAGING_ERROR_CODE_UNSPECIFIED, "Invalid or unsupported conversation type",
                               caller_ctx.correlation_id(), context);
@@ -985,12 +989,17 @@ MessagingServiceImpl::ListConversations(::grpc::ServerContext* context,
             continue;
         }
         auto* conv_meta = response->add_conversations();
-        conv_meta->set_conversation_id(item.conversation_id.to_string());
-        conv_meta->set_type(item.type == domain::ConversationType::Direct ? v1::CONVERSATION_TYPE_DIRECT
-                                                                          : v1::CONVERSATION_TYPE_GROUP);
-        auto ms =
-            std::chrono::duration_cast<std::chrono::milliseconds>(item.last_activity_at.time_since_epoch()).count();
-        conv_meta->set_created_at_unix_ms(ms);
+        auto details = conversation_service_->get_conversation(*caller_id, item.conversation_id);
+        if (details) {
+            populate_conversation_metadata(details.value, conv_meta);
+        } else {
+            conv_meta->set_conversation_id(item.conversation_id.to_string());
+            conv_meta->set_type(item.type == domain::ConversationType::Direct ? v1::CONVERSATION_TYPE_DIRECT
+                                                                              : v1::CONVERSATION_TYPE_GROUP);
+            auto ms =
+                std::chrono::duration_cast<std::chrono::milliseconds>(item.last_activity_at.time_since_epoch()).count();
+            conv_meta->set_created_at_unix_ms(ms);
+        }
     }
 
     if (result.value.next_page_token) {
@@ -1036,7 +1045,7 @@ MessagingServiceImpl::ListConversations(::grpc::ServerContext* context,
                               caller_ctx.correlation_id(), context);
     }
 
-    auto result = conversation_service_->add_participant(*caller_id, *conv_id, *target_id);
+    auto result = conversation_service_->add_participant(*caller_id, *conv_id, *target_id, caller_ctx.correlation_id());
     if (!result) {
         return to_grpc_status(result.error_code, result.error_message, caller_ctx.correlation_id(), context);
     }
@@ -1089,7 +1098,8 @@ MessagingServiceImpl::RemoveParticipant(::grpc::ServerContext* context,
                               caller_ctx.correlation_id(), context);
     }
 
-    auto result = conversation_service_->remove_participant(*caller_id, *conv_id, *target_id);
+    auto result =
+        conversation_service_->remove_participant(*caller_id, *conv_id, *target_id, caller_ctx.correlation_id());
     if (!result) {
         return to_grpc_status(result.error_code, result.error_message, caller_ctx.correlation_id(), context);
     }
@@ -1136,7 +1146,7 @@ MessagingServiceImpl::LeaveConversation(::grpc::ServerContext* context,
                               caller_ctx.correlation_id(), context);
     }
 
-    auto result = conversation_service_->leave_conversation(*caller_id, *conv_id);
+    auto result = conversation_service_->leave_conversation(*caller_id, *conv_id, caller_ctx.correlation_id());
     if (!result) {
         return to_grpc_status(result.error_code, result.error_message, caller_ctx.correlation_id(), context);
     }
@@ -1176,7 +1186,8 @@ MessagingServiceImpl::LeaveConversation(::grpc::ServerContext* context,
                               caller_ctx.correlation_id(), context);
     }
 
-    auto result = conversation_service_->update_group_metadata(*caller_id, *conv_id, request->title());
+    auto result = conversation_service_->update_group_metadata(*caller_id, *conv_id, request->title(),
+                                                               caller_ctx.correlation_id());
     if (!result) {
         return to_grpc_status(result.error_code, result.error_message, caller_ctx.correlation_id(), context);
     }
@@ -1528,6 +1539,10 @@ MessagingServiceImpl::UpdateSyncCursor(::grpc::ServerContext* context,
 
     const std::string sanitized_message = domain::sanitize_status_message(request->custom_status_message());
     const auto target_status = domain::from_proto(request->status());
+
+    if (target_status == domain::PresenceStatus::Online && !caller_ctx.device_id().empty()) {
+        presence_coordinator_->on_device_heartbeat(*caller_id, domain::DeviceId(caller_ctx.device_id()));
+    }
 
     if (target_status == domain::PresenceStatus::Unspecified ||
         (target_status == domain::PresenceStatus::Online && sanitized_message.empty())) {

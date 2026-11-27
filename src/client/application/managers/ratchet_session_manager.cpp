@@ -1,5 +1,6 @@
 #include "application/managers/ratchet_session_manager.hpp"
 
+#include "application/managers/local_audit_logger.hpp"
 #include "domain/crypto/double_ratchet_engine.hpp"
 #include "domain/crypto/x3dh_engine.hpp"
 #include "infrastructure/adapters/key_storage_helper.hpp"
@@ -180,6 +181,18 @@ RatchetSessionManager::encrypt_fanout_for_participants(const std::vector<domain:
     for (const auto& uid : participants) {
         auto dir_res = gateway_.get_device_crypto_directory(uid, {});
         if (!dir_res.is_ok()) {
+            if (dir_res.error().category() == ClientErrorCategory::Network) {
+                bool added_cached = false;
+                for (const auto& [key, _] : sessions_) {
+                    if (key.user_id == uid && !(key.user_id == local_user_id_ && key.device_id == local_device_id_)) {
+                        targets.emplace_back(key.user_id, key.device_id);
+                        added_cached = true;
+                    }
+                }
+                if (added_cached) {
+                    continue;
+                }
+            }
             return ClientResult<std::vector<domain::crypto::PerDeviceDeliveryPayload>>::error(dir_res.error());
         }
 
@@ -201,8 +214,22 @@ ClientResult<securecloud::common::configuration::SecretString>
 RatchetSessionManager::decrypt_from_device(const domain::UserId& sender_user_id,
                                            const domain::DeviceId& sender_device_id,
                                            const domain::crypto::EncryptedMessageEnvelope& envelope) {
+    auto res = decrypt_from_device_impl(sender_user_id, sender_device_id, envelope);
+    if (res.is_error() && local_audit_logger_ != nullptr) {
+        (void)local_audit_logger_->record_event(domain::LocalAuditCategory::MessagingSecurity, "ratchet.decrypt_failed",
+                                                domain::LocalAuditOutcome::Failure, "", sender_device_id.value(),
+                                                "Encrypted message decryption failed");
+    }
+    return res;
+}
+
+ClientResult<securecloud::common::configuration::SecretString>
+RatchetSessionManager::decrypt_from_device_impl(const domain::UserId& sender_user_id,
+                                                const domain::DeviceId& sender_device_id,
+                                                const domain::crypto::EncryptedMessageEnvelope& envelope) {
     domain::crypto::PeerDeviceKey key{.user_id = sender_user_id, .device_id = sender_device_id};
 
+    bool established_via_x3dh = false;
     auto it = sessions_.find(key);
     if (it == sessions_.end()) {
         auto load_res = load_session(sender_user_id, sender_device_id);
@@ -261,6 +288,7 @@ RatchetSessionManager::decrypt_from_device(const domain::UserId& sender_user_id,
         };
 
         it = sessions_.emplace(key, std::move(new_session)).first;
+        established_via_x3dh = true;
     }
 
     auto& session = it->second;
@@ -276,6 +304,10 @@ RatchetSessionManager::decrypt_from_device(const domain::UserId& sender_user_id,
         return ClientResult<securecloud::common::configuration::SecretString>::error(save_res.error());
     }
 
+    if (established_via_x3dh && peer_identity_observed_callback_ && !session.peer_identity_key.empty()) {
+        peer_identity_observed_callback_(sender_user_id, session.peer_identity_key);
+    }
+
     return dec_res;
 }
 
@@ -287,6 +319,11 @@ RatchetSessionManager::decrypt_payload_from_device(const domain::UserId& sender_
                                    payload.ciphertext_blob.size());
     auto env_res = domain::crypto::EncryptedMessageEnvelope::deserialize(bytes);
     if (!env_res.is_ok()) {
+        if (local_audit_logger_ != nullptr) {
+            (void)local_audit_logger_->record_event(domain::LocalAuditCategory::MessagingSecurity,
+                                                    "ratchet.decrypt_failed", domain::LocalAuditOutcome::Failure, "",
+                                                    sender_device_id.value(), "Encrypted message decryption failed");
+        }
         return ClientResult<securecloud::common::configuration::SecretString>::error(env_res.error());
     }
 

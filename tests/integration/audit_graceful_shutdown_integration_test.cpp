@@ -101,10 +101,11 @@ TEST_F(AuditGracefulShutdownIntegrationTest, InFlightBatchesFlushedBeforeShutdow
     auto mock_repo = std::make_shared<MockAuditEventRepository>();
 
     std::atomic<size_t> inserted_count{0};
-    EXPECT_CALL(*mock_repo, insert_batch(_))
+    EXPECT_CALL(*mock_repo, insert_batch_classified(_))
         .WillRepeatedly([&inserted_count](const std::vector<domain::AuditEvent>& events) {
             inserted_count.fetch_add(events.size());
-            return true;
+            return repository::RepositoryBatchWriteResult{
+                .status = repository::RepositoryWriteStatus::Committed, .error_code = "", .sanitized_reason = ""};
         });
 
     IngestionConfig ing_config;
@@ -114,17 +115,14 @@ TEST_F(AuditGracefulShutdownIntegrationTest, InFlightBatchesFlushedBeforeShutdow
     auto pipeline = std::make_shared<ingestion::AuditIngestionPipeline>(ing_config, mock_repo);
     pipeline->start();
 
-    // Submit 500 fully populated, valid events into the pipeline
     for (int i = 0; i < 500; ++i) {
         ingestion::IngestionEnvelope envelope;
         envelope.event = create_valid_domain_event();
         (void)pipeline->submit(std::move(envelope));
     }
 
-    // Initiate graceful shutdown with 2000ms deadline budget
     pipeline->shutdown(std::chrono::milliseconds(2000));
 
-    // All 500 events must be flushed to ClickHouse repository before shutdown completes
     EXPECT_EQ(inserted_count.load(), 500u);
 }
 
@@ -132,10 +130,11 @@ TEST_F(AuditGracefulShutdownIntegrationTest, InFlightBatchesFlushedBeforeShutdow
 TEST_F(AuditGracefulShutdownIntegrationTest, DeadlineExpirationPreventsFalseACKs) {
     auto mock_repo = std::make_shared<MockAuditEventRepository>();
 
-    // Simulate slow/failing ClickHouse repository
-    EXPECT_CALL(*mock_repo, insert_batch(_)).WillRepeatedly([](const std::vector<domain::AuditEvent>&) {
+    EXPECT_CALL(*mock_repo, insert_batch_classified(_)).WillRepeatedly([](const std::vector<domain::AuditEvent>&) {
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-        return false;
+        return repository::RepositoryBatchWriteResult{.status = repository::RepositoryWriteStatus::DeterministicFailure,
+                                                      .error_code = "TIMEOUT",
+                                                      .sanitized_reason = "Simulated slow ClickHouse write"};
     });
 
     IngestionConfig ing_config;
@@ -154,12 +153,10 @@ TEST_F(AuditGracefulShutdownIntegrationTest, DeadlineExpirationPreventsFalseACKs
 
     auto start_time = std::chrono::steady_clock::now();
 
-    // Trigger shutdown with short 300ms deadline budget
     pipeline->shutdown(std::chrono::milliseconds(300));
 
     auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_time);
 
-    // Shutdown must observe the deadline budget without blocking indefinitely
     EXPECT_LE(elapsed.count(), 1500);
 }
 

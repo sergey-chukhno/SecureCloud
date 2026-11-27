@@ -1,6 +1,14 @@
+#include "audit/audit_delivery_dispatcher.hpp"
+#include "audit/audit_producer_metrics.hpp"
+#include "audit/bounded_memory_pending_store.hpp"
+#include "audit/file_spool_pending_store.hpp"
+#include "audit/gateway_audit_event_factory.hpp"
+#include "audit/gateway_audit_producer.hpp"
+#include "grpc/audit_ingestion_client.hpp"
 #include "grpc/auth_service_client.hpp"
 #include "grpc/channel_manager.hpp"
 #include "grpc/files_service_client.hpp"
+#include "grpc/messaging_service_client.hpp"
 #include "health/gateway_health_evaluator.hpp"
 #include "http/auth/auth_service_token_validator.hpp"
 #include "http/auth/authentication_middleware.hpp"
@@ -14,6 +22,7 @@
 #include "http/middleware/resource_limiter_middleware.hpp"
 #include "http/proxy/auth_proxy_handler.hpp"
 #include "http/proxy/files_proxy_handler.hpp"
+#include "http/proxy/messaging_proxy_handler.hpp"
 #include "http/resilience/bulkhead_manager.hpp"
 #include "http/resilience/circuit_breaker.hpp"
 #include "http/resilience/deadline_manager.hpp"
@@ -127,7 +136,8 @@ int run_service() {
     securecloud::common::health::HealthServiceImpl health_service(config.common.service_name, health_manager);
 
     securecloud::gateway::grpc::GrpcChannelManager channel_manager(config);
-    securecloud::gateway::health::GatewayHealthEvaluator health_evaluator(channel_manager);
+    auto audit_metrics = std::make_shared<securecloud::gateway::audit::AuditProducerMetrics>();
+    securecloud::gateway::health::GatewayHealthEvaluator health_evaluator(channel_manager, audit_metrics);
     health_manager.set_readiness_evaluator([&health_evaluator] { return health_evaluator.evaluate_readiness(); });
 
     grpc::ServerBuilder builder;
@@ -205,6 +215,51 @@ int run_service() {
 
     auto drain_manager = std::make_shared<securecloud::gateway::http::DrainManager>(&health_manager);
 
+    auto deadline_manager = std::make_shared<securecloud::gateway::http::DeadlineManager>(config.deadlines);
+    auto retry_policy = std::make_shared<securecloud::gateway::http::RetryPolicy>();
+    auto bulkhead_manager = std::make_shared<securecloud::gateway::http::BulkheadManager>(config.bulkhead);
+    auto circuit_breaker_registry =
+        std::make_shared<securecloud::gateway::http::CircuitBreakerRegistry>(config.circuit_breaker);
+
+    std::shared_ptr<securecloud::gateway::audit::IAuditPendingStore> audit_pending_store;
+    if (config.audit_producer.enabled) {
+        if (config.audit_producer.mode == "spool") {
+            auto file_spool = std::make_shared<securecloud::gateway::audit::FileSpoolPendingStore>(config.audit_spool);
+            if (file_spool->is_available()) {
+                audit_pending_store = std::move(file_spool);
+            } else {
+                std::cerr << "[SecureCloud] [" << config.common.service_name
+                          << "] WARN: Audit spool directory unavailable; falling back to BoundedMemoryPendingStore\n";
+            }
+        }
+        if (!audit_pending_store) {
+            audit_pending_store =
+                std::make_shared<securecloud::gateway::audit::BoundedMemoryPendingStore>(10000U, 10U * 1024U * 1024U);
+        }
+    }
+
+    auto audit_factory =
+        std::make_shared<securecloud::gateway::audit::GatewayAuditEventFactory>(config.audit_producer.instance_name);
+    auto audit_producer = securecloud::gateway::audit::create_gateway_audit_producer(
+        audit_pending_store, audit_factory, config.audit_producer.enabled, config.audit_producer.aggregation_window_sec,
+        config.audit_producer.aggregation_max_keys);
+
+    std::unique_ptr<securecloud::gateway::audit::AuditDeliveryDispatcher> audit_dispatcher;
+    if (config.audit_producer.enabled && audit_pending_store) {
+        auto audit_channel = channel_manager.get_audit_channel();
+        auto audit_client = std::make_shared<securecloud::gateway::grpc::AuditIngestionClient>(audit_channel);
+        securecloud::gateway::audit::AuditDeliveryDispatcherConfig dispatcher_cfg{
+            .batch_max_records = config.audit_producer.batch_size,
+            .audit_timeout_ms = 1000U,
+            .audit_drain_budget_ms = config.audit_producer.drain_budget_ms,
+            .poll_interval_ms = config.audit_producer.backoff_ms,
+        };
+        audit_dispatcher = std::make_unique<securecloud::gateway::audit::AuditDeliveryDispatcher>(
+            audit_pending_store, std::move(audit_client), circuit_breaker_registry->get("audit"), audit_metrics,
+            dispatcher_cfg);
+        audit_dispatcher->start();
+    }
+
     // Assemble deterministic perimeter middleware pipeline:
     // 1. RequestIdMiddleware: assigns/propagates standard correlation ID
     // 2. LoggingMiddleware: measures request duration & logs all responses
@@ -218,28 +273,28 @@ int run_service() {
     router.use(std::make_shared<securecloud::gateway::http::LoggingMiddleware>());
     router.use(std::make_shared<securecloud::gateway::http::DrainMiddleware>(drain_manager));
     router.use(std::make_shared<securecloud::gateway::http::ResourceLimiterMiddleware>(config));
-    router.use(
-        std::make_shared<securecloud::gateway::http::AuthenticationMiddleware>(security_policy, token_validator));
-    router.use(std::make_shared<securecloud::gateway::http::RateLimiterMiddleware>(config));
+    router.use(std::make_shared<securecloud::gateway::http::AuthenticationMiddleware>(security_policy, token_validator,
+                                                                                      audit_producer));
+    router.use(std::make_shared<securecloud::gateway::http::RateLimiterMiddleware>(config, audit_producer));
     router.use(std::make_shared<securecloud::gateway::http::AuthorizationMiddleware>(security_policy));
 
     // Register all perimeter routes (Health, Auth proxy, and Phase 2 service stubs)
-    auto deadline_manager = std::make_shared<securecloud::gateway::http::DeadlineManager>(config.deadlines);
-    auto retry_policy = std::make_shared<securecloud::gateway::http::RetryPolicy>();
-    auto bulkhead_manager = std::make_shared<securecloud::gateway::http::BulkheadManager>(config.bulkhead);
-    auto circuit_breaker_registry =
-        std::make_shared<securecloud::gateway::http::CircuitBreakerRegistry>(config.circuit_breaker);
     auto auth_proxy = std::make_shared<securecloud::gateway::http::AuthProxyHandler>(
         auth_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("auth"));
+
+    auto messaging_channel = channel_manager.get_messaging_channel();
+    auto messaging_client = std::make_shared<securecloud::gateway::grpc::MessagingServiceClient>(messaging_channel);
+    auto messaging_proxy = std::make_shared<securecloud::gateway::http::MessagingProxyHandler>(
+        messaging_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("messaging"));
 
     auto files_channel = channel_manager.get_files_channel();
     auto files_client = std::make_shared<securecloud::gateway::grpc::FilesServiceClient>(files_channel);
     auto files_proxy = std::make_shared<securecloud::gateway::http::FilesProxyHandler>(
         files_client, deadline_manager, retry_policy, bulkhead_manager, circuit_breaker_registry->get("files"),
-        config.streaming);
+        config.streaming, messaging_client);
 
     securecloud::gateway::http::GatewayRouteRegistrar route_registrar(auth_proxy, health_manager, bulkhead_manager,
-                                                                      files_proxy);
+                                                                      files_proxy, messaging_proxy);
     route_registrar.register_all_routes(router);
 
     std::unique_ptr<securecloud::gateway::http::HttpServer> http_server;
@@ -286,12 +341,39 @@ int run_service() {
 
     execute_peer_probe(config);
 
+    if (audit_producer) {
+        securecloud::gateway::audit::GatewayAuditObservation start_obs;
+        start_obs.type = securecloud::gateway::audit::GatewayAuditEventType::LifecycleStarted;
+        start_obs.target_id = config.common.service_name;
+        start_obs.client_ip = "127.0.0.1";
+        start_obs.route_class = "lifecycle";
+        start_obs.http_method = "INTERNAL";
+        start_obs.metadata["version"] = securecloud::common::get_version_string();
+        (void)audit_producer->record_observation(start_obs);
+        if (audit_dispatcher) {
+            audit_dispatcher->notify_new_records();
+        }
+    }
+
     while (!g_shutdown_requested.load()) {
         std::this_thread::sleep_for(k_poll_interval);
     }
 
     std::cout << "[SecureCloud] [" << config.common.service_name
               << "] Shutdown signal received: starting coordinated graceful drain...\n";
+    if (audit_producer) {
+        securecloud::gateway::audit::GatewayAuditObservation drain_obs;
+        drain_obs.type = securecloud::gateway::audit::GatewayAuditEventType::LifecycleDrainStarted;
+        drain_obs.target_id = config.common.service_name;
+        drain_obs.client_ip = "127.0.0.1";
+        drain_obs.route_class = "lifecycle";
+        drain_obs.http_method = "INTERNAL";
+        if (audit_pending_store) {
+            drain_obs.metadata["pending_audit_events"] = std::to_string(audit_pending_store->stats().total_records);
+        }
+        (void)audit_producer->record_observation(drain_obs);
+        audit_producer->flush();
+    }
     drain_manager->start_drain(std::chrono::milliseconds(5000));
     health_manager.set_shutting_down(true);
 
@@ -306,6 +388,9 @@ int run_service() {
     if (http_server) {
         std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down HTTP server...\n";
         http_server->stop();
+    }
+    if (audit_dispatcher) {
+        audit_dispatcher->stop();
     }
     channel_manager.reset();
     std::cout << "[SecureCloud] [" << config.common.service_name << "] Shutting down mTLS server...\n";

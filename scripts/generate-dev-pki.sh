@@ -136,6 +136,11 @@ for service in "${SERVICES[@]}"; do
     "${OPENSSL_BIN}" req -new -key "${SVC_KEY}" -sha256 -out "${SVC_CSR}" \
         -subj "/CN=${service}.dev.securecloud.local/O=SecureCloud Dev" >/dev/null
 
+    SAN_VALUE="DNS:${service}"
+    if [[ "${service}" == "gateway" ]]; then
+        SAN_VALUE="DNS:gateway,DNS:localhost,IP:127.0.0.1"
+    fi
+
     # Create temporary extension configuration for service
     cat << EOF > "${SVC_EXT}"
 basicConstraints = critical, CA:FALSE
@@ -143,7 +148,7 @@ keyUsage = critical, digitalSignature
 extendedKeyUsage = serverAuth, clientAuth
 subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid
-subjectAltName = DNS:${service}
+subjectAltName = ${SAN_VALUE}
 EOF
 
     # Sign service certificate against Root CA using SHA-256

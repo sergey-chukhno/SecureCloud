@@ -14,6 +14,7 @@ class ClickHouseAuditEventRepository : public IAuditEventRepository {
     ~ClickHouseAuditEventRepository() override = default;
 
     bool insert_batch(const std::vector<domain::AuditEvent>& events) override;
+    RepositoryBatchWriteResult insert_batch_classified(const std::vector<domain::AuditEvent>& events) override;
 
     std::vector<domain::AuditEvent> query_by_time_range(std::chrono::system_clock::time_point start,
                                                         std::chrono::system_clock::time_point end,

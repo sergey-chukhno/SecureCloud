@@ -16,6 +16,64 @@ namespace securecloud::messaging::service {
 
 namespace {
 
+[[nodiscard]] bool is_valid_utf8_text(std::string_view s) noexcept {
+    std::size_t i = 0;
+    while (i < s.size()) {
+        const unsigned char c = static_cast<unsigned char>(s[i]);
+        if (c == '\0') {
+            return false;
+        }
+        std::size_t trailing = 0;
+        if (c <= 0x7FU) {
+            trailing = 0;
+        } else if ((c & 0xE0U) == 0xC0U) {
+            if (c < 0xC2U) {
+                return false;
+            }
+            trailing = 1;
+        } else if ((c & 0xF0U) == 0xE0U) {
+            trailing = 2;
+        } else if ((c & 0xF8U) == 0xF0U) {
+            if (c > 0xF4U) {
+                return false;
+            }
+            trailing = 3;
+        } else {
+            return false;
+        }
+        if (i + trailing >= s.size()) {
+            return false;
+        }
+        for (std::size_t j = 1; j <= trailing; ++j) {
+            if ((static_cast<unsigned char>(s[i + j]) & 0xC0U) != 0x80U) {
+                return false;
+            }
+        }
+        i += trailing + 1U;
+    }
+    return true;
+}
+
+[[nodiscard]] std::string encode_cql_text_safe(std::string_view raw) {
+    if (is_valid_utf8_text(raw)) {
+        return std::string(raw);
+    }
+    static constexpr char k_b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    out.reserve(((raw.size() + 2U) / 3U) * 4U);
+    for (std::size_t i = 0; i < raw.size(); i += 3U) {
+        const uint32_t b0 = static_cast<unsigned char>(raw[i]);
+        const uint32_t b1 = (i + 1U < raw.size()) ? static_cast<unsigned char>(raw[i + 1U]) : 0U;
+        const uint32_t b2 = (i + 2U < raw.size()) ? static_cast<unsigned char>(raw[i + 2U]) : 0U;
+        const uint32_t triple = (b0 << 16U) | (b1 << 8U) | b2;
+        out.push_back(k_b64[(triple >> 18U) & 0x3FU]);
+        out.push_back(k_b64[(triple >> 12U) & 0x3FU]);
+        out.push_back((i + 1U < raw.size()) ? k_b64[(triple >> 6U) & 0x3FU] : '=');
+        out.push_back((i + 2U < raw.size()) ? k_b64[triple & 0x3FU] : '=');
+    }
+    return out;
+}
+
 void stage_submission_audit_events(repository::IMessagingAuditOutboxRepository* audit_repo,
                                    const domain::MessageSubmissionCommand& cmd, const domain::MessageId& message_id,
                                    uint64_t sequence, std::chrono::system_clock::time_point occurred_at,
@@ -57,7 +115,7 @@ void stage_submission_audit_events(repository::IMessagingAuditOutboxRepository* 
             .actor_device_id = cmd.sender_device_id,
             .target_resource = message_id.to_string(),
             .payload_json = meta.dump(),
-            .correlation_id = {},
+            .correlation_id = cmd.correlation_id,
         };
         audit::stage_canonical_audit_event(audit_repo, submitted_event, routing_key);
     }
@@ -82,7 +140,7 @@ void stage_submission_audit_events(repository::IMessagingAuditOutboxRepository* 
                 .actor_device_id = cmd.sender_device_id,
                 .target_resource = routing_key,
                 .payload_json = emergency_meta.dump(),
-                .correlation_id = {},
+                .correlation_id = cmd.correlation_id,
             };
             audit::stage_canonical_audit_event(audit_repo, emergency_event, routing_key);
         }
@@ -132,7 +190,7 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
             .actor_device_id = cmd.sender_device_id,
             .target_resource = cmd.conversation_id.to_string(),
             .payload_json = R"({"action":"SUBMIT_MESSAGE","reason":"NOT_AN_ACTIVE_MEMBER"})",
-            .correlation_id = {},
+            .correlation_id = cmd.correlation_id,
         };
         audit::stage_canonical_audit_event(audit_repo_.get(), denied_event, cmd.conversation_id.to_string());
 
@@ -258,7 +316,7 @@ MessageSubmissionService::submit_message(const domain::MessageSubmissionCommand&
         msg_entity.sender_device_id = cmd.sender_device_id;
         msg_entity.priority = cmd.priority;
         msg_entity.accepted_at = accepted_at;
-        msg_entity.envelope.ciphertext = cmd.delivery_targets.front().ciphertext_blob;
+        msg_entity.envelope.ciphertext = encode_cql_text_safe(cmd.delivery_targets.front().ciphertext_blob);
         msg_entity.envelope.envelope_version = static_cast<int32_t>(cmd.protocol_version);
 
         message_repo_->save_message(msg_entity);

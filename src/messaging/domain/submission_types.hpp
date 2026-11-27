@@ -36,6 +36,7 @@ struct MessageSubmissionCommand {
     DeviceId sender_device_id;
     ConversationId conversation_id;
     std::string client_idempotency_token;
+    std::string correlation_id;
     MessagePriority priority{MessagePriority::Normal};
     std::optional<std::chrono::system_clock::time_point> expires_at{std::nullopt};
     E2EProtocolVersion protocol_version{E2EProtocolVersion::V1_Signal_PQXDH_DoubleRatchet};

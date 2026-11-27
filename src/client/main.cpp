@@ -1,14 +1,17 @@
 #include "application/client_application.hpp"
 #include "application/client_config.hpp"
+#include "infrastructure/adapters/platform_telemetry_collector.hpp"
 #include "infrastructure/client_logger.hpp"
 #include "securecloud/common/version.hpp"
 #include "ui/app_view_model.hpp"
+#include "ui/diagnostics_view_model.hpp"
 #include "ui/navigation_controller.hpp"
 #include "ui/ui_theme.hpp"
 #include "ui/window_state_manager.hpp"
 #include "ui/workspace_view_model.hpp"
 
 #include <QDir>
+#include <QEventLoop>
 #include <QGuiApplication>
 #include <QImage>
 #include <QQmlApplicationEngine>
@@ -17,7 +20,10 @@
 #include <QQuickWindow>
 #include <QSGRendererInterface>
 #include <QThread>
+#include <QTimer>
 #include <QUrl>
+#include <algorithm>
+#include <iomanip>
 #include <iostream>
 #include <string_view>
 
@@ -28,6 +34,7 @@ int main(int argc, char* argv[]) {
     // Check for CLI runtime flags before QGuiApplication construction
     bool isSmokeTest = false;
     bool isGalleryMode = false;
+    int benchmarkIdleMs = 0;
     QString screenshotOutDir;
     for (int i = 1; i < argc; ++i) {
         const std::string_view arg(argv[i]);
@@ -35,6 +42,12 @@ int main(int argc, char* argv[]) {
             isSmokeTest = true;
         } else if (arg == "--gallery" || arg == "--style-guide") {
             isGalleryMode = true;
+        } else if (arg == "--benchmark-idle-ms" && (i + 1) < argc) {
+            bool ok = false;
+            const int parsed = QString::fromUtf8(argv[++i]).toInt(&ok);
+            if (ok && parsed > 0) {
+                benchmarkIdleMs = std::clamp(parsed, 100, 30000);
+            }
         } else if (arg == "--capture-screenshots" && (i + 1) < argc) {
             screenshotOutDir = QString::fromUtf8(argv[++i]);
         }
@@ -73,6 +86,7 @@ int main(int argc, char* argv[]) {
     // UI Controllers and Presentation Wiring
     securecloud::client::ui::NavigationController navController;
     securecloud::client::ui::AppViewModel appViewModel(clientApp, navController);
+    securecloud::client::ui::DiagnosticsViewModel diagnosticsViewModel(clientApp, navController);
     securecloud::client::ui::WorkspaceViewModel workspaceViewModel(clientApp, navController);
     securecloud::client::ui::UiTheme uiTheme;
     securecloud::client::ui::WindowStateManager windowStateManager;
@@ -80,10 +94,11 @@ int main(int argc, char* argv[]) {
     workspaceViewModel.setUiTheme(&uiTheme);
 
     QObject::connect(&appViewModel, &securecloud::client::ui::AppViewModel::emergencyWipedChanged, &workspaceViewModel,
-                     [&appViewModel, &workspaceViewModel]() {
+                     [&appViewModel, &diagnosticsViewModel, &workspaceViewModel]() {
                          if (appViewModel.isDecoySession()) {
                              workspaceViewModel.enterDecoyWorkspace();
                          } else if (appViewModel.isEmergencyWiped()) {
+                             diagnosticsViewModel.resetForEmergencyWipe();
                              workspaceViewModel.resetForEmergencyWipe();
                          }
                      });
@@ -97,6 +112,7 @@ int main(int argc, char* argv[]) {
     qmlRegisterSingletonInstance<securecloud::client::ui::UiTheme>("SecureCloud.Theme", 1, 0, "Theme", &uiTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("navigationController"), &navController);
     engine.rootContext()->setContextProperty(QStringLiteral("appViewModel"), &appViewModel);
+    engine.rootContext()->setContextProperty(QStringLiteral("diagnosticsViewModel"), &diagnosticsViewModel);
     engine.rootContext()->setContextProperty(QStringLiteral("workspaceViewModel"), &workspaceViewModel);
     engine.rootContext()->setContextProperty(QStringLiteral("Theme"), &uiTheme);
     engine.rootContext()->setContextProperty(QStringLiteral("windowStateManager"), &windowStateManager);
@@ -117,6 +133,26 @@ int main(int argc, char* argv[]) {
         std::cerr << "[SecureCloud Client] Error: Failed to load root QML component from "
                   << url.toString().toStdString() << "\n";
         return -1;
+    }
+
+    if (benchmarkIdleMs > 0) {
+        QEventLoop settleLoop;
+        QTimer::singleShot(150, &settleLoop, &QEventLoop::quit);
+        settleLoop.exec();
+
+        securecloud::client::infrastructure::adapters::PlatformTelemetryCollector collector;
+        (void)collector.sample();
+
+        QEventLoop idleLoop;
+        QTimer::singleShot(benchmarkIdleMs, &idleLoop, &QEventLoop::quit);
+        idleLoop.exec();
+
+        const auto idleSample = collector.sample();
+        std::cout << std::fixed << std::setprecision(2) << "[SecureCloud BenchmarkIdle] idle_ms=" << benchmarkIdleMs
+                  << " rss_bytes=" << idleSample.rss_bytes << " rss_mb=" << idleSample.rss_megabytes
+                  << " cpu_percent=" << idleSample.cpu_percent << "\n";
+        (void)clientApp.shutdown();
+        return 0;
     }
 
     if (isSmokeTest) {
@@ -353,6 +389,15 @@ int main(int argc, char* argv[]) {
 
         uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
         captureWindow(QStringLiteral("settings-duress-light-1200x800.png"), 1200, 800);
+
+        // 8b. Authenticated Settings -> Advanced -> Diagnostics & Troubleshooting (CLIENT-015-T04)
+        (void)navController.navigateTo(securecloud::client::ui::NavigationController::NavigationState::Diagnostics);
+        diagnosticsViewModel.refreshDiagnostics();
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Dark);
+        captureWindow(QStringLiteral("diagnostics-dark-1200x800.png"), 1200, 800);
+
+        uiTheme.setThemeMode(securecloud::client::ui::ThemeMode::Light);
+        captureWindow(QStringLiteral("diagnostics-light-1200x800.png"), 1200, 800);
 
         // 9. Upgraded Panic Confirmation Modal with Pre-Wipe E2EE Broadcast (CLIENT-013, Dark & Light 1200x800)
         (void)navController.navigateTo(securecloud::client::ui::NavigationController::NavigationState::MainWorkspace);

@@ -72,32 +72,37 @@ class ConversationService {
                         std::shared_ptr<repository::IMessagingAuditOutboxRepository> audit_repo = nullptr);
 
     /// Creates or returns an existing 1-on-1 direct conversation idempotently.
-    [[nodiscard]] ServiceResult<domain::ConversationEntity> create_direct_conversation(const domain::UserId& caller,
-                                                                                       const domain::UserId& recipient);
+    [[nodiscard]] ServiceResult<domain::ConversationEntity>
+    create_direct_conversation(const domain::UserId& caller, const domain::UserId& recipient,
+                               std::string_view correlation_id = {});
 
     /// Creates a new group conversation with caller as Admin and initial members.
     [[nodiscard]] ServiceResult<domain::ConversationEntity>
     create_group_conversation(const domain::UserId& caller, std::string_view title,
-                              const std::vector<domain::UserId>& initial_participant_user_ids);
+                              const std::vector<domain::UserId>& initial_participant_user_ids,
+                              std::string_view correlation_id = {});
 
     /// Adds a participant to a group conversation or reactivates a previously left member.
     [[nodiscard]] ServiceResult<void> add_participant(const domain::UserId& caller,
                                                       const domain::ConversationId& conv_id,
-                                                      const domain::UserId& target_user);
+                                                      const domain::UserId& target_user,
+                                                      std::string_view correlation_id = {});
 
     /// Removes an active participant from a group conversation.
     [[nodiscard]] ServiceResult<void> remove_participant(const domain::UserId& caller,
                                                          const domain::ConversationId& conv_id,
-                                                         const domain::UserId& target_user);
+                                                         const domain::UserId& target_user,
+                                                         std::string_view correlation_id = {});
 
     /// Leaves an active group conversation, enforcing admin succession rules.
     [[nodiscard]] ServiceResult<void> leave_conversation(const domain::UserId& caller,
-                                                         const domain::ConversationId& conv_id);
+                                                         const domain::ConversationId& conv_id,
+                                                         std::string_view correlation_id = {});
 
     /// Updates the title of an active group conversation.
     [[nodiscard]] ServiceResult<domain::GroupMetadataEntity>
     update_group_metadata(const domain::UserId& caller, const domain::ConversationId& conv_id,
-                          std::string_view new_title);
+                          std::string_view new_title, std::string_view correlation_id = {});
 
     /// Fetches full conversation details after validating caller's view permission.
     [[nodiscard]] ServiceResult<ConversationDetails> get_conversation(const domain::UserId& caller,

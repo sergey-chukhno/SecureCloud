@@ -166,6 +166,10 @@ domain::AuthOutboxEntity OutboxEventMapper::to_outbox_entity(const domain::Audit
         aggregate_type_str = "SESSION";
         aggregate_id = *event.session_id;
     }
+    if (target_id_str.empty()) {
+        target_type_str = "SERVICE";
+        target_id_str = "auth";
+    }
 
     nlohmann::json metadata = nlohmann::json::object();
     metadata["client_ip"] = event.client_ip;
@@ -185,7 +189,11 @@ domain::AuthOutboxEntity OutboxEventMapper::to_outbox_entity(const domain::Audit
         metadata["failure_reason"] = safe_failure_reason;
     }
 
-    const std::string correlation_id = event.session_id.has_value() ? event.session_id->to_string() : eid.to_string();
+    const bool has_valid_corr_uuid =
+        !event.correlation_id.empty() && domain::Uuid::from_string(event.correlation_id).has_value();
+    const std::string correlation_id =
+        has_valid_corr_uuid ? event.correlation_id
+                            : (event.session_id.has_value() ? event.session_id->to_string() : eid.to_string());
 
     nlohmann::json payload = {
         {"event_id", eid.to_string()},      {"occurred_at_ms", occurred_ms},

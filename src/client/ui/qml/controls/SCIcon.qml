@@ -13,23 +13,25 @@ Item {
     width: size
     height: size
 
-    onNameChanged: canvas.requestPaint()
-    onColorChanged: canvas.requestPaint()
-    onSizeChanged: canvas.requestPaint()
-    onStrokeWidthChanged: canvas.requestPaint()
+    onNameChanged: if (iconRoot.visible) canvas.requestPaint()
+    onColorChanged: if (iconRoot.visible) canvas.requestPaint()
+    onSizeChanged: if (iconRoot.visible) canvas.requestPaint()
+    onStrokeWidthChanged: if (iconRoot.visible) canvas.requestPaint()
+    onVisibleChanged: if (visible) canvas.requestPaint()
 
     Canvas {
         id: canvas
+        visible: iconRoot.visible
         anchors.fill: parent
         antialiasing: true
         renderTarget: Canvas.Image
 
         onPaint: {
-            var ctx = getContext("2d");
-            ctx.reset();
-            if (!iconRoot.name || iconRoot.width <= 0 || iconRoot.height <= 0) {
+            if (!iconRoot.visible || !iconRoot.name || iconRoot.width <= 0 || iconRoot.height <= 0) {
                 return;
             }
+            var ctx = getContext("2d");
+            ctx.reset();
 
             var scaleX = iconRoot.width / 24.0;
             var scaleY = iconRoot.height / 24.0;

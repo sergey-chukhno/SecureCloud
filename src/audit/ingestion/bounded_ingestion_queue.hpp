@@ -16,7 +16,7 @@ namespace securecloud::audit::ingestion {
 
 class BoundedIngestionQueue {
   public:
-    explicit BoundedIngestionQueue(size_t capacity = 10000);
+    explicit BoundedIngestionQueue(size_t capacity = 10000, bool publish_metrics = true);
     ~BoundedIngestionQueue();
 
     BoundedIngestionQueue(const BoundedIngestionQueue&) = delete;
@@ -49,6 +49,7 @@ class BoundedIngestionQueue {
     void record_pop_metrics_locked(const IngestionEnvelope& item);
 
     const size_t capacity_;
+    const bool publish_metrics_;
     mutable std::mutex mutex_;
     std::condition_variable cv_not_full_;
     std::condition_variable cv_not_empty_;

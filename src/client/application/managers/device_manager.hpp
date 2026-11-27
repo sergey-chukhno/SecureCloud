@@ -15,6 +15,7 @@
 
 namespace securecloud::client::application::managers {
 
+class LocalAuditLogger;
 class RatchetSessionManager;
 
 class DeviceManager {
@@ -33,6 +34,8 @@ class DeviceManager {
 
     [[nodiscard]] ClientResult<domain::Device> get_local_device() const;
 
+    void clear_local_device() noexcept { local_device_.reset(); }
+
     ClientResult<domain::PrekeyInventoryStatus> check_prekey_inventory();
 
     ClientResult<std::size_t> replenish_prekeys(std::size_t batch_size = domain::PrekeyPolicy::kReplenishmentBatchSize);
@@ -48,6 +51,9 @@ class DeviceManager {
     void set_ratchet_session_manager(RatchetSessionManager* session_manager) noexcept {
         ratchet_session_manager_ = session_manager;
     }
+    void set_local_audit_logger(LocalAuditLogger* local_audit_logger) noexcept {
+        local_audit_logger_ = local_audit_logger;
+    }
 
     [[nodiscard]] interfaces::ISecureStorage& secure_storage() noexcept { return secure_storage_; }
     [[nodiscard]] interfaces::ICryptoProvider& crypto_provider() noexcept { return crypto_provider_; }
@@ -61,6 +67,7 @@ class DeviceManager {
 
     std::optional<domain::Device> local_device_;
     RatchetSessionManager* ratchet_session_manager_{nullptr};
+    LocalAuditLogger* local_audit_logger_{nullptr};
 };
 
 } // namespace securecloud::client::application::managers

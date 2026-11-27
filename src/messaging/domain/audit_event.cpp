@@ -123,7 +123,7 @@ std::string compute_outbox_bucket_utc(std::chrono::system_clock::time_point tp) 
 #else
     gmtime_r(&raw_time, &utc_tm);
 #endif
-    char buf[16]{};
+    char buf[64]{};
     std::snprintf(buf, sizeof(buf), "%04d%02d%02d%02d", utc_tm.tm_year + 1900, utc_tm.tm_mon + 1, utc_tm.tm_mday,
                   utc_tm.tm_hour);
     return std::string(buf);

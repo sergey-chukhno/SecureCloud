@@ -2,9 +2,16 @@
 
 #include "domain/prekey_policy.hpp"
 
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <openssl/crypto.h>
+#include <openssl/evp.h>
 #include <span>
+#include <stdexcept>
+#include <string_view>
 #include <vector>
 
 namespace securecloud::client::infrastructure::adapters {
@@ -308,6 +315,47 @@ application::ClientResult<void> KeyStorageHelper::wipe_device_keys(application::
                                                                    const domain::DeviceId& device_id) {
     const std::string key = make_storage_key(device_id);
     return storage.delete_secret(key);
+}
+
+std::string KeyStorageHelper::derive_one_time_prekey_id(const domain::DeviceId& device_id,
+                                                        std::span<const uint8_t> public_key) {
+    std::string device_id_lower = device_id.value();
+    std::transform(device_id_lower.begin(), device_id_lower.end(), device_id_lower.begin(),
+                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    static constexpr std::string_view kPrefix = "securecloud:otpk:v1:";
+    std::array<uint8_t, EVP_MAX_MD_SIZE> digest{};
+    unsigned int digest_len = 0;
+
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    if (ctx == nullptr) {
+        throw std::runtime_error("OpenSSL EVP_MD_CTX_new failed in derive_one_time_prekey_id");
+    }
+
+    const bool ok = EVP_DigestInit_ex(ctx, EVP_sha256(), nullptr) == 1 &&
+                    EVP_DigestUpdate(ctx, kPrefix.data(), kPrefix.size()) == 1 &&
+                    EVP_DigestUpdate(ctx, device_id_lower.data(), device_id_lower.size()) == 1 &&
+                    EVP_DigestUpdate(ctx, ":", 1) == 1 &&
+                    EVP_DigestUpdate(ctx, public_key.data(), public_key.size()) == 1 &&
+                    EVP_DigestFinal_ex(ctx, digest.data(), &digest_len) == 1;
+    EVP_MD_CTX_free(ctx);
+
+    if (!ok || digest_len < 16U) {
+        throw std::runtime_error("OpenSSL SHA-256 digest failed in derive_one_time_prekey_id");
+    }
+
+    std::array<uint8_t, 16> bytes{};
+    for (std::size_t i = 0; i < bytes.size(); ++i) {
+        bytes[i] = digest[i];
+    }
+    bytes[6] = static_cast<uint8_t>((bytes[6] & 0x0FU) | 0x50U);
+    bytes[8] = static_cast<uint8_t>((bytes[8] & 0x3FU) | 0x80U);
+
+    char buf[37]{};
+    std::snprintf(buf, sizeof(buf), "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", bytes[0],
+                  bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10],
+                  bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
+    return std::string(buf, 36);
 }
 
 } // namespace securecloud::client::infrastructure::adapters

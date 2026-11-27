@@ -1,5 +1,6 @@
 #include "auth/repository/device_public_key_repository.hpp"
 
+#include "auth/crypto/device_key_validator.hpp"
 #include "auth/domain/mappers.hpp"
 #include "auth/domain/timestamp.hpp"
 
@@ -385,7 +386,7 @@ void PostgresDevicePublicKeyRepository::store_one_time_prekeys(const domain::Uui
     const auto now = std::chrono::system_clock::now();
     for (const auto& key : keys) {
         domain::DevicePublicKeyEntity otk{
-            .key_id = domain::Uuid::generate_v7(),
+            .key_id = crypto::DeviceKeyValidator::derive_one_time_prekey_uuid(device_id, key),
             .device_id = device_id,
             .key_type = domain::KeyType::OneTimePrekey,
             .public_key = key,

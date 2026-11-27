@@ -278,6 +278,13 @@ ClientResult<std::size_t> ContactManager::sync_contacts() {
                     }
                 }
                 key_changed_detected = true;
+            } else if (contact.safety_number().empty() && !local_user_id_.empty() &&
+                       !local_identity_public_key_.empty()) {
+                const auto sn_res = safety_number_engine_->compute_safety_number(
+                    local_user_id_, local_identity_public_key_, contact.user_id(), active_peer_key);
+                if (sn_res.is_ok()) {
+                    contact.set_safety_number(sn_res.value());
+                }
             }
         }
 
@@ -471,6 +478,20 @@ ContactManager::evaluate_contact_key_change(const domain::UserId& peer_user_id,
 
         if (key_change_alert_callback_) {
             key_change_alert_callback_(peer_user_id, contact.safety_number());
+        }
+    } else if (!local_user_id_.empty() && !local_identity_public_key_.empty()) {
+        const auto sn_res = safety_number_engine_->compute_safety_number(local_user_id_, local_identity_public_key_,
+                                                                         peer_user_id, observed_identity_key);
+        if (sn_res.is_ok()) {
+            auto contact = contact_res.value();
+            if (contact.safety_number() != sn_res.value()) {
+                contact.set_safety_number(sn_res.value());
+                contact.set_updated_at(std::chrono::system_clock::now());
+                const auto save_res = local_store_.save_contact(contact);
+                if (save_res.is_error()) {
+                    return ClientResult<domain::KeyVerificationStatus>::error(save_res.error());
+                }
+            }
         }
     }
 

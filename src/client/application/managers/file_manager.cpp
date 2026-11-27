@@ -4,12 +4,15 @@
 #include "domain/crypto/file_crypto_engine.hpp"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <nlohmann/json.hpp>
+#include <openssl/rand.h>
 #include <span>
 
 namespace securecloud::client::application::managers {
@@ -27,6 +30,32 @@ std::string make_unique_id(std::string_view prefix) {
         std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::system_clock::now().time_since_epoch())
             .count();
     return std::string(prefix) + "-" + std::to_string(now_ns) + "-" + std::to_string(seq);
+}
+
+std::string bytes_to_hex(std::span<const uint8_t> bytes) {
+    static constexpr char kHex[] = "0123456789abcdef";
+    std::string out;
+    out.reserve(bytes.size() * 2U);
+    for (const uint8_t b : bytes) {
+        out.push_back(kHex[(b >> 4U) & 0x0FU]);
+        out.push_back(kHex[b & 0x0FU]);
+    }
+    return out;
+}
+
+ClientResult<std::string> generate_uuid_v4() {
+    std::array<uint8_t, 16> bytes{};
+    if (RAND_bytes(bytes.data(), static_cast<int>(bytes.size())) != 1) {
+        return ClientResult<std::string>::error(
+            ClientError::crypto("OpenSSL RAND_bytes failed for file_id UUIDv4 generation"));
+    }
+    bytes[6] = static_cast<uint8_t>((bytes[6] & 0x0FU) | 0x40U);
+    bytes[8] = static_cast<uint8_t>((bytes[8] & 0x3FU) | 0x80U);
+    char buf[37];
+    std::snprintf(buf, sizeof(buf), "%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x", bytes[0],
+                  bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9], bytes[10],
+                  bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]);
+    return ClientResult<std::string>::ok(std::string(buf, 36));
 }
 
 std::string to_lower_ascii(std::string_view sv) {
@@ -248,7 +277,11 @@ ClientResult<FileUploadResult> FileManager::start_upload(const FileUploadRequest
     }
 
     const std::string transfer_id = make_unique_id("tx-up");
-    const std::string file_id = make_unique_id("file");
+    const auto uuid_res = generate_uuid_v4();
+    if (uuid_res.is_error()) {
+        return ClientResult<FileUploadResult>::error(uuid_res.error());
+    }
+    const std::string file_id = uuid_res.value();
 
     const auto key_res = domain::crypto::FileCryptoEngine::generate_file_key();
     if (key_res.is_error()) {
@@ -265,9 +298,29 @@ ClientResult<FileUploadResult> FileManager::start_upload(const FileUploadRequest
         return ClientResult<FileUploadResult>::error(store_key_res.error());
     }
 
+    std::array<uint8_t, 24> metadata_nonce{};
+    if (RAND_bytes(metadata_nonce.data(), static_cast<int>(metadata_nonce.size())) != 1) {
+        (void)secure_storage_->delete_secret(storage_key);
+        return ClientResult<FileUploadResult>::error(
+            ClientError::crypto("OpenSSL RAND_bytes failed for encrypted file metadata nonce"));
+    }
+    const std::string fname_raw = src_path.filename().string();
+    const std::string fname_str = fname_raw.empty() ? std::string("file") : fname_raw;
+    const std::span<const uint8_t> iv12(metadata_nonce.data(), domain::crypto::FileCryptoEngine::kIvBytes);
+    const std::span<const uint8_t> fname_bytes(reinterpret_cast<const uint8_t*>(fname_str.data()), fname_str.size());
+    const std::span<const uint8_t> file_id_aad(reinterpret_cast<const uint8_t*>(file_id.data()), file_id.size());
+    const auto enc_meta_res = crypto_provider_.encrypt_aes_gcm(key_res.value(), iv12, fname_bytes, file_id_aad);
+    if (enc_meta_res.is_error()) {
+        (void)secure_storage_->delete_secret(storage_key);
+        return ClientResult<FileUploadResult>::error(enc_meta_res.error());
+    }
+
     nlohmann::json crypto_meta;
     crypto_meta["cipher_suite"] = std::string(domain::kDefaultFileCipherSuite);
     crypto_meta["chunk_size_bytes"] = engine.wire_chunk_size();
+    crypto_meta["encrypted_filename_hex"] = bytes_to_hex(enc_meta_res.value().ciphertext);
+    crypto_meta["metadata_nonce_hex"] = bytes_to_hex(metadata_nonce);
+    crypto_meta["metadata_tag_hex"] = bytes_to_hex(enc_meta_res.value().auth_tag);
 
     const auto init_res = gateway_.init_file_upload(interfaces::FileUploadInitRequest{
         .file_id = file_id,
@@ -421,6 +474,9 @@ ClientResult<FileUploadResult> FileManager::execute_upload_loop(domain::FileTran
     domain::crypto::StreamingSha256 ciphertext_hasher;
     std::vector<uint8_t> chunk_buffer;
     chunk_buffer.reserve(engine.max_plaintext_chunk_size());
+    interfaces::FileChunkUploadRequest upload_req;
+    upload_req.upload_id = record.upload_id;
+    upload_req.encrypted_data.reserve(engine.wire_chunk_size());
 
     uint64_t remaining_bytes = record.plaintext_size_bytes;
     for (uint32_t idx = 0U; idx < record.total_chunks; ++idx) {
@@ -454,12 +510,12 @@ ClientResult<FileUploadResult> FileManager::execute_upload_loop(domain::FileTran
         if (const auto pt_upd = plaintext_hasher.update(chunk_buffer); pt_upd.is_error()) {
             return ClientResult<FileUploadResult>::error(pt_upd.error());
         }
-        const auto frame_res =
-            engine.encrypt_chunk(crypto_provider_, raw_key_res.value(), record.file_id, idx, is_final, chunk_buffer);
-        if (frame_res.is_error()) {
-            return ClientResult<FileUploadResult>::error(frame_res.error());
+        const auto chunk_sha_res = engine.encrypt_chunk_into(crypto_provider_, raw_key_res.value(), record.file_id, idx,
+                                                             is_final, chunk_buffer, upload_req.encrypted_data);
+        if (chunk_sha_res.is_error()) {
+            return ClientResult<FileUploadResult>::error(chunk_sha_res.error());
         }
-        if (const auto ct_upd = ciphertext_hasher.update(frame_res.value().framed_bytes); ct_upd.is_error()) {
+        if (const auto ct_upd = ciphertext_hasher.update(upload_req.encrypted_data); ct_upd.is_error()) {
             return ClientResult<FileUploadResult>::error(ct_upd.error());
         }
 
@@ -467,12 +523,9 @@ ClientResult<FileUploadResult> FileManager::execute_upload_loop(domain::FileTran
             continue;
         }
 
-        const auto up_res = gateway_.upload_file_chunk(interfaces::FileChunkUploadRequest{
-            .upload_id = record.upload_id,
-            .chunk_index = idx,
-            .encrypted_data = frame_res.value().framed_bytes,
-            .ciphertext_sha256 = frame_res.value().ciphertext_sha256,
-        });
+        upload_req.chunk_index = idx;
+        upload_req.ciphertext_sha256 = chunk_sha_res.value();
+        const auto up_res = gateway_.upload_file_chunk(upload_req);
         if (up_res.is_error()) {
             if (up_res.error().category() == ClientErrorCategory::Network) {
                 record.status = domain::FileTransferStatus::Paused;
@@ -815,6 +868,9 @@ ClientResult<domain::FileTransferRecord> FileManager::execute_download_loop(doma
         }
 
         std::vector<uint8_t> replay_buf;
+        replay_buf.reserve(engine.max_plaintext_chunk_size());
+        std::vector<uint8_t> replay_framed_buf;
+        replay_framed_buf.reserve(engine.wire_chunk_size());
         uint64_t remaining_part = expected_part_bytes;
         for (uint32_t idx = 0U; idx < record.completed_chunks; ++idx) {
             const std::size_t slice_len = static_cast<std::size_t>(
@@ -828,12 +884,12 @@ ClientResult<domain::FileTransferRecord> FileManager::execute_download_loop(doma
             if (const auto pt_upd = plaintext_hasher.update(replay_buf); pt_upd.is_error()) {
                 return fail_closed(&part_path, pt_upd.error().user_message());
             }
-            const auto frame_res =
-                engine.encrypt_chunk(crypto_provider_, raw_key_res.value(), record.file_id, idx, is_final, replay_buf);
-            if (frame_res.is_error()) {
-                return fail_closed(&part_path, frame_res.error().user_message());
+            const auto replay_sha_res = engine.encrypt_chunk_into(crypto_provider_, raw_key_res.value(), record.file_id,
+                                                                  idx, is_final, replay_buf, replay_framed_buf);
+            if (replay_sha_res.is_error()) {
+                return fail_closed(&part_path, replay_sha_res.error().user_message());
             }
-            if (const auto ct_upd = ciphertext_hasher.update(frame_res.value().framed_bytes); ct_upd.is_error()) {
+            if (const auto ct_upd = ciphertext_hasher.update(replay_framed_buf); ct_upd.is_error()) {
                 return fail_closed(&part_path, ct_upd.error().user_message());
             }
         }

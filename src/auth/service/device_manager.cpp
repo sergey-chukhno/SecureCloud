@@ -65,13 +65,12 @@ std::string DeviceManager::generate_pairing_code_internal() {
     return code;
 }
 
-DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id, std::span<const uint8_t> identity_key,
-                                                    std::span<const uint8_t> signed_prekey,
-                                                    std::span<const uint8_t> signature,
-                                                    const std::vector<std::vector<uint8_t>>& one_time_prekeys,
-                                                    domain::AuthenticationLevel caller_auth_level,
-                                                    std::string_view client_ip) {
-    // 1. Cryptographic Key Bundle Validation
+std::optional<DeviceEnrollmentResult> DeviceManager::validate_and_persist_device_keys(
+    const domain::Uuid& user_id, const domain::Uuid& device_id, const std::optional<domain::DeviceEntity>& new_device,
+    domain::DeviceStatus initial_status, std::span<const uint8_t> identity_key, std::span<const uint8_t> signed_prekey,
+    std::span<const uint8_t> signature, const std::vector<std::vector<uint8_t>>& one_time_prekeys,
+    std::chrono::system_clock::time_point now, std::string_view client_ip) {
+    // Cryptographic Key Bundle Validation
     std::string validation_error;
     if (!crypto::DeviceKeyValidator::validate_registration_bundle(identity_key, signed_prekey, signature,
                                                                   one_time_prekeys, &validation_error)) {
@@ -80,28 +79,6 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
             .error_message = validation_error,
         };
     }
-
-    // 2. Strong Authorization Determination:
-    // If registered by an MFA_VERIFIED caller, device is Active immediately.
-    // Otherwise, caller receives PendingAuthorization requiring pairing PIN verification.
-    const auto now = std::chrono::system_clock::now();
-    const bool is_mfa = (caller_auth_level == domain::AuthenticationLevel::MfaVerified);
-    const domain::DeviceStatus initial_status =
-        is_mfa ? domain::DeviceStatus::Active : domain::DeviceStatus::PendingAuthorization;
-
-    const auto device_id = domain::Uuid::generate_v7();
-
-    domain::DeviceEntity device{
-        .device_id = device_id,
-        .user_id = user_id,
-        .device_status = initial_status,
-        .registered_at = now,
-        .revoked_at = std::nullopt,
-        .revocation_reason = std::nullopt,
-        .last_authenticated_at = now,
-        .created_at = now,
-        .updated_at = now,
-    };
 
     domain::DevicePublicKeyEntity id_key_entity{
         .key_id = domain::Uuid::generate_v7(),
@@ -130,7 +107,7 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
     otk_entities.reserve(one_time_prekeys.size());
     for (const auto& otk : one_time_prekeys) {
         otk_entities.push_back(domain::DevicePublicKeyEntity{
-            .key_id = domain::Uuid::generate_v7(),
+            .key_id = crypto::DeviceKeyValidator::derive_one_time_prekey_uuid(device_id, otk),
             .device_id = device_id,
             .key_type = domain::KeyType::OneTimePrekey,
             .public_key = otk,
@@ -141,19 +118,11 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
         });
     }
 
-    // 3. Category A: Persist Device, Public Keys, and Outbox Audit Events atomically
-    if (pool_ != nullptr) {
-        auto conn = pool_->acquire();
-        pqxx::work tx(*conn);
-
-        device_repo_->register_device(device, tx);
-        public_key_repo_->store_public_key(id_key_entity, tx);
-        public_key_repo_->store_public_key(spk_entity, tx);
-        for (const auto& otk_entity : otk_entities) {
-            public_key_repo_->store_public_key(otk_entity, tx);
+    auto publish_events_in_tx = [&](pqxx::transaction_base& tx) {
+        if (!audit_publisher_) {
+            return;
         }
-
-        if (audit_publisher_) {
+        if (new_device.has_value()) {
             if (initial_status == domain::DeviceStatus::PendingAuthorization) {
                 audit_publisher_->publish_in_tx(
                     domain::AuditEvent::device_enrolled(user_id, device_id, false, client_ip), tx);
@@ -165,18 +134,16 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
                 audit_publisher_->publish_in_tx(domain::AuditEvent::device_authorized(user_id, device_id, client_ip),
                                                 tx);
             }
+        } else {
+            audit_publisher_->publish_in_tx(domain::AuditEvent::device_authorized(user_id, device_id, client_ip), tx);
         }
+    };
 
-        tx.commit();
-    } else {
-        device_repo_->register_device(device);
-        public_key_repo_->store_public_key(id_key_entity);
-        public_key_repo_->store_public_key(spk_entity);
-        for (const auto& otk_entity : otk_entities) {
-            public_key_repo_->store_public_key(otk_entity);
+    auto publish_events_non_tx = [&]() {
+        if (!audit_publisher_) {
+            return;
         }
-
-        if (audit_publisher_) {
+        if (new_device.has_value()) {
             if (initial_status == domain::DeviceStatus::PendingAuthorization) {
                 audit_publisher_->publish(domain::AuditEvent::device_enrolled(user_id, device_id, false, client_ip));
                 audit_publisher_->publish(domain::AuditEvent::device_pairing_initiated(user_id, device_id, client_ip));
@@ -184,10 +151,83 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
                 audit_publisher_->publish(domain::AuditEvent::device_enrolled(user_id, device_id, true, client_ip));
                 audit_publisher_->publish(domain::AuditEvent::device_authorized(user_id, device_id, client_ip));
             }
+        } else {
+            audit_publisher_->publish(domain::AuditEvent::device_authorized(user_id, device_id, client_ip));
         }
+    };
+
+    // Category A: Persist Device (if new), Public Keys, and Outbox Audit Events atomically
+    if (pool_ != nullptr) {
+        auto conn = pool_->acquire();
+        pqxx::work tx(*conn);
+
+        if (new_device.has_value()) {
+            device_repo_->register_device(*new_device, tx);
+        } else if (public_key_repo_->find_active_identity_key(device_id, tx).has_value()) {
+            return DeviceEnrollmentResult{
+                .success = false,
+                .error_message = "Device already has an active identity key",
+            };
+        }
+
+        public_key_repo_->store_public_key(id_key_entity, tx);
+        public_key_repo_->store_public_key(spk_entity, tx);
+        for (const auto& otk_entity : otk_entities) {
+            public_key_repo_->store_public_key(otk_entity, tx);
+        }
+
+        publish_events_in_tx(tx);
+        tx.commit();
+    } else {
+        if (new_device.has_value()) {
+            device_repo_->register_device(*new_device);
+        }
+        public_key_repo_->store_public_key(id_key_entity);
+        public_key_repo_->store_public_key(spk_entity);
+        for (const auto& otk_entity : otk_entities) {
+            public_key_repo_->store_public_key(otk_entity);
+        }
+
+        publish_events_non_tx();
     }
 
-    // 4. Handle Pending vs Active Return
+    return std::nullopt;
+}
+
+DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id, std::span<const uint8_t> identity_key,
+                                                    std::span<const uint8_t> signed_prekey,
+                                                    std::span<const uint8_t> signature,
+                                                    const std::vector<std::vector<uint8_t>>& one_time_prekeys,
+                                                    domain::AuthenticationLevel caller_auth_level,
+                                                    std::string_view client_ip) {
+    // Strong Authorization Determination:
+    // If registered by an MFA_VERIFIED caller, device is Active immediately.
+    // Otherwise, caller receives PendingAuthorization requiring pairing PIN verification.
+    const auto now = std::chrono::system_clock::now();
+    const bool is_mfa = (caller_auth_level == domain::AuthenticationLevel::MfaVerified);
+    const domain::DeviceStatus initial_status =
+        is_mfa ? domain::DeviceStatus::Active : domain::DeviceStatus::PendingAuthorization;
+
+    const auto device_id = domain::Uuid::generate_v7();
+
+    domain::DeviceEntity device{
+        .device_id = device_id,
+        .user_id = user_id,
+        .device_status = initial_status,
+        .registered_at = now,
+        .revoked_at = std::nullopt,
+        .revocation_reason = std::nullopt,
+        .last_authenticated_at = now,
+        .created_at = now,
+        .updated_at = now,
+    };
+
+    if (auto err_res = validate_and_persist_device_keys(user_id, device_id, device, initial_status, identity_key,
+                                                        signed_prekey, signature, one_time_prekeys, now, client_ip)) {
+        return *err_res;
+    }
+
+    // Handle Pending vs Active Return
     if (initial_status == domain::DeviceStatus::PendingAuthorization) {
         const std::string raw_code = generate_pairing_code_internal();
         const std::string formatted_code = raw_code.substr(0, 4) + "-" + raw_code.substr(4, 4);
@@ -214,6 +254,74 @@ DeviceEnrollmentResult DeviceManager::enroll_device(const domain::Uuid& user_id,
             .pairing_code = formatted_code,
             .pairing_code_expires_at = expires_at,
         };
+    }
+
+    return DeviceEnrollmentResult{
+        .success = true,
+        .device_id = device_id,
+        .status = domain::DeviceStatus::Active,
+    };
+}
+
+std::optional<domain::Uuid> DeviceManager::provision_bootstrap_device(const domain::Uuid& user_id,
+                                                                      std::string_view client_ip) {
+    const auto now = std::chrono::system_clock::now();
+    const auto device_id = domain::Uuid::generate_v7();
+    const domain::DeviceEntity device{
+        .device_id = device_id,
+        .user_id = user_id,
+        .device_status = domain::DeviceStatus::Active,
+        .registered_at = now,
+        .revoked_at = std::nullopt,
+        .revocation_reason = std::nullopt,
+        .last_authenticated_at = now,
+        .created_at = now,
+        .updated_at = now,
+    };
+
+    if (pool_ != nullptr) {
+        auto conn = pool_->acquire();
+        pqxx::work tx(*conn);
+        device_repo_->register_device(device, tx);
+        if (audit_publisher_) {
+            audit_publisher_->publish_in_tx(domain::AuditEvent::device_enrolled(user_id, device_id, true, client_ip),
+                                            tx);
+        }
+        tx.commit();
+    } else {
+        device_repo_->register_device(device);
+        if (audit_publisher_) {
+            audit_publisher_->publish(domain::AuditEvent::device_enrolled(user_id, device_id, true, client_ip));
+        }
+    }
+
+    return device_id;
+}
+
+bool DeviceManager::is_bootstrap_device_awaiting_keys(const domain::Uuid& user_id, const domain::Uuid& device_id) {
+    const auto dev = device_repo_->find_by_id(device_id);
+    if (!dev.has_value() || dev->user_id != user_id || dev->device_status != domain::DeviceStatus::Active) {
+        return false;
+    }
+    return !public_key_repo_->find_active_identity_key(device_id).has_value();
+}
+
+DeviceEnrollmentResult DeviceManager::enroll_device_keys_for_existing(
+    const domain::Uuid& user_id, const domain::Uuid& device_id, std::span<const uint8_t> identity_key,
+    std::span<const uint8_t> signed_prekey, std::span<const uint8_t> signature,
+    const std::vector<std::vector<uint8_t>>& one_time_prekeys, std::string_view client_ip) {
+    if (!is_bootstrap_device_awaiting_keys(user_id, device_id)) {
+        return DeviceEnrollmentResult{
+            .success = false,
+            .error_message = "Device is not eligible for initial key attachment",
+        };
+    }
+
+    const auto now = std::chrono::system_clock::now();
+    if (auto err_res = validate_and_persist_device_keys(user_id, device_id, std::nullopt, domain::DeviceStatus::Active,
+                                                        identity_key, signed_prekey, signature, one_time_prekeys, now,
+                                                        client_ip)) {
+        return *err_res;
     }
 
     return DeviceEnrollmentResult{

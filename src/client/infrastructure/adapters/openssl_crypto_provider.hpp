@@ -59,6 +59,11 @@ class OpenSslCryptoProvider final : public application::interfaces::ICryptoProvi
     encrypt_aes_gcm(const securecloud::common::configuration::SecretString& key, std::span<const uint8_t> iv,
                     std::span<const uint8_t> plaintext, std::span<const uint8_t> associated_data = {}) override;
 
+    application::ClientResult<void>
+    encrypt_aes_gcm_into(const securecloud::common::configuration::SecretString& key, std::span<const uint8_t> iv,
+                         std::span<const uint8_t> plaintext, std::span<const uint8_t> associated_data,
+                         std::span<uint8_t> out_ciphertext, std::span<uint8_t> out_auth_tag) override;
+
     application::ClientResult<securecloud::common::configuration::SecretString>
     decrypt_aes_gcm(const securecloud::common::configuration::SecretString& key, std::span<const uint8_t> iv,
                     std::span<const uint8_t> ciphertext, std::span<const uint8_t> auth_tag,

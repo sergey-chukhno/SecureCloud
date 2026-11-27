@@ -19,6 +19,8 @@
 
 namespace securecloud::client::application::managers {
 
+class LocalAuditLogger;
+
 struct PairingVerificationPrompt {
     domain::UserId user_id;
     domain::DeviceId device_id;
@@ -65,11 +67,16 @@ class DevicePairingCoordinator {
 
     ClientResult<void> approve_companion_pairing(const PairingVerificationPrompt& prompt, std::string_view mfa_token);
 
+    void set_local_audit_logger(LocalAuditLogger* local_audit_logger) noexcept {
+        local_audit_logger_ = local_audit_logger;
+    }
+
   private:
     interfaces::IGatewayClient& gateway_;
     interfaces::ISecureStorage& secure_storage_;
     interfaces::ICryptoProvider& crypto_provider_;
     DeviceManager& device_manager_;
+    LocalAuditLogger* local_audit_logger_{nullptr};
 };
 
 } // namespace securecloud::client::application::managers
